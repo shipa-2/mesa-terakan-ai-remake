@@ -36,6 +36,10 @@ terakan_entrypoints = custom_target(
 )
 
 libterakan_files = files(
+  'terakan_instance.c',
+  'terakan_instance.h',
+  'terakan_physical_device.c',
+  'terakan_physical_device.h',
 )
 
 libvulkan_terascale = shared_library(
@@ -59,6 +63,7 @@ libvulkan_terascale = shared_library(
     inc_util,
   ],
   dependencies : [
+    dep_libdrm,
     dep_thread,
     dep_dl,
     dep_m,
