@@ -20,6 +20,9 @@ if with_amd_vk
     subdir('compiler/tests')
   endif
 endif
+if with_amd_terascale_vk
+  subdir('terascale/vulkan')
+endif
 
 if with_tools.contains('drm-shim')
   subdir('drm-shim')
