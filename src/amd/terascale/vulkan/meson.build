@@ -40,7 +40,15 @@ libterakan_files = files(
   'terakan_instance.h',
   'terakan_physical_device.c',
   'terakan_physical_device.h',
+  'winsys/terakan_winsys.h',
 )
+
+if not with_platform_windows
+  libterakan_files += files(
+    'winsys/drm_radeon/terakan_winsys_drm_radeon.c',
+    'winsys/drm_radeon/terakan_winsys_drm_radeon.h',
+  )
+endif
 
 libvulkan_terascale = shared_library(
   'vulkan_terascale',

@@ -147,6 +147,8 @@ terakan_CreateInstance(
 
    instance->vk.physical_devices.try_create_for_drm = terakan_physical_device_try_create_for_drm;
 
+   instance->vk.physical_devices.destroy = terakan_physical_device_destroy;
+
    if (instance->debug_flags & TERAKAN_DEBUG_STARTUP) {
       fputs("terakan: info: Created an instance.\n", stderr);
    }

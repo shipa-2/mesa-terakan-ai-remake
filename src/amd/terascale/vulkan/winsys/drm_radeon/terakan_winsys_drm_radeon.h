@@ -1,6 +1,11 @@
 /*
  * Copyright © 2023 Vitaliy Triang3l Kuzmin
  *
+ * Based on Gallium Radeon DRM winsys which is:
+ * Copyright © 2008 Jérôme Glisse
+ * Copyright © 2009 Corbin Simpson <MostAwesomeDude@gmail.com>
+ * Copyright © 2011 Marek Olšák <maraeo@gmail.com>
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
  * to deal in the Software without restriction, including without limitation
@@ -21,33 +26,20 @@
  * IN THE SOFTWARE.
  */
 
-#ifndef TERAKAN_PHYSICAL_DEVICE_H
-#define TERAKAN_PHYSICAL_DEVICE_H
+#ifndef TERAKAN_WINSYS_DRM_RADEON_H
+#define TERAKAN_WINSYS_DRM_RADEON_H
 
-#include "terakan_instance.h"
-#include "winsys/terakan_winsys.h"
+#include "../terakan_winsys.h"
 
-#include "vk_physical_device.h"
+#include <stddef.h>
 
-#define TERAKAN_ATI_VENDOR_ID 0x1002
+struct terakan_winsys_drm_radeon {
+   struct terakan_winsys base;
 
-struct terakan_physical_device {
-   struct vk_physical_device vk;
-
-#if !defined(_WIN32)
-   int local_fd;
-#endif
-
-   struct terakan_winsys * winsys;
+   /* Not owned by the winsys. */
+   int fd;
 };
 
-VK_DEFINE_HANDLE_CASTS(
-   terakan_physical_device, vk.base, VkPhysicalDevice, VK_OBJECT_TYPE_PHYSICAL_DEVICE)
+struct terakan_winsys * terakan_winsys_drm_radeon_create(int fd);
 
-VkResult terakan_physical_device_try_create_for_drm(
-   struct vk_instance * instance, struct _drmDevice * drm_device,
-   struct vk_physical_device * * physical_device_out);
-
-void terakan_physical_device_destroy(struct vk_physical_device * device);
-
-#endif /* TERAKAN_PHYSICAL_DEVICE_H */
+#endif /* TERAKAN_WINSYS_DRM_RADEON_H */

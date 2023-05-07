@@ -21,11 +21,16 @@
  * IN THE SOFTWARE.
  */
 
+#include "terakan_entrypoints.h"
 #include "terakan_physical_device.h"
+#include "winsys/drm_radeon/terakan_winsys_drm_radeon.h"
 
 #include "util/macros.h"
+#include "vk_alloc.h"
 #include "vk_log.h"
+#include "wsi_common.h"
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
@@ -34,6 +39,23 @@
 #include <fcntl.h>
 #include <xf86drm.h>
 #endif
+
+void
+terakan_physical_device_destroy(struct vk_physical_device * const device_base)
+{
+   struct terakan_physical_device * const device =
+      container_of(device_base, struct terakan_physical_device, vk);
+
+   device->winsys->fn->destroy(device->winsys);
+
+#if !defined(_WIN32)
+   close(device->local_fd);
+#endif
+
+   vk_physical_device_finish(&device->vk);
+
+   vk_free(&device->vk.instance->alloc, device);
+}
 
 VkResult
 terakan_physical_device_try_create_for_drm(
@@ -84,9 +106,42 @@ terakan_physical_device_try_create_for_drm(
       fprintf(stderr, "terakan: info: Found a compatible DRM device '%s'.\n", render_node_path);
    }
 
-   result = VK_ERROR_INCOMPATIBLE_DRIVER;
-   goto fail_fd;
+   struct terakan_physical_device * const device =
+      vk_alloc2(&instance->vk.alloc, NULL, sizeof(*device), alignof(*device),
+      VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE);
+   if (device == NULL) {
+      result = vk_error(instance, VK_ERROR_OUT_OF_HOST_MEMORY);
+      goto fail_fd;
+   }
 
+   struct vk_physical_device_dispatch_table dispatch_table;
+   vk_physical_device_dispatch_table_from_entrypoints(
+      &dispatch_table, &terakan_physical_device_entrypoints, true);
+   vk_physical_device_dispatch_table_from_entrypoints(
+      &dispatch_table, &wsi_physical_device_entrypoints, false);
+
+   result = vk_physical_device_init(&device->vk, &instance->vk, NULL, NULL, NULL, &dispatch_table);
+   if (result != VK_SUCCESS) {
+      goto fail_alloc;
+   }
+
+   device->local_fd = fd;
+
+   device->winsys = terakan_winsys_drm_radeon_create(fd);
+   if (device->winsys == NULL) {
+      result = VK_ERROR_INCOMPATIBLE_DRIVER;
+      goto fail_object;
+   }
+
+   result = VK_ERROR_INCOMPATIBLE_DRIVER;
+   goto fail_winsys;
+
+fail_winsys:
+   device->winsys->fn->destroy(device->winsys);
+fail_object:
+   vk_physical_device_finish(&device->vk);
+fail_alloc:
+   vk_free(&instance->vk.alloc, device);
 fail_fd:
    close(fd);
    return result;

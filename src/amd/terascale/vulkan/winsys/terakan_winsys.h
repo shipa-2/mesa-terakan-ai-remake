@@ -21,33 +21,17 @@
  * IN THE SOFTWARE.
  */
 
-#ifndef TERAKAN_PHYSICAL_DEVICE_H
-#define TERAKAN_PHYSICAL_DEVICE_H
+#ifndef TERAKAN_WINSYS_H
+#define TERAKAN_WINSYS_H
 
-#include "terakan_instance.h"
-#include "winsys/terakan_winsys.h"
+struct terakan_winsys;
 
-#include "vk_physical_device.h"
-
-#define TERAKAN_ATI_VENDOR_ID 0x1002
-
-struct terakan_physical_device {
-   struct vk_physical_device vk;
-
-#if !defined(_WIN32)
-   int local_fd;
-#endif
-
-   struct terakan_winsys * winsys;
+struct terakan_winsys_fn {
+   void (* destroy)(struct terakan_winsys * winsys);
 };
 
-VK_DEFINE_HANDLE_CASTS(
-   terakan_physical_device, vk.base, VkPhysicalDevice, VK_OBJECT_TYPE_PHYSICAL_DEVICE)
+struct terakan_winsys {
+   struct terakan_winsys_fn const * fn;
+};
 
-VkResult terakan_physical_device_try_create_for_drm(
-   struct vk_instance * instance, struct _drmDevice * drm_device,
-   struct vk_physical_device * * physical_device_out);
-
-void terakan_physical_device_destroy(struct vk_physical_device * device);
-
-#endif /* TERAKAN_PHYSICAL_DEVICE_H */
+#endif /* TERAKAN_WINSYS_H */

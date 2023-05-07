@@ -1,6 +1,11 @@
 /*
  * Copyright © 2023 Vitaliy Triang3l Kuzmin
  *
+ * Based on Gallium Radeon DRM winsys which is:
+ * Copyright © 2008 Jérôme Glisse
+ * Copyright © 2009 Corbin Simpson <MostAwesomeDude@gmail.com>
+ * Copyright © 2011 Marek Olšák <maraeo@gmail.com>
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
  * to deal in the Software without restriction, including without limitation
@@ -21,33 +26,38 @@
  * IN THE SOFTWARE.
  */
 
-#ifndef TERAKAN_PHYSICAL_DEVICE_H
-#define TERAKAN_PHYSICAL_DEVICE_H
+#include "terakan_winsys_drm_radeon.h"
 
-#include "terakan_instance.h"
-#include "winsys/terakan_winsys.h"
+#include "util/macros.h"
+#include "util/u_memory.h"
 
-#include "vk_physical_device.h"
+#include <radeon_drm.h>
+#include <stddef.h>
+#include <stdio.h>
 
-#define TERAKAN_ATI_VENDOR_ID 0x1002
+static void
+terakan_winsys_drm_radeon_destroy(struct terakan_winsys * const winsys_base)
+{
+   struct terakan_winsys_drm_radeon * const winsys =
+      container_of(winsys_base, struct terakan_winsys_drm_radeon, base);
 
-struct terakan_physical_device {
-   struct vk_physical_device vk;
+   FREE(winsys);
+}
 
-#if !defined(_WIN32)
-   int local_fd;
-#endif
-
-   struct terakan_winsys * winsys;
+static struct terakan_winsys_fn const terakan_winsys_drm_radeon_fn = {
+   .destroy = terakan_winsys_drm_radeon_destroy,
 };
 
-VK_DEFINE_HANDLE_CASTS(
-   terakan_physical_device, vk.base, VkPhysicalDevice, VK_OBJECT_TYPE_PHYSICAL_DEVICE)
+struct terakan_winsys *
+terakan_winsys_drm_radeon_create(int const fd)
+{
+   struct terakan_winsys_drm_radeon * winsys = MALLOC_STRUCT(terakan_winsys_drm_radeon);
+   if (winsys == NULL) {
+      fputs("terakan/drm_radeon: Failed to allocate memory for the winsys structure.\n", stderr);
+      return NULL;
+   }
+   winsys->fd = fd;
+   winsys->base.fn = &terakan_winsys_drm_radeon_fn;
 
-VkResult terakan_physical_device_try_create_for_drm(
-   struct vk_instance * instance, struct _drmDevice * drm_device,
-   struct vk_physical_device * * physical_device_out);
-
-void terakan_physical_device_destroy(struct vk_physical_device * device);
-
-#endif /* TERAKAN_PHYSICAL_DEVICE_H */
+   return &winsys->base;
+}
