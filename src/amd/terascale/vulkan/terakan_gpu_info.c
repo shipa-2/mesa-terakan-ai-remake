@@ -21,21 +21,45 @@
  * IN THE SOFTWARE.
  */
 
-#ifndef TERAKAN_WINSYS_H
-#define TERAKAN_WINSYS_H
-
 #include "terakan_gpu_info.h"
 
-struct terakan_winsys;
+#include <stddef.h>
 
-struct terakan_winsys_fn {
-   void (* destroy)(struct terakan_winsys * winsys);
-};
+bool
+terakan_gpu_info_init_chip_family(
+   struct terakan_gpu_info * const info, uint32_t const pci_id)
+{
+   enum radeon_family chip_family = CHIP_UNKNOWN;
+   char const * chip_family_name = NULL;
+   switch (pci_id) {
+#define CHIPSET(chipset_pci_id, chipset_name, chipset_family) \
+   case chipset_pci_id: \
+      chip_family = CHIP_##chipset_family; \
+      chip_family_name = #chipset_family; \
+      break;
+#include "pci_ids/r600_pci_ids.h"
+#undef CHIPSET
+   }
+   /* Only Evergreen (R8xx) and Cayman (R9xx) are supported by Terakan. */
+   if (!(chip_family >= CHIP_CEDAR && chip_family <= CHIP_ARUBA)) {
+      return false;
+   }
 
-struct terakan_winsys {
-   struct terakan_winsys_fn const * fn;
+   info->pci_id = pci_id;
+   info->chip_family = chip_family;
+   info->chip_family_name = chip_family_name;
+   info->gfx_level = chip_family >= CHIP_CAYMAN ? CAYMAN : EVERGREEN;
 
-   struct terakan_gpu_info gpu_info;
-};
+   switch (chip_family) {
+   case CHIP_PALM:
+   case CHIP_SUMO:
+   case CHIP_SUMO2:
+   case CHIP_ARUBA:
+      info->has_dedicated_vram = false;
+      break;
+   default:
+      info->has_dedicated_vram = true;
+   }
 
-#endif /* TERAKAN_WINSYS_H */
+   return true;
+}

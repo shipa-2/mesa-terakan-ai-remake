@@ -36,6 +36,8 @@ terakan_entrypoints = custom_target(
 )
 
 libterakan_files = files(
+  'terakan_gpu_info.c',
+  'terakan_gpu_info.h',
   'terakan_instance.c',
   'terakan_instance.h',
   'terakan_physical_device.c',

@@ -28,6 +28,7 @@
 #include "util/macros.h"
 #include "vk_alloc.h"
 #include "vk_log.h"
+#include "vk_util.h"
 #include "wsi_common.h"
 
 #include <stdbool.h>
@@ -60,7 +61,7 @@ terakan_physical_device_destroy(struct vk_physical_device * const device_base)
 VkResult
 terakan_physical_device_try_create_for_drm(
    struct vk_instance * const instance_base, struct _drmDevice * const drm_device,
-   struct vk_physical_device * * const physical_device_out)
+   struct vk_physical_device * * const device_out)
 {
 #if defined(_WIN32)
    return vk_errorf(
@@ -130,15 +131,16 @@ terakan_physical_device_try_create_for_drm(
    device->winsys = terakan_winsys_drm_radeon_create(fd);
    if (device->winsys == NULL) {
       result = VK_ERROR_INCOMPATIBLE_DRIVER;
-      goto fail_object;
+      goto fail_device;
    }
 
-   result = VK_ERROR_INCOMPATIBLE_DRIVER;
-   goto fail_winsys;
+   vk_warn_non_conformant_implementation("terakan");
 
-fail_winsys:
-   device->winsys->fn->destroy(device->winsys);
-fail_object:
+   *device_out = &device->vk;
+
+   return VK_SUCCESS;
+
+fail_device:
    vk_physical_device_finish(&device->vk);
 fail_alloc:
    vk_free(&instance->vk.alloc, device);

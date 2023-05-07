@@ -29,8 +29,6 @@
 
 #include "vk_physical_device.h"
 
-#define TERAKAN_ATI_VENDOR_ID 0x1002
-
 struct terakan_physical_device {
    struct vk_physical_device vk;
 
@@ -46,7 +44,7 @@ VK_DEFINE_HANDLE_CASTS(
 
 VkResult terakan_physical_device_try_create_for_drm(
    struct vk_instance * instance, struct _drmDevice * drm_device,
-   struct vk_physical_device * * physical_device_out);
+   struct vk_physical_device * * device_out);
 
 void terakan_physical_device_destroy(struct vk_physical_device * device);
 

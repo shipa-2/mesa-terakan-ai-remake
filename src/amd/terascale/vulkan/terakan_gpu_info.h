@@ -21,21 +21,29 @@
  * IN THE SOFTWARE.
  */
 
-#ifndef TERAKAN_WINSYS_H
-#define TERAKAN_WINSYS_H
+#ifndef TERAKAN_GPU_INFO_H
+#define TERAKAN_GPU_INFO_H
 
-#include "terakan_gpu_info.h"
+#include "amd_family.h"
 
-struct terakan_winsys;
+#include <stdbool.h>
+#include <stdint.h>
 
-struct terakan_winsys_fn {
-   void (* destroy)(struct terakan_winsys * winsys);
+#define TERAKAN_ATI_VENDOR_ID 0x1002
+
+struct terakan_gpu_info {
+   uint32_t pci_id;
+   enum radeon_family chip_family;
+   char const * chip_family_name;
+   enum amd_gfx_level gfx_level;
+
+   bool has_dedicated_vram;
 };
 
-struct terakan_winsys {
-   struct terakan_winsys_fn const * fn;
+/* Returns whether the GPU is supported by Terakan.
+ * If it's not, the output info is unmodified.
+ */
+bool terakan_gpu_info_init_chip_family(
+   struct terakan_gpu_info * info, uint32_t pci_id);
 
-   struct terakan_gpu_info gpu_info;
-};
-
-#endif /* TERAKAN_WINSYS_H */
+#endif /* TERAKAN_GPU_INFO_H */
