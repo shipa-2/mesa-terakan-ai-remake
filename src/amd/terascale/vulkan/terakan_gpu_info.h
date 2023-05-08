@@ -27,17 +27,33 @@
 #include "amd_family.h"
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
+#include <vulkan/vulkan_core.h>
 
 #define TERAKAN_ATI_VENDOR_ID 0x1002
 
 struct terakan_gpu_info {
+   /* The following are initialized via terakan_gpu_info_init_chip_family. */
+
    uint32_t pci_id;
    enum radeon_family chip_family;
    char const * chip_family_name;
    enum amd_gfx_level gfx_level;
 
    bool has_dedicated_vram;
+
+   /* The following need to be set up by the winsys. */
+
+   size_t gart_page_size;
+   uint64_t gart_size;
+   uint64_t vram_size;
+   uint64_t vram_visible; /* Included in vram_size. */
+
+   VkDeviceSize max_bo_size;
+   size_t min_memory_map_alignment;
+
+   uint32_t clock_crystal_frequency;
 };
 
 /* Returns whether the GPU is supported by Terakan.

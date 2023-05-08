@@ -26,9 +26,13 @@
 
 #include "terakan_gpu_info.h"
 
+#include "vk_sync.h"
+
 struct terakan_winsys;
 
 struct terakan_winsys_fn {
+   struct vk_sync_type const * const * (* get_sync_types)(struct terakan_winsys * winsys);
+
    void (* destroy)(struct terakan_winsys * winsys);
 };
 

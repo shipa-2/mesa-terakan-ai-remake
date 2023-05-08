@@ -21,49 +21,38 @@
  * IN THE SOFTWARE.
  */
 
-#ifndef TERAKAN_PHYSICAL_DEVICE_H
-#define TERAKAN_PHYSICAL_DEVICE_H
+#include "terakan_wsi.h"
 
-#include "terakan_instance.h"
-#include "winsys/terakan_winsys.h"
+#include "vk_instance.h"
 #include "wsi_common.h"
 
-#include "vk_physical_device.h"
+static VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL
+terakan_wsi_proc_addr(VkPhysicalDevice const physicalDevice, char const * const pName)
+{
+   struct terakan_physical_device const * const physical_device =
+      terakan_physical_device_from_handle(physicalDevice);
+   return vk_instance_get_proc_addr_unchecked(physical_device->vk.instance, pName);
+}
 
-#if !defined(_WIN32)
-#include <sys/types.h>
-#include <xf86drm.h>
-#endif
+void
+terakan_wsi_finish(struct terakan_physical_device * const physical_device)
+{
+   physical_device->vk.wsi_device = NULL;
+   wsi_device_finish(&physical_device->wsi_device, &physical_device->vk.instance->alloc);
+}
 
-struct terakan_physical_device {
-   struct vk_physical_device vk;
+VkResult
+terakan_wsi_init(struct terakan_physical_device * const physical_device)
+{
+   struct wsi_device_options const device_options = { .sw_device = false };
+   VkResult result = wsi_device_init(
+      &physical_device->wsi_device, terakan_physical_device_to_handle(physical_device),
+      terakan_wsi_proc_addr, &physical_device->vk.instance->alloc, -1, NULL, &device_options);
+   if (result != VK_SUCCESS) {
+      return result;
+   }
 
-#if !defined(_WIN32)
-   /* TODO(Triang3l): master_fd. */
-   int local_fd;
-#endif
+   physical_device->vk.wsi_device = &physical_device->wsi_device;
 
-   struct terakan_winsys * winsys;
-
-#if !defined(_WIN32)
-   int drm_available_nodes;
-   drmPciBusInfo drm_bus_info;
-   dev_t drm_primary_devid;
-   dev_t drm_render_devid;
-#endif
-
-   VkPhysicalDeviceMemoryProperties memory_properties;
-
-   struct wsi_device wsi_device;
-};
-
-VK_DEFINE_HANDLE_CASTS(
-   terakan_physical_device, vk.base, VkPhysicalDevice, VK_OBJECT_TYPE_PHYSICAL_DEVICE)
-
-VkResult terakan_physical_device_try_create_for_drm(
-   struct vk_instance * instance, struct _drmDevice * drm_device,
-   struct vk_physical_device * * device_out);
-
-void terakan_physical_device_destroy(struct vk_physical_device * device);
-
-#endif /* TERAKAN_PHYSICAL_DEVICE_H */
+   return VK_SUCCESS;
+}

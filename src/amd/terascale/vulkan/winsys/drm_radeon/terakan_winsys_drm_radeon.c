@@ -30,12 +30,15 @@
 
 #include "util/macros.h"
 #include "util/u_memory.h"
+#include "vk_drm_syncobj.h"
 
+#include <assert.h>
 #include <radeon_drm.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <unistd.h>
 #include <xf86drm.h>
 
 static bool
@@ -59,6 +62,14 @@ terakan_winsys_drm_radeon_get_drm_value(
    return true;
 }
 
+static struct vk_sync_type const * const *
+terakan_winsys_drm_radeon_get_sync_types(struct terakan_winsys * const winsys_base)
+{
+   struct terakan_winsys_drm_radeon const * const winsys =
+      container_of(winsys_base, struct terakan_winsys_drm_radeon const, base);
+   return winsys->sync_types;
+}
+
 static void
 terakan_winsys_drm_radeon_destroy(struct terakan_winsys * const winsys_base)
 {
@@ -69,6 +80,7 @@ terakan_winsys_drm_radeon_destroy(struct terakan_winsys * const winsys_base)
 }
 
 static struct terakan_winsys_fn const terakan_winsys_drm_radeon_fn = {
+   .get_sync_types = terakan_winsys_drm_radeon_get_sync_types,
    .destroy = terakan_winsys_drm_radeon_destroy,
 };
 
@@ -120,6 +132,53 @@ terakan_winsys_drm_radeon_create(int const fd)
    winsys->fd = fd;
 
    winsys->base.fn = &terakan_winsys_drm_radeon_fn;
+
+   /* Get memory info. */
+   size_t const page_size = (size_t)sysconf(_SC_PAGESIZE);
+   /* TTM aligns the BO size to the CPU page size. */
+   winsys->base.gpu_info.gart_page_size = page_size;
+   {
+      struct drm_radeon_gem_info gem_info = {0};
+      int const read_gem_info_result =
+         drmCommandWriteRead(fd, DRM_RADEON_GEM_INFO, &gem_info, sizeof(gem_info));
+      if (read_gem_info_result != 0) {
+         fprintf(
+            stderr,
+            "terakan/drm_radeon: Failed to get the memory management info, error number %d.\n",
+            read_gem_info_result);
+         goto fail_alloc;
+      }
+      winsys->base.gpu_info.gart_size = gem_info.gart_size;
+      winsys->base.gpu_info.vram_size = gem_info.vram_size;
+      winsys->base.gpu_info.vram_visible = gem_info.vram_visible;
+   }
+   /* The command buffer parser in the Radeon kernel driver stores 32-bit offsets to bindings within
+    * buffer objects, and for the indirect arguments base (SET_BASE packet), it doesn't apply the
+    * offset during relocation, so DRAW_INDIRECT and DRAW_INDEX_INDIRECT need a 32-bit BO-relative
+    * offset rather than an offset within the Vulkan buffer.
+    * Also, it aligns BO sizes (accepted as unsigned long - 32-bit on 32-bit architectures) to the
+    * CPU page size.
+    */
+   winsys->base.gpu_info.max_bo_size = UINT32_MAX & ~(VkDeviceSize)(page_size - 1);
+   winsys->base.gpu_info.min_memory_map_alignment = page_size;
+
+   /* Get the timestamp frequency. In case of failure, timestamp queries will be disabled. */
+   if (!terakan_winsys_drm_radeon_get_drm_value(
+          fd, RADEON_INFO_CLOCK_CRYSTAL_FREQ, NULL,
+          &winsys->base.gpu_info.clock_crystal_frequency)) {
+      winsys->base.gpu_info.clock_crystal_frequency = 0;
+   }
+
+   /* Initialize synchronization. */
+   size_t sync_type_count = 0;
+   winsys->syncobj_sync_type = vk_drm_syncobj_get_type(fd);
+   if (winsys->syncobj_sync_type.features) {
+      assert(sync_type_count < ARRAY_SIZE(winsys->sync_types));
+      winsys->sync_types[sync_type_count++] = &winsys->syncobj_sync_type;
+      /* TODO(Triang3l): Timeline semaphores. */
+   }
+   assert(sync_type_count < ARRAY_SIZE(winsys->sync_types));
+   winsys->sync_types[sync_type_count++] = NULL;
 
    return &winsys->base;
 

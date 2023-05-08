@@ -23,6 +23,7 @@
 
 #include "terakan_entrypoints.h"
 #include "terakan_instance.h"
+#include "terakan_limits.h"
 #include "terakan_physical_device.h"
 
 #include "util/macros.h"
@@ -144,6 +145,42 @@ terakan_CreateInstance(
    }
 
    instance->debug_flags = parse_debug_string(getenv("TERAKAN_DEBUG"), terakan_debug_options);
+
+   /* Allocate binding spaces. */
+   /* TODO(Triang3l): Binding space allocation configuration via environment variables or
+    * application-specific workarounds.
+    */
+
+   /* Vulkan requires at least 4 storage buffers and 4 storage images.
+    *
+    * Direct3D 11.0 provides 8 Unordered Access Views (UAVs) in compute shaders and 8 combined RTVs
+    * and UAVs in pixel shaders.
+    *
+    * By default, expose 4 storage buffers and 8 storage images.
+    *
+    * The RATionale is that all Direct3D 11 UAV types, including structured and raw buffers, can be
+    * implemented as Vulkan storage images, so there need to be at least as many storage image
+    * bindings as Direct3D 11.0 UAVs.
+    *
+    * Each UAV in Direct3D 11 can also have a 32-bit counter. Vulkan doesn't have a similar concept,
+    * a separate storage buffer/image binding is generally used for the counter. Unfortunately,
+    * there are not enough hardware RATs to make it possible to do that. However, there are 4
+    * storage buffer slots, and the translation layer may use one of them to store counters of all
+    * of the bound UAVs.
+    */
+   instance->storage_buffer_count = 4;
+
+   uint32_t const uniform_buffer_count = TERAKAN_LIMITS_VK_CONSTANT_BUFFER_UNIFORM_BUFFER_MAX_COUNT;
+   instance->resource_base_sampled_images =
+      TERAKAN_LIMITS_VK_RESOURCE_UNIFORM_BUFFER_SAMPLED_IMAGE_INPUT_ATTACHMENT_BASE +
+      uniform_buffer_count;
+
+   uint32_t const input_attachment_count = 4;
+   instance->resource_base_input_attachments =
+      TERAKAN_LIMITS_VK_RESOURCE_UNIFORM_BUFFER_SAMPLED_IMAGE_INPUT_ATTACHMENT_END -
+      input_attachment_count;
+
+   /* Initialize physical device management. */
 
    instance->vk.physical_devices.try_create_for_drm = terakan_physical_device_try_create_for_drm;
 

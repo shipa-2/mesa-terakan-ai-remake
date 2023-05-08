@@ -40,8 +40,11 @@ libterakan_files = files(
   'terakan_gpu_info.h',
   'terakan_instance.c',
   'terakan_instance.h',
+  'terakan_limits.h',
   'terakan_physical_device.c',
   'terakan_physical_device.h',
+  'terakan_wsi.c',
+  'terakan_wsi.h',
   'winsys/terakan_winsys.h',
 )
 

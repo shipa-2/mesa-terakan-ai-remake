@@ -1,11 +1,6 @@
 /*
  * Copyright © 2023 Vitaliy Triang3l Kuzmin
  *
- * Based on Gallium Radeon DRM winsys which is:
- * Copyright © 2008 Jérôme Glisse
- * Copyright © 2009 Corbin Simpson <MostAwesomeDude@gmail.com>
- * Copyright © 2011 Marek Olšák <maraeo@gmail.com>
- *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
  * to deal in the Software without restriction, including without limitation
@@ -26,25 +21,13 @@
  * IN THE SOFTWARE.
  */
 
-#ifndef TERAKAN_WINSYS_DRM_RADEON_H
-#define TERAKAN_WINSYS_DRM_RADEON_H
+#ifndef TERAKAN_WSI_H
+#define TERAKAN_WSI_H
 
-#include "../terakan_winsys.h"
+#include "terakan_physical_device.h"
 
-#include "vk_sync.h"
+void terakan_wsi_finish(struct terakan_physical_device * physical_device);
 
-#include <stddef.h>
+VkResult terakan_wsi_init(struct terakan_physical_device * physical_device);
 
-struct terakan_winsys_drm_radeon {
-   struct terakan_winsys base;
-
-   /* Not owned by the winsys. */
-   int fd;
-
-   struct vk_sync_type syncobj_sync_type;
-   struct vk_sync_type const * sync_types[2];
-};
-
-struct terakan_winsys * terakan_winsys_drm_radeon_create(int fd);
-
-#endif /* TERAKAN_WINSYS_DRM_RADEON_H */
+#endif /* TERAKAN_WSI_H */
