@@ -66,6 +66,9 @@ terakan_physical_device_get_supported_extensions(
 {
    memset(extensions_out, 0, sizeof(*extensions_out));
 
+   extensions_out->EXT_4444_formats = true;
+   extensions_out->KHR_format_feature_flags2 = true;
+
 #if !defined(_WIN32)
    extensions_out->EXT_pci_bus_info = true;
    extensions_out->EXT_physical_device_drm = true;
@@ -85,6 +88,29 @@ terakan_GetPhysicalDeviceFeatures(
 
    pFeatures->robustBufferAccess = VK_TRUE;
    pFeatures->fullDrawIndexUint32 = VK_TRUE;
+   pFeatures->textureCompressionBC = VK_TRUE;
+}
+
+VKAPI_ATTR void VKAPI_CALL
+terakan_GetPhysicalDeviceFeatures2(
+   VkPhysicalDevice const physicalDevice, VkPhysicalDeviceFeatures2 * const pFeatures)
+{
+   terakan_GetPhysicalDeviceFeatures(physicalDevice, &pFeatures->features);
+
+   vk_foreach_struct(ext, pFeatures->pNext)
+   {
+      switch (ext->sType) {
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_4444_FORMATS_FEATURES_EXT: {
+         VkPhysicalDevice4444FormatsFeaturesEXT * const features =
+            (VkPhysicalDevice4444FormatsFeaturesEXT *)ext;
+         features->formatA4R4G4B4 = VK_TRUE;
+         features->formatA4B4G4R4 = VK_TRUE;
+      } break;
+
+      default:
+         break;
+      }
+   }
 }
 
 static void

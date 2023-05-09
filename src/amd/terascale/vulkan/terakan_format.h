@@ -1,0 +1,79 @@
+/*
+ * Copyright © 2023 Vitaliy Triang3l Kuzmin
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction, including without limitation
+ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
+ * and/or sell copies of the Software, and to permit persons to whom the
+ * Software is furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice (including the next
+ * paragraph) shall be included in all copies or substantial portions of the
+ * Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+ * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+ * IN THE SOFTWARE.
+ */
+
+#ifndef TERAKAN_FORMAT_H
+#define TERAKAN_FORMAT_H
+
+#include "gallium/drivers/r600/evergreend.h"
+#include "gallium/drivers/r600/r600_formats.h"
+
+#include <stdbool.h>
+#include <stdint.h>
+#include <vulkan/vulkan_core.h>
+
+/* Returns COLOR_INVALID if invalid. */
+uint32_t terakan_format_color_get_format(VkFormat format);
+/* Returns UINT32_MAX if invalid. */
+uint32_t terakan_format_color_get_number_type(VkFormat format);
+/* Returns UINT32_MAX if invalid. */
+uint32_t terakan_format_color_get_swap(VkFormat format);
+bool terakan_format_color_is_blendable(uint32_t color_format, uint32_t number_type);
+
+/* Returns Z_INVALID if invalid. */
+uint32_t terakan_format_depth_get_format(VkFormat format);
+bool terakan_format_has_stencil_8(VkFormat format);
+
+#define TERAKAN_FORMAT_DATA_VERTEX_ONLY_FORMATS \
+   (((uint64_t)1 << FMT_3_3_2) | ((uint64_t)1 << FMT_8_24_FLOAT) | \
+    ((uint64_t)1 << FMT_24_8_FLOAT) | ((uint64_t)1 << FMT_10_11_11) | \
+    ((uint64_t)1 << FMT_11_11_10) | ((uint64_t)1 << FMT_11_11_10_FLOAT) | \
+    ((uint64_t)1 << FMT_8_8_8) | ((uint64_t)1 << FMT_16_16_16) | \
+    ((uint64_t)1 << FMT_16_16_16_FLOAT))
+
+#define TERAKAN_FORMAT_DATA_SUBSAMPLED_FORMATS \
+   (((uint64_t)1 << FMT_GB_GR) | ((uint64_t)1 << FMT_BG_RG))
+
+#define TERAKAN_FORMAT_DATA_BLOCK_COMPRESSED_FORMATS \
+   (((uint64_t)1 << FMT_BC1) | ((uint64_t)1 << FMT_BC2) | ((uint64_t)1 << FMT_BC3) | \
+    ((uint64_t)1 << FMT_BC4) | ((uint64_t)1 << FMT_BC5) | ((uint64_t)1 << FMT_BC6) | \
+    ((uint64_t)1 << FMT_BC7))
+
+#define TERAKAN_FORMAT_DATA_TEXTURE_ONLY_FORMATS \
+   (TERAKAN_FORMAT_DATA_SUBSAMPLED_FORMATS | TERAKAN_FORMAT_DATA_BLOCK_COMPRESSED_FORMATS)
+
+/* Returns a format that can be used for both vertex and texture fetching, or FMT_INVALID if
+ * invalid.
+ */
+uint32_t terakan_format_data_get_common_format(VkFormat format);
+/* Returns UINT32_MAX if invalid. */
+uint32_t terakan_format_data_get_number_format(VkFormat format);
+
+/* Returns FMT_INVALID if invalid. */
+uint32_t terakan_format_texture_get_format(VkFormat format);
+uint32_t terakan_format_texture_get_word4_signs(VkFormat format);
+
+/* Returns FMT_INVALID if invalid. */
+uint32_t terakan_format_vertex_get_format(VkFormat format);
+uint32_t terakan_format_vertex_get_sign(VkFormat format);
+
+#endif /* TERAKAN_FORMAT_H */

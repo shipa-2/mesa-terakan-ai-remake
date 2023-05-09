@@ -1,0 +1,838 @@
+/*
+ * Copyright © 2023 Vitaliy Triang3l Kuzmin
+ *
+ * Based in part on r600_state_common.c and r600_texture.c which are:
+ * Copyright 2010 Red Hat Inc.
+ *           2010 Jerome Glisse <glisse@freedesktop.org>
+ *
+ * Based in part on radv_formats.c which is:
+ * Copyright © 2016 Red Hat.
+ * Copyright © 2016 Bas Nieuwenhuizen
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction, including without limitation
+ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
+ * and/or sell copies of the Software, and to permit persons to whom the
+ * Software is furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice (including the next
+ * paragraph) shall be included in all copies or substantial portions of the
+ * Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+ * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+ * IN THE SOFTWARE.
+ */
+
+#include "terakan_entrypoints.h"
+#include "terakan_format.h"
+#include "terakan_limits.h"
+#include "terakan_physical_device.h"
+
+#include "vk_format.h"
+#include "vk_util.h"
+#include "util/format/u_format.h"
+#include "util/u_endian.h"
+
+#include <stdbool.h>
+#include <stdint.h>
+
+/* TODO(Triang3l): Big-endian. */
+
+static bool
+terakan_format_is_unsupported(VkFormat const format)
+{
+   /* Mapped to 16_UNORM PIPE_FORMAT, but not supported. */
+   if (format == VK_FORMAT_R10X6_UNORM_PACK16 || format == VK_FORMAT_R10X6G10X6_UNORM_2PACK16) {
+      return true;
+   }
+
+   return false;
+}
+
+/* TODO(Triang3l): Research S8_UINT and D16_UNORM_S8_UINT color attachment and storage usage. */
+
+uint32_t
+terakan_format_color_get_format(VkFormat const format)
+{
+   if (terakan_format_is_unsupported(format)) {
+      return V_028C70_COLOR_INVALID;
+   }
+
+   /* Not a plain format.*/
+   if (format == VK_FORMAT_B10G11R11_UFLOAT_PACK32) {
+      return V_028C70_COLOR_10_11_11_FLOAT;
+   }
+
+   struct util_format_description const * const description = vk_format_description(format);
+
+   if (description->format == PIPE_FORMAT_NONE || description->layout != UTIL_FORMAT_LAYOUT_PLAIN) {
+      return V_028C70_COLOR_INVALID;
+   }
+
+   switch (description->nr_channels) {
+   case 1:
+      switch (description->channel[0].size) {
+      case 8:
+         return V_028C70_COLOR_8;
+      case 16:
+         if (description->channel[0].type == UTIL_FORMAT_TYPE_FLOAT) {
+            return V_028C70_COLOR_16_FLOAT;
+         }
+         return V_028C70_COLOR_16;
+      case 32:
+         if (description->channel[0].type == UTIL_FORMAT_TYPE_FLOAT) {
+            return V_028C70_COLOR_32_FLOAT;
+         }
+         return V_028C70_COLOR_32;
+      }
+      break;
+
+   case 2:
+      if (description->channel[0].size == description->channel[1].size) {
+         switch (description->channel[0].size) {
+         case 8:
+            return V_028C70_COLOR_8_8;
+         case 16:
+            if (description->channel[0].type == UTIL_FORMAT_TYPE_FLOAT) {
+               return V_028C70_COLOR_16_16_FLOAT;
+            }
+            return V_028C70_COLOR_16_16;
+         case 32:
+            if (description->channel[0].type == UTIL_FORMAT_TYPE_FLOAT) {
+               return V_028C70_COLOR_32_32_FLOAT;
+            }
+            return V_028C70_COLOR_32_32;
+         }
+      } else if (description->channel[0].size == 8 && description->channel[1].size == 24) {
+         return V_028C70_COLOR_24_8;
+      } else if (description->channel[0].size == 24 && description->channel[1].size == 8) {
+         return V_028C70_COLOR_8_24;
+      }
+      break;
+
+   case 3:
+      if (description->channel[0].size == 5 && description->channel[1].size == 6 &&
+          description->channel[2].size == 5) {
+         return V_028C70_COLOR_5_6_5;
+      } else if (description->channel[0].size == 32 && description->channel[1].size == 8 &&
+                 description->channel[2].size == 24) {
+         return V_028C70_COLOR_X24_8_32_FLOAT;
+      }
+      break;
+
+   case 4:
+      if (description->channel[0].size == description->channel[1].size &&
+          description->channel[0].size == description->channel[2].size) {
+         if (description->channel[0].size == description->channel[3].size) {
+            switch (description->channel[0].size) {
+            case 4:
+               return V_028C70_COLOR_4_4_4_4;
+            case 8:
+               return V_028C70_COLOR_8_8_8_8;
+            case 16:
+               if (description->channel[0].type == UTIL_FORMAT_TYPE_FLOAT) {
+                  return V_028C70_COLOR_16_16_16_16_FLOAT;
+               }
+               return V_028C70_COLOR_16_16_16_16;
+            case 32:
+               if (description->channel[0].type == UTIL_FORMAT_TYPE_FLOAT) {
+                  return V_028C70_COLOR_32_32_32_32_FLOAT;
+               }
+               return V_028C70_COLOR_32_32_32_32;
+            }
+         } else if (description->channel[0].size == 5 && description->channel[3].size == 1) {
+            return V_028C70_COLOR_1_5_5_5;
+         } else if (description->channel[0].size == 10 && description->channel[3].size == 2) {
+            return V_028C70_COLOR_2_10_10_10;
+         }
+      } else if (description->channel[1].size == description->channel[2].size &&
+                 description->channel[1].size == description->channel[3].size) {
+         if (description->channel[0].size == 1 && description->channel[1].size == 5) {
+            return V_028C70_COLOR_5_5_5_1;
+         } else if (description->channel[0].size == 2 && description->channel[1].size == 10) {
+            return V_028C70_COLOR_10_10_10_2;
+         }
+      }
+      break;
+   }
+
+   return V_028C70_COLOR_INVALID;
+}
+
+uint32_t
+terakan_format_color_get_number_type(VkFormat const format)
+{
+   /* Not a plain format.*/
+   if (format == VK_FORMAT_B10G11R11_UFLOAT_PACK32) {
+      return V_028C70_NUMBER_FLOAT;
+   }
+
+   struct util_format_description const * const description = vk_format_description(format);
+
+   if (description->layout != UTIL_FORMAT_LAYOUT_PLAIN) {
+      return UINT32_MAX;
+   }
+
+   if (description->colorspace == UTIL_FORMAT_COLORSPACE_SRGB) {
+      return V_028C70_NUMBER_SRGB;
+   }
+
+   int const channel_index = util_format_get_first_non_void_channel(description->format);
+   if (channel_index < 0) {
+      return UINT32_MAX;
+   }
+   struct util_format_channel_description const * const channel =
+      &description->channel[channel_index];
+
+   switch (channel->type) {
+   case UTIL_FORMAT_TYPE_UNSIGNED:
+      if (channel->normalized) {
+         return V_028C70_NUMBER_UNORM;
+      } else if (channel->pure_integer) {
+         return V_028C70_NUMBER_UINT;
+      }
+      break;
+
+   case UTIL_FORMAT_TYPE_SIGNED:
+      if (channel->normalized) {
+         return V_028C70_NUMBER_SNORM;
+      } else if (channel->pure_integer) {
+         return V_028C70_NUMBER_SINT;
+      }
+      break;
+
+   case UTIL_FORMAT_TYPE_FLOAT:
+      return V_028C70_NUMBER_FLOAT;
+
+   default:
+      break;
+   }
+
+   return UINT32_MAX;
+}
+
+uint32_t
+terakan_format_color_get_swap(VkFormat const format)
+{
+   /* Not a plain format.*/
+   if (format == VK_FORMAT_B10G11R11_UFLOAT_PACK32) {
+      return V_028C70_SWAP_STD;
+   }
+
+   struct util_format_description const * const description = vk_format_description(format);
+
+   if (description->layout != UTIL_FORMAT_LAYOUT_PLAIN) {
+      return UINT32_MAX;
+   }
+
+   switch (description->nr_channels) {
+   case 1:
+      if (description->swizzle[0] == PIPE_SWIZZLE_X) {
+         /* X___ */
+         return V_028C70_SWAP_STD;
+      } else if (description->swizzle[3] == PIPE_SWIZZLE_X) {
+         /* ___X */
+         return V_028C70_SWAP_ALT_REV;
+      }
+      break;
+
+   case 2:
+      if ((description->swizzle[0] == PIPE_SWIZZLE_X &&
+           (description->swizzle[1] == PIPE_SWIZZLE_Y ||
+            description->swizzle[1] == PIPE_SWIZZLE_NONE)) ||
+          (description->swizzle[0] == PIPE_SWIZZLE_NONE &&
+           description->swizzle[1] == PIPE_SWIZZLE_Y)) {
+         /* XY__ */
+         return V_028C70_SWAP_STD;
+      } else if ((description->swizzle[0] == PIPE_SWIZZLE_Y &&
+                  (description->swizzle[1] == PIPE_SWIZZLE_X ||
+                   description->swizzle[1] == PIPE_SWIZZLE_NONE)) ||
+                 (description->swizzle[0] == PIPE_SWIZZLE_NONE &&
+                  description->swizzle[1] == PIPE_SWIZZLE_X)) {
+         /* YX__ */
+         return V_028C70_SWAP_STD_REV;
+      } else if (description->swizzle[0] == PIPE_SWIZZLE_X &&
+                 description->swizzle[3] == PIPE_SWIZZLE_Y) {
+         /* X__Y */
+         return V_028C70_SWAP_ALT;
+      } else if (description->swizzle[0] == PIPE_SWIZZLE_Y &&
+                 description->swizzle[3] == PIPE_SWIZZLE_X) {
+         /* Y__X */
+         return V_028C70_SWAP_ALT_REV;
+      }
+      break;
+
+   case 3:
+      if (description->swizzle[0] == PIPE_SWIZZLE_X) {
+         /* XYZ_ */
+         return V_028C70_SWAP_STD;
+      } else if (description->swizzle[0] == PIPE_SWIZZLE_Z) {
+         /* ZYX_ */
+         return V_028C70_SWAP_STD_REV;
+      }
+      break;
+
+   case 4:
+      /* Check the middle channels, the [0] and [3] channels can be NONE. */
+      if (description->swizzle[1] == PIPE_SWIZZLE_Y) {
+         if (description->swizzle[2] == PIPE_SWIZZLE_Z) {
+            /* XYZW */
+            return V_028C70_SWAP_STD;
+         } else if (description->swizzle[2] == PIPE_SWIZZLE_X) {
+            /* ZYXW */
+            return V_028C70_SWAP_ALT;
+         }
+      } else if (description->swizzle[1] == PIPE_SWIZZLE_Z) {
+         if (description->swizzle[2] == PIPE_SWIZZLE_Y) {
+            /* WZYX */
+            return V_028C70_SWAP_STD_REV;
+         } else if (description->swizzle[2] == PIPE_SWIZZLE_W) {
+            /* YZWX */
+            return V_028C70_SWAP_ALT_REV;
+         }
+      }
+      break;
+   }
+
+   return UINT32_MAX;
+}
+
+bool
+terakan_format_color_is_blendable(uint32_t const color_format, uint32_t const number_type)
+{
+   return number_type != V_028C70_NUMBER_UINT && number_type != V_028C70_NUMBER_SINT &&
+          color_format != V_028C70_COLOR_8_24 && color_format != V_028C70_COLOR_24_8 &&
+          color_format != V_028C70_COLOR_X24_8_32_FLOAT;
+}
+
+uint32_t
+terakan_format_depth_get_format(VkFormat const format)
+{
+   struct util_format_description const * const description = vk_format_description(format);
+
+   if (!util_format_has_depth(description)) {
+      return V_028040_Z_INVALID;
+   }
+
+   struct util_format_channel_description const * const depth_channel =
+      &description->channel[description->swizzle[0]];
+   if (depth_channel->type == UTIL_FORMAT_TYPE_UNSIGNED) {
+      if (depth_channel->normalized) {
+         switch (depth_channel->size) {
+         case 16:
+            return V_028040_Z_16;
+         case 24:
+            return V_028040_Z_24;
+         }
+      }
+   } else if (depth_channel->type == UTIL_FORMAT_TYPE_FLOAT) {
+      if (depth_channel->size == 32) {
+         return V_028040_Z_32_FLOAT;
+      }
+   }
+
+   return V_028040_Z_INVALID;
+}
+
+bool
+terakan_format_has_stencil_8(VkFormat const format)
+{
+   struct util_format_description const * const description = vk_format_description(format);
+   return util_format_has_stencil(description) &&
+          description->channel[description->swizzle[1]].size == 8;
+}
+
+uint32_t
+terakan_format_data_get_common_format(VkFormat const format)
+{
+   if (terakan_format_is_unsupported(format)) {
+      return FMT_INVALID;
+   }
+
+   /* Not plain formats. */
+   if (format == VK_FORMAT_B10G11R11_UFLOAT_PACK32) {
+      return FMT_10_11_11_FLOAT;
+   } else if (format == VK_FORMAT_E5B9G9R9_UFLOAT_PACK32) {
+      return FMT_5_9_9_9_SHAREDEXP;
+   }
+
+   struct util_format_description const * const description = vk_format_description(format);
+
+   if (description->format == PIPE_FORMAT_NONE || description->layout != UTIL_FORMAT_LAYOUT_PLAIN) {
+      return FMT_INVALID;
+   }
+
+   switch (description->nr_channels) {
+   case 1:
+      switch (description->channel[0].size) {
+      case 8:
+         return FMT_8;
+      case 16:
+         if (description->channel[0].type == UTIL_FORMAT_TYPE_FLOAT) {
+            return FMT_16_FLOAT;
+         }
+         return FMT_16;
+      case 32:
+         if (description->channel[0].type == UTIL_FORMAT_TYPE_FLOAT) {
+            return FMT_32_FLOAT;
+         }
+         return FMT_32;
+      }
+      break;
+
+   case 2:
+      if (description->channel[0].size == description->channel[1].size) {
+         switch (description->channel[0].size) {
+         case 4:
+            return FMT_4_4;
+         case 8:
+            return FMT_8_8;
+         case 16:
+            if (description->channel[0].type == UTIL_FORMAT_TYPE_FLOAT) {
+               return FMT_16_16_FLOAT;
+            }
+            return FMT_16_16;
+         case 32:
+            if (description->channel[0].type == UTIL_FORMAT_TYPE_FLOAT) {
+               return FMT_32_32_FLOAT;
+            }
+            return FMT_32_32;
+         }
+      } else if (description->channel[0].size == 8 && description->channel[1].size == 24) {
+         return FMT_24_8;
+      } else if (description->channel[0].size == 24 && description->channel[1].size == 8) {
+         return FMT_8_24;
+      }
+      break;
+
+   case 3:
+      if (description->channel[0].size == 5) {
+         if (description->channel[1].size == 6 && description->channel[2].size == 5) {
+            return FMT_5_6_5;
+         } else if (description->channel[1].size == 5 && description->channel[2].size == 6) {
+            return FMT_6_5_5;
+         }
+      } else if (description->channel[0].size == 32) {
+         if (description->channel[1].size == 8 && description->channel[2].size == 24) {
+            return FMT_X24_8_32_FLOAT; 
+         } else if (description->channel[1].size == 32 && description->channel[2].size == 32) {
+            if (description->channel[0].type == UTIL_FORMAT_TYPE_FLOAT) {
+               return FMT_32_32_32_FLOAT;
+            }
+            return FMT_32_32_32;
+         }
+      }
+      break;
+
+   case 4:
+      if (description->channel[0].size == description->channel[1].size &&
+          description->channel[0].size == description->channel[2].size) {
+         if (description->channel[0].size == description->channel[3].size) {
+            switch (description->channel[0].size) {
+            case 4:
+               return FMT_4_4_4_4;
+            case 8:
+               return FMT_8_8_8_8;
+            case 16:
+               if (description->channel[0].type == UTIL_FORMAT_TYPE_FLOAT) {
+                  return FMT_16_16_16_16_FLOAT;
+               }
+               return FMT_16_16_16_16;
+            case 32:
+               if (description->channel[0].type == UTIL_FORMAT_TYPE_FLOAT) {
+                  return FMT_32_32_32_32_FLOAT;
+               }
+               return FMT_32_32_32_32;
+            }
+         } else if (description->channel[0].size == 5 && description->channel[3].size == 1) {
+            return FMT_1_5_5_5;
+         } else if (description->channel[0].size == 10 && description->channel[3].size == 2) {
+            return FMT_2_10_10_10;
+         }
+      } else if (description->channel[1].size == description->channel[2].size &&
+                 description->channel[1].size == description->channel[3].size) {
+         if (description->channel[0].size == 1 && description->channel[1].size == 5) {
+            return FMT_5_5_5_1;
+         } else if (description->channel[0].size == 2 && description->channel[1].size == 10) {
+            return FMT_10_10_10_2;
+         }
+      }
+      break;
+   }
+
+   return FMT_INVALID;
+}
+
+uint32_t
+terakan_format_data_get_number_format(VkFormat const format)
+{
+   struct util_format_description const * const description = vk_format_description(format);
+
+   if (description->layout != UTIL_FORMAT_LAYOUT_PLAIN) {
+      /* All supported non-plain formats are NORM. */
+      return V_030010_SQ_NUM_FORMAT_NORM;
+   }
+
+   int const channel_index = util_format_get_first_non_void_channel(description->format);
+   if (channel_index < 0) {
+      return UINT32_MAX;
+   }
+   struct util_format_channel_description const * const channel =
+      &description->channel[channel_index];
+
+   switch (channel->type) {
+   case UTIL_FORMAT_TYPE_UNSIGNED:
+   case UTIL_FORMAT_TYPE_SIGNED:
+      if (channel->normalized) {
+         return V_030010_SQ_NUM_FORMAT_NORM;
+      } else if (channel->pure_integer) {
+         return V_030010_SQ_NUM_FORMAT_INT;
+      } else {
+         return V_030010_SQ_NUM_FORMAT_SCALED;
+      }
+      break;
+
+   /* Fixed-point formats are not supported. */
+
+   case UTIL_FORMAT_TYPE_FLOAT:
+      return V_030010_SQ_NUM_FORMAT_NORM;
+
+   default:
+      break;
+   }
+
+   return UINT32_MAX;
+}
+
+uint32_t
+terakan_format_texture_get_format(VkFormat const format)
+{
+   uint32_t const common_format = terakan_format_data_get_common_format(format);
+   if (common_format != FMT_INVALID) {
+      return common_format;
+   }
+
+   /* Handle texture-only formats. */
+
+   switch (format) {
+   case VK_FORMAT_BC1_RGB_UNORM_BLOCK:
+   case VK_FORMAT_BC1_RGB_SRGB_BLOCK:
+   case VK_FORMAT_BC1_RGBA_UNORM_BLOCK:
+   case VK_FORMAT_BC1_RGBA_SRGB_BLOCK:
+      return FMT_BC1;
+
+   case VK_FORMAT_BC2_UNORM_BLOCK:
+   case VK_FORMAT_BC2_SRGB_BLOCK:
+      return FMT_BC2;
+
+   case VK_FORMAT_BC3_UNORM_BLOCK:
+   case VK_FORMAT_BC3_SRGB_BLOCK:
+      return FMT_BC3;
+
+   case VK_FORMAT_BC4_UNORM_BLOCK:
+   case VK_FORMAT_BC4_SNORM_BLOCK:
+      return FMT_BC4;
+
+   case VK_FORMAT_BC5_UNORM_BLOCK:
+   case VK_FORMAT_BC5_SNORM_BLOCK:
+      return FMT_BC5;
+
+   case VK_FORMAT_BC6H_UFLOAT_BLOCK:
+   case VK_FORMAT_BC6H_SFLOAT_BLOCK:
+      return FMT_BC6;
+
+   case VK_FORMAT_BC7_UNORM_BLOCK:
+   case VK_FORMAT_BC7_SRGB_BLOCK:
+      return FMT_BC7;
+
+   case VK_FORMAT_G8B8G8R8_422_UNORM:
+      return FMT_BG_RG;
+
+   case VK_FORMAT_B8G8R8G8_422_UNORM:
+      return FMT_GB_GR;
+
+   default:
+      break;
+   }
+
+   return FMT_INVALID;
+}
+
+uint32_t
+terakan_format_texture_get_word4_signs(VkFormat const format)
+{
+   /* Not plain formats. */
+   switch (format) {
+   case VK_FORMAT_BC4_SNORM_BLOCK:
+      return V_030010_SQ_FORMAT_COMP_SIGNED;
+   case VK_FORMAT_BC5_SNORM_BLOCK:
+      return V_030010_SQ_FORMAT_COMP_SIGNED * 0b0101;
+   case VK_FORMAT_BC6H_SFLOAT_BLOCK:
+      return V_030010_SQ_FORMAT_COMP_SIGNED * 0b010101;
+   default:
+      break;
+   }
+
+   struct util_format_description const * const description = vk_format_description(format);
+
+   if (description->layout != UTIL_FORMAT_LAYOUT_PLAIN) {
+      /* All supported non-plain texture formats except for the ones already handled are unsigned or
+       * float.
+       */
+      return 0;
+   }
+
+   uint32_t word4_signs = 0;
+   for (size_t channel_index = 0; channel_index < 4; ++channel_index) {
+      if (description->channel[channel_index].type == UTIL_FORMAT_TYPE_SIGNED) {
+         word4_signs |= V_030010_SQ_FORMAT_COMP_SIGNED << (2 * channel_index);
+      }
+   }
+
+   return word4_signs;
+}
+
+uint32_t
+terakan_format_vertex_get_format(VkFormat const format)
+{
+   uint32_t const common_format = terakan_format_data_get_common_format(format);
+   if (common_format != FMT_INVALID) {
+      return common_format;
+   }
+
+   /* Handle vertex-only formats. */
+
+   if (terakan_format_is_unsupported(format)) {
+      return FMT_INVALID;
+   }
+
+   struct util_format_description const * const description = vk_format_description(format);
+
+   if (description->format == PIPE_FORMAT_NONE || description->layout != UTIL_FORMAT_LAYOUT_PLAIN) {
+      return FMT_INVALID;
+   }
+
+   if (description->nr_channels == 3) {
+      if (description->channel[0].size == description->channel[1].size) {
+         if (description->channel[0].size == description->channel[2].size) {
+            switch (description->channel[0].size) {
+            case 8:
+               return FMT_8_8_8;
+            case 16:
+               if (description->channel[0].type == UTIL_FORMAT_TYPE_FLOAT) {
+                  return FMT_16_16_16_FLOAT;
+               }
+               return FMT_16_16_16;
+            }
+         } else if (description->channel[0].size == 11 && description->channel[2].size == 10) {
+            return FMT_10_11_11;
+         }
+      } else if (description->channel[1].size == description->channel[2].size) {
+         if (description->channel[0].size == 2 && description->channel[1].size == 3) {
+            return FMT_3_3_2;
+         } else if (description->channel[0].size == 10 && description->channel[1].size == 11) {
+            return FMT_11_11_10;
+         }
+      }
+   }
+
+   return FMT_INVALID;
+}
+
+uint32_t
+terakan_format_vertex_get_sign(VkFormat const format)
+{
+   struct util_format_description const * const description = vk_format_description(format);
+
+   if (description->layout != UTIL_FORMAT_LAYOUT_PLAIN) {
+      /* All supported non-plain vertex formats are unsigned or float. */
+      return 0;
+   }
+
+   int const channel_index = util_format_get_first_non_void_channel(description->format);
+   if (channel_index < 0) {
+      return 0;
+   }
+   struct util_format_channel_description const * const channel =
+      &description->channel[channel_index];
+
+   return (uint32_t)(channel->type == UTIL_FORMAT_TYPE_SIGNED);
+}
+
+VKAPI_ATTR void VKAPI_CALL
+terakan_GetPhysicalDeviceFormatProperties2(
+   VkPhysicalDevice const physicalDevice, VkFormat const format,
+   VkFormatProperties2 * const pFormatProperties)
+{
+   VkFormatFeatureFlags2 image_features = 0;
+   VkFormatFeatureFlags2 image_optimal_only_features = 0;
+   VkFormatFeatureFlags2 buffer_features = 0;
+
+   uint32_t const color_format = terakan_format_color_get_format(format);
+   uint32_t const color_number_type = terakan_format_color_get_number_type(format);
+   bool const color_supported =
+      color_format != V_028C70_COLOR_INVALID && color_number_type != UINT32_MAX &&
+      terakan_format_color_get_swap(format) != UINT32_MAX;
+
+   uint32_t const depth_format = terakan_format_depth_get_format(format);
+   bool const has_stencil_8 = terakan_format_has_stencil_8(format);
+
+   uint32_t const data_number_format = terakan_format_data_get_number_format(format);
+   uint32_t const texture_format =
+      data_number_format != UINT32_MAX ? terakan_format_texture_get_format(format) : FMT_INVALID;
+   uint32_t const vertex_format =
+      data_number_format != UINT32_MAX ? terakan_format_vertex_get_format(format) : FMT_INVALID;
+
+   if (color_supported) {
+      image_features |= VK_FORMAT_FEATURE_2_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_2_BLIT_DST_BIT;
+      if (terakan_format_color_is_blendable(color_format, color_number_type)) {
+         image_features |= VK_FORMAT_FEATURE_2_COLOR_ATTACHMENT_BLEND_BIT;
+      }
+      if (texture_format != FMT_INVALID) {
+         image_features |=
+            VK_FORMAT_FEATURE_2_STORAGE_IMAGE_BIT |
+            VK_FORMAT_FEATURE_2_STORAGE_READ_WITHOUT_FORMAT_BIT |
+            VK_FORMAT_FEATURE_2_STORAGE_WRITE_WITHOUT_FORMAT_BIT;
+      }
+      if (vertex_format != FMT_INVALID) {
+         buffer_features |=
+            VK_FORMAT_FEATURE_2_STORAGE_TEXEL_BUFFER_BIT |
+            VK_FORMAT_FEATURE_2_STORAGE_READ_WITHOUT_FORMAT_BIT |
+            VK_FORMAT_FEATURE_2_STORAGE_WRITE_WITHOUT_FORMAT_BIT;
+      }
+      if (format == VK_FORMAT_R32_UINT || format == VK_FORMAT_R32_SINT) {
+         image_features |= VK_FORMAT_FEATURE_2_STORAGE_IMAGE_ATOMIC_BIT;
+         buffer_features |= VK_FORMAT_FEATURE_2_STORAGE_TEXEL_BUFFER_ATOMIC_BIT;
+      }
+   }
+
+   if (depth_format != V_028040_Z_INVALID || has_stencil_8) {
+      image_optimal_only_features |= VK_FORMAT_FEATURE_2_DEPTH_STENCIL_ATTACHMENT_BIT;
+   }
+
+   if (texture_format != FMT_INVALID) {
+      image_features |= VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_2_BLIT_SRC_BIT;
+      if (data_number_format != V_030010_SQ_NUM_FORMAT_INT) {
+         image_features |= VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
+      }
+      if (depth_format != V_028040_Z_INVALID) {
+         image_features |= VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_DEPTH_COMPARISON_BIT;
+      }
+   }
+
+   if (vertex_format != FMT_INVALID) {
+      buffer_features |=
+         VK_FORMAT_FEATURE_2_UNIFORM_TEXEL_BUFFER_BIT | VK_FORMAT_FEATURE_2_VERTEX_BUFFER_BIT;
+   }
+
+   if (image_features) {
+      image_features |= VK_FORMAT_FEATURE_2_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_2_TRANSFER_DST_BIT;
+   }
+   if (buffer_features) {
+      buffer_features |=
+         VK_FORMAT_FEATURE_2_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_2_TRANSFER_DST_BIT;
+   }
+
+   VkFormatFeatureFlags const image_optimal_features =
+      texture_format != FMT_1 && texture_format != FMT_1_REVERSED && texture_format != FMT_32_32_32
+         ? image_features | image_optimal_only_features
+         : 0;
+
+   pFormatProperties->formatProperties.linearTilingFeatures = (VkFormatFeatureFlags)image_features;
+   pFormatProperties->formatProperties.optimalTilingFeatures =
+      (VkFormatFeatureFlags)image_optimal_features;
+   pFormatProperties->formatProperties.bufferFeatures = (VkFormatFeatureFlags)buffer_features;
+
+   VkFormatProperties3 * const format_properties_3 =
+      vk_find_struct(pFormatProperties, FORMAT_PROPERTIES_3);
+   if (format_properties_3 != NULL) {
+      format_properties_3->linearTilingFeatures = image_features;
+      format_properties_3->optimalTilingFeatures = image_optimal_features;
+      format_properties_3->bufferFeatures = buffer_features;
+   }
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL
+terakan_GetPhysicalDeviceImageFormatProperties2(
+   VkPhysicalDevice const physicalDevice,
+   VkPhysicalDeviceImageFormatInfo2 const * const pImageFormatInfo,
+   VkImageFormatProperties2 * const pImageFormatProperties)
+{
+   VkFormatProperties3 format_properties_3;
+   format_properties_3.sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_3;
+   format_properties_3.pNext = NULL;
+   VkFormatProperties2 format_properties_2;
+   format_properties_2.sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2;
+   format_properties_2.pNext = &format_properties_3;
+   terakan_GetPhysicalDeviceFormatProperties2(
+      physicalDevice, pImageFormatInfo->format, &format_properties_2);
+
+   VkFormatFeatureFlags2 features;
+   switch (pImageFormatInfo->tiling) {
+   case VK_IMAGE_TILING_OPTIMAL:
+      features = format_properties_3.optimalTilingFeatures;
+      break;
+   case VK_IMAGE_TILING_LINEAR:
+      features = format_properties_3.linearTilingFeatures;
+      break;
+   default:
+      return VK_ERROR_FORMAT_NOT_SUPPORTED;
+   }
+   if (!features) {
+      return VK_ERROR_FORMAT_NOT_SUPPORTED;
+   }
+
+   VkImageFormatProperties image_format_properties;
+
+   image_format_properties.maxExtent.width = TERAKAN_LIMITS_HW_TEXTURE_WIDTH_HEIGHT;
+   /* TODO(Triang3l): Allow 8192 (TERAKAN_LIMITS_HW_TEXTURE_DEPTH_SLICES_TEXTURE) depth and layers
+    * for non-framebuffer-attachments when copying into textures with many layers is implemented
+    * correctly.
+    */
+   switch (pImageFormatInfo->type) {
+   case VK_IMAGE_TYPE_1D:
+      image_format_properties.maxExtent.height = 1;
+      image_format_properties.maxExtent.depth = 1;
+      image_format_properties.maxArrayLayers = TERAKAN_LIMITS_HW_TEXTURE_DEPTH_SLICES_TARGET;
+      break;
+   case VK_IMAGE_TYPE_2D:
+      image_format_properties.maxExtent.height = TERAKAN_LIMITS_HW_TEXTURE_WIDTH_HEIGHT;
+      image_format_properties.maxExtent.depth = 1;
+      image_format_properties.maxArrayLayers = TERAKAN_LIMITS_HW_TEXTURE_DEPTH_SLICES_TARGET;
+      break;
+   case VK_IMAGE_TYPE_3D:
+      image_format_properties.maxExtent.height = TERAKAN_LIMITS_HW_TEXTURE_WIDTH_HEIGHT;
+      image_format_properties.maxExtent.depth = TERAKAN_LIMITS_HW_TEXTURE_DEPTH_SLICES_TARGET;
+      image_format_properties.maxArrayLayers = 1;
+      break;
+   default:
+      return VK_ERROR_FORMAT_NOT_SUPPORTED;
+   }
+   image_format_properties.maxMipLevels = TERAKAN_LIMITS_HW_TEXTURE_WIDTH_HEIGHT_LOG2 + 1;
+
+   image_format_properties.sampleCounts = VK_SAMPLE_COUNT_1_BIT;
+   if ((features &
+        (VK_FORMAT_FEATURE_2_COLOR_ATTACHMENT_BIT |
+         VK_FORMAT_FEATURE_2_DEPTH_STENCIL_ATTACHMENT_BIT)) &&
+       pImageFormatInfo->type == VK_IMAGE_TYPE_2D &&
+       pImageFormatInfo->tiling == VK_IMAGE_TILING_OPTIMAL &&
+       !(pImageFormatInfo->flags & VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT)) {
+      image_format_properties.sampleCounts |=
+         VK_SAMPLE_COUNT_2_BIT | VK_SAMPLE_COUNT_4_BIT | VK_SAMPLE_COUNT_8_BIT;
+   }
+
+   struct terakan_physical_device const * const device =
+      terakan_physical_device_from_handle(physicalDevice);
+
+   image_format_properties.maxResourceSize = device->winsys->gpu_info.max_bo_size;
+
+   pImageFormatProperties->imageFormatProperties = image_format_properties;
+
+   return VK_SUCCESS;
+}
