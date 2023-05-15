@@ -38,6 +38,8 @@ terakan_entrypoints = custom_target(
 libterakan_files = files(
   'terakan_device.c',
   'terakan_device.h',
+  'terakan_device_memory.c',
+  'terakan_device_memory.h',
   'terakan_format.c',
   'terakan_format.h',
   'terakan_gpu_info.c',
@@ -49,6 +51,7 @@ libterakan_files = files(
   'terakan_physical_device.h',
   'terakan_wsi.c',
   'terakan_wsi.h',
+  'winsys/terakan_winsys.c',
   'winsys/terakan_winsys.h',
 )
 
@@ -56,6 +59,8 @@ if not with_platform_windows
   libterakan_files += files(
     'winsys/drm_radeon/terakan_winsys_drm_radeon.c',
     'winsys/drm_radeon/terakan_winsys_drm_radeon.h',
+    'winsys/drm_radeon/terakan_winsys_drm_radeon_bo.c',
+    'winsys/drm_radeon/terakan_winsys_drm_radeon_cs.c',
   )
 endif
 

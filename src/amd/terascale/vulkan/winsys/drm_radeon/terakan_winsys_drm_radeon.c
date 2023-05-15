@@ -132,6 +132,8 @@ terakan_winsys_drm_radeon_create(int const fd)
    winsys->fd = fd;
 
    winsys->base.fn = &terakan_winsys_drm_radeon_fn;
+   winsys->base.bo_fn = &terakan_winsys_drm_radeon_bo_fn;
+   winsys->base.cs_fn = &terakan_winsys_drm_radeon_cs_fn;
 
    /* Get memory info. */
    size_t const page_size = (size_t)sysconf(_SC_PAGESIZE);
@@ -161,6 +163,9 @@ terakan_winsys_drm_radeon_create(int const fd)
     */
    winsys->base.gpu_info.max_bo_size = UINT32_MAX & ~(VkDeviceSize)(page_size - 1);
    winsys->base.gpu_info.min_memory_map_alignment = page_size;
+
+   winsys->base.gpu_info.cs_bo_reference_size = sizeof(struct drm_radeon_cs_reloc);
+   winsys->base.gpu_info.cs_bo_reference_alignment = alignof(struct drm_radeon_cs_reloc);
 
    /* Get the timestamp frequency. In case of failure, timestamp queries will be disabled. */
    if (!terakan_winsys_drm_radeon_get_drm_value(

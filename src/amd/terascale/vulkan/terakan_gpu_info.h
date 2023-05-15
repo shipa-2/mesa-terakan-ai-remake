@@ -53,6 +53,9 @@ struct terakan_gpu_info {
    VkDeviceSize max_bo_size;
    size_t min_memory_map_alignment;
 
+   size_t cs_bo_reference_size;
+   size_t cs_bo_reference_alignment;
+
    uint32_t clock_crystal_frequency;
 };
 

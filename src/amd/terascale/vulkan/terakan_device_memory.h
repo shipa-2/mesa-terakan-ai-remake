@@ -1,11 +1,6 @@
 /*
  * Copyright © 2023 Vitaliy Triang3l Kuzmin
  *
- * Based on Gallium Radeon DRM winsys which is:
- * Copyright © 2008 Jérôme Glisse
- * Copyright © 2009 Corbin Simpson <MostAwesomeDude@gmail.com>
- * Copyright © 2011 Marek Olšák <maraeo@gmail.com>
- *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
  * to deal in the Software without restriction, including without limitation
@@ -26,43 +21,21 @@
  * IN THE SOFTWARE.
  */
 
-#ifndef TERAKAN_WINSYS_DRM_RADEON_H
-#define TERAKAN_WINSYS_DRM_RADEON_H
+#ifndef TERAKAN_DEVICE_MEMORY_H
+#define TERAKAN_DEVICE_MEMORY_H
 
-#include "../terakan_winsys.h"
+#include "winsys/terakan_winsys.h"
 
-#include "vk_sync.h"
+#include "vk_device_memory.h"
 
-#include <stddef.h>
-#include <vulkan/vulkan_core.h>
-#include <xf86drm.h>
+struct terakan_device_memory {
+   struct vk_device_memory vk;
 
-struct terakan_winsys_drm_radeon_bo {
-   struct terakan_winsys_bo base;
-
-   VkDeviceSize size;
-
-   __u32 domains;
-
-   __u32 handle;
+   struct terakan_winsys_bo * bo;
 
    void * mapping;
 };
 
-extern struct terakan_winsys_bo_fn const terakan_winsys_drm_radeon_bo_fn;
+VK_DEFINE_HANDLE_CASTS(terakan_device_memory, vk.base, VkDeviceMemory, VK_OBJECT_TYPE_DEVICE_MEMORY)
 
-extern struct terakan_winsys_cs_fn const terakan_winsys_drm_radeon_cs_fn;
-
-struct terakan_winsys_drm_radeon {
-   struct terakan_winsys base;
-
-   /* Not owned by the winsys. */
-   int fd;
-
-   struct vk_sync_type syncobj_sync_type;
-   struct vk_sync_type const * sync_types[2];
-};
-
-struct terakan_winsys * terakan_winsys_drm_radeon_create(int fd);
-
-#endif /* TERAKAN_WINSYS_DRM_RADEON_H */
+#endif /* TERAKAN_DEVICE_MEMORY_H */

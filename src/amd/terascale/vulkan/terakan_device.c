@@ -25,6 +25,7 @@
 #include "terakan_entrypoints.h"
 #include "terakan_physical_device.h"
 
+#include "util/macros.h"
 #include "vk_alloc.h"
 #include "vk_log.h"
 #include "wsi_common.h"
@@ -57,7 +58,7 @@ terakan_CreateDevice(
       terakan_physical_device_from_handle(physicalDevice);
 
    struct terakan_device * const device = vk_alloc2(
-      &physical_device->vk.instance->alloc, pAllocator, sizeof(*device), 8,
+      &physical_device->vk.instance->alloc, pAllocator, sizeof(*device), alignof(*device),
       VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
    if (device == NULL) {
       return vk_error(physical_device->vk.instance, VK_ERROR_OUT_OF_HOST_MEMORY);

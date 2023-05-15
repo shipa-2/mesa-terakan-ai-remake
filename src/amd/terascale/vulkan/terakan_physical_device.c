@@ -68,6 +68,7 @@ terakan_physical_device_get_supported_extensions(
 
    extensions_out->EXT_4444_formats = true;
    extensions_out->KHR_format_feature_flags2 = true;
+   extensions_out->KHR_map_memory2 = true;
 
 #if !defined(_WIN32)
    extensions_out->EXT_pci_bus_info = true;

@@ -26,9 +26,54 @@
 
 #include "terakan_gpu_info.h"
 
+#include "amd_family.h"
 #include "vk_sync.h"
 
+#include <stdbool.h>
+#include <stdint.h>
+#include <vulkan/vulkan_core.h>
+
+/* Each group of two has the same priority (the maximum priority is 0xF).
+ * Similar to RADEON_PRIO in the Gallium Radeon winsys.
+ */
+enum terakan_winsys_cs_bo_priority {
+   TERAKAN_WINSYS_CS_BO_PRIORITY_FENCE_TRACE = 0,
+   TERAKAN_WINSYS_CS_BO_PRIORITY_TRANSFORM_FEEDBACK_COUNTER = 0,
+
+   TERAKAN_WINSYS_CS_BO_PRIORITY_QUERY = 1,
+
+   TERAKAN_WINSYS_CS_BO_PRIORITY_DRAW_INDIRECT = 2,
+   TERAKAN_WINSYS_CS_BO_PRIORITY_INDEX_BUFFER = 2,
+
+   TERAKAN_WINSYS_CS_BO_PRIORITY_CP_DMA = 3,
+
+   TERAKAN_WINSYS_CS_BO_PRIORITY_UNIFORM_BUFFER = 4,
+
+   TERAKAN_WINSYS_CS_BO_PRIORITY_SHADER_READ_BUFFER = 5,
+   TERAKAN_WINSYS_CS_BO_PRIORITY_VERTEX_BUFFER = 5,
+
+   TERAKAN_WINSYS_CS_BO_PRIORITY_SHADER_RW_BUFFER = 6,
+   TERAKAN_WINSYS_CS_BO_PRIORITY_SHADER_READ_IMAGE = 6,
+
+   TERAKAN_WINSYS_CS_BO_PRIORITY_SHADER_RW_IMAGE = 7,
+   TERAKAN_WINSYS_CS_BO_PRIORITY_SHADER_READ_IMAGE_MS = 7,
+
+   TERAKAN_WINSYS_CS_BO_PRIORITY_COLOR_BUFFER = 8,
+   TERAKAN_WINSYS_CS_BO_PRIORITY_DEPTH_BUFFER = 8,
+
+   TERAKAN_WINSYS_CS_BO_PRIORITY_COLOR_BUFFER_MS = 9,
+   TERAKAN_WINSYS_CS_BO_PRIORITY_DEPTH_BUFFER_MS = 9,
+
+   TERAKAN_WINSYS_CS_BO_PRIORITY_SEPARATE_META = 10,
+   /* The hardware can't hide instruction cache misses. */
+   TERAKAN_WINSYS_CS_BO_PRIORITY_SHADER_BINARY = 10,
+
+   TERAKAN_WINSYS_CS_BO_PRIORITY_SHADER_RINGS = 11,
+   TERAKAN_WINSYS_CS_BO_PRIORITY_SCRATCH_BUFFER = 11,
+};
+
 struct terakan_winsys;
+struct terakan_winsys_bo;
 
 struct terakan_winsys_fn {
    struct vk_sync_type const * const * (* get_sync_types)(struct terakan_winsys * winsys);
@@ -36,10 +81,50 @@ struct terakan_winsys_fn {
    void (* destroy)(struct terakan_winsys * winsys);
 };
 
+struct terakan_winsys_bo_fn {
+   void * (* map)(struct terakan_winsys_bo * bo);
+   void (* unmap)(struct terakan_winsys_bo * bo);
+
+   /* If the buffer is currently mapped, freeing it implicitly unmaps it. */
+   void (* free)(struct terakan_winsys_bo * bo);
+
+   struct terakan_winsys_bo * (* allocate_device_memory)(
+      struct terakan_winsys * winsys, VkDeviceSize size, VkDeviceSize alignment,
+      VkMemoryPropertyFlags flags);
+};
+
+struct terakan_winsys_cs_fn {
+   /* BO references are winsys-specific objects whose size is
+    * terakan_gpu_info::cs_bo_reference_size.
+    */
+   void (* create_bo_reference)(
+      void * bo_reference, struct terakan_winsys_bo const * bo, bool is_reading, bool is_writing,
+      enum terakan_winsys_cs_bo_priority priority);
+   void (* update_bo_reference)(
+      void * bo_reference, struct terakan_winsys_bo const * bo, bool is_reading, bool is_writing,
+      enum terakan_winsys_cs_bo_priority priority);
+
+   /* Not exposing queue priorities as the Linux Radeon 2.50.0 kernel driver only provides a
+    * high-priority DMA ring on R9xx.
+    */
+   VkResult (* submit)(
+      struct terakan_winsys * winsys, enum amd_ip_type ip_type, uint32_t bo_reference_count,
+      void const * bo_references, uint32_t indirect_buffer_size_dwords,
+      uint32_t const * indirect_buffer, bool is_end_of_frame);
+};
+
 struct terakan_winsys {
    struct terakan_winsys_fn const * fn;
+   struct terakan_winsys_bo_fn const * bo_fn;
+   struct terakan_winsys_cs_fn const * cs_fn;
 
    struct terakan_gpu_info gpu_info;
 };
+
+struct terakan_winsys_bo {
+   struct terakan_winsys * winsys;
+};
+
+void terakan_winsys_bo_base_init(struct terakan_winsys_bo * bo, struct terakan_winsys * winsys);
 
 #endif /* TERAKAN_WINSYS_H */
