@@ -24,6 +24,7 @@
 #include "terakan_device.h"
 #include "terakan_entrypoints.h"
 #include "terakan_physical_device.h"
+#include "terakan_queue.h"
 
 #include "util/macros.h"
 #include "vk_alloc.h"
@@ -32,6 +33,18 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+
+static void
+terakan_device_destroy(struct terakan_device * const device)
+{
+   if (device->queue_graphics != NULL) {
+      terakan_queue_destroy(device->queue_graphics);
+   }
+
+   vk_device_finish(&device->vk);
+
+   vk_free(&device->vk.alloc, device);
+}
 
 VKAPI_ATTR void VKAPI_CALL
 terakan_DestroyDevice(VkDevice const deviceHandle, VkAllocationCallbacks const * const pAllocator)
@@ -42,9 +55,7 @@ terakan_DestroyDevice(VkDevice const deviceHandle, VkAllocationCallbacks const *
       return;
    }
 
-   vk_device_finish(&device->vk);
-
-   vk_free(&device->vk.alloc, device);
+   terakan_device_destroy(device);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
@@ -73,6 +84,34 @@ terakan_CreateDevice(
    if (result != VK_SUCCESS) {
       vk_free(&device->vk.alloc, device);
       return result;
+   }
+
+   device->queue_graphics = NULL;
+
+   /* The device can be finished at this point in case of an error. Create optional queues. */
+
+   for (uint32_t queue_create_info_index = 0;
+        queue_create_info_index < pCreateInfo->queueCreateInfoCount; ++queue_create_info_index) {
+      VkDeviceQueueCreateInfo const * const queue_create_info =
+         &pCreateInfo->pQueueCreateInfos[queue_create_info_index];
+      if (queue_create_info->queueFamilyIndex == 0) {
+         if (queue_create_info->queueCount != 1 || device->queue_graphics != NULL) {
+            terakan_device_destroy(device);
+            return vk_errorf(
+               physical_device->vk.instance, VK_ERROR_INITIALIZATION_FAILED,
+               "Only one graphics queue can be created");
+         }
+         result = terakan_queue_create(device, queue_create_info, 0, &device->queue_graphics);
+         if (result != VK_SUCCESS) {
+            terakan_device_destroy(device);
+            return result;
+         }
+      } else {
+         terakan_device_destroy(device);
+         return vk_errorf(
+            physical_device->vk.instance, VK_ERROR_INITIALIZATION_FAILED,
+            "Unknown queue family requested");
+      }
    }
 
    *pDevice = terakan_device_to_handle(device);

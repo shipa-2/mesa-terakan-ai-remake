@@ -26,6 +26,7 @@
  * IN THE SOFTWARE.
  */
 
+#include "terakan_sync_bo_wait_idle.h"
 #include "terakan_winsys_drm_radeon.h"
 
 #include "util/macros.h"
@@ -131,6 +132,8 @@ terakan_winsys_drm_radeon_create(int const fd)
    }
    winsys->fd = fd;
 
+   terakan_winsys_base_init(&winsys->base);
+
    winsys->base.fn = &terakan_winsys_drm_radeon_fn;
    winsys->base.bo_fn = &terakan_winsys_drm_radeon_bo_fn;
    winsys->base.cs_fn = &terakan_winsys_drm_radeon_cs_fn;
@@ -176,12 +179,9 @@ terakan_winsys_drm_radeon_create(int const fd)
 
    /* Initialize synchronization. */
    size_t sync_type_count = 0;
-   winsys->syncobj_sync_type = vk_drm_syncobj_get_type(fd);
-   if (winsys->syncobj_sync_type.features) {
-      assert(sync_type_count < ARRAY_SIZE(winsys->sync_types));
-      winsys->sync_types[sync_type_count++] = &winsys->syncobj_sync_type;
-      /* TODO(Triang3l): Timeline semaphores. */
-   }
+   assert(sync_type_count < ARRAY_SIZE(winsys->sync_types));
+   winsys->sync_types[sync_type_count++] = &terakan_sync_bo_wait_idle_type;
+   /* TODO(Triang3l): Timeline semaphores. */
    assert(sync_type_count < ARRAY_SIZE(winsys->sync_types));
    winsys->sync_types[sync_type_count++] = NULL;
 

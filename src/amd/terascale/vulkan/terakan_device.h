@@ -24,10 +24,15 @@
 #ifndef TERAKAN_DEVICE_H
 #define TERAKAN_DEVICE_H
 
+#include "terakan_queue.h"
+
 #include "vk_device.h"
 
 struct terakan_device {
    struct vk_device vk;
+
+   /* Each queue is optional, if requested by the application. */
+   struct terakan_queue * queue_graphics;
 };
 
 VK_DEFINE_HANDLE_CASTS(terakan_device, vk.base, VkDevice, VK_OBJECT_TYPE_DEVICE)

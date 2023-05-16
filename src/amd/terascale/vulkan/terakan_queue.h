@@ -21,21 +21,38 @@
  * IN THE SOFTWARE.
  */
 
-#include "terakan_winsys.h"
+#ifndef TERAKAN_QUEUE_H
+#define TERAKAN_QUEUE_H
 
-#include "util/u_atomic.h"
+#include "terakan_command_buffer.h"
 
-void
-terakan_winsys_base_init(struct terakan_winsys * const winsys)
-{
-   winsys->last_bo_creation_number = 0;
-}
+#include "vk_queue.h"
 
-void
-terakan_winsys_bo_base_init(
-   struct terakan_winsys_bo * const bo, struct terakan_winsys * const winsys)
-{
-   bo->winsys = winsys;
+#include <stddef.h>
+#include <stdint.h>
 
-   bo->creation_number = p_atomic_inc_return(&winsys->last_bo_creation_number);
-}
+struct terakan_device;
+
+struct terakan_queue {
+   struct vk_queue vk;
+
+   struct terakan_device * device;
+
+   enum amd_ip_type ip_type;
+
+   void * sync_bo_references;
+
+   /* The last so these don't leave a lot of space between other fields. */
+   struct terakan_bo_reference_writer sync_bo_reference_writer;
+   uint32_t sync_indirect_buffer[TERAKAN_MAX_INDIRECT_BUFFER_SIZE_DWORDS];
+};
+
+VK_DEFINE_HANDLE_CASTS(terakan_queue, vk.base, VkQueue, VK_OBJECT_TYPE_QUEUE)
+
+void terakan_queue_destroy(struct terakan_queue * queue);
+
+VkResult terakan_queue_create(
+   struct terakan_device * device, VkDeviceQueueCreateInfo const * create_info,
+   uint32_t index_in_family, struct terakan_queue * * queue_out);
+
+#endif /* TERAKAN_QUEUE_H */

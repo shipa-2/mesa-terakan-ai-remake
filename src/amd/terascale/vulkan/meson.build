@@ -36,6 +36,8 @@ terakan_entrypoints = custom_target(
 )
 
 libterakan_files = files(
+  'terakan_command_buffer.c',
+  'terakan_command_buffer.h',
   'terakan_device.c',
   'terakan_device.h',
   'terakan_device_memory.c',
@@ -49,6 +51,10 @@ libterakan_files = files(
   'terakan_limits.h',
   'terakan_physical_device.c',
   'terakan_physical_device.h',
+  'terakan_queue.c',
+  'terakan_queue.h',
+  'terakan_sync_bo_wait_idle.c',
+  'terakan_sync_bo_wait_idle.h',
   'terakan_wsi.c',
   'terakan_wsi.h',
   'winsys/terakan_winsys.c',

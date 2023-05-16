@@ -59,7 +59,6 @@ struct terakan_winsys_drm_radeon {
    /* Not owned by the winsys. */
    int fd;
 
-   struct vk_sync_type syncobj_sync_type;
    struct vk_sync_type const * sync_types[2];
 };
 

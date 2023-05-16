@@ -85,6 +85,18 @@ struct terakan_winsys_bo_fn {
    void * (* map)(struct terakan_winsys_bo * bo);
    void (* unmap)(struct terakan_winsys_bo * bo);
 
+   /* Returns:
+    *    * 0 if the buffer is not used by the GPU anymore.
+    *    * -EBUSY if the buffer is still potentially used by the GPU (only if the timeout is not
+    *      OS_TIMEOUT_INFINITE).
+    *    * Other value in case of an error.
+    * Waiting can be performed from any thread, however, the behavior is undefined while command
+    * submissions referencing this BO are being performed - it must be ensured externally that
+    * waiting is done after the submission whose completion needs to be awaited and before any other
+    * submissions referencing this buffer.
+    */
+   int (* wait_idle)(struct terakan_winsys_bo * bo, uint64_t abs_timeout_ns);
+
    /* If the buffer is currently mapped, freeing it implicitly unmaps it. */
    void (* free)(struct terakan_winsys_bo * bo);
 
@@ -119,10 +131,20 @@ struct terakan_winsys {
    struct terakan_winsys_cs_fn const * cs_fn;
 
    struct terakan_gpu_info gpu_info;
+
+   uint32_t last_bo_creation_number;
 };
+
+void terakan_winsys_base_init(struct terakan_winsys * winsys);
 
 struct terakan_winsys_bo {
    struct terakan_winsys * winsys;
+
+   /* Value of the monotonically increasing counter of created BOs given to this BO.
+    * Only for purposes like hashing - must not be used as an unique identifier, as it may wrap
+    * around.
+    */
+   uint32_t creation_number;
 };
 
 void terakan_winsys_bo_base_init(struct terakan_winsys_bo * bo, struct terakan_winsys * winsys);

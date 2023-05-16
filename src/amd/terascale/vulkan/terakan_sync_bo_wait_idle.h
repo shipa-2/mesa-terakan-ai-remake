@@ -21,21 +21,28 @@
  * IN THE SOFTWARE.
  */
 
-#include "terakan_winsys.h"
+#ifndef TERAKAN_SYNC_BO_WAIT_IDLE_H
+#define TERAKAN_SYNC_BO_WAIT_IDLE_H
 
-#include "util/u_atomic.h"
+#include "winsys/terakan_winsys.h"
 
-void
-terakan_winsys_base_init(struct terakan_winsys * const winsys)
-{
-   winsys->last_bo_creation_number = 0;
-}
+#include "c11/threads.h"
+#include "vk_sync.h"
 
-void
-terakan_winsys_bo_base_init(
-   struct terakan_winsys_bo * const bo, struct terakan_winsys * const winsys)
-{
-   bo->winsys = winsys;
+#include <stdbool.h>
+#include <stdint.h>
 
-   bo->creation_number = p_atomic_inc_return(&winsys->last_bo_creation_number);
-}
+struct terakan_sync_bo_wait_idle {
+   struct vk_sync vk;
+
+   struct terakan_winsys_bo * bo;
+   uint32_t volatile * bo_mapping;
+
+   mtx_t scheduled_mutex;
+   cnd_t scheduled_condition;
+   bool scheduled;
+};
+
+extern struct vk_sync_type const terakan_sync_bo_wait_idle_type;
+
+#endif /* TERAKAN_SYNC_BO_WAIT_IDLE_H */

@@ -30,12 +30,14 @@
 
 #include "util/macros.h"
 #include "util/os_mman.h"
+#include "util/os_time.h"
 #include "util/u_memory.h"
 
 #include <assert.h>
 #include <errno.h>
 #include <inttypes.h>
 #include <radeon_drm.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -99,6 +101,53 @@ terakan_winsys_drm_radeon_bo_unmap(struct terakan_winsys_bo * const bo_base)
 
    os_munmap(bo->mapping, (size_t)bo->size);
    bo->mapping = NULL;
+}
+
+static int
+terakan_winsys_drm_radeon_bo_wait_idle(
+   struct terakan_winsys_bo * const bo_base, uint64_t const abs_timeout_ns)
+{
+   struct terakan_winsys_drm_radeon_bo const * const bo =
+      container_of(bo_base, struct terakan_winsys_drm_radeon_bo const, base);
+   struct terakan_winsys_drm_radeon const * const winsys =
+      container_of(bo->base.winsys, struct terakan_winsys_drm_radeon const, base);
+
+   if (abs_timeout_ns == 0) {
+      struct drm_radeon_gem_busy gem_busy_arguments = {
+         .handle = bo->handle,
+      };
+      return drmCommandWriteRead(
+         winsys->fd, DRM_RADEON_GEM_BUSY, &gem_busy_arguments, sizeof(gem_busy_arguments));
+   }
+
+   if (abs_timeout_ns == OS_TIMEOUT_INFINITE) {
+      struct drm_radeon_gem_wait_idle gem_wait_idle_arguments = {
+         .handle = bo->handle,
+      };
+      int gem_wait_idle_result;
+      do {
+         gem_wait_idle_result = drmCommandWrite(
+            winsys->fd, DRM_RADEON_GEM_WAIT_IDLE, &gem_wait_idle_arguments,
+            sizeof(gem_wait_idle_arguments));
+      } while (gem_wait_idle_result == -EBUSY);
+      return gem_wait_idle_result;
+   }
+
+   /* Other timeouts need to be emulated with a loop. */
+   while (true) {
+      struct drm_radeon_gem_busy gem_busy_arguments = {
+         .handle = bo->handle,
+      };
+      int const gem_busy_result = drmCommandWriteRead(
+         winsys->fd, DRM_RADEON_GEM_BUSY, &gem_busy_arguments, sizeof(gem_busy_arguments));
+      if (gem_busy_result != -EBUSY) {
+         return gem_busy_result;
+      }
+      if (os_time_get_nano() >= (int64_t)abs_timeout_ns) {
+         return -EBUSY;
+      }
+      os_time_sleep(10);
+   }
 }
 
 static void
@@ -201,5 +250,6 @@ struct terakan_winsys_bo_fn const terakan_winsys_drm_radeon_bo_fn = {
    .map = terakan_winsys_drm_radeon_bo_map,
    .unmap = terakan_winsys_drm_radeon_bo_unmap,
    .free = terakan_winsys_drm_radeon_bo_free,
+   .wait_idle = terakan_winsys_drm_radeon_bo_wait_idle,
    .allocate_device_memory = terakan_winsys_drm_radeon_bo_allocate_device_memory,
 };
