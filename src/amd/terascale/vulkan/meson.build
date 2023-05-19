@@ -36,6 +36,8 @@ terakan_entrypoints = custom_target(
 )
 
 libterakan_files = files(
+  'terakan_buffer.c',
+  'terakan_buffer.h',
   'terakan_command_buffer.c',
   'terakan_command_buffer.h',
   'terakan_device.c',
