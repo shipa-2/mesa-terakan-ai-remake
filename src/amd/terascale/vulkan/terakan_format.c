@@ -670,6 +670,9 @@ terakan_GetPhysicalDeviceFormatProperties2(
    VkPhysicalDevice const physicalDevice, VkFormat const format,
    VkFormatProperties2 * const pFormatProperties)
 {
+   struct terakan_physical_device const * const device =
+      terakan_physical_device_from_handle(physicalDevice);
+
    VkFormatFeatureFlags2 image_features = 0;
    VkFormatFeatureFlags2 image_optimal_only_features = 0;
    VkFormatFeatureFlags2 buffer_features = 0;
@@ -695,10 +698,18 @@ terakan_GetPhysicalDeviceFormatProperties2(
          image_features |= VK_FORMAT_FEATURE_2_COLOR_ATTACHMENT_BLEND_BIT;
       }
       if (texture_format != FMT_INVALID) {
-         image_features |=
+         VkFormatFeatureFlags2 const storage_image_features =
             VK_FORMAT_FEATURE_2_STORAGE_IMAGE_BIT |
             VK_FORMAT_FEATURE_2_STORAGE_READ_WITHOUT_FORMAT_BIT |
             VK_FORMAT_FEATURE_2_STORAGE_WRITE_WITHOUT_FORMAT_BIT;
+         /* According to R800 AddrLib, "Tex2D UAV on cypress will fail/hang if tile mode is
+          * linear".
+          */
+         if (device->winsys->gpu_info.chip_family == CHIP_CYPRESS) {
+            image_optimal_only_features |= storage_image_features;
+         } else {
+            image_features |= storage_image_features;
+         }
       }
       if (vertex_format != FMT_INVALID) {
          buffer_features |=
