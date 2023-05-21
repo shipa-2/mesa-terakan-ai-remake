@@ -28,6 +28,7 @@
 
 #include "util/bitset.h"
 
+#include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -56,11 +57,17 @@
 #define TERAKAN_BO_REFERENCE_WRITER_REFERENCE_COUNT \
    ((uint32_t)1 << TERAKAN_BO_REFERENCE_WRITER_REFERENCE_COUNT_LOG2)
 
-/* Larger than the reference count to reduce the likelihood of hash collisions.
+/* Double as large as the reference count to reduce the likelihood of hash collisions, and also to
+ * provide one additional entry per hash value for quick collision resolution.
  * Twice the size of the Gallium R600 driver relocation hash table as of May 2023.
  */
 #define TERAKAN_BO_REFERENCE_HASH_BITS (TERAKAN_BO_REFERENCE_WRITER_REFERENCE_COUNT_LOG2 + 1)
 #define TERAKAN_BO_REFERENCE_HASH_MASK (((uint32_t)1 << TERAKAN_BO_REFERENCE_HASH_BITS) - 1)
+static_assert(
+   TERAKAN_BO_REFERENCE_HASH_MASK + 1 >= TERAKAN_BO_REFERENCE_WRITER_REFERENCE_COUNT,
+   "There need to be enough BO reference hash map entries for each BO reference with the default "
+   "BO reference count, so it can be assumed externally that allocation can fail only due to an "
+   "overflow of the total BO reference count and not because of the hash map.");
 
 struct terakan_bo_reference_writer {
    struct terakan_winsys const * winsys;
@@ -82,7 +89,9 @@ struct terakan_bo_reference_writer {
 void terakan_bo_reference_writer_reset(
    struct terakan_bo_reference_writer * writer, void * bo_references);
 
-/* Returns the reference index to use in the relocation, or UINT32_MAX if too many references. */
+/* Returns the reference offset in dwords to use in the relocation, or UINT32_MAX if too many
+ * references.
+ */
 uint32_t terakan_bo_reference_writer_add_reference(
    struct terakan_bo_reference_writer * writer, struct terakan_winsys_bo const * bo,
    bool is_reading, bool is_writing, enum terakan_winsys_cs_bo_priority priority);
