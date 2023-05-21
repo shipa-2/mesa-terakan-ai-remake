@@ -145,8 +145,44 @@ terakan_queue_submit(struct vk_queue * const queue_base, struct vk_queue_submit 
       sync_waits_submitted = sync_wait_index;
    }
 
-   /* TODO(Triang3l): Submit the command buffers. */
-   /* TODO(Triang3l): End of frame flag. */
+   /* Submit the command buffers. */
+   for (uint32_t command_buffer_index = 0; command_buffer_index < submit->command_buffer_count;
+        ++command_buffer_index) {
+      struct terakan_command_buffer const * const command_buffer = container_of(
+         submit->command_buffers[command_buffer_index], struct terakan_command_buffer const, vk);
+      list_for_each_entry(
+         struct terakan_command_buffer_submission, command_buffer_submission_base,
+         &command_buffer->submissions, command_buffer_submission_link) {
+         struct terakan_command_buffer_submission_indirect_buffer const *
+         command_buffer_indirect_buffer;
+         if (command_buffer_submission_base->is_secondary_execution) {
+            struct terakan_command_buffer_submission_secondary_execution const *
+            command_buffer_submission = container_of(
+               command_buffer_submission_base,
+               struct terakan_command_buffer_submission_secondary_execution const, base);
+            command_buffer_indirect_buffer = command_buffer_submission->indirect_buffer;
+         } else {
+            command_buffer_indirect_buffer = container_of(
+               command_buffer_submission_base,
+               struct terakan_command_buffer_submission_indirect_buffer const, base);
+         }
+         /* TODO(Triang3l): End of frame flag. */
+         VkResult const command_buffer_submit_result = winsys->cs_fn->submit(
+            winsys, queue->ip_type, command_buffer_indirect_buffer->bo_reference_count,
+            command_buffer_indirect_buffer->bo_references,
+            command_buffer_indirect_buffer->indirect_buffer_size_dwords,
+            command_buffer_indirect_buffer->indirect_buffer, false);
+         if (command_buffer_submit_result != VK_SUCCESS) {
+            /* Lose the device regardless of the actual result for this specific command buffer
+             * because a part of the queue submission might have already been done, don't leave the
+             * device in an indeterminate state.
+             */
+            return vk_device_set_lost(
+               &queue->device->vk, "Command buffer submission failed with result %s",
+               vk_Result_to_str(command_buffer_submit_result));
+         }
+      }
+   }
 
    /* Submit synchronization signals. */
    uint32_t const sync_event_write_eop_dwords = 6 + 2;
