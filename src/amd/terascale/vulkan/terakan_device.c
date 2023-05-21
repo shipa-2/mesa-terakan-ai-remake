@@ -21,6 +21,7 @@
  * IN THE SOFTWARE.
  */
 
+#include "terakan_command_buffer.h"
 #include "terakan_device.h"
 #include "terakan_entrypoints.h"
 #include "terakan_physical_device.h"
@@ -85,6 +86,8 @@ terakan_CreateDevice(
       vk_free(&device->vk.alloc, device);
       return result;
    }
+
+   device->vk.command_buffer_ops = &terakan_command_buffer_ops;
 
    device->queue_graphics = NULL;
 

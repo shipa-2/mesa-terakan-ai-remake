@@ -22,10 +22,15 @@
  */
 
 #include "terakan_command_buffer.h"
+#include "terakan_device.h"
+#include "terakan_entrypoints.h"
 
 #include "util/macros.h"
+#include "vk_alloc.h"
+#include "vk_log.h"
 
 #include <assert.h>
+#include <stddef.h>
 #include <stdint.h>
 
 void
@@ -119,4 +124,174 @@ terakan_bo_reference_writer_add_reference(
 
    assert(reference_size % sizeof(uint32_t) == 0);
    return (uint32_t)(reference_size / sizeof(uint32_t)) * reference_index;
+}
+
+static void
+terakan_command_buffer_release_resources(struct terakan_command_buffer * const command_buffer)
+{
+   struct terakan_command_pool * const command_pool =
+      container_of(command_buffer->vk.pool, struct terakan_command_pool, vk);
+
+   list_for_each_entry_safe(
+      struct terakan_command_buffer_submission, submission_base, &command_buffer->submissions,
+      command_buffer_submission_link) {
+      list_del(&submission_base->command_buffer_submission_link);
+      if (submission_base->is_secondary_execution) {
+         struct terakan_command_buffer_submission_secondary_execution * const submission =
+            container_of(
+               submission_base, struct terakan_command_buffer_submission_secondary_execution, base);
+         list_add(&submission->free_link, &command_pool->secondary_executions_free);
+      } else {
+         struct terakan_command_buffer_submission_indirect_buffer * const submission = container_of(
+            submission_base, struct terakan_command_buffer_submission_indirect_buffer, base);
+         list_add(&submission->free_link, &command_pool->indirect_buffers_free);
+      }
+   }
+}
+
+static void
+terakan_command_buffer_reset(
+   struct vk_command_buffer * const command_buffer_base,
+   UNUSED VkCommandBufferResetFlags const flags)
+{
+   struct terakan_command_buffer * command_buffer =
+      container_of(command_buffer_base, struct terakan_command_buffer, vk);
+
+   vk_command_buffer_reset(&command_buffer->vk);
+
+   terakan_command_buffer_release_resources(command_buffer);
+}
+
+static void
+terakan_command_buffer_destroy(struct vk_command_buffer * const command_buffer_base)
+{
+   struct terakan_command_buffer * command_buffer =
+      container_of(command_buffer_base, struct terakan_command_buffer, vk);
+
+   terakan_command_buffer_release_resources(command_buffer);
+
+   vk_command_buffer_finish(&command_buffer->vk);
+
+   vk_free(&command_buffer->vk.pool->alloc, command_buffer);
+}
+
+static VkResult
+terakan_command_buffer_create(struct vk_command_pool * const command_pool,
+                              UNUSED VkCommandBufferLevel level,
+                              struct vk_command_buffer ** const command_buffer_out)
+{
+   VkResult result;
+
+   struct terakan_command_buffer * command_buffer = vk_alloc(
+      &command_pool->alloc, sizeof(*command_buffer), alignof(*command_buffer),
+      VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+   if (command_buffer == NULL) {
+      return vk_error(command_pool->base.device, VK_ERROR_OUT_OF_HOST_MEMORY);
+   }
+
+   result =
+      vk_command_buffer_init(command_pool, &command_buffer->vk, &terakan_command_buffer_ops, 0);
+   if (result != VK_SUCCESS) {
+      vk_free(&command_pool->alloc, command_buffer);
+      return result;
+   }
+
+   list_inithead(&command_buffer->submissions);
+
+   *command_buffer_out = &command_buffer->vk;
+
+   return VK_SUCCESS;
+}
+
+struct vk_command_buffer_ops const terakan_command_buffer_ops = {
+   .create = terakan_command_buffer_create,
+   .reset = terakan_command_buffer_reset,
+   .destroy = terakan_command_buffer_destroy,
+};
+
+static void
+terakan_command_pool_trim_resources(struct terakan_command_pool * const command_pool)
+{
+   list_for_each_entry_safe(
+      struct terakan_command_buffer_submission_secondary_execution, submission,
+      &command_pool->secondary_executions_free, free_link) {
+      vk_free(&command_pool->vk.alloc, submission);
+   }
+   list_inithead(&command_pool->secondary_executions_free);
+
+   list_for_each_entry_safe(
+      struct terakan_command_buffer_submission_indirect_buffer, submission,
+      &command_pool->indirect_buffers_free, free_link) {
+      vk_free(&command_pool->vk.alloc, submission->indirect_buffer);
+      vk_free(&command_pool->vk.alloc, submission->bo_references);
+      vk_free(&command_pool->vk.alloc, submission);
+   }
+   list_inithead(&command_pool->indirect_buffers_free);
+}
+
+VKAPI_ATTR void VKAPI_CALL
+terakan_TrimCommandPool(
+   VkDevice const deviceHandle, VkCommandPool const commandPool,
+   UNUSED VkCommandPoolTrimFlags const flags)
+{
+   struct terakan_command_pool * const command_pool = terakan_command_pool_from_handle(commandPool);
+
+   vk_command_pool_trim(&command_pool->vk, flags);
+
+   terakan_command_pool_trim_resources(command_pool);
+}
+
+VKAPI_ATTR void VKAPI_CALL
+terakan_DestroyCommandPool(
+   VkDevice const deviceHandle, VkCommandPool const commandPool,
+   VkAllocationCallbacks const * const pAllocator)
+{
+   struct terakan_command_pool * const command_pool = terakan_command_pool_from_handle(commandPool);
+
+   if (command_pool == NULL) {
+      return;
+   }
+
+   /* Finish the command pool base before destroying their dependencies, as finishing the base
+    * destroys all allocated command buffers, and resetting command buffers sends their dependencies
+    * back to the free lists.
+    */
+   vk_command_pool_finish(&command_pool->vk);
+
+   struct terakan_device const * const device = terakan_device_from_handle(deviceHandle);
+
+   terakan_command_pool_trim_resources(command_pool);
+
+   vk_free2(&device->vk.alloc, pAllocator, command_pool);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL
+terakan_CreateCommandPool(
+   VkDevice const deviceHandle, VkCommandPoolCreateInfo const * const pCreateInfo,
+   VkAllocationCallbacks const * const pAllocator, VkCommandPool * const pCommandPool)
+{
+   VkResult result;
+
+   struct terakan_device * const device = terakan_device_from_handle(deviceHandle);
+
+   struct terakan_command_pool * const command_pool = vk_alloc2(
+      &device->vk.alloc, pAllocator, sizeof(*command_pool), alignof(*command_pool),
+      VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+   if (command_pool == NULL) {
+      return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
+   }
+
+   list_inithead(&command_pool->indirect_buffers_free);
+
+   list_inithead(&command_pool->secondary_executions_free);
+
+   result = vk_command_pool_init(&device->vk, &command_pool->vk, pCreateInfo, pAllocator);
+   if (result != VK_SUCCESS) {
+      vk_free2(&device->vk.alloc, pAllocator, command_pool);
+      return result;
+   }
+
+   *pCommandPool = terakan_command_pool_to_handle(command_pool);
+
+   return VK_SUCCESS;
 }

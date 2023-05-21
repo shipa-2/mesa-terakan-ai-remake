@@ -27,6 +27,9 @@
 #include "winsys/terakan_winsys.h"
 
 #include "util/bitset.h"
+#include "util/list.h"
+#include "vk_command_buffer.h"
+#include "vk_command_pool.h"
 
 #include <assert.h>
 #include <stdbool.h>
@@ -95,5 +98,55 @@ void terakan_bo_reference_writer_reset(
 uint32_t terakan_bo_reference_writer_add_reference(
    struct terakan_bo_reference_writer * writer, struct terakan_winsys_bo const * bo,
    bool is_reading, bool is_writing, enum terakan_winsys_cs_bo_priority priority);
+
+struct terakan_command_buffer_submission {
+   bool is_secondary_execution;
+
+   /* Within terakan_command_buffer::submissions. */
+   struct list_head command_buffer_submission_link;
+};
+
+struct terakan_command_buffer_submission_indirect_buffer {
+   struct terakan_command_buffer_submission base;
+
+   /* Within terakan_command_pool::indirect_buffers_free. */
+   struct list_head free_link;
+
+   uint32_t bo_reference_count;
+   void * bo_references;
+
+   uint32_t indirect_buffer_size_dwords;
+   uint32_t * indirect_buffer;
+};
+
+struct terakan_command_buffer_submission_secondary_execution {
+   struct terakan_command_buffer_submission base;
+
+   /* Within terakan_command_pool::secondary_executions_free. */
+   struct list_head free_link;
+
+   struct terakan_command_buffer_submission_indirect_buffer const * indirect_buffer;
+};
+
+struct terakan_command_buffer {
+   struct vk_command_buffer vk;
+
+   struct list_head submissions;
+};
+
+VK_DEFINE_HANDLE_CASTS(
+   terakan_command_buffer, vk.base, VkCommandBuffer, VK_OBJECT_TYPE_COMMAND_BUFFER)
+
+extern struct vk_command_buffer_ops const terakan_command_buffer_ops;
+
+struct terakan_command_pool {
+   struct vk_command_pool vk;
+
+   struct list_head indirect_buffers_free;
+
+   struct list_head secondary_executions_free;
+};
+
+VK_DEFINE_HANDLE_CASTS(terakan_command_pool, vk.base, VkCommandPool, VK_OBJECT_TYPE_COMMAND_POOL)
 
 #endif /* TERAKAN_COMMAND_BUFFER_H */
