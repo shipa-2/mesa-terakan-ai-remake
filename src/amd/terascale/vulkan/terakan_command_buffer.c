@@ -318,7 +318,12 @@ terakan_command_writer_new_indirect_buffer(struct terakan_command_writer * const
       &command_writer->bo_reference_writer,
       command_writer->indirect_buffer->bo_references);
 
-   return true;
+   /* Re-emit the state from the previous indirect buffer. */
+   command_writer->is_beginning_indirect_buffer = true;
+   terakan_hw_state_draw_emit_all(command_writer);
+   command_writer->is_beginning_indirect_buffer = false;
+
+   return !vk_command_buffer_has_error(&command_writer->command_buffer->vk);
 }
 
 uint32_t *
@@ -420,6 +425,8 @@ terakan_BeginCommandBuffer(
 
    /* The first emission will request the first indirect buffer. */
    command_buffer->command_writer->is_beginning_indirect_buffer = false;
+
+   terakan_hw_state_draw_reset(&command_buffer->command_writer->hw_state_draw);
 
    return vk_command_buffer_get_record_result(&command_buffer->vk);
 }

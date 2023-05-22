@@ -24,8 +24,10 @@
 #ifndef TERAKAN_COMMAND_BUFFER_H
 #define TERAKAN_COMMAND_BUFFER_H
 
+#include "terakan_hw_state.h"
 #include "winsys/terakan_winsys.h"
 
+#include "gallium/drivers/r600/evergreend.h"
 #include "util/bitset.h"
 #include "util/list.h"
 #include "vk_command_buffer.h"
@@ -34,6 +36,10 @@
 #include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
+
+#define TERAKAN_CONFIG_REG_OFFSET(address) (((address) - EVERGREEN_CONFIG_REG_OFFSET) >> 2)
+#define TERAKAN_CONTEXT_REG_OFFSET(address) (((address) - EVERGREEN_CONTEXT_REG_OFFSET) >> 2)
+#define TERAKAN_CTL_CONST_OFFSET(address) (((address) - EVERGREEN_CTL_CONST_OFFSET) >> 2)
 
 /* Given that Terakan exposes more sampled image bindings than the Gallium R600 driver due to
  * separate images and samplers, the number of bindings may be much bigger, and thus, also taking
@@ -154,6 +160,8 @@ struct terakan_command_writer {
    struct terakan_bo_reference_writer bo_reference_writer;
 
    bool is_beginning_indirect_buffer;
+
+   struct terakan_hw_state_draw hw_state_draw;
 };
 
 /* Entry point for emitting packets.
