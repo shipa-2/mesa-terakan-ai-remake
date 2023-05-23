@@ -45,6 +45,11 @@ struct terakan_gpu_info {
 
    /* The following need to be set up by the winsys. */
 
+   uint8_t tile_pipes_log2;
+   uint8_t tile_banks_log2;
+   uint8_t tile_pipe_interleave_bytes_log2;
+   uint8_t tile_row_bytes_log2;
+
    size_t gart_page_size;
    uint64_t gart_size;
    uint64_t vram_size;
@@ -57,6 +62,10 @@ struct terakan_gpu_info {
    size_t cs_bo_reference_alignment;
 
    uint32_t clock_crystal_frequency;
+
+   /* The following are set up by terakan_gpu_info_init_complete. */
+
+   VkDeviceSize buffer_image_bo_alignment;
 };
 
 /* Returns whether the GPU is supported by Terakan.
@@ -64,5 +73,7 @@ struct terakan_gpu_info {
  */
 bool terakan_gpu_info_init_chip_family(
    struct terakan_gpu_info * info, uint32_t pci_id);
+
+void terakan_gpu_info_init_complete(struct terakan_gpu_info * info);
 
 #endif /* TERAKAN_GPU_INFO_H */

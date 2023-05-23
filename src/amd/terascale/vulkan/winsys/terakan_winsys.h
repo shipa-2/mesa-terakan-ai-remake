@@ -26,6 +26,7 @@
 
 #include "terakan_gpu_info.h"
 
+#include "ac_surface.h"
 #include "amd_family.h"
 #include "vk_sync.h"
 
@@ -74,6 +75,12 @@ enum terakan_winsys_cs_bo_priority {
 
 struct terakan_winsys;
 struct terakan_winsys_bo;
+
+struct terakan_winsys_surface_fn {
+   bool (* translate_image_create_info)(
+      struct terakan_winsys const * winsys, VkImageCreateInfo const * image_create_info,
+      struct radeon_surf * surface_out);
+};
 
 struct terakan_winsys_fn {
    struct vk_sync_type const * const * (* get_sync_types)(struct terakan_winsys * winsys);
@@ -127,6 +134,7 @@ struct terakan_winsys_cs_fn {
 
 struct terakan_winsys {
    struct terakan_winsys_fn const * fn;
+   struct terakan_winsys_surface_fn const * surface_fn;
    struct terakan_winsys_bo_fn const * bo_fn;
    struct terakan_winsys_cs_fn const * cs_fn;
 

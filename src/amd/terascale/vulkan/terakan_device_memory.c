@@ -128,9 +128,13 @@ terakan_AllocateMemory(
    struct terakan_physical_device const * const physical_device =
       container_of(device->vk.physical, struct terakan_physical_device const, vk);
 
-   /* TODO(Triang3l): Max alignment from addrlib. */
+   /* TODO(Triang3l): Smaller alignment for dedicated allocations. The maximum image alignment is
+    * 128 KB on the Radeon HD 6990, for example, which is huge compared to the BO alignment in the
+    * Radeon kernel driver (4 KB).
+    */
    device_memory->bo = physical_device->winsys->bo_fn->allocate_device_memory(
-      physical_device->winsys, pAllocateInfo->allocationSize, 4096,
+      physical_device->winsys, pAllocateInfo->allocationSize,
+      physical_device->winsys->gpu_info.buffer_image_bo_alignment,
       physical_device->memory_properties.memoryTypes[pAllocateInfo->memoryTypeIndex].propertyFlags);
    if (device_memory->bo == NULL) {
       vk_object_free(&device->vk, pAllocator, device_memory);

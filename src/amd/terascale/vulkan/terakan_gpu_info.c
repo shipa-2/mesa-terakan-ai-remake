@@ -1,6 +1,9 @@
 /*
  * Copyright © 2023 Vitaliy Triang3l Kuzmin
  *
+ * Based in part on r800addrlib.h which is:
+ * Copyright (c) 2007-2023 Advanced Micro Devices, Inc. All Rights Reserved.
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
  * to deal in the Software without restriction, including without limitation
@@ -22,6 +25,9 @@
  */
 
 #include "terakan_gpu_info.h"
+#include "terakan_limits.h"
+
+#include "util/u_math.h"
 
 #include <stddef.h>
 
@@ -62,4 +68,19 @@ terakan_gpu_info_init_chip_family(
    }
 
    return true;
+}
+
+void
+terakan_gpu_info_init_complete(struct terakan_gpu_info * const info)
+{
+   /* HwlComputeMaxBaseAlignments from the R800 AddrLib for images.
+    * Maximum 8x8 micro-tile size is 8-sample and 16 byte-per-pixel.
+    * With the largest tile size, the bank width and height can be treated as 1.
+    */
+   VkDeviceSize const max_image_alignment =
+      (VkDeviceSize)1 <<
+      (MIN2(info->tile_row_bytes_log2, 3 + 3 + 3 + 4) + info->tile_banks_log2 +
+       info->tile_pipes_log2);
+   info->buffer_image_bo_alignment =
+      MAX2(TERAKAN_LIMITS_HW_CONSTANT_BUFFER_CACHE_LINE_BYTES, max_image_alignment);
 }

@@ -750,12 +750,14 @@ terakan_GetPhysicalDeviceFormatProperties2(
          VK_FORMAT_FEATURE_2_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_2_TRANSFER_DST_BIT;
    }
 
+   VkFormatFeatureFlags const image_linear_features =
+      !vk_format_is_compressed(format) ? image_features : 0;
    VkFormatFeatureFlags const image_optimal_features =
       texture_format != FMT_1 && texture_format != FMT_1_REVERSED && texture_format != FMT_32_32_32
          ? image_features | image_optimal_only_features
          : 0;
 
-   pFormatProperties->formatProperties.linearTilingFeatures = (VkFormatFeatureFlags)image_features;
+   pFormatProperties->formatProperties.linearTilingFeatures = image_linear_features;
    pFormatProperties->formatProperties.optimalTilingFeatures =
       (VkFormatFeatureFlags)image_optimal_features;
    pFormatProperties->formatProperties.bufferFeatures = (VkFormatFeatureFlags)buffer_features;
@@ -763,7 +765,7 @@ terakan_GetPhysicalDeviceFormatProperties2(
    VkFormatProperties3 * const format_properties_3 =
       vk_find_struct(pFormatProperties, FORMAT_PROPERTIES_3);
    if (format_properties_3 != NULL) {
-      format_properties_3->linearTilingFeatures = image_features;
+      format_properties_3->linearTilingFeatures = image_linear_features;
       format_properties_3->optimalTilingFeatures = image_optimal_features;
       format_properties_3->bufferFeatures = buffer_features;
    }

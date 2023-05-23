@@ -77,6 +77,8 @@ terakan_winsys_drm_radeon_destroy(struct terakan_winsys * const winsys_base)
    struct terakan_winsys_drm_radeon * const winsys =
       container_of(winsys_base, struct terakan_winsys_drm_radeon, base);
 
+   radeon_surface_manager_free(winsys->surface_manager);
+
    FREE(winsys);
 }
 
@@ -135,8 +137,20 @@ terakan_winsys_drm_radeon_create(int const fd)
    terakan_winsys_base_init(&winsys->base);
 
    winsys->base.fn = &terakan_winsys_drm_radeon_fn;
+   winsys->base.surface_fn = &terakan_winsys_drm_radeon_surface_fn;
    winsys->base.bo_fn = &terakan_winsys_drm_radeon_bo_fn;
    winsys->base.cs_fn = &terakan_winsys_drm_radeon_cs_fn;
+
+   /* Get tiling configuration. */
+   uint32_t tiling_config;
+   if (!terakan_winsys_drm_radeon_get_drm_value(
+           fd, RADEON_INFO_TILING_CONFIG, "tiling configuration", &tiling_config)) {
+      goto fail_alloc;
+   }
+   winsys->base.gpu_info.tile_pipes_log2 = tiling_config & 0xF;
+   winsys->base.gpu_info.tile_banks_log2 = 2 + ((tiling_config >> 4) & 0xF);
+   winsys->base.gpu_info.tile_pipe_interleave_bytes_log2 = 8 + ((tiling_config >> 8) & 0xF);
+   winsys->base.gpu_info.tile_row_bytes_log2 = 10 + ((tiling_config >> 12) & 0xF);
 
    /* Get memory info. */
    size_t const page_size = (size_t)sysconf(_SC_PAGESIZE);
@@ -175,6 +189,16 @@ terakan_winsys_drm_radeon_create(int const fd)
           fd, RADEON_INFO_CLOCK_CRYSTAL_FREQ, NULL,
           &winsys->base.gpu_info.clock_crystal_frequency)) {
       winsys->base.gpu_info.clock_crystal_frequency = 0;
+   }
+
+   /* Complete GPU info initialization. */
+   terakan_gpu_info_init_complete(&winsys->base.gpu_info);
+
+   /* Initialize the surface manager. */
+   winsys->surface_manager = radeon_surface_manager_new(fd);
+   if (winsys->surface_manager == NULL) {
+      fputs("terakan/drm_radeon: Failed to create the surface manager.\n", stderr);
+      goto fail_alloc;
    }
 
    /* Initialize synchronization. */

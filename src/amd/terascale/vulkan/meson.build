@@ -52,6 +52,8 @@ libterakan_files = files(
   'terakan_gpu_info.h',
   'terakan_hw_state.c',
   'terakan_hw_state.h',
+  'terakan_image.c',
+  'terakan_image.h',
   'terakan_instance.c',
   'terakan_instance.h',
   'terakan_limits.h',
@@ -74,6 +76,7 @@ if not with_platform_windows
     'winsys/drm_radeon/terakan_winsys_drm_radeon.h',
     'winsys/drm_radeon/terakan_winsys_drm_radeon_bo.c',
     'winsys/drm_radeon/terakan_winsys_drm_radeon_cs.c',
+    'winsys/drm_radeon/terakan_winsys_drm_radeon_surface.c',
   )
 endif
 
