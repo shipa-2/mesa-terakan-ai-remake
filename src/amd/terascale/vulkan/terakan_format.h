@@ -39,6 +39,18 @@ uint32_t terakan_format_color_get_number_type(VkFormat format);
 uint32_t terakan_format_color_get_swap(VkFormat format);
 bool terakan_format_color_is_blendable(uint32_t color_format, uint32_t number_type);
 
+#define TERAKAN_FORMAT_COLOR_16BPC_EXPORT_NORM_FORMATS \
+   (((uint64_t)1 << V_028C70_COLOR_8) | ((uint64_t)1 << V_028C70_COLOR_8_8) | \
+    ((uint64_t)1 << V_028C70_COLOR_5_6_5) | ((uint64_t)1 << V_028C70_COLOR_1_5_5_5) | \
+    ((uint64_t)1 << V_028C70_COLOR_4_4_4_4) | ((uint64_t)1 << V_028C70_COLOR_5_5_5_1) | \
+    ((uint64_t)1 << V_028C70_COLOR_2_10_10_10) | ((uint64_t)1 << V_028C70_COLOR_8_8_8_8) | \
+    ((uint64_t)1 << V_028C70_COLOR_10_10_10_2))
+#define TERAKAN_FORMAT_COLOR_16BPC_EXPORT_FLOAT_FORMATS \
+   (((uint64_t)1 << V_028C70_COLOR_16) | ((uint64_t)1 << V_028C70_COLOR_16_FLOAT) | \
+    ((uint64_t)1 << V_028C70_COLOR_16_16) | ((uint64_t)1 << V_028C70_COLOR_16_16_FLOAT) | \
+    ((uint64_t)1 << V_028C70_COLOR_10_11_11) | ((uint64_t)1 << V_028C70_COLOR_10_11_11_FLOAT) | \
+    ((uint64_t)1 << V_028C70_COLOR_16_16_16_16) | ((uint64_t)1 << V_028C70_COLOR_16_16_16_16_FLOAT))
+
 /* Returns Z_INVALID if invalid. */
 uint32_t terakan_format_depth_get_format(VkFormat format);
 bool terakan_format_has_stencil_8(VkFormat format);
