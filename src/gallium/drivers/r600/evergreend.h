@@ -567,6 +567,8 @@
 #define   S_028C74_NUM_SAMPLES(x)                      (((unsigned)(x) & 0x7) << 24) /* cayman only */
 #define   S_028C74_NUM_FRAGMENTS(x)                    (((unsigned)(x) & 0x3) << 27) /* cayman only */
 #define   S_028C74_FORCE_DST_ALPHA_1(x)                (((unsigned)(x) & 0x1) << 31) /* cayman only */
+#define   G_028C74_FORCE_DST_ALPHA_1(x)                (((x) >> 31) & 0x1) /* cayman only */
+#define   C_028C74_FORCE_DST_ALPHA_1                   0x7FFFFFFF /* cayman only */
 
 #define R_028C78_CB_COLOR0_DIM                         0x028C78
 #define   S_028C78_WIDTH_MAX(x)                        (((unsigned)(x) & 0xFFFF) << 0)
