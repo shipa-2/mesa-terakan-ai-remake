@@ -31,6 +31,7 @@
 #include "gallium/drivers/r600/evergreend.h"
 #include "util/bitscan.h"
 #include "util/u_math.h"
+#include "vk_format.h"
 #include "vk_image.h"
 
 #include <assert.h>
@@ -63,9 +64,31 @@ terakan_image_tile_split_bytes_to_hw(uint32_t const tile_split) {
 
 uint32_t terakan_image_get_optimal_tiling_array_mode(VkImageCreateInfo const * image_create_info);
 
+static inline bool
+terakan_image_ac_surface_has_separate_stencil_layout(VkFormat const format)
+{
+   return vk_format_has_stencil(format) && vk_format_has_depth(format);
+}
+
 struct terakan_image {
    struct vk_image vk;
 
+   /* Bytes per element (bpe) is:
+    * - For depth / stencil, for the depth aspect (2 for 16_UNORM, 4 for 24_UNORM / 32_SFLOAT).
+    *   If depth and stencil are combined, stencil BPE must be assumed to be 1 (not explicitly
+    *   stored).
+    * - 1 for S8.
+    * - 3 for R8G8B8, 6 for R16G16B16, 9 for R32G32B32.
+    *
+    * 1 and 1_REVERSED are completely unsupported (as of May 2023, Vulkan doesn't have any 1-bit
+    * formats).
+    *
+    * For combined depth and stencil formats, the stencil layout information is valid.
+    * For stencil-only, the main aspect info stores the stencil info, and the separate stencil
+    * layout contains zeros.
+    *
+    * u.legacy.num_banks may be zero - use terakan_gpu_info::tile_banks_log2 instead.
+    */
    struct radeon_surf surface;
 
    struct terakan_winsys_bo const * bo;

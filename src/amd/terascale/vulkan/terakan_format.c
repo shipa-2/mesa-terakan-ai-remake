@@ -9,6 +9,9 @@
  * Copyright © 2016 Red Hat.
  * Copyright © 2016 Bas Nieuwenhuizen
  *
+ * Based in parts of r800addrlib.cpp which is:
+ * Copyright (c) 2007-2023 Advanced Micro Devices, Inc. All Rights Reserved.
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
  * to deal in the Software without restriction, including without limitation
@@ -36,9 +39,11 @@
 
 #include "vk_format.h"
 #include "vk_util.h"
+#include "util/bitscan.h"
 #include "util/format/u_format.h"
 #include "util/u_endian.h"
 
+#include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -55,7 +60,65 @@ terakan_format_is_unsupported(VkFormat const format)
    return false;
 }
 
-/* TODO(Triang3l): Research S8_UINT and D16_UNORM_S8_UINT color attachment and storage usage. */
+bool
+terakan_format_is_linear_only(VkFormat const format)
+{
+   if (vk_format_is_depth_or_stencil(format)) {
+      /* Depth or stencil images are always tiled.
+       * PIPE_FORMAT_Z16_UNORM_S8_UINT is considered 24-bit though, not power-of-two, but it's
+       * stored as separate 16 UNORM and 8 UINT surfaces on the hardware.
+       */
+      return false;
+   }
+
+   /* According to the R800 AddrLib:
+    * "Special format such as FMT_1 and FMT_32_32_32 can be linear only".
+    *
+    * In Terakan specifically, copying to tiled images is done via a color texture target with the
+    * same number of bits per element - and they're supported only for power-of-two formats.
+    * Copying to linear images is done using a buffer random access target, to which the three
+    * components can be written separately.
+    */
+   if (!util_is_power_of_two_nonzero(vk_format_get_blocksizebits(format) / 8)) {
+      return true;
+   }
+
+   /* According to the Gallium R600 and RadeonSI drivers, tiling doesn't work with the subsampled
+    * formats.
+    */
+   if (vk_format_description(format)->layout == UTIL_FORMAT_LAYOUT_SUBSAMPLED) {
+      return true;
+   }
+
+   return false;
+}
+
+bool
+terakan_format_is_tiled_only(VkFormat const format)
+{
+   /* Combined depth and stencil images are always tiled, libdrm_radeon forces tiling for
+    * RADEON_ZBUFFER or RADEON_SBUFFER (which both must be specified so the stencil layout is
+    * computed, so can't omit them if depth / stencil attachment usage is not needed) even when a
+    * linear array mode is requested.
+    * According to the Gallium R600 driver, compressed textures must always be tiled.
+    */
+   if ((vk_format_has_depth(format) && vk_format_has_stencil(format)) ||
+       vk_format_is_block_compressed(format)) {
+      return true;
+   }
+
+   return false;
+}
+
+static int
+terakan_format_get_depth_or_first_non_void_channel(
+   struct util_format_description const * const description)
+{
+   /* If the format has depth, getters are for the depth aspect - for channel swizzle[0]. */
+   return util_format_has_depth(description)
+             ? description->swizzle[0]
+             : util_format_get_first_non_void_channel(description->format);
+}
 
 uint32_t
 terakan_format_color_get_format(VkFormat const format)
@@ -109,6 +172,9 @@ terakan_format_color_get_format(VkFormat const format)
             }
             return V_028C70_COLOR_32_32;
          }
+      } else if (description->channel[0].size == 16 && description->channel[1].size == 8) {
+         /* Depth aspect of VK_FORMAT_D16_UNORM_S8_UINT. */
+         return V_028C70_COLOR_16;
       } else if (description->channel[0].size == 8 && description->channel[1].size == 24) {
          return V_028C70_COLOR_24_8;
       } else if (description->channel[0].size == 24 && description->channel[1].size == 8) {
@@ -122,7 +188,8 @@ terakan_format_color_get_format(VkFormat const format)
          return V_028C70_COLOR_5_6_5;
       } else if (description->channel[0].size == 32 && description->channel[1].size == 8 &&
                  description->channel[2].size == 24) {
-         return V_028C70_COLOR_X24_8_32_FLOAT;
+         /* Depth aspect, not X24_8_32_FLOAT. */
+         return V_028C70_COLOR_32_FLOAT;
       }
       break;
 
@@ -183,7 +250,7 @@ terakan_format_color_get_number_type(VkFormat const format)
       return V_028C70_NUMBER_SRGB;
    }
 
-   int const channel_index = util_format_get_first_non_void_channel(description->format);
+   int const channel_index = terakan_format_get_depth_or_first_non_void_channel(description);
    if (channel_index < 0) {
       return UINT32_MAX;
    }
@@ -226,6 +293,13 @@ terakan_format_color_get_swap(VkFormat const format)
    }
 
    struct util_format_description const * const description = vk_format_description(format);
+
+   if (description->colorspace == UTIL_FORMAT_COLORSPACE_ZS) {
+      /* In Vulkan, both depth and stencil are in X (which one is accessed depends on the view
+       * aspect).
+       */
+      return V_028C70_SWAP_STD;
+   }
 
    if (description->layout != UTIL_FORMAT_LAYOUT_PLAIN) {
       return UINT32_MAX;
@@ -404,6 +478,9 @@ terakan_format_data_get_common_format(VkFormat const format)
             }
             return FMT_32_32;
          }
+      } else if (description->channel[0].size == 16 && description->channel[1].size == 8) {
+         /* Depth aspect of VK_FORMAT_D16_UNORM_S8_UINT. */
+         return FMT_16;
       } else if (description->channel[0].size == 8 && description->channel[1].size == 24) {
          return FMT_24_8;
       } else if (description->channel[0].size == 24 && description->channel[1].size == 8) {
@@ -420,7 +497,8 @@ terakan_format_data_get_common_format(VkFormat const format)
          }
       } else if (description->channel[0].size == 32) {
          if (description->channel[1].size == 8 && description->channel[2].size == 24) {
-            return FMT_X24_8_32_FLOAT; 
+            /* Depth aspect, not X24_8_32_FLOAT. */
+            return FMT_32_FLOAT;
          } else if (description->channel[1].size == 32 && description->channel[2].size == 32) {
             if (description->channel[0].type == UTIL_FORMAT_TYPE_FLOAT) {
                return FMT_32_32_32_FLOAT;
@@ -479,7 +557,7 @@ terakan_format_data_get_number_format(VkFormat const format)
       return V_030010_SQ_NUM_FORMAT_NORM;
    }
 
-   int const channel_index = util_format_get_first_non_void_channel(description->format);
+   int const channel_index = terakan_format_get_depth_or_first_non_void_channel(description);
    if (channel_index < 0) {
       return UINT32_MAX;
    }
@@ -655,7 +733,7 @@ terakan_format_vertex_get_sign(VkFormat const format)
       return 0;
    }
 
-   int const channel_index = util_format_get_first_non_void_channel(description->format);
+   int const channel_index = terakan_format_get_depth_or_first_non_void_channel(description);
    if (channel_index < 0) {
       return 0;
    }
@@ -677,6 +755,8 @@ terakan_GetPhysicalDeviceFormatProperties2(
    VkFormatFeatureFlags2 image_optimal_only_features = 0;
    VkFormatFeatureFlags2 buffer_features = 0;
 
+   bool const is_tiled_only = terakan_format_is_tiled_only(format);
+
    uint32_t const color_format = terakan_format_color_get_format(format);
    uint32_t const color_number_type = terakan_format_color_get_number_type(format);
    bool const color_supported =
@@ -685,6 +765,7 @@ terakan_GetPhysicalDeviceFormatProperties2(
 
    uint32_t const depth_format = terakan_format_depth_get_format(format);
    bool const has_stencil_8 = terakan_format_has_stencil_8(format);
+   bool const is_depth_stencil = depth_format != V_028040_Z_INVALID || has_stencil_8;
 
    uint32_t const data_number_format = terakan_format_data_get_number_format(format);
    uint32_t const texture_format =
@@ -697,7 +778,12 @@ terakan_GetPhysicalDeviceFormatProperties2(
       if (terakan_format_color_is_blendable(color_format, color_number_type)) {
          image_features |= VK_FORMAT_FEATURE_2_COLOR_ATTACHMENT_BLEND_BIT;
       }
-      if (texture_format != FMT_INVALID) {
+      /* Storage images and buffers require both a random access target and a texture resource.
+       * 1D storage images must be linear according to the Gallium R600 driver, so don't permit
+       * storage image usage for tiled-only formats at all (as well as for depth / stencil formats,
+       * because depth / stencil attachments must be tiled).
+       */
+      if (texture_format != FMT_INVALID && !is_tiled_only && !is_depth_stencil) {
          VkFormatFeatureFlags2 const storage_image_features =
             VK_FORMAT_FEATURE_2_STORAGE_IMAGE_BIT |
             VK_FORMAT_FEATURE_2_STORAGE_READ_WITHOUT_FORMAT_BIT |
@@ -723,7 +809,7 @@ terakan_GetPhysicalDeviceFormatProperties2(
       }
    }
 
-   if (depth_format != V_028040_Z_INVALID || has_stencil_8) {
+   if (is_depth_stencil) {
       image_optimal_only_features |= VK_FORMAT_FEATURE_2_DEPTH_STENCIL_ATTACHMENT_BIT;
    }
 
@@ -750,12 +836,20 @@ terakan_GetPhysicalDeviceFormatProperties2(
          VK_FORMAT_FEATURE_2_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_2_TRANSFER_DST_BIT;
    }
 
-   VkFormatFeatureFlags const image_linear_features =
-      !vk_format_is_compressed(format) ? image_features : 0;
-   VkFormatFeatureFlags const image_optimal_features =
-      texture_format != FMT_1 && texture_format != FMT_1_REVERSED && texture_format != FMT_32_32_32
-         ? image_features | image_optimal_only_features
-         : 0;
+   if (is_depth_stencil || vk_format_is_block_compressed(format)) {
+      /* bufferFeatures must not support any features for depth or stencil or block-compressed
+       * formats according to the Vulkan specification. Internally, for simplicity of both
+       * implementation and usage, Terakan format logic commonly doesn't distinguish between R8 and
+       * S8, R16 and D16, R32 and D32, and also provides depth aspect information for combined depth
+       * and stencil formats.
+       */
+      buffer_features = 0;
+   }
+
+   VkFormatFeatureFlags2 const image_linear_features = is_tiled_only ? 0 : image_features;
+   /* If the format supports only linear images, linear tiling is considered optimal. */
+   VkFormatFeatureFlags2 const image_optimal_features =
+      image_features | (terakan_format_is_linear_only(format) ? 0 : image_optimal_only_features);
 
    pFormatProperties->formatProperties.linearTilingFeatures = image_linear_features;
    pFormatProperties->formatProperties.optimalTilingFeatures =
@@ -830,12 +924,16 @@ terakan_GetPhysicalDeviceImageFormatProperties2(
    image_format_properties.maxMipLevels = TERAKAN_LIMITS_HW_TEXTURE_WIDTH_HEIGHT_LOG2 + 1;
 
    image_format_properties.sampleCounts = VK_SAMPLE_COUNT_1_BIT;
+   /* Multisampled images must be 2D-tiled.
+    * For linear-only formats, the optimal tiling is linear tiling, so check both conditions.
+    */
    if ((features &
         (VK_FORMAT_FEATURE_2_COLOR_ATTACHMENT_BIT |
          VK_FORMAT_FEATURE_2_DEPTH_STENCIL_ATTACHMENT_BIT)) &&
        pImageFormatInfo->type == VK_IMAGE_TYPE_2D &&
+       !(pImageFormatInfo->flags & VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT) &&
        pImageFormatInfo->tiling == VK_IMAGE_TILING_OPTIMAL &&
-       !(pImageFormatInfo->flags & VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT)) {
+       !terakan_format_is_linear_only(pImageFormatInfo->format)) {
       image_format_properties.sampleCounts |=
          VK_SAMPLE_COUNT_2_BIT | VK_SAMPLE_COUNT_4_BIT | VK_SAMPLE_COUNT_8_BIT;
    }

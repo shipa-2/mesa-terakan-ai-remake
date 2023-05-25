@@ -49,6 +49,10 @@
 uint32_t
 terakan_image_get_optimal_tiling_array_mode(VkImageCreateInfo const * const image_create_info)
 {
+   if (terakan_format_is_linear_only(image_create_info->format)) {
+      return V_028C70_ARRAY_LINEAR_ALIGNED;
+   }
+
    /* Multisampled images must be 2D-tiled. */
    if (image_create_info->samples > VK_SAMPLE_COUNT_1_BIT) {
       return V_028C70_ARRAY_2D_TILED_THIN1;
@@ -56,22 +60,19 @@ terakan_image_get_optimal_tiling_array_mode(VkImageCreateInfo const * const imag
 
    /* Handle common candidates for the linear mode.
     *
-    * Depth/stencil and compressed images must be tiled.
+    * Depth / stencil attachments must be tiled.
     *
     * The "Tex2D UAV on cypress will fail/hang if tile mode is linear" note from the R800 AddrLib
     * must be taken into account if there's possibility of this image being used as a random access
     * target.
     *
-    * 1D images must be linear - fixes storage image operations on 1D according to the Gallium R600
-    * driver.
-    *
-    * Tiling doesn't work with the 422 (SUBSAMPLED) formats according to the Gallium R600 driver.
+    * 1D storage images must be linear according to the Gallium R600 driver, and overall linear is
+    * more compact for them (storage image usage is not supported in Terakan for formats that must
+    * be tiled).
     */
-   if (!vk_format_is_depth_or_stencil(image_create_info->format) &&
-       !vk_format_is_compressed(image_create_info->format) &&
-       (image_create_info->imageType == VK_IMAGE_TYPE_1D ||
-        vk_format_description(image_create_info->format)->layout ==
-        UTIL_FORMAT_LAYOUT_SUBSAMPLED)) {
+   if (!(image_create_info->usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) &&
+       !terakan_format_is_tiled_only(image_create_info->format) &&
+       image_create_info->imageType == VK_IMAGE_TYPE_1D) {
       return V_028C70_ARRAY_LINEAR_ALIGNED;
    }
 
@@ -134,9 +135,11 @@ terakan_GetImageSubresourceLayout(
 {
    struct terakan_image const * const image = terakan_image_from_handle(imageHandle);
 
-   bool const is_stencil = pSubresource->aspectMask == VK_IMAGE_ASPECT_STENCIL_BIT;
+   bool const is_stencil_layout =
+      pSubresource->aspectMask == VK_IMAGE_ASPECT_STENCIL_BIT &&
+      terakan_image_ac_surface_has_separate_stencil_layout(image->vk.format);
    struct legacy_surf_level const * const level =
-      is_stencil
+      is_stencil_layout
          ? &image->surface.u.legacy.zs.stencil_level[pSubresource->mipLevel]
          : &image->surface.u.legacy.level[pSubresource->mipLevel];
 
@@ -153,7 +156,7 @@ terakan_GetImageSubresourceLayout(
     * vkGetImageSubresourceLayout is for linear images only - no need to take MSAA samples into
     * account.
     */
-   pLayout->rowPitch = (is_stencil ? 1 : image->surface.bpe) * (VkDeviceSize)level->nblk_x;
+   pLayout->rowPitch = (is_stencil_layout ? 1 : image->surface.bpe) * (VkDeviceSize)level->nblk_x;
 
    pLayout->arrayPitch = slice_size;
    pLayout->depthPitch = slice_size;
@@ -180,24 +183,40 @@ terakan_image_create_color_descriptor(
    struct terakan_color_descriptor * const descriptor_out,
    struct terakan_color_meta_descriptor * const meta_descriptor_out_opt)
 {
-   uint32_t const color_format = terakan_format_color_get_format(image_view_create_info->format);
-   if (color_format == V_028C70_COLOR_INVALID) {
-      return false;
-   }
-   uint32_t const number_type = terakan_format_color_get_number_type(image_view_create_info->format);
-   if (number_type == UINT32_MAX) {
-      return false;
-   }
-   uint32_t const swap = terakan_format_color_get_swap(image_view_create_info->format);
-   if (swap == UINT32_MAX) {
-      return false;
+   bool const is_stencil_aspect =
+      image_view_create_info->subresourceRange.aspectMask == VK_IMAGE_ASPECT_STENCIL_BIT;
+
+   uint32_t color_format, number_type, swap;
+   if (is_stencil_aspect && vk_format_has_depth(image_view_create_info->format)) {
+      /* The getters return the values for the depth aspect, not stencil. */
+      color_format = V_028C70_COLOR_8;
+      number_type = V_028C70_NUMBER_UINT;
+      swap = V_028C70_SWAP_STD;
+   } else {
+      color_format = terakan_format_color_get_format(image_view_create_info->format);
+      if (color_format == V_028C70_COLOR_INVALID) {
+         return false;
+      }
+      number_type = terakan_format_color_get_number_type(image_view_create_info->format);
+      if (number_type == UINT32_MAX) {
+         return false;
+      }
+      swap = terakan_format_color_get_swap(image_view_create_info->format);
+      if (swap == UINT32_MAX) {
+         return false;
+      }
    }
 
    struct terakan_image const * const image =
       terakan_image_from_handle(image_view_create_info->image);
 
+   bool const is_stencil_layout =
+      is_stencil_aspect && terakan_image_ac_surface_has_separate_stencil_layout(image->vk.format);
    struct legacy_surf_level const * const level =
-      &image->surface.u.legacy.level[image_view_create_info->subresourceRange.baseMipLevel];
+      is_stencil_layout
+         ? &image->surface.u.legacy.zs.stencil_level[
+               image_view_create_info->subresourceRange.baseMipLevel]
+         : &image->surface.u.legacy.level[image_view_create_info->subresourceRange.baseMipLevel];
    /* Only LINEAR_ALIGNED is currently supported for linear, not LINEAR_GENERAL. */
    assert(level->mode != (enum radeon_surf_mode)0);
 

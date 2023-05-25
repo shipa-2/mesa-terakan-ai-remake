@@ -109,12 +109,37 @@ terakan_winsys_drm_radeon_surface_translate_image_create_info(
       .blk_d = 1,
       .array_size = image_create_info->arrayLayers,
       .last_level = image_create_info->mipLevels - 1,
-      .bpe =
-         image_create_info->format == VK_FORMAT_D32_SFLOAT_S8_UINT
-            ? sizeof(float)
-            : vk_format_get_blocksize(image_create_info->format),
       .nsamples = (uint32_t)image_create_info->samples,
    };
+
+   bool const has_depth = vk_format_has_depth(image_create_info->format);
+   bool const has_stencil = vk_format_has_stencil(image_create_info->format);
+   /* RADEON_SURF_ZBUFFER or RADEON_SURF_SBUFFER forces the surface to be tiled. However, that's not
+    * necessary if the image isn't going be used as a depth / stencil attachment, can still request
+    * a linear 8/16/32bpp surface in this case. But both flags must be provided so the stencil
+    * layout is computed for combined depth and stencil images - not allowing them to be linear at
+    * all.
+    */
+   bool const add_depth_stencil_flags =
+      (has_depth && has_stencil) ||
+      (image_create_info->usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
+   assert(!(add_depth_stencil_flags && image_create_info->tiling != VK_IMAGE_TILING_OPTIMAL));
+   if (vk_format_has_depth(image_create_info->format)) {
+      /* BPE is for the depth only (stencil is always 8-bit). */
+      struct util_format_description const * const format_description =
+         vk_format_description(image_create_info->format);
+      /* swizzle[0] is the depth channel. */
+      drm_surface.bpe =
+         format_description->channel[format_description->swizzle[0]].size > 16 ? 4 : 2;
+      if (add_depth_stencil_flags) {
+         drm_surface.flags |= RADEON_SURF_ZBUFFER;
+      }
+   } else {
+      drm_surface.bpe = vk_format_get_blocksize(image_create_info->format);
+   }
+   if (add_depth_stencil_flags && has_stencil) {
+      drm_surface.flags |= RADEON_SURF_SBUFFER | RADEON_SURF_HAS_SBUFFER_MIPTREE;
+   }
 
    switch (image_create_info->imageType) {
    case VK_IMAGE_TYPE_1D:
@@ -147,13 +172,6 @@ terakan_winsys_drm_radeon_surface_translate_image_create_info(
    default:
       assert(!"Unsupported image type");
       return false;
-   }
-
-   if (vk_format_has_depth(image_create_info->format)) {
-      drm_surface.flags |= RADEON_SURF_ZBUFFER;
-   }
-   if (vk_format_has_stencil(image_create_info->format)) {
-      drm_surface.flags |= RADEON_SURF_SBUFFER | RADEON_SURF_HAS_SBUFFER_MIPTREE;
    }
 
    if (image_create_info->tiling == VK_IMAGE_TILING_LINEAR) {
@@ -195,6 +213,10 @@ terakan_winsys_drm_radeon_surface_translate_image_create_info(
    }
 
    terakan_winsys_drm_radeon_surface_drm_to_ac(&drm_surface, surface_out);
+
+   assert(
+      !(image_create_info->tiling == VK_IMAGE_TILING_LINEAR &&
+        surface_out->u.legacy.level[0].mode != RADEON_SURF_MODE_LINEAR_ALIGNED));
 
    return true;
 }

@@ -31,6 +31,14 @@
 #include <stdint.h>
 #include <vulkan/vulkan_core.h>
 
+bool terakan_format_is_linear_only(VkFormat format);
+bool terakan_format_is_tiled_only(VkFormat format);
+
+/* For images with both depth and stencil, these functions always return the values for the depth
+ * aspect.
+ * The stencil aspect is always 8 UINT with STD swap (Vulkan has both depth and stencil in X
+ * depending on the view aspect).
+ */
 /* Returns COLOR_INVALID if invalid. */
 uint32_t terakan_format_color_get_format(VkFormat format);
 /* Returns UINT32_MAX if invalid. */
@@ -50,6 +58,12 @@ bool terakan_format_color_is_blendable(uint32_t color_format, uint32_t number_ty
     ((uint64_t)1 << V_028C70_COLOR_16_16) | ((uint64_t)1 << V_028C70_COLOR_16_16_FLOAT) | \
     ((uint64_t)1 << V_028C70_COLOR_10_11_11) | ((uint64_t)1 << V_028C70_COLOR_10_11_11_FLOAT) | \
     ((uint64_t)1 << V_028C70_COLOR_16_16_16_16) | ((uint64_t)1 << V_028C70_COLOR_16_16_16_16_FLOAT))
+
+/* Depth and stencil are always stored in memory separately, with the stencil buffer being 8-bit.
+ * VK_FORMAT_D16_UNORM_S8_UINT = 16 UNORM + 8 UINT.
+ * VK_FORMAT_D24_UNORM_S8_UINT = 8_24 UNORM + 8 UINT.
+ * VK_FORMAT_D32_SFLOAT_S8_UINT = 32 FLOAT + 8 UINT.
+ */
 
 /* Returns Z_INVALID if invalid. */
 uint32_t terakan_format_depth_get_format(VkFormat format);
@@ -73,6 +87,11 @@ bool terakan_format_has_stencil_8(VkFormat format);
 #define TERAKAN_FORMAT_DATA_TEXTURE_ONLY_FORMATS \
    (TERAKAN_FORMAT_DATA_SUBSAMPLED_FORMATS | TERAKAN_FORMAT_DATA_BLOCK_COMPRESSED_FORMATS)
 
+/* For images with both depth and stencil, these functions always return the values for the depth
+ * aspect.
+ * The stencil aspect is always 8 UINT with X001 destination component selection (Vulkan has both
+ * depth and stencil in X depending on the view aspect).
+ */
 /* Returns a format that can be used for both vertex and texture fetching, or FMT_INVALID if
  * invalid.
  */
