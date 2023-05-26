@@ -2138,22 +2138,22 @@
 #define R_02879C_CB_BLEND7_CONTROL                   0x0002879C
 #define R_028818_PA_CL_VTE_CNTL                      0x00028818
 #define   S_028818_VPORT_X_SCALE_ENA(x)                (((unsigned)(x) & 0x1) << 0)
-#define   G_028818_VPORT_X_SCALE_ENA(x)                (((x) >> 0 & 0x1)
+#define   G_028818_VPORT_X_SCALE_ENA(x)                (((x) >> 0) & 0x1)
 #define   C_028818_VPORT_X_SCALE_ENA                   0xFFFFFFFE
 #define   S_028818_VPORT_X_OFFSET_ENA(x)               (((unsigned)(x) & 0x1) << 1)
-#define   G_028818_VPORT_X_OFFSET_ENA(x)               (((x) >> 1 & 0x1)
+#define   G_028818_VPORT_X_OFFSET_ENA(x)               (((x) >> 1) & 0x1)
 #define   C_028818_VPORT_X_OFFSET_ENA                  0xFFFFFFFD
 #define   S_028818_VPORT_Y_SCALE_ENA(x)                (((unsigned)(x) & 0x1) << 2)
-#define   G_028818_VPORT_Y_SCALE_ENA(x)                (((x) >> 2 & 0x1)
+#define   G_028818_VPORT_Y_SCALE_ENA(x)                (((x) >> 2) & 0x1)
 #define   C_028818_VPORT_Y_SCALE_ENA                   0xFFFFFFFB
 #define   S_028818_VPORT_Y_OFFSET_ENA(x)               (((unsigned)(x) & 0x1) << 3)
-#define   G_028818_VPORT_Y_OFFSET_ENA(x)               (((x) >> 3 & 0x1)
+#define   G_028818_VPORT_Y_OFFSET_ENA(x)               (((x) >> 3) & 0x1)
 #define   C_028818_VPORT_Y_OFFSET_ENA                  0xFFFFFFF7
 #define   S_028818_VPORT_Z_SCALE_ENA(x)                (((unsigned)(x) & 0x1) << 4)
-#define   G_028818_VPORT_Z_SCALE_ENA(x)                (((x) >> 4 & 0x1)
+#define   G_028818_VPORT_Z_SCALE_ENA(x)                (((x) >> 4) & 0x1)
 #define   C_028818_VPORT_Z_SCALE_ENA                   0xFFFFFFEF
 #define   S_028818_VPORT_Z_OFFSET_ENA(x)               (((unsigned)(x) & 0x1) << 5)
-#define   G_028818_VPORT_Z_OFFSET_ENA(x)               (((x) >> 5 & 0x1)
+#define   G_028818_VPORT_Z_OFFSET_ENA(x)               (((x) >> 5) & 0x1)
 #define   C_028818_VPORT_Z_OFFSET_ENA                  0xFFFFFFDF
 #define   S_028818_VTX_XY_FMT(x)                       (((unsigned)(x) & 0x1) << 8)
 #define   G_028818_VTX_XY_FMT(x)                       (((x) >> 8) & 0x1)
