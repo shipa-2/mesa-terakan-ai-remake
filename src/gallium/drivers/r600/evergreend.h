@@ -1870,6 +1870,18 @@
 #define SQ_TEX_INST_SAMPLE_C 0x18
 
 #define R_008A14_PA_CL_ENHANCE                       0x00008A14
+#define   S_008A14_CLIP_VTX_REORDER_ENA(x)             (((unsigned)(x) & 0x1) << 0)
+#define   G_008A14_CLIP_VTX_REORDER_ENA(x)             (((x) >> 0) & 0x1)
+#define   C_008A14_CLIP_VTX_REORDER_ENA                0xFFFFFFFE
+#define   S_008A14_NUM_CLIP_SEQ(x)                     (((unsigned)(x) & 0x3) << 1)
+#define   G_008A14_NUM_CLIP_SEQ(x)                     (((x) >> 1) & 0x3)
+#define   C_008A14_NUM_CLIP_SEQ                        0xFFFFFFF9
+#define   S_008A14_CLIPPED_PRIM_SEQ_STALL(x)           (((unsigned)(x) & 0x1) << 3)
+#define   G_008A14_CLIPPED_PRIM_SEQ_STALL(x)           (((x) >> 3) & 0x1)
+#define   C_008A14_CLIPPED_PRIM_SEQ_STALL              0xFFFFFFF7
+#define   S_008A14_VE_NAN_PROC_DISABLE(x)              (((unsigned)(x) & 0x1) << 4)
+#define   G_008A14_VE_NAN_PROC_DISABLE(x)              (((x) >> 4) & 0x1)
+#define   C_008A14_VE_NAN_PROC_DISABLE                 0xFFFFFFEF
 #define R_008D8C_SQ_DYN_GPR_CNTL_PS_FLUSH_REQ        0x00008D8C
 #define R_028000_DB_RENDER_CONTROL                   0x00028000
 #define   S_028000_DEPTH_CLEAR_ENABLE(x)               (((unsigned)(x) & 0x1) << 0)
