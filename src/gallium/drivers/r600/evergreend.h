@@ -1961,6 +1961,28 @@
 #define   G_02800C_DISABLE_PIXEL_RATE_TILES(x)         (((x) >> 26) & 0x1)
 #define   C_02800C_DISABLE_PIXEL_RATE_TILES            0xFFFDFFFF
 #define R_028010_DB_RENDER_OVERRIDE2                 0x00028010
+#define   S_028010_PARTIAL_SQUAD_LAUNCH_CONTROL(x)        (((unsigned)(x) & 0x3) << 0)
+#define   G_028010_PARTIAL_SQUAD_LAUNCH_CONTROL(x)        (((x) >> 0) & 0x3)
+#define   C_028010_PARTIAL_SQUAD_LAUNCH_CONTROL           0xFFFFFFFC
+#define     V_028010_PSLC_AUTO                            0
+#define     V_028010_PSLC_ON_HANG_ONLY                    1
+#define     V_028010_PSLC_ASAP                            2
+#define     V_028010_PSLC_COUNTDOWN                       3
+#define   S_028010_PARTIAL_SQUAD_LAUNCH_COUNTDOWN(x)      (((unsigned)(x) & 0x7) << 2)
+#define   G_028010_PARTIAL_SQUAD_LAUNCH_COUNTDOWN(x)      (((x) >> 2) & 0x7)
+#define   C_028010_PARTIAL_SQUAD_LAUNCH_COUNTDOWN         0xFFFFFFE3
+#define   S_028010_DISABLE_ZMASK_EXPCLEAR_OPTIMIZATION(x) (((unsigned)(x) & 0x1) << 5)
+#define   G_028010_DISABLE_ZMASK_EXPCLEAR_OPTIMIZATION(x) (((x) >> 5) & 0x1)
+#define   C_028010_DISABLE_ZMASK_EXPCLEAR_OPTIMIZATION    0xFFFFFFDF
+#define   S_028010_DISABLE_SMEM_EXPCLEAR_OPTIMIZATION(x)  (((unsigned)(x) & 0x1) << 6) /* cayman only */
+#define   G_028010_DISABLE_SMEM_EXPCLEAR_OPTIMIZATION(x)  (((x) >> 6) & 0x1) /* cayman only */
+#define   C_028010_DISABLE_SMEM_EXPCLEAR_OPTIMIZATION     0xFFFFFFBF /* cayman only */
+#define   S_028010_DISABLE_COLOR_ON_VALIDATION(x)         (((unsigned)(x) & 0x1) << 7) /* cayman only */
+#define   G_028010_DISABLE_COLOR_ON_VALIDATION(x)         (((x) >> 7) & 0x1) /* cayman only */
+#define   C_028010_DISABLE_COLOR_ON_VALIDATION            0xFFFFFF7F /* cayman only */
+#define   S_028010_DECOMPRESS_Z_ON_FLUSH(x)               (((unsigned)(x) & 0x1) << 8) /* cayman only */
+#define   G_028010_DECOMPRESS_Z_ON_FLUSH(x)               (((x) >> 8) & 0x1) /* cayman only */
+#define   C_028010_DECOMPRESS_Z_ON_FLUSH                  0xFFFFFEFF /* cayman only */
 #define R_028014_DB_HTILE_DATA_BASE                  0x00028014
 #define R_028028_DB_STENCIL_CLEAR                    0x00028028
 #define R_02802C_DB_DEPTH_CLEAR                      0x0002802C
