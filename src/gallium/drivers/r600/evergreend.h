@@ -1882,7 +1882,13 @@
 #define   S_008A14_VE_NAN_PROC_DISABLE(x)              (((unsigned)(x) & 0x1) << 4)
 #define   G_008A14_VE_NAN_PROC_DISABLE(x)              (((x) >> 4) & 0x1)
 #define   C_008A14_VE_NAN_PROC_DISABLE                 0xFFFFFFEF
+
+/* diff */
 #define R_008D8C_SQ_DYN_GPR_CNTL_PS_FLUSH_REQ        0x00008D8C
+#define   S_008D8C_DYN_GPR_ENABLE(x)                   (((unsigned)(x) & 0x1) << 8)
+#define   G_008D8C_DYN_GPR_ENABLE(x)                   (((x) >> 8) & 0x1)
+#define   C_008D8C_DYN_GPR_ENABLE                      0xFFFFFEFF
+
 #define R_028000_DB_RENDER_CONTROL                   0x00028000
 #define   S_028000_DEPTH_CLEAR_ENABLE(x)               (((unsigned)(x) & 0x1) << 0)
 #define   S_028000_STENCIL_CLEAR_ENABLE(x)             (((unsigned)(x) & 0x1) << 1)

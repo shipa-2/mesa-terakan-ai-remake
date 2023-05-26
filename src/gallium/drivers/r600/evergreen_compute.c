@@ -373,7 +373,8 @@ static void compute_emit_cs(struct r600_context *rctx,
 		radeon_emit(cs, S_008C04_NUM_CLAUSE_TEMP_GPRS(rctx->r6xx_num_clause_temp_gprs));
 		radeon_emit(cs, 0);
 		radeon_emit(cs, 0);
-		radeon_set_config_reg(cs, R_008D8C_SQ_DYN_GPR_CNTL_PS_FLUSH_REQ, (1 << 8));
+		radeon_set_config_reg(cs, R_008D8C_SQ_DYN_GPR_CNTL_PS_FLUSH_REQ,
+		                      S_008D8C_DYN_GPR_ENABLE(1));
 	}
 
 	rctx->b.flags |= R600_CONTEXT_WAIT_3D_IDLE | R600_CONTEXT_FLUSH_AND_INV;
