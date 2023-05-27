@@ -67,6 +67,60 @@ terakan_gpu_info_init_chip_family(
       info->has_dedicated_vram = true;
    }
 
+   switch (chip_family) {
+   case CHIP_CEDAR:
+   case CHIP_PALM:
+   case CHIP_SUMO:
+   case CHIP_SUMO2:
+   case CHIP_CAICOS:
+      info->has_vertex_cache = false;
+      break;
+   default:
+      /* Cayman vertex fetch always goes through the texture cache, but Linux Radeon 2.50.0 and the
+       * Gallium R600 driver set SQ_CONFIG.VC_ENABLE to 1 on it.
+       */
+      info->has_vertex_cache = true;
+   }
+
+   if (info->gfx_level >= CAYMAN) {
+      info->sq_max_threads = 256;
+      info->sq_ps_threads_r8xx = 0;
+   } else {
+      switch (chip_family) {
+      case CHIP_CEDAR:
+      case CHIP_PALM:
+      case CHIP_CAICOS:
+         info->sq_max_threads = 192;
+         break;
+      default:
+         info->sq_max_threads = 248;
+      }
+
+      switch (chip_family) {
+      case CHIP_CEDAR:
+      case CHIP_PALM:
+      case CHIP_SUMO:
+      case CHIP_SUMO2:
+         info->sq_ps_threads_r8xx = 96;
+         break;
+      default:
+         info->sq_ps_threads_r8xx = 128;
+      }
+   }
+
+   switch (chip_family) {
+   case CHIP_CEDAR:
+   case CHIP_REDWOOD:
+   case CHIP_PALM:
+   case CHIP_SUMO:
+   case CHIP_TURKS:
+   case CHIP_CAICOS:
+      info->sq_max_stack_entries = 256;
+      break;
+   default:
+      info->sq_max_stack_entries = 512;
+   }
+
    return true;
 }
 

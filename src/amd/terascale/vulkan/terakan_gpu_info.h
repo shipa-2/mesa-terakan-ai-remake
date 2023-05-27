@@ -43,6 +43,11 @@ struct terakan_gpu_info {
 
    bool has_dedicated_vram;
 
+   bool has_vertex_cache;
+   uint32_t sq_max_threads;
+   uint32_t sq_ps_threads_r8xx;
+   uint32_t sq_max_stack_entries;
+
    /* The following need to be set up by the winsys. */
 
    uint8_t tile_pipes_log2;
