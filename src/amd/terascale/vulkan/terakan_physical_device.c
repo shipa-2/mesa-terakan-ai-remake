@@ -67,6 +67,10 @@ terakan_physical_device_get_supported_extensions(
    memset(extensions_out, 0, sizeof(*extensions_out));
 
    extensions_out->EXT_4444_formats = true;
+   extensions_out->EXT_extended_dynamic_state = true;
+   extensions_out->EXT_extended_dynamic_state2 = true;
+   extensions_out->EXT_extended_dynamic_state3 = true;
+   extensions_out->EXT_provoking_vertex = true;
    extensions_out->KHR_format_feature_flags2 = true;
    extensions_out->KHR_map_memory2 = true;
 
@@ -106,6 +110,63 @@ terakan_GetPhysicalDeviceFeatures2(
             (VkPhysicalDevice4444FormatsFeaturesEXT *)ext;
          features->formatA4R4G4B4 = VK_TRUE;
          features->formatA4B4G4R4 = VK_TRUE;
+      } break;
+
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_FEATURES_EXT: {
+         VkPhysicalDeviceExtendedDynamicStateFeaturesEXT * const features =
+            (VkPhysicalDeviceExtendedDynamicStateFeaturesEXT *)ext;
+         features->extendedDynamicState = VK_FALSE;
+      } break;
+
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_2_FEATURES_EXT: {
+         VkPhysicalDeviceExtendedDynamicState2FeaturesEXT * const features =
+            (VkPhysicalDeviceExtendedDynamicState2FeaturesEXT *)ext;
+         features->extendedDynamicState2 = VK_FALSE;
+         features->extendedDynamicState2LogicOp = VK_FALSE;
+         features->extendedDynamicState2PatchControlPoints = VK_FALSE;
+      } break;
+
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT: {
+         VkPhysicalDeviceExtendedDynamicState3FeaturesEXT * const features =
+            (VkPhysicalDeviceExtendedDynamicState3FeaturesEXT *)ext;
+         features->extendedDynamicState3TessellationDomainOrigin = VK_FALSE;
+         features->extendedDynamicState3DepthClampEnable = VK_FALSE;
+         features->extendedDynamicState3PolygonMode = VK_TRUE;
+         features->extendedDynamicState3RasterizationSamples = VK_FALSE;
+         features->extendedDynamicState3SampleMask = VK_FALSE;
+         features->extendedDynamicState3AlphaToCoverageEnable = VK_FALSE;
+         features->extendedDynamicState3AlphaToOneEnable = VK_FALSE;
+         features->extendedDynamicState3LogicOpEnable = VK_FALSE;
+         features->extendedDynamicState3ColorBlendEnable = VK_FALSE;
+         features->extendedDynamicState3ColorBlendEquation = VK_FALSE;
+         features->extendedDynamicState3ColorWriteMask = VK_FALSE;
+         features->extendedDynamicState3RasterizationStream = VK_FALSE;
+         features->extendedDynamicState3ConservativeRasterizationMode = VK_FALSE;
+         features->extendedDynamicState3ExtraPrimitiveOverestimationSize = VK_FALSE;
+         features->extendedDynamicState3DepthClipEnable = VK_FALSE;
+         features->extendedDynamicState3SampleLocationsEnable = VK_FALSE;
+         features->extendedDynamicState3ColorBlendAdvanced = VK_FALSE;
+         features->extendedDynamicState3ProvokingVertexMode = VK_TRUE;
+         features->extendedDynamicState3LineRasterizationMode = VK_FALSE;
+         features->extendedDynamicState3LineStippleEnable = VK_FALSE;
+         features->extendedDynamicState3DepthClipNegativeOneToOne = VK_FALSE;
+         features->extendedDynamicState3ViewportWScalingEnable = VK_FALSE;
+         features->extendedDynamicState3ViewportSwizzle = VK_FALSE;
+         features->extendedDynamicState3CoverageToColorEnable = VK_FALSE;
+         features->extendedDynamicState3CoverageToColorLocation = VK_FALSE;
+         features->extendedDynamicState3CoverageModulationMode = VK_FALSE;
+         features->extendedDynamicState3CoverageModulationTableEnable = VK_FALSE;
+         features->extendedDynamicState3CoverageModulationTable = VK_FALSE;
+         features->extendedDynamicState3CoverageReductionMode = VK_FALSE;
+         features->extendedDynamicState3RepresentativeFragmentTestEnable = VK_FALSE;
+         features->extendedDynamicState3ShadingRateImageEnable = VK_FALSE;
+      } break;
+
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROVOKING_VERTEX_FEATURES_EXT: {
+         VkPhysicalDeviceProvokingVertexFeaturesEXT * const features =
+            (VkPhysicalDeviceProvokingVertexFeaturesEXT *)ext;
+         features->provokingVertexLast = VK_TRUE;
+         features->transformFeedbackPreservesProvokingVertex = VK_TRUE;
       } break;
 
       default:
@@ -454,6 +515,12 @@ terakan_GetPhysicalDeviceProperties2(
    vk_foreach_struct(ext, pProperties->pNext)
    {
       switch (ext->sType) {
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_PROPERTIES_EXT: {
+         VkPhysicalDeviceExtendedDynamicState3PropertiesEXT * const properties =
+            (VkPhysicalDeviceExtendedDynamicState3PropertiesEXT *)ext;
+         properties->dynamicPrimitiveTopologyUnrestricted = VK_TRUE;
+      } break;
+
 #if !defined(_WIN32)
       case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRM_PROPERTIES_EXT: {
          VkPhysicalDeviceDrmPropertiesEXT * const properties =
@@ -485,6 +552,13 @@ terakan_GetPhysicalDeviceProperties2(
          properties->pciFunction = device->drm_bus_info.func;
       } break;
 #endif
+
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROVOKING_VERTEX_PROPERTIES_EXT: {
+         VkPhysicalDeviceProvokingVertexPropertiesEXT * const properties =
+            (VkPhysicalDeviceProvokingVertexPropertiesEXT *)ext;
+         properties->provokingVertexModePerPipeline = VK_TRUE;
+         properties->transformFeedbackPreservesTriangleFanProvokingVertex = VK_TRUE;
+      } break;
 
       default:
          break;

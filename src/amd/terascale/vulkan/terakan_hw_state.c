@@ -36,6 +36,20 @@ typedef void (* terakan_hw_state_draw_emit_function)(
    struct terakan_command_writer * command_writer, enum terakan_hw_state_draw_index state_index);
 
 static void
+terakan_hw_state_draw_emit_pa_su_sc_mode_cntl(
+   struct terakan_command_writer * const command_writer,
+   UNUSED enum terakan_hw_state_draw_index const state_index)
+{
+   uint32_t * packet = terakan_command_writer_emit(command_writer, 2 + 1, 0, 0);
+   if (unlikely(packet == NULL)) {
+      return;
+   }
+   *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
+   *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028814_PA_SU_SC_MODE_CNTL);
+   *packet++ = command_writer->hw_state_draw.pa_su_sc_mode_cntl;
+}
+
+static void
 terakan_hw_state_draw_emit_cb_blend_rgba(
    struct terakan_command_writer * const command_writer,
    UNUSED enum terakan_hw_state_draw_index const state_index)
@@ -51,6 +65,7 @@ terakan_hw_state_draw_emit_cb_blend_rgba(
 
 static terakan_hw_state_draw_emit_function const terakan_hw_state_draw_emit_functions[
    TERAKAN_HW_STATE_DRAW_COUNT] = {
+   [TERAKAN_HW_STATE_DRAW_PA_SU_SC_MODE_CNTL] = terakan_hw_state_draw_emit_pa_su_sc_mode_cntl,
    [TERAKAN_HW_STATE_DRAW_CB_BLEND_RGBA] = terakan_hw_state_draw_emit_cb_blend_rgba,
 };
 
@@ -66,6 +81,19 @@ terakan_hw_state_draw_written(
    if (modified) {
       BITSET_SET(state->state_modified, state_index);
    }
+}
+
+void
+terakan_hw_state_draw_replace_fields(
+   struct terakan_hw_state_draw * const state, enum terakan_hw_state_draw_index const state_index,
+   uint32_t * const value, uint32_t const keep_fields, uint32_t const set_fields)
+{
+   /* The kept fields must have been initialized, otherwise they'd contain junk. */
+   assert(!keep_fields || BITSET_TEST(state->state_ever_written, state_index));
+   assert(!(set_fields & keep_fields));
+   uint32_t const old_value = *value;
+   uint32_t const new_value = (old_value & keep_fields) | set_fields;
+   terakan_hw_state_draw_written(state, state_index, old_value != new_value);
 }
 
 void
@@ -102,5 +130,12 @@ void
 terakan_hw_state_draw_reset(struct terakan_hw_state_draw * const state)
 {
    BITSET_ZERO(state->state_ever_written);
-   BITSET_ZERO(state->state_modified);
+
+   /* Initialize state relevant to all draws. */
+
+   state->pa_su_sc_mode_cntl = TERAKAN_HW_STATE_DRAW_DEFAULT_PA_SU_SC_MODE_CNTL;
+   BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_PA_SU_SC_MODE_CNTL);
+
+   /* Clear modified bits, and make sure the defaults are emitted before the first draw. */
+   BITSET_COPY(state->state_modified, state->state_ever_written);
 }

@@ -29,11 +29,37 @@
 #include <stdbool.h>
 
 enum terakan_hw_state_draw_index {
+   TERAKAN_HW_STATE_DRAW_PA_SU_SC_MODE_CNTL,
+
    TERAKAN_HW_STATE_DRAW_CB_BLEND_RGBA,
 
    TERAKAN_HW_STATE_DRAW_COUNT,
 };
 
+/* Defaults correspond to zeroed (like via memset) values in Vulkan structures they're obtained
+ * from.
+ */
+
+#define TERAKAN_HW_STATE_DRAW_DEFAULT_PA_SU_SC_MODE_CNTL \
+   (/* cullMode = VK_CULL_MODE_NONE */ \
+    S_028814_CULL_FRONT(0) | \
+    S_028814_CULL_BACK(0) | \
+    /* frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE */ \
+    S_028814_FACE(0) | \
+    /* polygonMode = VK_POLYGON_MODE_FILL */ \
+    S_028814_POLY_MODE(V_028814_X_DISABLE_POLY_MODE) | \
+    S_028814_POLYMODE_FRONT_PTYPE(V_028814_X_DRAW_TRIANGLES) | \
+    S_028814_POLYMODE_BACK_PTYPE(V_028814_X_DRAW_TRIANGLES) | \
+    /* depthBiasEnable = VK_FALSE */ \
+    S_028814_POLY_OFFSET_FRONT_ENABLE(0) | \
+    S_028814_POLY_OFFSET_BACK_ENABLE(0) | \
+    S_028814_POLY_OFFSET_PARA_ENABLE(0) | \
+    /* provokingVertexMode = VK_PROVOKING_VERTEX_MODE_FIRST_VERTEX_EXT */ \
+    S_028814_PROVOKING_VTX_LAST(0))
+
+/* State applied before performing application's or internal draws, and reapplied when switching to
+ * a new indirect buffer in the Vulkan command buffer.
+ */
 struct terakan_hw_state_draw {
    /* Whether each state item has ever been written, and thus has a value that's not complete junk,
     * and is potentially relevant to the current command buffer.
@@ -41,6 +67,9 @@ struct terakan_hw_state_draw {
    BITSET_DECLARE(state_ever_written, TERAKAN_HW_STATE_DRAW_COUNT);
    /* Whether each state item has been modified and needs to be emitted before the next draw. */
    BITSET_DECLARE(state_modified, TERAKAN_HW_STATE_DRAW_COUNT);
+
+   /* TERAKAN_HW_STATE_DRAW_PA_SU_SC_MODE_CNTL */
+   uint32_t pa_su_sc_mode_cntl;
 
    /* TERAKAN_HW_STATE_DRAW_CB_BLEND_RGBA */
    float cb_blend_rgba[4];
@@ -59,6 +88,10 @@ struct terakan_command_writer;
 void terakan_hw_state_draw_written(
    struct terakan_hw_state_draw * state, enum terakan_hw_state_draw_index state_index,
    bool modified);
+
+void terakan_hw_state_draw_replace_fields(
+   struct terakan_hw_state_draw * state, enum terakan_hw_state_draw_index state_index,
+   uint32_t * value, uint32_t keep_fields, uint32_t set_fields);
 
 void terakan_hw_state_draw_emit_modified(struct terakan_command_writer * command_writer);
 
