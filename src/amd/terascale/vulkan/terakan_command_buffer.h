@@ -25,6 +25,7 @@
 #define TERAKAN_COMMAND_BUFFER_H
 
 #include "terakan_hw_state.h"
+#include "terakan_state.h"
 #include "winsys/terakan_winsys.h"
 
 #include "gallium/drivers/r600/evergreend.h"
@@ -162,6 +163,8 @@ struct terakan_command_writer {
    bool is_beginning_indirect_buffer;
 
    struct terakan_hw_state_draw hw_state_draw;
+
+   struct terakan_state_draw state_draw;
 };
 
 /* Entry point for emitting packets.

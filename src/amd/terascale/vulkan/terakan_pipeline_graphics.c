@@ -23,6 +23,8 @@
 
 #include "terakan_command_buffer.h"
 #include "terakan_pipeline_graphics.h"
+#include "terakan_state.h"
+#include "terakan_state_input_assembly.h"
 #include "terakan_state_rasterization.h"
 
 #include "vk_graphics_state.h"
@@ -31,60 +33,114 @@
 #include <stddef.h>
 #include <stdint.h>
 
-static VkResult
-terakan_pipeline_graphics_pre_rasterization_init(
-   struct vk_graphics_pipeline_state const * const pipeline_state,
-   struct terakan_pipeline_graphics_pre_rasterization * const pre_rasterization_out)
-{
-   /* PA_SU_SC_MODE_CNTL. */
-   pre_rasterization_out->pa_su_sc_mode_cntl_clear = UINT32_MAX;
-   pre_rasterization_out->pa_su_sc_mode_cntl = 0;
-   if (!BITSET_TEST(pipeline_state->dynamic, MESA_VK_DYNAMIC_RS_POLYGON_MODE)) {
-      pre_rasterization_out->pa_su_sc_mode_cntl_clear &=
-         TERAKAN_STATE_DRAW_POLYGON_MODE_PA_SU_SC_MODE_CNTL_CLEAR;
-      pre_rasterization_out->pa_su_sc_mode_cntl |=
-         terakan_state_draw_polygon_mode_pa_su_sc_mode_cntl(pipeline_state->rs->polygon_mode);
-   }
-   if (!BITSET_TEST(pipeline_state->dynamic, MESA_VK_DYNAMIC_RS_CULL_MODE)) {
-      pre_rasterization_out->pa_su_sc_mode_cntl_clear &=
-         TERAKAN_STATE_DRAW_CULL_MODE_PA_SU_SC_MODE_CNTL_CLEAR;
-      pre_rasterization_out->pa_su_sc_mode_cntl |=
-         terakan_state_draw_cull_mode_pa_su_sc_mode_cntl(pipeline_state->rs->cull_mode);
-   }
-   if (!BITSET_TEST(pipeline_state->dynamic, MESA_VK_DYNAMIC_RS_FRONT_FACE)) {
-      pre_rasterization_out->pa_su_sc_mode_cntl_clear &=
-         TERAKAN_STATE_DRAW_FRONT_FACE_PA_SU_SC_MODE_CNTL_CLEAR;
-      pre_rasterization_out->pa_su_sc_mode_cntl |=
-         terakan_state_draw_front_face_pa_su_sc_mode_cntl(pipeline_state->rs->front_face);
-   }
-   if (!BITSET_TEST(pipeline_state->dynamic, MESA_VK_DYNAMIC_RS_PROVOKING_VERTEX)) {
-      pre_rasterization_out->pa_su_sc_mode_cntl_clear &=
-         TERAKAN_STATE_DRAW_PROVOKING_VERTEX_MODE_PA_SU_SC_MODE_CNTL_CLEAR;
-      pre_rasterization_out->pa_su_sc_mode_cntl |=
-         terakan_state_draw_provoking_vertex_mode_pa_su_sc_mode_cntl(
-            pipeline_state->rs->provoking_vertex);
-   }
-   if (!BITSET_TEST(pipeline_state->dynamic, MESA_VK_DYNAMIC_RS_DEPTH_BIAS_ENABLE)) {
-      pre_rasterization_out->pa_su_sc_mode_cntl_clear &=
-         TERAKAN_STATE_DRAW_DEPTH_BIAS_ENABLE_PA_SU_SC_MODE_CNTL_CLEAR;
-      pre_rasterization_out->pa_su_sc_mode_cntl |=
-         terakan_state_draw_depth_bias_enable_pa_su_sc_mode_cntl(
-            pipeline_state->rs->depth_bias.enable);
-   }
-   assert(
-      !(pre_rasterization_out->pa_su_sc_mode_cntl &
-        pre_rasterization_out->pa_su_sc_mode_cntl_clear));
+typedef void (* terakan_pipeline_graphics_apply_state_function)(
+   struct terakan_command_writer * command_writer,
+   struct terakan_pipeline_graphics const * pipeline,
+   enum terakan_pipeline_graphics_state_index state_index);
 
-   return VK_SUCCESS;
+static void
+terakan_pipeline_graphics_apply_vgt_primitive_type(
+   struct terakan_command_writer * const command_writer,
+   struct terakan_pipeline_graphics const * const pipeline,
+   UNUSED enum terakan_pipeline_graphics_state_index const state_index)
+{
+   command_writer->state_draw.vgt_primitive_type = pipeline->vertex_input.vgt_primitive_type;
+   terakan_state_draw_written(&command_writer->state_draw, TERAKAN_STATE_DRAW_VGT_PRIMITIVE_TYPE);
 }
+
+static void
+terakan_pipeline_graphics_apply_pa_su_sc_mode_cntl(
+   struct terakan_command_writer * const command_writer,
+   struct terakan_pipeline_graphics const * const pipeline,
+   UNUSED enum terakan_pipeline_graphics_state_index const state_index)
+{
+   terakan_state_draw_replace_fields(
+      &command_writer->state_draw, TERAKAN_STATE_DRAW_PA_SU_SC_MODE_CNTL,
+      &command_writer->state_draw.pa_su_sc_mode_cntl,
+      pipeline->pre_rasterization.pa_su_sc_mode_cntl_clear,
+      pipeline->pre_rasterization.pa_su_sc_mode_cntl);
+}
+
+static terakan_pipeline_graphics_apply_state_function const
+terakan_pipeline_graphics_apply_state_functions[
+   TERAKAN_PIPELINE_GRAPHICS_STATE_COUNT] = {
+   [TERAKAN_PIPELINE_GRAPHICS_STATE_VGT_PRIMITIVE_TYPE] =
+      terakan_pipeline_graphics_apply_vgt_primitive_type,
+   [TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SU_SC_MODE_CNTL] =
+      terakan_pipeline_graphics_apply_pa_su_sc_mode_cntl,
+};
 
 static void
 terakan_pipeline_graphics_bind(
    struct terakan_command_writer * const command_writer,
    struct terakan_pipeline_graphics const * const pipeline)
 {
-   terakan_hw_state_draw_replace_fields(
-      &command_writer->hw_state_draw, TERAKAN_HW_STATE_DRAW_PA_SU_SC_MODE_CNTL,
-      &command_writer->hw_state_draw.pa_su_sc_mode_cntl, pipeline->pre_rasterization.pa_su_sc_mode_cntl_clear,
-      pipeline->pre_rasterization.pa_su_sc_mode_cntl);
+   unsigned state_index;
+   BITSET_FOREACH_SET(state_index, pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_COUNT) {
+      terakan_pipeline_graphics_apply_state_functions[state_index](
+         command_writer, pipeline, (enum terakan_state_draw_index)state_index);
+   }
+}
+
+static VkResult
+terakan_pipeline_graphics_vertex_input_init(
+   struct terakan_pipeline_graphics * const pipeline,
+   struct vk_graphics_pipeline_state const * const state)
+{
+   /* TERAKAN_PIPELINE_GRAPHICS_STATE_VGT_PRIMITIVE_TYPE */
+   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_IA_PRIMITIVE_TOPOLOGY)) {
+      pipeline->vertex_input.vgt_primitive_type =
+         terakan_state_draw_primitive_topology_vgt_primitive_type(state->ia->primitive_topology);
+      BITSET_SET(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_VGT_PRIMITIVE_TYPE);
+   }
+
+   return VK_SUCCESS;
+}
+
+static VkResult
+terakan_pipeline_graphics_pre_rasterization_init(
+   struct terakan_pipeline_graphics * const pipeline,
+   struct vk_graphics_pipeline_state const * const state)
+{
+   /* TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SU_SC_MODE_CNTL */
+   pipeline->pre_rasterization.pa_su_sc_mode_cntl_clear = UINT32_MAX;
+   pipeline->pre_rasterization.pa_su_sc_mode_cntl = 0;
+   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_RS_POLYGON_MODE)) {
+      pipeline->pre_rasterization.pa_su_sc_mode_cntl_clear &=
+         TERAKAN_STATE_DRAW_POLYGON_MODE_PA_SU_SC_MODE_CNTL_CLEAR;
+      pipeline->pre_rasterization.pa_su_sc_mode_cntl |=
+         terakan_state_draw_polygon_mode_pa_su_sc_mode_cntl(state->rs->polygon_mode);
+   }
+   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_RS_CULL_MODE)) {
+      pipeline->pre_rasterization.pa_su_sc_mode_cntl_clear &=
+         TERAKAN_STATE_DRAW_CULL_MODE_PA_SU_SC_MODE_CNTL_CLEAR;
+      pipeline->pre_rasterization.pa_su_sc_mode_cntl |=
+         terakan_state_draw_cull_mode_pa_su_sc_mode_cntl(state->rs->cull_mode);
+   }
+   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_RS_FRONT_FACE)) {
+      pipeline->pre_rasterization.pa_su_sc_mode_cntl_clear &=
+         TERAKAN_STATE_DRAW_FRONT_FACE_PA_SU_SC_MODE_CNTL_CLEAR;
+      pipeline->pre_rasterization.pa_su_sc_mode_cntl |=
+         terakan_state_draw_front_face_pa_su_sc_mode_cntl(state->rs->front_face);
+   }
+   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_RS_PROVOKING_VERTEX)) {
+      pipeline->pre_rasterization.pa_su_sc_mode_cntl_clear &=
+         TERAKAN_STATE_DRAW_PROVOKING_VERTEX_MODE_PA_SU_SC_MODE_CNTL_CLEAR;
+      pipeline->pre_rasterization.pa_su_sc_mode_cntl |=
+         terakan_state_draw_provoking_vertex_mode_pa_su_sc_mode_cntl(state->rs->provoking_vertex);
+   }
+   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_RS_DEPTH_BIAS_ENABLE)) {
+      pipeline->pre_rasterization.pa_su_sc_mode_cntl_clear &=
+         TERAKAN_STATE_DRAW_DEPTH_BIAS_ENABLE_PA_SU_SC_MODE_CNTL_CLEAR;
+      pipeline->pre_rasterization.pa_su_sc_mode_cntl |=
+         terakan_state_draw_depth_bias_enable_pa_su_sc_mode_cntl(state->rs->depth_bias.enable);
+   }
+   assert(
+      !(pipeline->pre_rasterization.pa_su_sc_mode_cntl &
+        pipeline->pre_rasterization.pa_su_sc_mode_cntl_clear));
+   if (pipeline->pre_rasterization.pa_su_sc_mode_cntl_clear != UINT32_MAX) {
+      BITSET_SET(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SU_SC_MODE_CNTL);
+   }
+
+   return VK_SUCCESS;
 }

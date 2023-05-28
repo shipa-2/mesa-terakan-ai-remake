@@ -71,6 +71,7 @@ terakan_physical_device_get_supported_extensions(
    extensions_out->EXT_extended_dynamic_state2 = true;
    extensions_out->EXT_extended_dynamic_state3 = true;
    extensions_out->EXT_provoking_vertex = true;
+   extensions_out->KHR_dynamic_rendering = true;
    extensions_out->KHR_format_feature_flags2 = true;
    extensions_out->KHR_map_memory2 = true;
    extensions_out->KHR_timeline_semaphore = true;
@@ -107,6 +108,9 @@ terakan_physical_device_get_supported_features(struct vk_features * const featur
    /* VK_EXT_provoking_vertex */
    features_out->provokingVertexLast = true;
    features_out->transformFeedbackPreservesProvokingVertex = true;
+
+   /* VK_KHR_dynamic_rendering */
+   features_out->dynamicRendering = true;
 
    /* VK_KHR_timeline_semaphore */
    features_out->timelineSemaphore = true;

@@ -23,7 +23,7 @@
 
 #include "terakan_command_buffer.h"
 #include "terakan_entrypoints.h"
-#include "terakan_hw_state.h"
+#include "terakan_state.h"
 #include "terakan_state_rasterization.h"
 
 #include <stdint.h>
@@ -31,11 +31,10 @@
 VKAPI_ATTR void VKAPI_CALL
 terakan_CmdSetPolygonModeEXT(VkCommandBuffer const commandBuffer, VkPolygonMode const polygonMode)
 {
-   struct terakan_command_writer * const command_writer =
-      terakan_command_buffer_from_handle(commandBuffer)->command_writer;
-   terakan_hw_state_draw_replace_fields(
-      &command_writer->hw_state_draw, TERAKAN_HW_STATE_DRAW_PA_SU_SC_MODE_CNTL,
-      &command_writer->hw_state_draw.pa_su_sc_mode_cntl,
+   struct terakan_state_draw * const state_draw =
+      &terakan_command_buffer_from_handle(commandBuffer)->command_writer->state_draw;
+   terakan_state_draw_replace_fields(
+      state_draw, TERAKAN_STATE_DRAW_PA_SU_SC_MODE_CNTL, &state_draw->pa_su_sc_mode_cntl,
       TERAKAN_STATE_DRAW_POLYGON_MODE_PA_SU_SC_MODE_CNTL_CLEAR,
       terakan_state_draw_polygon_mode_pa_su_sc_mode_cntl(polygonMode));
 }
@@ -43,11 +42,10 @@ terakan_CmdSetPolygonModeEXT(VkCommandBuffer const commandBuffer, VkPolygonMode 
 VKAPI_ATTR void VKAPI_CALL
 terakan_CmdSetCullMode(VkCommandBuffer const commandBuffer, VkCullModeFlags const cullMode)
 {
-   struct terakan_command_writer * const command_writer =
-      terakan_command_buffer_from_handle(commandBuffer)->command_writer;
-   terakan_hw_state_draw_replace_fields(
-      &command_writer->hw_state_draw, TERAKAN_HW_STATE_DRAW_PA_SU_SC_MODE_CNTL,
-      &command_writer->hw_state_draw.pa_su_sc_mode_cntl,
+   struct terakan_state_draw * const state_draw =
+      &terakan_command_buffer_from_handle(commandBuffer)->command_writer->state_draw;
+   terakan_state_draw_replace_fields(
+      state_draw, TERAKAN_STATE_DRAW_PA_SU_SC_MODE_CNTL, &state_draw->pa_su_sc_mode_cntl,
       TERAKAN_STATE_DRAW_CULL_MODE_PA_SU_SC_MODE_CNTL_CLEAR,
       terakan_state_draw_cull_mode_pa_su_sc_mode_cntl(cullMode));
 }
@@ -55,11 +53,10 @@ terakan_CmdSetCullMode(VkCommandBuffer const commandBuffer, VkCullModeFlags cons
 VKAPI_ATTR void VKAPI_CALL
 terakan_CmdSetFrontFace(VkCommandBuffer const commandBuffer, VkFrontFace const frontFace)
 {
-   struct terakan_command_writer * const command_writer =
-      terakan_command_buffer_from_handle(commandBuffer)->command_writer;
-   terakan_hw_state_draw_replace_fields(
-      &command_writer->hw_state_draw, TERAKAN_HW_STATE_DRAW_PA_SU_SC_MODE_CNTL,
-      &command_writer->hw_state_draw.pa_su_sc_mode_cntl,
+   struct terakan_state_draw * const state_draw =
+      &terakan_command_buffer_from_handle(commandBuffer)->command_writer->state_draw;
+   terakan_state_draw_replace_fields(
+      state_draw, TERAKAN_STATE_DRAW_PA_SU_SC_MODE_CNTL, &state_draw->pa_su_sc_mode_cntl,
       TERAKAN_STATE_DRAW_FRONT_FACE_PA_SU_SC_MODE_CNTL_CLEAR,
       terakan_state_draw_front_face_pa_su_sc_mode_cntl(frontFace));
 }
@@ -68,11 +65,10 @@ VKAPI_ATTR void VKAPI_CALL
 terakan_CmdSetProvokingVertexModeEXT(
    VkCommandBuffer const commandBuffer, VkProvokingVertexModeEXT const provokingVertexMode)
 {
-   struct terakan_command_writer * const command_writer =
-      terakan_command_buffer_from_handle(commandBuffer)->command_writer;
-   terakan_hw_state_draw_replace_fields(
-      &command_writer->hw_state_draw, TERAKAN_HW_STATE_DRAW_PA_SU_SC_MODE_CNTL,
-      &command_writer->hw_state_draw.pa_su_sc_mode_cntl,
+   struct terakan_state_draw * const state_draw =
+      &terakan_command_buffer_from_handle(commandBuffer)->command_writer->state_draw;
+   terakan_state_draw_replace_fields(
+      state_draw, TERAKAN_STATE_DRAW_PA_SU_SC_MODE_CNTL, &state_draw->pa_su_sc_mode_cntl,
       TERAKAN_STATE_DRAW_PROVOKING_VERTEX_MODE_PA_SU_SC_MODE_CNTL_CLEAR,
       terakan_state_draw_provoking_vertex_mode_pa_su_sc_mode_cntl(provokingVertexMode));
 }
@@ -80,11 +76,10 @@ terakan_CmdSetProvokingVertexModeEXT(
 VKAPI_ATTR void VKAPI_CALL
 terakan_CmdSetDepthBiasEnable(VkCommandBuffer const commandBuffer, VkBool32 const depthBiasEnable)
 {
-   struct terakan_command_writer * const command_writer =
-      terakan_command_buffer_from_handle(commandBuffer)->command_writer;
-   terakan_hw_state_draw_replace_fields(
-      &command_writer->hw_state_draw, TERAKAN_HW_STATE_DRAW_PA_SU_SC_MODE_CNTL,
-      &command_writer->hw_state_draw.pa_su_sc_mode_cntl,
+   struct terakan_state_draw * const state_draw =
+      &terakan_command_buffer_from_handle(commandBuffer)->command_writer->state_draw;
+   terakan_state_draw_replace_fields(
+      state_draw, TERAKAN_STATE_DRAW_PA_SU_SC_MODE_CNTL, &state_draw->pa_su_sc_mode_cntl,
       TERAKAN_STATE_DRAW_DEPTH_BIAS_ENABLE_PA_SU_SC_MODE_CNTL_CLEAR,
       terakan_state_draw_depth_bias_enable_pa_su_sc_mode_cntl(depthBiasEnable));
 }

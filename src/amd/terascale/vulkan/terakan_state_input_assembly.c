@@ -23,22 +23,18 @@
 
 #include "terakan_command_buffer.h"
 #include "terakan_entrypoints.h"
-#include "terakan_hw_state.h"
-
-#include "util/macros.h"
+#include "terakan_state.h"
+#include "terakan_state_input_assembly.h"
 
 #include <stdbool.h>
-#include <string.h>
 
 VKAPI_ATTR void VKAPI_CALL
-terakan_CmdSetBlendConstants(
-   VkCommandBuffer const commandBuffer, float const blendConstants[4])
+terakan_CmdSetPrimitiveTopology(
+   VkCommandBuffer const commandBuffer, VkPrimitiveTopology const primitiveTopology)
 {
-   struct terakan_hw_state_draw * const hw_state_draw =
-      &terakan_command_buffer_from_handle(commandBuffer)->command_writer->hw_state_draw;
-   /* The blend constant is not needed by internal draws, modify hw_state_draw directly. */
-   bool const modified =
-      memcmp(hw_state_draw->cb_blend_rgba, blendConstants, sizeof(float) * 4) != 0;
-   memcpy(hw_state_draw->cb_blend_rgba, blendConstants, sizeof(float) * 4);
-   terakan_hw_state_draw_written(hw_state_draw, TERAKAN_HW_STATE_DRAW_CB_BLEND_RGBA, modified);
+   struct terakan_state_draw * const state_draw =
+      &terakan_command_buffer_from_handle(commandBuffer)->command_writer->state_draw;
+   state_draw->vgt_primitive_type =
+      terakan_state_draw_primitive_topology_vgt_primitive_type(primitiveTopology);
+   terakan_state_draw_written(state_draw, TERAKAN_STATE_DRAW_VGT_PRIMITIVE_TYPE);
 }

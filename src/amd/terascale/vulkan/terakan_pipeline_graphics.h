@@ -24,17 +24,38 @@
 #ifndef TERAKAN_PIPELINE_GRAPHICS_H
 #define TERAKAN_PIPELINE_GRAPHICS_H
 
+#include "util/bitset.h"
 #include "vk_object.h"
 
 #include <stdint.h>
 
+enum terakan_pipeline_graphics_state_index {
+   TERAKAN_PIPELINE_GRAPHICS_STATE_VGT_PRIMITIVE_TYPE,
+
+   TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SU_SC_MODE_CNTL,
+
+   TERAKAN_PIPELINE_GRAPHICS_STATE_COUNT,
+};
+
+struct terakan_pipeline_graphics_vertex_input {
+   /* TERAKAN_PIPELINE_GRAPHICS_STATE_VGT_PRIMITIVE_TYPE */
+   uint32_t vgt_primitive_type;
+};
+
 struct terakan_pipeline_graphics_pre_rasterization {
+   /* TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SU_SC_MODE_CNTL */
    uint32_t pa_su_sc_mode_cntl_clear;
    uint32_t pa_su_sc_mode_cntl;
 };
 
 struct terakan_pipeline_graphics {
    struct vk_object_base base;
+
+   BITSET_DECLARE(static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_COUNT);
+
+   /* State fields not in static_state are undefined. */
+
+   struct terakan_pipeline_graphics_vertex_input vertex_input;
 
    struct terakan_pipeline_graphics_pre_rasterization pre_rasterization;
 };

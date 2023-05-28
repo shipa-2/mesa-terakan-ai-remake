@@ -428,6 +428,8 @@ terakan_BeginCommandBuffer(
 
    terakan_hw_state_draw_reset(&command_buffer->command_writer->hw_state_draw);
 
+   terakan_state_draw_reset(&command_buffer->command_writer->state_draw);
+
    return vk_command_buffer_get_record_result(&command_buffer->vk);
 }
 
