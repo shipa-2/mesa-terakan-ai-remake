@@ -85,94 +85,27 @@ terakan_physical_device_get_supported_extensions(
 #endif
 }
 
-VKAPI_ATTR void VKAPI_CALL
-terakan_GetPhysicalDeviceFeatures(
-   VkPhysicalDevice const physicalDevice, VkPhysicalDeviceFeatures * const pFeatures)
+static void
+terakan_physical_device_get_supported_features(struct vk_features * const features_out)
 {
-   memset(pFeatures, 0, sizeof(*pFeatures));
+   memset(features_out, 0, sizeof(*features_out));
 
-   pFeatures->robustBufferAccess = VK_TRUE;
-   pFeatures->fullDrawIndexUint32 = VK_TRUE;
-   pFeatures->textureCompressionBC = VK_TRUE;
-}
+   /* Vulkan 1.0 */
+   features_out->robustBufferAccess = true;
+   features_out->fullDrawIndexUint32 = true;
+   features_out->textureCompressionBC = true;
 
-VKAPI_ATTR void VKAPI_CALL
-terakan_GetPhysicalDeviceFeatures2(
-   VkPhysicalDevice const physicalDevice, VkPhysicalDeviceFeatures2 * const pFeatures)
-{
-   terakan_GetPhysicalDeviceFeatures(physicalDevice, &pFeatures->features);
+   /* VK_EXT_4444_formats */
+   features_out->formatA4R4G4B4 = true;
+   features_out->formatA4B4G4R4 = true;
 
-   vk_foreach_struct(ext, pFeatures->pNext)
-   {
-      switch (ext->sType) {
-      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_4444_FORMATS_FEATURES_EXT: {
-         VkPhysicalDevice4444FormatsFeaturesEXT * const features =
-            (VkPhysicalDevice4444FormatsFeaturesEXT *)ext;
-         features->formatA4R4G4B4 = VK_TRUE;
-         features->formatA4B4G4R4 = VK_TRUE;
-      } break;
+   /* VK_EXT_extended_dynamic_state3 */
+   features_out->extendedDynamicState3PolygonMode = true;
+   features_out->extendedDynamicState3ProvokingVertexMode = true;
 
-      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_FEATURES_EXT: {
-         VkPhysicalDeviceExtendedDynamicStateFeaturesEXT * const features =
-            (VkPhysicalDeviceExtendedDynamicStateFeaturesEXT *)ext;
-         features->extendedDynamicState = VK_FALSE;
-      } break;
-
-      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_2_FEATURES_EXT: {
-         VkPhysicalDeviceExtendedDynamicState2FeaturesEXT * const features =
-            (VkPhysicalDeviceExtendedDynamicState2FeaturesEXT *)ext;
-         features->extendedDynamicState2 = VK_FALSE;
-         features->extendedDynamicState2LogicOp = VK_FALSE;
-         features->extendedDynamicState2PatchControlPoints = VK_FALSE;
-      } break;
-
-      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT: {
-         VkPhysicalDeviceExtendedDynamicState3FeaturesEXT * const features =
-            (VkPhysicalDeviceExtendedDynamicState3FeaturesEXT *)ext;
-         features->extendedDynamicState3TessellationDomainOrigin = VK_FALSE;
-         features->extendedDynamicState3DepthClampEnable = VK_FALSE;
-         features->extendedDynamicState3PolygonMode = VK_TRUE;
-         features->extendedDynamicState3RasterizationSamples = VK_FALSE;
-         features->extendedDynamicState3SampleMask = VK_FALSE;
-         features->extendedDynamicState3AlphaToCoverageEnable = VK_FALSE;
-         features->extendedDynamicState3AlphaToOneEnable = VK_FALSE;
-         features->extendedDynamicState3LogicOpEnable = VK_FALSE;
-         features->extendedDynamicState3ColorBlendEnable = VK_FALSE;
-         features->extendedDynamicState3ColorBlendEquation = VK_FALSE;
-         features->extendedDynamicState3ColorWriteMask = VK_FALSE;
-         features->extendedDynamicState3RasterizationStream = VK_FALSE;
-         features->extendedDynamicState3ConservativeRasterizationMode = VK_FALSE;
-         features->extendedDynamicState3ExtraPrimitiveOverestimationSize = VK_FALSE;
-         features->extendedDynamicState3DepthClipEnable = VK_FALSE;
-         features->extendedDynamicState3SampleLocationsEnable = VK_FALSE;
-         features->extendedDynamicState3ColorBlendAdvanced = VK_FALSE;
-         features->extendedDynamicState3ProvokingVertexMode = VK_TRUE;
-         features->extendedDynamicState3LineRasterizationMode = VK_FALSE;
-         features->extendedDynamicState3LineStippleEnable = VK_FALSE;
-         features->extendedDynamicState3DepthClipNegativeOneToOne = VK_FALSE;
-         features->extendedDynamicState3ViewportWScalingEnable = VK_FALSE;
-         features->extendedDynamicState3ViewportSwizzle = VK_FALSE;
-         features->extendedDynamicState3CoverageToColorEnable = VK_FALSE;
-         features->extendedDynamicState3CoverageToColorLocation = VK_FALSE;
-         features->extendedDynamicState3CoverageModulationMode = VK_FALSE;
-         features->extendedDynamicState3CoverageModulationTableEnable = VK_FALSE;
-         features->extendedDynamicState3CoverageModulationTable = VK_FALSE;
-         features->extendedDynamicState3CoverageReductionMode = VK_FALSE;
-         features->extendedDynamicState3RepresentativeFragmentTestEnable = VK_FALSE;
-         features->extendedDynamicState3ShadingRateImageEnable = VK_FALSE;
-      } break;
-
-      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROVOKING_VERTEX_FEATURES_EXT: {
-         VkPhysicalDeviceProvokingVertexFeaturesEXT * const features =
-            (VkPhysicalDeviceProvokingVertexFeaturesEXT *)ext;
-         features->provokingVertexLast = VK_TRUE;
-         features->transformFeedbackPreservesProvokingVertex = VK_TRUE;
-      } break;
-
-      default:
-         break;
-      }
-   }
+   /* VK_EXT_provoking_vertex */
+   features_out->provokingVertexLast = true;
+   features_out->transformFeedbackPreservesProvokingVertex = true;
 }
 
 static void
@@ -754,6 +687,8 @@ terakan_physical_device_try_create_for_drm(
    terakan_physical_device_init_memory_properties(device);
 
    terakan_physical_device_get_supported_extensions(&device->vk.supported_extensions);
+
+   terakan_physical_device_get_supported_features(&device->vk.supported_features);
 
    /* Initialize WSI after everything else as it's a layer on top of the Vulkan physical device. */
    result = terakan_wsi_init(device);
