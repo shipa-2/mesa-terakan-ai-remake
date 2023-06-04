@@ -42,6 +42,14 @@ terakan_device_destroy(struct terakan_device * const device)
       terakan_queue_destroy(device->queue_graphics);
    }
 
+   mtx_lock(&device->completion_mutex);
+   device->completion_lost = true;
+   mtx_unlock(&device->completion_mutex);
+   cnd_broadcast(&device->completion_condition);
+
+   cnd_destroy(&device->completion_condition);
+   mtx_destroy(&device->completion_mutex);
+
    vk_device_finish(&device->vk);
 
    vk_free(&device->vk.alloc, device);
@@ -83,11 +91,25 @@ terakan_CreateDevice(
    result =
       vk_device_init(&device->vk, &physical_device->vk, &dispatch_table, pCreateInfo, pAllocator);
    if (result != VK_SUCCESS) {
-      vk_free(&device->vk.alloc, device);
-      return result;
+      goto fail_alloc;
    }
 
    device->vk.command_buffer_ops = &terakan_command_buffer_ops;
+
+   if (mtx_init(&device->completion_mutex, mtx_plain) != thrd_success) {
+      result = vk_errorf(
+         physical_device->vk.instance, VK_ERROR_OUT_OF_HOST_MEMORY,
+         "Failed to initialize the submission mutex");
+      goto fail_device;
+   }
+   if (cnd_init(&device->completion_condition) != thrd_success) {
+      result = vk_errorf(
+         physical_device->vk.instance, VK_ERROR_OUT_OF_HOST_MEMORY,
+         "Failed to initialize the submission condition variable");
+      goto fail_completion_mutex;
+   }
+
+   device->completion_lost = false;
 
    device->queue_graphics = NULL;
 
@@ -120,4 +142,12 @@ terakan_CreateDevice(
    *pDevice = terakan_device_to_handle(device);
 
    return VK_SUCCESS;
+
+fail_completion_mutex:
+   mtx_destroy(&device->completion_mutex);
+fail_device:
+   vk_device_finish(&device->vk);
+fail_alloc:
+   vk_free(&device->vk.alloc, device);
+   return result;
 }

@@ -24,11 +24,12 @@
 #include "terakan_command_buffer.h"
 #include "terakan_device.h"
 #include "terakan_physical_device.h"
-#include "terakan_sync_bo_wait_idle.h"
+#include "terakan_sync_completion.h"
 #include "terakan_queue.h"
 #include "winsys/terakan_winsys.h"
 
 #include "c11/threads.h"
+#include "c99_alloca.h"
 #include "gallium/drivers/r600/evergreend.h"
 #include "gallium/drivers/r600/r600d_common.h"
 #include "util/macros.h"
@@ -39,113 +40,94 @@
 #include "vk_sync_dummy.h"
 
 #include <assert.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
+
+static int
+terakan_queue_completion_thread_func(void * queue_ptr)
+{
+   struct terakan_queue * const queue = queue_ptr;
+
+   struct terakan_device * const device =
+      container_of(queue->vk.base.device, struct terakan_device, vk);
+   struct terakan_winsys_bo_fn const * const bo_fn =
+      container_of(device->vk.physical, struct terakan_physical_device const, vk)->winsys->bo_fn;
+
+   mtx_lock(&device->completion_mutex);
+   while (true) {
+      if (device->completion_lost) {
+         mtx_unlock(&device->completion_mutex);
+         return 1;
+      }
+
+      if (queue->shutdown_competion_thread) {
+         /* Graceful device shutdown. */
+         break;
+      }
+
+      if (list_is_empty(&queue->completion_submissions_pending)) {
+         if (cnd_wait(&device->completion_condition, &device->completion_mutex) != thrd_success) {
+            vk_device_set_lost(&device->vk, "Failed to await the submission condition variable");
+            device->completion_lost = true;
+            mtx_unlock(&device->completion_mutex);
+            cnd_broadcast(&device->completion_condition);
+            return 1;
+         }
+         continue;
+      }
+
+      /* Await the BO not to be potentially accessed by the GPU anymore without holding the
+       * mutex.
+       */
+      struct terakan_queue_completion_submission * submission = list_first_entry(
+         &queue->completion_submissions_pending, struct terakan_queue_completion_submission, link);
+      list_del(&submission->link);
+      mtx_unlock(&device->completion_mutex);
+      bool const awaited =
+         bo_fn->wait_idle(submission->bo) &&
+         *submission->bo_mapping == submission->expected_bo_data;
+      mtx_lock(&device->completion_mutex);
+      if (unlikely(!awaited)) {
+         vk_device_set_lost(
+            &device->vk,
+            "Failed to wait for the synchronization buffer object to become idle and to contain "
+            "the expected value");
+         device->completion_lost = true;
+      } else {
+         struct terakan_queue_completion_signal * signal;
+         LIST_FOR_EACH_ENTRY(signal, &submission->signals, link) {
+            assert(signal->value <= signal->sync->pending_value);
+            assert(signal->value > signal->sync->current_value);
+            signal->sync->current_value = signal->value;
+         }
+      }
+
+      /* Recycle the submission. */
+      list_splice(&submission->signals, &queue->completion_signals_free);
+      list_add(&submission->link, &queue->completion_submissions_free);
+
+      /* Notify signal waits of new semaphore values or the failure. */
+      cnd_broadcast(&device->completion_condition);
+   }
+   mtx_unlock(&device->completion_mutex);
+
+   return 0;
+}
 
 static VkResult
 terakan_queue_submit(struct vk_queue * const queue_base, struct vk_queue_submit * const submit)
 {
    struct terakan_queue * const queue = container_of(queue_base, struct terakan_queue, vk);
 
+   struct terakan_device * const device =
+      container_of(queue->vk.base.device, struct terakan_device, vk);
    struct terakan_winsys * const winsys =
-      container_of(queue->device->vk.physical, struct terakan_physical_device const, vk)->winsys;
-
-   /* GFX command buffers must be padded to a multiple of 8 dwords with NOPs. */
-   uint32_t const sync_indirect_buffer_max_dwords =
-      ARRAY_SIZE(queue->sync_indirect_buffer) & ~(uint32_t)7;
-
-   /* Submit synchronization waits. */
-   uint32_t const sync_wait_reg_mem_and_mem_write_dwords = 7 + 2 + 5 + 2;
-   for (uint32_t sync_waits_submitted = 0; sync_waits_submitted < submit->wait_count;) {
-      terakan_bo_reference_writer_reset(
-         &queue->sync_bo_reference_writer, queue->sync_bo_references);
-      uint32_t sync_indirect_buffer_dwords = 0;
-
-      uint32_t sync_wait_index;
-      for (sync_wait_index = sync_waits_submitted; sync_wait_index < submit->wait_count;
-           ++sync_wait_index) {
-         struct vk_sync_wait const * const sync_wait_base = &submit->waits[sync_wait_index];
-         if (sync_wait_base->sync->type == &vk_sync_dummy_type) {
-            continue;
-         }
-         assert(sync_wait_base->sync->type == &terakan_sync_bo_wait_idle_type);
-
-         if (sync_indirect_buffer_max_dwords - sync_indirect_buffer_dwords <
-             sync_wait_reg_mem_and_mem_write_dwords) {
-            break;
-         }
-
-         struct terakan_sync_bo_wait_idle const * const sync_wait =
-            container_of(sync_wait_base->sync, struct terakan_sync_bo_wait_idle const, vk);
-
-         uint32_t const sync_wait_bo_reference_index = terakan_bo_reference_writer_add_reference(
-            &queue->sync_bo_reference_writer, sync_wait->bo, true, true,
-            TERAKAN_WINSYS_CS_BO_PRIORITY_FENCE_TRACE);
-         if (sync_wait_bo_reference_index == UINT32_MAX) {
-            break;
-         }
-
-         /* Await the semaphore in ME. */
-         queue->sync_indirect_buffer[sync_indirect_buffer_dwords++] =
-            PKT3(PKT3_WAIT_REG_MEM, 6 - 1, 0);
-         queue->sync_indirect_buffer[sync_indirect_buffer_dwords++] =
-            WAIT_REG_MEM_MEMORY | WAIT_REG_MEM_GEQUAL;
-         /* Lower address bits and endian swap. */
-         queue->sync_indirect_buffer[sync_indirect_buffer_dwords++] = 0;
-         /* Higher address bits. */
-         queue->sync_indirect_buffer[sync_indirect_buffer_dwords++] = 0;
-         /* Reference (>= 1). */
-         queue->sync_indirect_buffer[sync_indirect_buffer_dwords++] = 1;
-         /* Mask. */
-         queue->sync_indirect_buffer[sync_indirect_buffer_dwords++] = UINT32_MAX;
-         /* Polling interval. */
-         queue->sync_indirect_buffer[sync_indirect_buffer_dwords++] = 4;
-         /* Relocation. */
-         queue->sync_indirect_buffer[sync_indirect_buffer_dwords++] = PKT3(PKT3_NOP, 1 - 1, 0);
-         queue->sync_indirect_buffer[sync_indirect_buffer_dwords++] = sync_wait_bo_reference_index;
-
-         /* Reset the semaphore in ME. */
-         queue->sync_indirect_buffer[sync_indirect_buffer_dwords++] =
-            PKT3(PKT3_MEM_WRITE, 4 - 1, 0);
-         /* Lower address bits and endian swap. */
-         queue->sync_indirect_buffer[sync_indirect_buffer_dwords++] = 0;
-         /* Flags and higher address bits. */
-         queue->sync_indirect_buffer[sync_indirect_buffer_dwords++] = MEM_WRITE_32_BITS;
-         /* Data. */
-         queue->sync_indirect_buffer[sync_indirect_buffer_dwords++] = 1;
-         queue->sync_indirect_buffer[sync_indirect_buffer_dwords++] = 0;
-         /* Relocation. */
-         queue->sync_indirect_buffer[sync_indirect_buffer_dwords++] = PKT3(PKT3_NOP, 1 - 1, 0);
-         queue->sync_indirect_buffer[sync_indirect_buffer_dwords++] = sync_wait_bo_reference_index;
-
-         assert(sync_indirect_buffer_dwords <= sync_indirect_buffer_max_dwords);
-      }
-
-      if (sync_indirect_buffer_dwords != 0) {
-         /* Pad the GFX ring indirect buffer to a multiple of 8 dwords with NOPs. */
-         while ((sync_indirect_buffer_dwords & 7) != 0) {
-            queue->sync_indirect_buffer[sync_indirect_buffer_dwords++] = PKT_TYPE_S(2);
-         }
-         VkResult const sync_wait_submit_result = winsys->cs_fn->submit(
-            winsys, queue->ip_type, queue->sync_bo_reference_writer.reference_count,
-            queue->sync_bo_reference_writer.references, sync_indirect_buffer_dwords,
-            queue->sync_indirect_buffer, false);
-         if (sync_wait_submit_result != VK_SUCCESS) {
-            /* Lose the device regardless of the actual result for this specific command buffer
-             * because a part of the queue submission might have already been done, don't leave the
-             * device in an indeterminate state.
-             */
-            return vk_device_set_lost(
-               &queue->device->vk,
-               "Synchronization wait command buffer submission failed with result %s",
-               vk_Result_to_str(sync_wait_submit_result));
-         }
-      }
-
-      sync_waits_submitted = sync_wait_index;
-   }
+      container_of(device->vk.physical, struct terakan_physical_device const, vk)->winsys;
 
    /* Submit the command buffers. */
+
    /* TODO(Triang3l): Implement inheritance in secondary command buffers.
     *
     * Instead of writing dwords with the real register values and relocations to the secondary
@@ -164,7 +146,7 @@ terakan_queue_submit(struct vk_queue * const queue_base, struct vk_queue_submit 
     *   relative to the current dword can be stored, so that 0 will be the terminator.
     *
     * During queue submission, the secondary indirect buffer should be copied to a temporary
-    * indirect buffer in the queue (the same indirect buffer that is used for synchronization), and
+    * indirect buffer in the queue (take threaded submission in Mesa into account though), and
     * references to inherited BOs also need to be added to the submission.
     *
     * It must be guaranteed that during submission, there will be free space for all the attachment
@@ -187,6 +169,7 @@ terakan_queue_submit(struct vk_queue * const queue_base, struct vk_queue_submit 
     * created not only by substitution tokens for relocations, but also by tokens that will be
     * replaced with virtual addresses.
     */
+
    for (uint32_t command_buffer_index = 0; command_buffer_index < submit->command_buffer_count;
         ++command_buffer_index) {
       struct terakan_command_buffer const * const command_buffer = container_of(
@@ -214,109 +197,198 @@ terakan_queue_submit(struct vk_queue * const queue_base, struct vk_queue_submit 
             command_buffer_indirect_buffer->indirect_buffer_size_dwords,
             command_buffer_indirect_buffer->indirect_buffer, false);
          if (command_buffer_submit_result != VK_SUCCESS) {
-            /* Lose the device regardless of the actual result for this specific command buffer
-             * because a part of the queue submission might have already been done, don't leave the
-             * device in an indeterminate state.
+            /* Lose the device as the submission might have been done partially already, don't leave
+             * it in an indeterminate state.
              */
-            return vk_device_set_lost(
-               &queue->device->vk, "Command buffer submission failed with result %s",
+            vk_device_set_lost(
+               &device->vk, "Command buffer submission failed with result %s",
                vk_Result_to_str(command_buffer_submit_result));
+            mtx_lock(&device->completion_mutex);
+            device->completion_lost = true;
+            mtx_unlock(&device->completion_mutex);
+            cnd_broadcast(&device->completion_condition);
+            return VK_ERROR_DEVICE_LOST;
          }
       }
    }
 
-   /* Submit synchronization signals. */
-   uint32_t const sync_event_write_eop_dwords = 6 + 2;
-   for (uint32_t sync_signals_submitted = 0; sync_signals_submitted < submit->signal_count;) {
-      terakan_bo_reference_writer_reset(
-         &queue->sync_bo_reference_writer, queue->sync_bo_references);
-      uint32_t sync_indirect_buffer_dwords = 0;
+   /* If there are semaphores to signal from this submission, signal the fence BO to await the
+    * completion from the completion thread. */
 
-      uint32_t sync_signal_index;
-      for (sync_signal_index = sync_signals_submitted; sync_signal_index < submit->signal_count;
-           ++sync_signal_index) {
-         struct vk_sync_signal const * const sync_signal_base = &submit->signals[sync_signal_index];
-         if (sync_signal_base->sync->type == &vk_sync_dummy_type) {
-            continue;
-         }
-         assert(sync_signal_base->sync->type == &terakan_sync_bo_wait_idle_type);
-
-         if (sync_indirect_buffer_max_dwords - sync_indirect_buffer_dwords <
-             sync_event_write_eop_dwords) {
-            break;
-         }
-
-         struct terakan_sync_bo_wait_idle const * const sync_signal =
-            container_of(sync_signal_base->sync, struct terakan_sync_bo_wait_idle const, vk);
-
-         uint32_t const sync_signal_bo_reference_index = terakan_bo_reference_writer_add_reference(
-            &queue->sync_bo_reference_writer, sync_signal->bo, false, true,
-            TERAKAN_WINSYS_CS_BO_PRIORITY_FENCE_TRACE);
-         if (sync_signal_bo_reference_index == UINT32_MAX) {
-            break;
-         }
-
-         queue->sync_indirect_buffer[sync_indirect_buffer_dwords++] =
-            PKT3(PKT3_EVENT_WRITE_EOP, 5 - 1, 0);
-         /* TODO(Triang3l): Correct event type. */
-         queue->sync_indirect_buffer[sync_indirect_buffer_dwords++] =
-            EVENT_INDEX(5) | EVENT_TYPE(EVENT_TYPE_CACHE_FLUSH_AND_INV_TS_EVENT);
-         /* Lower address bits. */
-         queue->sync_indirect_buffer[sync_indirect_buffer_dwords++] = 0;
-         /* Data selection, interrupt selection, and higher address bits. */
-         queue->sync_indirect_buffer[sync_indirect_buffer_dwords++] =
-            EOP_DATA_SEL(EOP_DATA_SEL_VALUE_32BIT);
-         /* Data. */
-         queue->sync_indirect_buffer[sync_indirect_buffer_dwords++] = 1;
-         queue->sync_indirect_buffer[sync_indirect_buffer_dwords++] = 0;
-         /* Relocation. */
-         queue->sync_indirect_buffer[sync_indirect_buffer_dwords++] = PKT3(PKT3_NOP, 1 - 1, 0);
-         queue->sync_indirect_buffer[sync_indirect_buffer_dwords++] =
-            sync_signal_bo_reference_index;
-
-         assert(sync_indirect_buffer_dwords <= sync_indirect_buffer_max_dwords);
+   /* Construct the list of the timeline semaphores that need to be signaled. */
+   struct list_head completion_signals;
+   list_inithead(&completion_signals);
+   for (uint32_t submit_signal_index = 0; submit_signal_index < submit->signal_count;
+        ++submit_signal_index) {
+      struct vk_sync_signal const * const submit_signal = &submit->signals[submit_signal_index];
+      if (submit_signal->sync->type == &vk_sync_dummy_type) {
+         continue;
       }
-
-      if (sync_indirect_buffer_dwords != 0) {
-         /* Pad the GFX ring indirect buffer to a multiple of 8 dwords with NOPs. */
-         while ((sync_indirect_buffer_dwords & 7) != 0) {
-            queue->sync_indirect_buffer[sync_indirect_buffer_dwords++] = PKT_TYPE_S(2);
-         }
-         VkResult const sync_wait_submit_result = winsys->cs_fn->submit(
-            winsys, queue->ip_type, queue->sync_bo_reference_writer.reference_count,
-            queue->sync_bo_reference_writer.references, sync_indirect_buffer_dwords,
-            queue->sync_indirect_buffer, false);
-         if (sync_wait_submit_result != VK_SUCCESS) {
-            /* Lose the device regardless of the actual result for this specific command buffer
-             * because a part of the queue submission might have already been done, don't leave the
-             * device in an indeterminate state.
+      assert(submit_signal->sync->type == &terakan_sync_completion_type);
+      struct terakan_queue_completion_signal * completion_signal;
+      mtx_lock(&device->completion_mutex);
+      if (!list_is_empty(&queue->completion_signals_free)) {
+         completion_signal = list_first_entry(
+            &queue->completion_signals_free, struct terakan_queue_completion_signal, link);
+         list_del(&completion_signal->link);
+         mtx_unlock(&device->completion_mutex);
+      } else {
+         mtx_unlock(&device->completion_mutex);
+         completion_signal = vk_alloc(
+            &device->vk.alloc, sizeof(*completion_signal), alignof(*completion_signal),
+            VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
+         if (completion_signal == NULL) {
+            /* Lose the device as the submission has been done partially already, don't leave it in
+             * an indeterminate state.
              */
-            return vk_device_set_lost(
-               &queue->device->vk,
-               "Synchronization wait command buffer submission failed with result %s",
-               vk_Result_to_str(sync_wait_submit_result));
-         }
-
-         /* Wake up waits-before-signals after the successful submission of signals. */
-         for (uint32_t sync_wake_signal_index = sync_signals_submitted;
-              sync_wake_signal_index < sync_signal_index; ++sync_wake_signal_index) {
-            struct vk_sync_signal const * const sync_wake_signal_base =
-               &submit->signals[sync_wake_signal_index];
-            if (sync_wake_signal_base->sync->type == &vk_sync_dummy_type) {
-               continue;
-            }
-            assert(sync_wake_signal_base->sync->type == &terakan_sync_bo_wait_idle_type);
-            struct terakan_sync_bo_wait_idle * const sync_wake_signal =
-               container_of(sync_wake_signal_base->sync, struct terakan_sync_bo_wait_idle, vk);
-            mtx_lock(&sync_wake_signal->scheduled_mutex);
-            sync_wake_signal->scheduled = true;
-            mtx_unlock(&sync_wake_signal->scheduled_mutex);
-            cnd_broadcast(&sync_wake_signal->scheduled_condition);
+            vk_device_set_lost(
+               &device->vk, "Failed to allocate memory for a submission completion signal");
+            mtx_lock(&device->completion_mutex);
+            list_splice(&completion_signals, &queue->completion_signals_free);
+            device->completion_lost = true;
+            mtx_unlock(&device->completion_mutex);
+            cnd_broadcast(&device->completion_condition);
+            return VK_ERROR_DEVICE_LOST;
          }
       }
-
-      sync_signals_submitted = sync_signal_index;
+      completion_signal->sync =
+         container_of(submit_signal->sync, struct terakan_sync_completion, vk);
+      completion_signal->value = submit_signal->signal_value;
+      list_add(&completion_signal->link, &completion_signals);
    }
+   if (list_is_empty(&completion_signals)) {
+      /* Nothing to signal. */
+      return VK_SUCCESS;
+   }
+
+   /* Set up the fence BO. */
+   struct terakan_queue_completion_submission * completion_submission;
+   mtx_lock(&device->completion_mutex);
+   if (!list_is_empty(&queue->completion_submissions_free)) {
+      completion_submission = list_first_entry(
+         &queue->completion_submissions_free, struct terakan_queue_completion_submission, link);
+      list_del(&completion_submission->link);
+      mtx_unlock(&device->completion_mutex);
+   } else {
+      mtx_unlock(&device->completion_mutex);
+      completion_submission = vk_alloc(
+         &device->vk.alloc, sizeof(*completion_submission), alignof(*completion_submission),
+         VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
+      if (completion_submission == NULL) {
+         /* Lose the device as the submission has been done partially already, don't leave it in an
+          * indeterminate state.
+          */
+         vk_device_set_lost(
+            &device->vk, "Failed to allocate memory for a submission completion submission");
+         mtx_lock(&device->completion_mutex);
+         list_splice(&completion_signals, &queue->completion_signals_free);
+         device->completion_lost = true;
+         mtx_unlock(&device->completion_mutex);
+         cnd_broadcast(&device->completion_condition);
+         return VK_ERROR_DEVICE_LOST;
+      }
+      completion_submission->bo = winsys->bo_fn->allocate_device_memory(
+         winsys, sizeof(uint64_t), sizeof(uint64_t),
+         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+      if (completion_submission->bo == NULL) {
+         vk_device_set_lost(
+            &device->vk, "Failed to create the submission completion fence buffer object");
+         vk_free(&device->vk.alloc, completion_submission);
+         mtx_lock(&device->completion_mutex);
+         list_splice(&completion_signals, &queue->completion_signals_free);
+         device->completion_lost = true;
+         mtx_unlock(&device->completion_mutex);
+         cnd_broadcast(&device->completion_condition);
+         return VK_ERROR_DEVICE_LOST;
+      }
+      completion_submission->bo_mapping = winsys->bo_fn->map(completion_submission->bo);
+      if (completion_submission->bo_mapping == NULL) {
+         vk_device_set_lost(
+            &device->vk, "Failed to map the submission completion fence buffer object");
+         winsys->bo_fn->free(completion_submission->bo);
+         vk_free(&device->vk.alloc, completion_submission);
+         mtx_lock(&device->completion_mutex);
+         list_splice(&completion_signals, &queue->completion_signals_free);
+         device->completion_lost = true;
+         mtx_unlock(&device->completion_mutex);
+         cnd_broadcast(&device->completion_condition);
+         return VK_ERROR_DEVICE_LOST;
+      }
+      *completion_submission->bo_mapping = queue->next_completion_bo_data - 1;
+   }
+   completion_submission->expected_bo_data = queue->next_completion_bo_data;
+   list_replace(&completion_signals, &completion_submission->signals);
+
+   /* Submit a signal to the fence BO, making that BO not idle until the GPU has completed the
+    * submission.
+    */
+   void * const signal_bo_reference = alloca(winsys->gpu_info.cs_bo_reference_size);
+   winsys->cs_fn->create_bo_reference(
+      signal_bo_reference, completion_submission->bo, false, true,
+      TERAKAN_WINSYS_CS_BO_PRIORITY_FENCE_TRACE);
+   uint32_t signal_indirect_buffer[8] = {
+      [0] = PKT3(PKT3_EVENT_WRITE_EOP, 5 - 1, 0),
+      /* TODO(Triang3l): Correct event type. */
+      [1] = EVENT_INDEX(5) | EVENT_TYPE(EVENT_TYPE_CACHE_FLUSH_AND_INV_TS_EVENT),
+      /* Lower address bits. */
+      [2] = 0,
+      /* Data selection, interrupt selection, and higher address bits. */
+      [3] = EOP_DATA_SEL(EOP_DATA_SEL_VALUE_64BIT),
+      /* [4], [5] - data (will be written with memcpy for correct endianness, the GPU write is
+       * little-endian).
+       */
+      /* Relocation. */
+      [6] = PKT3(PKT3_NOP, 1 - 1, 0),
+      [7] = 0,
+      /* GFX command buffers must be padded to a multiple of 8 dwords with NOPs, but this indirect
+       * buffer is exactly 8 dwords long.
+       */
+   };
+   memcpy(
+      &signal_indirect_buffer[4], &queue->next_completion_bo_data,
+      sizeof(queue->next_completion_bo_data));
+   ++queue->next_completion_bo_data;
+   VkResult const signal_submit_result = winsys->cs_fn->submit(
+      winsys, queue->ip_type, 1, signal_bo_reference, ARRAY_SIZE(signal_indirect_buffer),
+      signal_indirect_buffer, false);
+   if (signal_submit_result != VK_SUCCESS) {
+      /* Lose the device regardless of the actual result for this specific command buffer because a
+       * part of the queue submission might have already been done, don't leave the device in an
+       * indeterminate state.
+       */
+      vk_device_set_lost(
+         &device->vk, "Synchronization signal command buffer submission failed with result %s",
+         vk_Result_to_str(signal_submit_result));
+      mtx_lock(&device->completion_mutex);
+      list_splice(&completion_submission->signals, &queue->completion_signals_free);
+      list_add(&completion_submission->link, &queue->completion_submissions_free);
+      device->completion_lost = true;
+      mtx_unlock(&device->completion_mutex);
+      cnd_broadcast(&device->completion_condition);
+      return VK_ERROR_DEVICE_LOST;
+   }
+
+   /* Update the pending values of the signaled semaphores once the kernel has received the
+    * submission, make the submission completion awaiting thread await the completion of the new
+    * submission, and wake pending signal waiting threads and the submission completion awaiting
+    * thread.
+    */
+   mtx_lock(&device->completion_mutex);
+   for (uint32_t submit_signal_index = 0; submit_signal_index < submit->signal_count;
+        ++submit_signal_index) {
+      struct vk_sync_signal const * const submit_signal = &submit->signals[submit_signal_index];
+      if (submit_signal->sync->type == &vk_sync_dummy_type) {
+         continue;
+      }
+      assert(submit_signal->sync->type == &terakan_sync_completion_type);
+      struct terakan_sync_completion * const submit_signal_sync =
+         container_of(submit_signal->sync, struct terakan_sync_completion, vk);
+      assert(submit_signal_sync->pending_value < submit_signal->signal_value);
+      submit_signal_sync->pending_value = submit_signal->signal_value;
+   }
+   list_addtail(&completion_submission->link, &queue->completion_submissions_pending);
+   mtx_unlock(&device->completion_mutex);
+   cnd_broadcast(&device->completion_condition);
 
    return VK_SUCCESS;
 }
@@ -324,11 +396,41 @@ terakan_queue_submit(struct vk_queue * const queue_base, struct vk_queue_submit 
 void
 terakan_queue_destroy(struct terakan_queue * const queue)
 {
-   vk_free(&queue->device->vk.alloc, queue->sync_bo_references);
+   struct terakan_device * const device =
+      container_of(queue->vk.base.device, struct terakan_device, vk);
+   struct terakan_winsys_bo_fn const * const bo_fn =
+      container_of(device->vk.physical, struct terakan_physical_device const, vk)->winsys->bo_fn;
+
+   mtx_lock(&device->completion_mutex);
+   queue->shutdown_competion_thread = true;
+   mtx_unlock(&device->completion_mutex);
+   cnd_broadcast(&device->completion_condition);
+
+   thrd_join(queue->completion_thread, NULL);
+
+   struct terakan_queue_completion_submission * completion_submission, * next_submission;
+   struct terakan_queue_completion_signal * completion_signal, * next_signal;
+   LIST_FOR_EACH_ENTRY_SAFE(
+      completion_submission, next_submission, &queue->completion_submissions_pending, link) {
+      LIST_FOR_EACH_ENTRY_SAFE(
+         completion_signal, next_signal, &completion_submission->signals, link) {
+         vk_free(&device->vk.alloc, completion_signal);
+      }
+      bo_fn->free(completion_submission->bo);
+      vk_free(&device->vk.alloc, completion_submission);
+   }
+   LIST_FOR_EACH_ENTRY_SAFE(
+      completion_submission, next_submission, &queue->completion_submissions_free, link) {
+      bo_fn->free(completion_submission->bo);
+      vk_free(&device->vk.alloc, completion_submission);
+   }
+   LIST_FOR_EACH_ENTRY_SAFE(completion_signal, next_signal, &queue->completion_signals_free, link) {
+      vk_free(&device->vk.alloc, completion_signal);
+   }
 
    vk_queue_finish(&queue->vk);
 
-   vk_free(&queue->device->vk.alloc, queue);
+   vk_free(&device->vk.alloc, queue);
 }
 
 VkResult
@@ -350,23 +452,26 @@ terakan_queue_create(
       goto fail_alloc;
    }
 
-   queue->device = device;
-
    queue->ip_type = AMD_IP_GFX;
 
-   struct terakan_physical_device const * const physical_device =
-      container_of(device->vk.physical, struct terakan_physical_device const, vk);
+   list_inithead(&queue->completion_signals_free);
+   list_inithead(&queue->completion_submissions_free);
 
-   queue->sync_bo_references = vk_alloc(
-      &device->vk.alloc,
-      physical_device->winsys->gpu_info.cs_bo_reference_size *
-      TERAKAN_BO_REFERENCE_WRITER_REFERENCE_COUNT,
-      physical_device->winsys->gpu_info.cs_bo_reference_alignment,
-      VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
-   if (queue->sync_bo_references == NULL) {
-      result = vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
+   list_inithead(&queue->completion_submissions_pending);
+
+   queue->shutdown_competion_thread = false;
+
+   if (thrd_create(&queue->completion_thread, terakan_queue_completion_thread_func, queue) !=
+       thrd_success) {
+      result = vk_errorf(
+         device, VK_ERROR_OUT_OF_HOST_MEMORY, "Failed to create the submission completion thread");
       goto fail_queue;
    }
+
+   /* Start from 1 to distinguish from the zero that might have potentially been used to initialize
+    * the contents of a new BO.
+    */
+   queue->next_completion_bo_data = 1;
 
    queue->vk.driver_submit = terakan_queue_submit;
 

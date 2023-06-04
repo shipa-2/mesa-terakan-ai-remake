@@ -92,17 +92,14 @@ struct terakan_winsys_bo_fn {
    void * (* map)(struct terakan_winsys_bo * bo);
    void (* unmap)(struct terakan_winsys_bo * bo);
 
-   /* Returns:
-    *    * 0 if the buffer is not used by the GPU anymore.
-    *    * -EBUSY if the buffer is still potentially used by the GPU (only if the timeout is not
-    *      OS_TIMEOUT_INFINITE).
-    *    * Other value in case of an error.
+   /* Returns whether the wait was successful.
     * Waiting can be performed from any thread, however, the behavior is undefined while command
     * submissions referencing this BO are being performed - it must be ensured externally that
     * waiting is done after the submission whose completion needs to be awaited and before any other
     * submissions referencing this buffer.
+    * In case of a GPU hang, must return in finite time.
     */
-   int (* wait_idle)(struct terakan_winsys_bo * bo, uint64_t abs_timeout_ns);
+   bool (* wait_idle)(struct terakan_winsys_bo * bo);
 
    /* If the buffer is currently mapped, freeing it implicitly unmaps it. */
    void (* free)(struct terakan_winsys_bo * bo);

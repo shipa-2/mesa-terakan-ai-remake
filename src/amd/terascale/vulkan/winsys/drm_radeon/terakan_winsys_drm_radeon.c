@@ -26,12 +26,11 @@
  * IN THE SOFTWARE.
  */
 
-#include "terakan_sync_bo_wait_idle.h"
+#include "terakan_sync_completion.h"
 #include "terakan_winsys_drm_radeon.h"
 
 #include "util/macros.h"
 #include "util/u_memory.h"
-#include "vk_drm_syncobj.h"
 
 #include <assert.h>
 #include <radeon_drm.h>
@@ -204,8 +203,10 @@ terakan_winsys_drm_radeon_create(int const fd)
    /* Initialize synchronization. */
    size_t sync_type_count = 0;
    assert(sync_type_count < ARRAY_SIZE(winsys->sync_types));
-   winsys->sync_types[sync_type_count++] = &terakan_sync_bo_wait_idle_type;
-   /* TODO(Triang3l): Timeline semaphores. */
+   winsys->sync_types[sync_type_count++] = &terakan_sync_completion_type;
+   winsys->sync_type_binary = vk_sync_binary_get_type(&terakan_sync_completion_type);
+   assert(sync_type_count < ARRAY_SIZE(winsys->sync_types));
+   winsys->sync_types[sync_type_count++] = &winsys->sync_type_binary.sync;
    assert(sync_type_count < ARRAY_SIZE(winsys->sync_types));
    winsys->sync_types[sync_type_count++] = NULL;
 

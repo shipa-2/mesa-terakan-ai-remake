@@ -26,10 +26,25 @@
 
 #include "terakan_queue.h"
 
+#include "c11/threads.h"
 #include "vk_device.h"
+
+#include <stdbool.h>
 
 struct terakan_device {
    struct vk_device vk;
+
+   /* Mutex and condition variable for terakan_sync_completion timeline semaphore value updates and
+    * controlling submission completion waits.
+    */
+   mtx_t completion_mutex;
+   cnd_t completion_condition;
+
+   /* Whether awaiting submission completion isn't possible anymore, as a result of device
+    * destruction or submission-related device loss.
+    * Protected by completion_mutex, broadcast completion_condition when setting.
+    */
+   bool completion_lost;
 
    /* Each queue is optional, if requested by the application. */
    struct terakan_queue * queue_graphics;

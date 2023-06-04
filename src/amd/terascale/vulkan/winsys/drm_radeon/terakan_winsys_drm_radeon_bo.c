@@ -30,7 +30,6 @@
 
 #include "util/macros.h"
 #include "util/os_mman.h"
-#include "util/os_time.h"
 #include "util/u_memory.h"
 
 #include <assert.h>
@@ -103,51 +102,21 @@ terakan_winsys_drm_radeon_bo_unmap(struct terakan_winsys_bo * const bo_base)
    bo->mapping = NULL;
 }
 
-static int
-terakan_winsys_drm_radeon_bo_wait_idle(
-   struct terakan_winsys_bo * const bo_base, uint64_t const abs_timeout_ns)
+static bool
+terakan_winsys_drm_radeon_bo_wait_idle(struct terakan_winsys_bo * const bo_base)
 {
    struct terakan_winsys_drm_radeon_bo const * const bo =
       container_of(bo_base, struct terakan_winsys_drm_radeon_bo const, base);
    struct terakan_winsys_drm_radeon const * const winsys =
       container_of(bo->base.winsys, struct terakan_winsys_drm_radeon const, base);
 
-   if (abs_timeout_ns == 0) {
-      struct drm_radeon_gem_busy gem_busy_arguments = {
-         .handle = bo->handle,
-      };
-      return drmCommandWriteRead(
-         winsys->fd, DRM_RADEON_GEM_BUSY, &gem_busy_arguments, sizeof(gem_busy_arguments));
-   }
-
-   if (abs_timeout_ns == OS_TIMEOUT_INFINITE) {
-      struct drm_radeon_gem_wait_idle gem_wait_idle_arguments = {
-         .handle = bo->handle,
-      };
-      int gem_wait_idle_result;
-      do {
-         gem_wait_idle_result = drmCommandWrite(
-            winsys->fd, DRM_RADEON_GEM_WAIT_IDLE, &gem_wait_idle_arguments,
-            sizeof(gem_wait_idle_arguments));
-      } while (gem_wait_idle_result == -EBUSY);
-      return gem_wait_idle_result;
-   }
-
-   /* Other timeouts need to be emulated with a loop. */
-   while (true) {
-      struct drm_radeon_gem_busy gem_busy_arguments = {
-         .handle = bo->handle,
-      };
-      int const gem_busy_result = drmCommandWriteRead(
-         winsys->fd, DRM_RADEON_GEM_BUSY, &gem_busy_arguments, sizeof(gem_busy_arguments));
-      if (gem_busy_result != -EBUSY) {
-         return gem_busy_result;
-      }
-      if (os_time_get_nano() >= (int64_t)abs_timeout_ns) {
-         return -EBUSY;
-      }
-      os_time_sleep(10);
-   }
+   struct drm_radeon_gem_wait_idle gem_wait_idle_arguments = {
+      .handle = bo->handle,
+   };
+   /* Returns -EBUSY in finite time in case of a hang (30-second timeout in Linux Radeon 2.50.0). */
+   return drmCommandWrite(
+      winsys->fd, DRM_RADEON_GEM_WAIT_IDLE, &gem_wait_idle_arguments,
+      sizeof(gem_wait_idle_arguments)) == 0;
 }
 
 static void

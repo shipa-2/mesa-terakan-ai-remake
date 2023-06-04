@@ -32,6 +32,7 @@
 #include "../terakan_winsys.h"
 
 #include "vk_sync.h"
+#include "vk_sync_binary.h"
 
 #include <stddef.h>
 #include <radeon_surface.h>
@@ -64,7 +65,8 @@ struct terakan_winsys_drm_radeon {
 
    struct radeon_surface_manager * surface_manager;
 
-   struct vk_sync_type const * sync_types[2];
+   struct vk_sync_binary_type sync_type_binary;
+   struct vk_sync_type const * sync_types[3];
 };
 
 struct terakan_winsys * terakan_winsys_drm_radeon_create(int fd);

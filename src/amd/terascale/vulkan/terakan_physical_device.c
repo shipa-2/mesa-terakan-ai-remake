@@ -73,6 +73,7 @@ terakan_physical_device_get_supported_extensions(
    extensions_out->EXT_provoking_vertex = true;
    extensions_out->KHR_format_feature_flags2 = true;
    extensions_out->KHR_map_memory2 = true;
+   extensions_out->KHR_timeline_semaphore = true;
 
 #if !defined(_WIN32)
    extensions_out->EXT_pci_bus_info = true;
@@ -106,6 +107,9 @@ terakan_physical_device_get_supported_features(struct vk_features * const featur
    /* VK_EXT_provoking_vertex */
    features_out->provokingVertexLast = true;
    features_out->transformFeedbackPreservesProvokingVertex = true;
+
+   /* VK_KHR_timeline_semaphore */
+   features_out->timelineSemaphore = true;
 }
 
 static void
@@ -491,6 +495,12 @@ terakan_GetPhysicalDeviceProperties2(
             (VkPhysicalDeviceProvokingVertexPropertiesEXT *)ext;
          properties->provokingVertexModePerPipeline = VK_TRUE;
          properties->transformFeedbackPreservesTriangleFanProvokingVertex = VK_TRUE;
+      } break;
+
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_PROPERTIES: {
+         VkPhysicalDeviceTimelineSemaphoreProperties * const properties =
+            (VkPhysicalDeviceTimelineSemaphoreProperties *)ext;
+         properties->maxTimelineSemaphoreValueDifference = UINT64_MAX;
       } break;
 
       default:

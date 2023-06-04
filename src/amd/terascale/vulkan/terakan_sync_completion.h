@@ -21,28 +21,24 @@
  * IN THE SOFTWARE.
  */
 
-#ifndef TERAKAN_SYNC_BO_WAIT_IDLE_H
-#define TERAKAN_SYNC_BO_WAIT_IDLE_H
-
-#include "winsys/terakan_winsys.h"
-
-#include "c11/threads.h"
 #include "vk_sync.h"
 
-#include <stdbool.h>
 #include <stdint.h>
 
-struct terakan_sync_bo_wait_idle {
+#ifndef TERAKAN_SYNC_COMPLETION_H
+#define TERAKAN_SYNC_COMPLETION_H
+
+struct terakan_sync_completion {
    struct vk_sync vk;
 
-   struct terakan_winsys_bo * bo;
-   uint32_t volatile * bo_mapping;
-
-   mtx_t scheduled_mutex;
-   cnd_t scheduled_condition;
-   bool scheduled;
+   /* Values protected by completion_mutex of the device, with completion_condition broadcast on
+    * update, but p_atomic_read can be used to quickly get the current value without locking the
+    * mutex if no waiting is needed, thus p_atomic_set must be used for updating.
+    */
+   uint64_t pending_value;
+   uint64_t current_value;
 };
 
-extern struct vk_sync_type const terakan_sync_bo_wait_idle_type;
+extern struct vk_sync_type const terakan_sync_completion_type;
 
-#endif /* TERAKAN_SYNC_BO_WAIT_IDLE_H */
+#endif /* TERAKAN_SYNC_COMPLETION_H */

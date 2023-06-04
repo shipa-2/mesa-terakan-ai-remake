@@ -25,13 +25,36 @@
 #define TERAKAN_QUEUE_H
 
 #include "terakan_command_buffer.h"
+#include "terakan_sync_completion.h"
+#include "winsys/terakan_winsys.h"
 
+#include "c11/threads.h"
+#include "util/list.h"
 #include "vk_queue.h"
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
 struct terakan_device;
+
+struct terakan_queue_completion_signal {
+   struct list_head link;
+
+   struct terakan_sync_completion * sync;
+   uint64_t value;
+};
+
+struct terakan_queue_completion_submission {
+   struct list_head link;
+
+   struct terakan_winsys_bo * bo;
+   uint64_t volatile * bo_mapping;
+
+   uint64_t expected_bo_data;
+
+   struct list_head signals;
+};
 
 struct terakan_queue {
    struct vk_queue vk;
@@ -40,11 +63,28 @@ struct terakan_queue {
 
    enum amd_ip_type ip_type;
 
-   void * sync_bo_references;
+   /* Completion free lists protected by completion_mutex of the device. */
+   struct list_head completion_signals_free;
+   struct list_head completion_submissions_free;
 
-   /* The last so these don't leave a lot of space between other fields. */
-   struct terakan_bo_reference_writer sync_bo_reference_writer;
-   uint32_t sync_indirect_buffer[TERAKAN_MAX_INDIRECT_BUFFER_SIZE_DWORDS];
+   /* Protected by completion_mutex of the device, broadcast completion_condition after adding. */
+   struct list_head completion_submissions_pending;
+
+   /* Protected by completion_mutex of the device, broadcast completion_condition after setting. */
+   bool shutdown_competion_thread;
+
+   /* Thread awaiting completion of submissions that perform any signals, to signal timeline
+    * semaphores, and let dependent submissions and CPU threads continue.
+    * Note that GPU waits are implemented by deferring the dependent submissions on the CPU.
+    * WAIT_REG_MEM doing wait-before-signal must never be submitted, because it can hang the GPU if,
+    * for instance, the process that is supposed to do the signal is killed.
+    */
+   thrd_t completion_thread;
+
+   /* Accessed by vkQueueSubmit, the next value to write from the GPU to a completion BO, used for
+    * verifying that the submission has been executed successfully.
+    */
+   uint64_t next_completion_bo_data;
 };
 
 VK_DEFINE_HANDLE_CASTS(terakan_queue, vk.base, VkQueue, VK_OBJECT_TYPE_QUEUE)
