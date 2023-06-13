@@ -65,7 +65,8 @@
 #define EG_PKT3_INDEX_BASE                     0x26
 #define PKT3_DRAW_INDEX_2                      0x27
 #define PKT3_CONTEXT_CONTROL                   0x28
-#define PKT3_DRAW_INDEX_IMMD_BE                0x29
+#define PKT3_DRAW_INDEX_IMMD_BE                0x29 /* removed on evergreen*/
+#define EG_PKT3_DRAW_INDEX_OFFSET              0x29 /* >= evergreen*/
 #define PKT3_INDEX_TYPE                        0x2A
 #define     VGT_INDEX_16                   0
 #define     VGT_INDEX_32                   1
