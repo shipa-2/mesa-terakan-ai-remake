@@ -318,9 +318,14 @@ terakan_gfx_command_writer_new_indirect_buffer(
    terakan_bo_reference_writer_reset(&command_writer->base.bo_reference_writer,
                                      command_writer->indirect_buffer->bo_references);
 
-   /* Re-emit the state from the previous indirect buffer. */
    command_writer->is_beginning_indirect_buffer = true;
-   terakan_hw_state_draw_emit_all(command_writer);
+
+   if (command_writer->indirect_buffer_ever_begun) {
+      /* Re-emit the state from the previous indirect buffer. */
+      terakan_hw_state_draw_emit_all(command_writer);
+   }
+   command_writer->indirect_buffer_ever_begun = true;
+
    command_writer->is_beginning_indirect_buffer = false;
 
    return !vk_command_buffer_has_error(&command_writer->base.command_buffer->vk);
@@ -417,6 +422,8 @@ terakan_BeginCommandBuffer(VkCommandBuffer const commandBuffer,
    }
 
    command_buffer->command_writer.gfx->base.command_buffer = command_buffer;
+
+   command_buffer->command_writer.gfx->indirect_buffer_ever_begun = false;
 
    /* The first emission will request the first indirect buffer. */
    command_buffer->command_writer.gfx->is_beginning_indirect_buffer = false;

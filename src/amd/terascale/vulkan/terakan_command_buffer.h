@@ -167,6 +167,8 @@ struct terakan_gfx_command_writer {
 
    struct terakan_command_buffer_submission_indirect_buffer * indirect_buffer;
 
+   bool indirect_buffer_ever_begun;
+
    bool is_beginning_indirect_buffer;
 
    struct terakan_hw_state_draw hw_state_draw;
