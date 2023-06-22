@@ -104,6 +104,13 @@ struct terakan_winsys_bo_fn {
    /* If the buffer is currently mapped, freeing it implicitly unmaps it. */
    void (*free)(struct terakan_winsys_bo * bo);
 
+   /* For host-visible device-local memory, it's assumed that the kernel driver can evict
+    * allocations to the GART automatically, and that host-visible device-local memory should be
+    * preferred over copying to non-host-visible memory on the GPU if the CPU writes the data
+    * frequently, as long as each submission doesn't reference too much host-visible device-local
+    * memory. Falling back to trying HOST_VISIBLE alone if a HOST_VISIBLE | DEVICE_LOCAL allocation
+    * attempt fails is also not necessary.
+    */
    struct terakan_winsys_bo * (*allocate_device_memory)(struct terakan_winsys * winsys,
                                                         VkDeviceSize size, VkDeviceSize alignment,
                                                         VkMemoryPropertyFlags flags);
