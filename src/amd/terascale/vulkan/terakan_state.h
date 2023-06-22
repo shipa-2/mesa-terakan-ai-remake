@@ -101,7 +101,7 @@ struct terakan_state_draw {
    struct terakan_color_meta_descriptor cb_color_meta[TERAKAN_LIMITS_HW_COLOR_MRT_COUNT];
 };
 
-struct terakan_command_writer;
+struct terakan_gfx_command_writer;
 
 /* May be called after internal draws or while updating dependencies even if the state item has
  * never been written yet.
@@ -136,7 +136,7 @@ terakan_state_draw_replace_fields(struct terakan_state_draw * const state,
    terakan_state_draw_written(state, state_index);
 }
 
-void terakan_state_draw_apply_pending(struct terakan_command_writer * command_writer);
+void terakan_state_draw_apply_pending(struct terakan_gfx_command_writer * command_writer);
 
 void terakan_state_draw_reset(struct terakan_state_draw * state);
 

@@ -136,14 +136,16 @@ struct terakan_command_buffer_submission_secondary_execution {
    struct terakan_command_buffer_submission_indirect_buffer const * indirect_buffer;
 };
 
-struct terakan_command_writer;
+struct terakan_gfx_command_writer;
 
 struct terakan_command_buffer {
    struct vk_command_buffer vk;
 
    struct list_head submissions;
 
-   struct terakan_command_writer * command_writer;
+   union {
+      struct terakan_gfx_command_writer * gfx;
+   } command_writer;
 };
 
 VK_DEFINE_HANDLE_CASTS(terakan_command_buffer, vk.base, VkCommandBuffer,
@@ -157,9 +159,13 @@ struct terakan_command_writer {
 
    struct terakan_command_buffer * command_buffer;
 
-   struct terakan_command_buffer_submission_indirect_buffer * indirect_buffer;
-
    struct terakan_bo_reference_writer bo_reference_writer;
+};
+
+struct terakan_gfx_command_writer {
+   struct terakan_command_writer base;
+
+   struct terakan_command_buffer_submission_indirect_buffer * indirect_buffer;
 
    bool is_beginning_indirect_buffer;
 
@@ -172,17 +178,17 @@ struct terakan_command_writer {
  * Allocates space for `packet_dwords`, and if relocations are needed, `relocation_packet_dwords`,
  * and assumes that the application will write them all.
  * Also ensures that `bo_count` calls to `terakan_bo_reference_writer_add_reference` for
- * `terakan_command_writer::bo_reference_writer` will succeed (regardless of which BOs are
+ * `terakan_gfx_command_writer::bo_reference_writer` will succeed (regardless of which BOs are
  * specified).
  * Switches to the next indirect buffer and reapplies the state if needed.
  * Returns a pointer to the packet dwords, or NULL if failed to allocate (the result must be
  * checked).
  * The returned BO reference allocation is valid within the current command buffer recording until
- * the next `terakan_command_writer_emit` call for it.
+ * the next `terakan_gfx_command_writer_emit` call for it.
  */
-uint32_t * terakan_command_writer_emit(struct terakan_command_writer * command_writer,
-                                       uint32_t packet_dwords, uint32_t bo_count,
-                                       uint32_t relocation_packet_dwords);
+uint32_t * terakan_gfx_command_writer_emit(struct terakan_gfx_command_writer * command_writer,
+                                           uint32_t packet_dwords, uint32_t bo_count,
+                                           uint32_t relocation_packet_dwords);
 
 struct terakan_command_pool {
    struct vk_command_pool vk;

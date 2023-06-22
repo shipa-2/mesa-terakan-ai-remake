@@ -33,11 +33,11 @@
 #include <stdint.h>
 #include <string.h>
 
-typedef void (*terakan_state_draw_apply_function)(struct terakan_command_writer * command_writer,
-                                                  enum terakan_state_draw_index state_index);
+typedef void (*terakan_state_draw_apply_function)(
+   struct terakan_gfx_command_writer * command_writer, enum terakan_state_draw_index state_index);
 
 static void
-terakan_state_draw_apply_vgt_index_type(struct terakan_command_writer * const command_writer,
+terakan_state_draw_apply_vgt_index_type(struct terakan_gfx_command_writer * const command_writer,
                                         UNUSED enum terakan_state_draw_index const state_index)
 {
    bool const modified =
@@ -48,7 +48,7 @@ terakan_state_draw_apply_vgt_index_type(struct terakan_command_writer * const co
 }
 
 static void
-terakan_state_draw_apply_vgt_primitive_type(struct terakan_command_writer * const command_writer,
+terakan_state_draw_apply_vgt_primitive_type(struct terakan_gfx_command_writer * const command_writer,
                                             UNUSED enum terakan_state_draw_index const state_index)
 {
    bool const modified = command_writer->hw_state_draw.vgt_primitive_type !=
@@ -59,7 +59,7 @@ terakan_state_draw_apply_vgt_primitive_type(struct terakan_command_writer * cons
 }
 
 static void
-terakan_state_draw_apply_pa_su_sc_mode_cntl(struct terakan_command_writer * const command_writer,
+terakan_state_draw_apply_pa_su_sc_mode_cntl(struct terakan_gfx_command_writer * const command_writer,
                                             UNUSED enum terakan_state_draw_index const state_index)
 {
    bool const modified = command_writer->hw_state_draw.pa_su_sc_mode_cntl !=
@@ -70,7 +70,7 @@ terakan_state_draw_apply_pa_su_sc_mode_cntl(struct terakan_command_writer * cons
 }
 
 static void
-terakan_state_draw_apply_color(struct terakan_command_writer * const command_writer,
+terakan_state_draw_apply_color(struct terakan_gfx_command_writer * const command_writer,
                                enum terakan_state_draw_index const state_index)
 {
    uint32_t const color_index = (uint32_t)state_index - (uint32_t)TERAKAN_STATE_DRAW_CB_COLOR_FIRST;
@@ -101,7 +101,7 @@ terakan_state_draw_apply_color(struct terakan_command_writer * const command_wri
 }
 
 static void
-terakan_state_draw_apply_color_rat_only(struct terakan_command_writer * const command_writer,
+terakan_state_draw_apply_color_rat_only(struct terakan_gfx_command_writer * const command_writer,
                                         enum terakan_state_draw_index const state_index)
 {
    uint32_t const color_index = (uint32_t)state_index - (uint32_t)TERAKAN_STATE_DRAW_CB_COLOR_FIRST;
@@ -145,7 +145,7 @@ static terakan_state_draw_apply_function const
 };
 
 void
-terakan_state_draw_apply_pending(struct terakan_command_writer * const command_writer)
+terakan_state_draw_apply_pending(struct terakan_gfx_command_writer * const command_writer)
 {
    struct terakan_state_draw * const state = &command_writer->state_draw;
    /* Manual loop instead of BITSET_FOREACH_SET, reading the pending bits at each iteration so

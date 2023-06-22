@@ -35,7 +35,7 @@ terakan_CmdBeginRendering(VkCommandBuffer const commandBuffer,
                           VkRenderingInfo const * const pRenderingInfo)
 {
    struct terakan_state_draw * const state_draw =
-      &terakan_command_buffer_from_handle(commandBuffer)->command_writer->state_draw;
+      &terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx->state_draw;
 
    /* TODO(Triang3l): Don't set CB_COLOR# directly, they need to be remapped according to the pixel
     * shader usage. Also, secondary command buffers need inheritance.

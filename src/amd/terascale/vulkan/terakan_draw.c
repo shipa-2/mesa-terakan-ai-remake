@@ -40,8 +40,8 @@ VKAPI_ATTR void VKAPI_CALL
 terakan_CmdBindIndexBuffer(VkCommandBuffer const commandBuffer, VkBuffer const bufferHandle,
                            VkDeviceSize const offset, VkIndexType const indexType)
 {
-   struct terakan_command_writer * const command_writer =
-      terakan_command_buffer_from_handle(commandBuffer)->command_writer;
+   struct terakan_gfx_command_writer * const command_writer =
+      terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx;
 
    struct terakan_buffer const * const buffer = terakan_buffer_from_handle(bufferHandle);
 
@@ -82,13 +82,13 @@ terakan_CmdBindIndexBuffer(VkCommandBuffer const commandBuffer, VkBuffer const b
 }
 
 void
-terakan_before_hw_draw(struct terakan_command_writer * command_writer)
+terakan_before_hw_draw(struct terakan_gfx_command_writer * command_writer)
 {
    terakan_hw_state_draw_emit_modified(command_writer);
 }
 
 static void
-terakan_before_draw(struct terakan_command_writer * command_writer)
+terakan_before_draw(struct terakan_gfx_command_writer * command_writer)
 {
    terakan_state_draw_apply_pending(command_writer);
 
@@ -100,8 +100,8 @@ terakan_CmdDraw(VkCommandBuffer const commandBuffer, uint32_t const vertexCount,
                 uint32_t const instanceCount, uint32_t const firstVertex,
                 uint32_t const firstInstance)
 {
-   struct terakan_command_writer * const command_writer =
-      terakan_command_buffer_from_handle(commandBuffer)->command_writer;
+   struct terakan_gfx_command_writer * const command_writer =
+      terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx;
 
    terakan_before_draw(command_writer);
 

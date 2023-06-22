@@ -32,14 +32,15 @@
 #include <stdint.h>
 #include <string.h>
 
-typedef void (*terakan_hw_state_draw_emit_function)(struct terakan_command_writer * command_writer,
-                                                    enum terakan_hw_state_draw_index state_index);
+typedef void (*terakan_hw_state_draw_emit_function)(
+   struct terakan_gfx_command_writer * command_writer,
+   enum terakan_hw_state_draw_index state_index);
 
 static void
-terakan_hw_state_draw_emit_vgt_index_type(struct terakan_command_writer * const command_writer,
+terakan_hw_state_draw_emit_vgt_index_type(struct terakan_gfx_command_writer * const command_writer,
                                           UNUSED enum terakan_hw_state_draw_index const state_index)
 {
-   uint32_t * packet = terakan_command_writer_emit(command_writer, 2, 0, 0);
+   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2, 0, 0);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -49,10 +50,10 @@ terakan_hw_state_draw_emit_vgt_index_type(struct terakan_command_writer * const 
 
 static void
 terakan_hw_state_draw_emit_vgt_index_buffer(
-   struct terakan_command_writer * const command_writer,
+   struct terakan_gfx_command_writer * const command_writer,
    UNUSED enum terakan_hw_state_draw_index const state_index)
 {
-   uint32_t * packet = terakan_command_writer_emit(command_writer, 3 + 2, 1, 2);
+   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 3 + 2, 1, 2);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -62,8 +63,8 @@ terakan_hw_state_draw_emit_vgt_index_buffer(
    *packet++ = (uint32_t)(command_writer->hw_state_draw.vgt_index_buffer_base >> 32);
    *packet++ = PKT3(PKT3_NOP, 0, 0);
    *packet++ = terakan_bo_reference_writer_add_reference(
-      &command_writer->bo_reference_writer, command_writer->hw_state_draw.vgt_index_buffer_bo, true,
-      false, TERAKAN_WINSYS_CS_BO_PRIORITY_INDEX_BUFFER);
+      &command_writer->base.bo_reference_writer, command_writer->hw_state_draw.vgt_index_buffer_bo,
+      true, false, TERAKAN_WINSYS_CS_BO_PRIORITY_INDEX_BUFFER);
 
    *packet++ = PKT3(EG_PKT3_INDEX_BUFFER_SIZE, 1 - 1, 0);
    *packet++ = command_writer->hw_state_draw.vgt_index_buffer_size;
@@ -71,10 +72,10 @@ terakan_hw_state_draw_emit_vgt_index_buffer(
 
 static void
 terakan_hw_state_draw_emit_vgt_primitive_type(
-   struct terakan_command_writer * const command_writer,
+   struct terakan_gfx_command_writer * const command_writer,
    UNUSED enum terakan_hw_state_draw_index const state_index)
 {
-   uint32_t * packet = terakan_command_writer_emit(command_writer, 2 + 1, 0, 0);
+   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, 0, 0);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -85,10 +86,10 @@ terakan_hw_state_draw_emit_vgt_primitive_type(
 
 static void
 terakan_hw_state_draw_emit_pa_su_sc_mode_cntl(
-   struct terakan_command_writer * const command_writer,
+   struct terakan_gfx_command_writer * const command_writer,
    UNUSED enum terakan_hw_state_draw_index const state_index)
 {
-   uint32_t * packet = terakan_command_writer_emit(command_writer, 2 + 1, 0, 0);
+   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, 0, 0);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -98,10 +99,10 @@ terakan_hw_state_draw_emit_pa_su_sc_mode_cntl(
 }
 
 static void
-terakan_hw_state_draw_emit_cb_blend_rgba(struct terakan_command_writer * const command_writer,
+terakan_hw_state_draw_emit_cb_blend_rgba(struct terakan_gfx_command_writer * const command_writer,
                                          UNUSED enum terakan_hw_state_draw_index const state_index)
 {
-   uint32_t * packet = terakan_command_writer_emit(command_writer, 2 + 4, 0, 0);
+   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 4, 0, 0);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -111,7 +112,7 @@ terakan_hw_state_draw_emit_cb_blend_rgba(struct terakan_command_writer * const c
 }
 
 static void
-terakan_hw_state_draw_emit_color(struct terakan_command_writer * const command_writer,
+terakan_hw_state_draw_emit_color(struct terakan_gfx_command_writer * const command_writer,
                                  enum terakan_hw_state_draw_index const state_index)
 {
    uint32_t const color_index =
@@ -137,7 +138,7 @@ terakan_hw_state_draw_emit_color(struct terakan_command_writer * const command_w
        */
       uint32_t const cb_color_relocation_count = 4;
 
-      uint32_t * packet = terakan_command_writer_emit(
+      uint32_t * packet = terakan_gfx_command_writer_emit(
          command_writer, 2 + cb_color_descriptor_dwords + cb_color_meta_descriptor_dwords, 1,
          2 * cb_color_relocation_count);
       if (unlikely(packet == NULL)) {
@@ -154,7 +155,7 @@ terakan_hw_state_draw_emit_color(struct terakan_command_writer * const command_w
        * reliable).
        */
       uint32_t const color_bo_reference = terakan_bo_reference_writer_add_reference(
-         &command_writer->bo_reference_writer, color_bo, true, true,
+         &command_writer->base.bo_reference_writer, color_bo, true, true,
          G_028C70_RAT(color_descriptor->info) ? TERAKAN_WINSYS_CS_BO_PRIORITY_SHADER_RW_IMAGE
                                               : TERAKAN_WINSYS_CS_BO_PRIORITY_COLOR_BUFFER);
 
@@ -173,7 +174,7 @@ terakan_hw_state_draw_emit_color(struct terakan_command_writer * const command_w
       }
    } else {
       /* Set the format to invalid, not requiring any relocations. */
-      uint32_t * packet = terakan_command_writer_emit(command_writer, 2 + 1, 0, 0);
+      uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, 0, 0);
       if (unlikely(packet == NULL)) {
          return;
       }
@@ -184,7 +185,7 @@ terakan_hw_state_draw_emit_color(struct terakan_command_writer * const command_w
 }
 
 static void
-terakan_hw_state_draw_emit_color_rat_only(struct terakan_command_writer * const command_writer,
+terakan_hw_state_draw_emit_color_rat_only(struct terakan_gfx_command_writer * const command_writer,
                                           enum terakan_hw_state_draw_index const state_index)
 {
    uint32_t const color_rat_only_index =
@@ -206,7 +207,7 @@ terakan_hw_state_draw_emit_color_rat_only(struct terakan_command_writer * const 
        */
       uint32_t const cb_color_relocation_count = 2;
 
-      uint32_t * packet = terakan_command_writer_emit(
+      uint32_t * packet = terakan_gfx_command_writer_emit(
          command_writer, 2 + cb_color_descriptor_dwords, 1, 2 * cb_color_relocation_count);
       if (unlikely(packet == NULL)) {
          return;
@@ -216,7 +217,7 @@ terakan_hw_state_draw_emit_color_rat_only(struct terakan_command_writer * const 
       *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028E40_CB_COLOR8_BASE + color_register_offset);
 
       uint32_t const color_bo_reference = terakan_bo_reference_writer_add_reference(
-         &command_writer->bo_reference_writer, color_bo, true, true,
+         &command_writer->base.bo_reference_writer, color_bo, true, true,
          TERAKAN_WINSYS_CS_BO_PRIORITY_SHADER_RW_IMAGE);
 
       memcpy(packet, color_descriptor, sizeof(*color_descriptor));
@@ -229,7 +230,7 @@ terakan_hw_state_draw_emit_color_rat_only(struct terakan_command_writer * const 
       }
    } else {
       /* Set the format to invalid, not requiring any relocations. */
-      uint32_t * packet = terakan_command_writer_emit(command_writer, 2 + 1, 0, 0);
+      uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, 0, 0);
       if (unlikely(packet == NULL)) {
          return;
       }
@@ -261,7 +262,7 @@ static terakan_hw_state_draw_emit_function const
 };
 
 void
-terakan_hw_state_draw_emit_all(struct terakan_command_writer * const command_writer)
+terakan_hw_state_draw_emit_all(struct terakan_gfx_command_writer * const command_writer)
 {
    struct terakan_hw_state_draw * const state = &command_writer->hw_state_draw;
    BITSET_ZERO(state->state_modified);
@@ -274,7 +275,7 @@ terakan_hw_state_draw_emit_all(struct terakan_command_writer * const command_wri
 }
 
 void
-terakan_hw_state_draw_emit_modified(struct terakan_command_writer * const command_writer)
+terakan_hw_state_draw_emit_modified(struct terakan_gfx_command_writer * const command_writer)
 {
    struct terakan_hw_state_draw * const state = &command_writer->hw_state_draw;
    unsigned state_index;

@@ -26,6 +26,6 @@
 
 #include "terakan_command_buffer.h"
 
-void terakan_before_hw_draw(struct terakan_command_writer * command_writer);
+void terakan_before_hw_draw(struct terakan_gfx_command_writer * command_writer);
 
 #endif /* TERAKAN_DRAW_H */

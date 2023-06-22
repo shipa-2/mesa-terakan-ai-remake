@@ -34,13 +34,13 @@
 #include <stdint.h>
 
 typedef void (*terakan_pipeline_graphics_apply_state_function)(
-   struct terakan_command_writer * command_writer,
+   struct terakan_gfx_command_writer * command_writer,
    struct terakan_pipeline_graphics const * pipeline,
    enum terakan_pipeline_graphics_state_index state_index);
 
 static void
 terakan_pipeline_graphics_apply_vgt_primitive_type(
-   struct terakan_command_writer * const command_writer,
+   struct terakan_gfx_command_writer * const command_writer,
    struct terakan_pipeline_graphics const * const pipeline,
    UNUSED enum terakan_pipeline_graphics_state_index const state_index)
 {
@@ -50,7 +50,7 @@ terakan_pipeline_graphics_apply_vgt_primitive_type(
 
 static void
 terakan_pipeline_graphics_apply_pa_su_sc_mode_cntl(
-   struct terakan_command_writer * const command_writer,
+   struct terakan_gfx_command_writer * const command_writer,
    struct terakan_pipeline_graphics const * const pipeline,
    UNUSED enum terakan_pipeline_graphics_state_index const state_index)
 {
@@ -70,7 +70,7 @@ static terakan_pipeline_graphics_apply_state_function const
 };
 
 static void
-terakan_pipeline_graphics_bind(struct terakan_command_writer * const command_writer,
+terakan_pipeline_graphics_bind(struct terakan_gfx_command_writer * const command_writer,
                                struct terakan_pipeline_graphics const * const pipeline)
 {
    unsigned state_index;

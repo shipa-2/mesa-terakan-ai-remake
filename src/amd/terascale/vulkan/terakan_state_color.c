@@ -34,7 +34,7 @@ VKAPI_ATTR void VKAPI_CALL
 terakan_CmdSetBlendConstants(VkCommandBuffer const commandBuffer, float const blendConstants[4])
 {
    struct terakan_hw_state_draw * const hw_state_draw =
-      &terakan_command_buffer_from_handle(commandBuffer)->command_writer->hw_state_draw;
+      &terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx->hw_state_draw;
    /* The blend constant is not needed by internal draws, modify hw_state_draw directly. */
    bool const modified =
       memcmp(hw_state_draw->cb_blend_rgba, blendConstants, sizeof(float) * 4) != 0;
