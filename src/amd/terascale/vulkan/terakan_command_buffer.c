@@ -37,8 +37,8 @@
 #include <stdint.h>
 
 void
-terakan_bo_reference_writer_reset(
-   struct terakan_bo_reference_writer * const writer, void * const bo_references)
+terakan_bo_reference_writer_reset(struct terakan_bo_reference_writer * const writer,
+                                  void * const bo_references)
 {
    writer->references = bo_references;
 
@@ -48,9 +48,10 @@ terakan_bo_reference_writer_reset(
 }
 
 uint32_t
-terakan_bo_reference_writer_add_reference(
-   struct terakan_bo_reference_writer * const writer, struct terakan_winsys_bo const * const bo,
-   bool const is_reading, bool const is_writing, enum terakan_winsys_cs_bo_priority const priority)
+terakan_bo_reference_writer_add_reference(struct terakan_bo_reference_writer * const writer,
+                                          struct terakan_winsys_bo const * const bo,
+                                          bool const is_reading, bool const is_writing,
+                                          enum terakan_winsys_cs_bo_priority const priority)
 {
    /* Provide two slots per hash value for quick handling of collisions by effectively doing
     * separate chaining if there are only 2 BOs per hash in this open addressing scheme (though this
@@ -70,8 +71,7 @@ terakan_bo_reference_writer_add_reference(
    uint32_t reference_index = UINT32_MAX;
    uint32_t collisions;
    for (collisions = 0; collisions <= TERAKAN_BO_REFERENCE_HASH_MASK; ++collisions) {
-      uint32_t const check_hash =
-         (hash + collisions) & TERAKAN_BO_REFERENCE_HASH_MASK;
+      uint32_t const check_hash = (hash + collisions) & TERAKAN_BO_REFERENCE_HASH_MASK;
       if (!BITSET_TEST(writer->map_entries_used, check_hash)) {
          /* Didn't find an existing BO. */
          break;
@@ -141,14 +141,13 @@ terakan_command_buffer_new_indirect_buffer(struct terakan_command_buffer * const
 
    struct terakan_command_buffer_submission_indirect_buffer * indirect_buffer;
    if (!list_is_empty(&command_pool->indirect_buffers_free)) {
-      indirect_buffer = list_first_entry(
-         &command_pool->indirect_buffers_free,
-         struct terakan_command_buffer_submission_indirect_buffer, free_link);
+      indirect_buffer =
+         list_first_entry(&command_pool->indirect_buffers_free,
+                          struct terakan_command_buffer_submission_indirect_buffer, free_link);
       list_del(&indirect_buffer->free_link);
    } else {
-      indirect_buffer = vk_alloc(
-         &command_pool->vk.alloc, sizeof(*indirect_buffer), alignof(*indirect_buffer),
-         VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+      indirect_buffer = vk_alloc(&command_pool->vk.alloc, sizeof(*indirect_buffer),
+                                 alignof(*indirect_buffer), VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
       if (indirect_buffer == NULL) {
          vk_command_buffer_set_error(&command_buffer->vk, VK_ERROR_OUT_OF_HOST_MEMORY);
          return NULL;
@@ -157,14 +156,14 @@ terakan_command_buffer_new_indirect_buffer(struct terakan_command_buffer * const
       indirect_buffer->base.is_secondary_execution = false;
 
       struct terakan_gpu_info const * const gpu_info =
-         &container_of(
-            command_buffer->vk.pool->base.device->physical, struct terakan_physical_device const,
-            vk)->winsys->gpu_info;
+         &container_of(command_buffer->vk.pool->base.device->physical,
+                       struct terakan_physical_device const, vk)
+             ->winsys->gpu_info;
 
-      indirect_buffer->bo_references = vk_alloc(
-         &command_pool->vk.alloc,
-         gpu_info->cs_bo_reference_size * TERAKAN_BO_REFERENCE_WRITER_REFERENCE_COUNT,
-         gpu_info->cs_bo_reference_alignment, VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+      indirect_buffer->bo_references =
+         vk_alloc(&command_pool->vk.alloc,
+                  gpu_info->cs_bo_reference_size * TERAKAN_BO_REFERENCE_WRITER_REFERENCE_COUNT,
+                  gpu_info->cs_bo_reference_alignment, VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
       if (indirect_buffer->bo_references == NULL) {
          vk_command_buffer_set_error(&command_buffer->vk, VK_ERROR_OUT_OF_HOST_MEMORY);
          vk_free(&command_pool->vk.alloc, indirect_buffer);
@@ -185,8 +184,8 @@ terakan_command_buffer_new_indirect_buffer(struct terakan_command_buffer * const
    indirect_buffer->bo_reference_count = 0;
    indirect_buffer->indirect_buffer_size_dwords = 0;
 
-   list_addtail(
-      &indirect_buffer->base.command_buffer_submission_link, &command_buffer->submissions);
+   list_addtail(&indirect_buffer->base.command_buffer_submission_link,
+                &command_buffer->submissions);
 
    return indirect_buffer;
 }
@@ -204,14 +203,14 @@ terakan_command_buffer_release_resources(struct terakan_command_buffer * const c
       command_buffer->command_writer = NULL;
    }
 
-   list_for_each_entry_safe(
-      struct terakan_command_buffer_submission, submission_base, &command_buffer->submissions,
-      command_buffer_submission_link) {
+   list_for_each_entry_safe(struct terakan_command_buffer_submission, submission_base,
+                            &command_buffer->submissions, command_buffer_submission_link)
+   {
       list_del(&submission_base->command_buffer_submission_link);
       if (submission_base->is_secondary_execution) {
          struct terakan_command_buffer_submission_secondary_execution * const submission =
-            container_of(
-               submission_base, struct terakan_command_buffer_submission_secondary_execution, base);
+            container_of(submission_base,
+                         struct terakan_command_buffer_submission_secondary_execution, base);
          list_add(&submission->free_link, &command_pool->secondary_executions_free);
       } else {
          struct terakan_command_buffer_submission_indirect_buffer * const submission = container_of(
@@ -222,9 +221,8 @@ terakan_command_buffer_release_resources(struct terakan_command_buffer * const c
 }
 
 static void
-terakan_command_buffer_reset(
-   struct vk_command_buffer * const command_buffer_base,
-   UNUSED VkCommandBufferResetFlags const flags)
+terakan_command_buffer_reset(struct vk_command_buffer * const command_buffer_base,
+                             UNUSED VkCommandBufferResetFlags const flags)
 {
    struct terakan_command_buffer * command_buffer =
       container_of(command_buffer_base, struct terakan_command_buffer, vk);
@@ -254,9 +252,9 @@ terakan_command_buffer_create(struct vk_command_pool * const command_pool,
 {
    VkResult result;
 
-   struct terakan_command_buffer * command_buffer = vk_alloc(
-      &command_pool->alloc, sizeof(*command_buffer), alignof(*command_buffer),
-      VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+   struct terakan_command_buffer * command_buffer =
+      vk_alloc(&command_pool->alloc, sizeof(*command_buffer), alignof(*command_buffer),
+               VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
    if (command_buffer == NULL) {
       return vk_error(command_pool->base.device, VK_ERROR_OUT_OF_HOST_MEMORY);
    }
@@ -295,8 +293,8 @@ terakan_command_writer_end_indirect_buffer(struct terakan_command_writer * const
 
    /* Pad the GFX ring indirect buffer to a multiple of 8 dwords with NOPs. */
    while ((command_writer->indirect_buffer->indirect_buffer_size_dwords & 7) != 0) {
-      command_writer->indirect_buffer->indirect_buffer[
-         command_writer->indirect_buffer->indirect_buffer_size_dwords++] =
+      command_writer->indirect_buffer
+         ->indirect_buffer[command_writer->indirect_buffer->indirect_buffer_size_dwords++] =
          PKT_TYPE_S(2);
    }
 
@@ -314,9 +312,8 @@ terakan_command_writer_new_indirect_buffer(struct terakan_command_writer * const
       return false;
    }
 
-   terakan_bo_reference_writer_reset(
-      &command_writer->bo_reference_writer,
-      command_writer->indirect_buffer->bo_references);
+   terakan_bo_reference_writer_reset(&command_writer->bo_reference_writer,
+                                     command_writer->indirect_buffer->bo_references);
 
    /* Re-emit the state from the previous indirect buffer. */
    command_writer->is_beginning_indirect_buffer = true;
@@ -327,9 +324,9 @@ terakan_command_writer_new_indirect_buffer(struct terakan_command_writer * const
 }
 
 uint32_t *
-terakan_command_writer_emit(
-   struct terakan_command_writer * const command_writer, uint32_t const packet_dwords,
-   uint32_t const bo_count, uint32_t const relocation_packet_dwords)
+terakan_command_writer_emit(struct terakan_command_writer * const command_writer,
+                            uint32_t const packet_dwords, uint32_t const bo_count,
+                            uint32_t const relocation_packet_dwords)
 {
    if (unlikely(vk_command_buffer_has_error(&command_writer->command_buffer->vk))) {
       return NULL;
@@ -341,19 +338,17 @@ terakan_command_writer_emit(
       TERAKAN_MAX_INDIRECT_BUFFER_SIZE_DWORDS & ~((uint32_t)7);
 
    if (command_writer->indirect_buffer == NULL ||
-       (indirect_buffer_max_dwords -
-        command_writer->indirect_buffer->indirect_buffer_size_dwords) <
-       total_packet_dwords ||
+       (indirect_buffer_max_dwords - command_writer->indirect_buffer->indirect_buffer_size_dwords) <
+          total_packet_dwords ||
        (TERAKAN_BO_REFERENCE_WRITER_REFERENCE_COUNT -
-        command_writer->bo_reference_writer.reference_count) <
-       bo_count) {
+        command_writer->bo_reference_writer.reference_count) < bo_count) {
       assert(!command_writer->is_beginning_indirect_buffer);
       if (unlikely(command_writer->is_beginning_indirect_buffer)) {
          /* Possibly a recursive overflow while moving to the new indirect buffer, if this happens,
           * it's a Terakan bug.
           */
-         vk_command_buffer_set_error(
-            &command_writer->command_buffer->vk, VK_ERROR_OUT_OF_HOST_MEMORY);
+         vk_command_buffer_set_error(&command_writer->command_buffer->vk,
+                                     VK_ERROR_OUT_OF_HOST_MEMORY);
          return NULL;
       }
       if (!terakan_command_writer_new_indirect_buffer(command_writer)) {
@@ -361,18 +356,15 @@ terakan_command_writer_emit(
       }
    }
 
-   if (unlikely(
-          (indirect_buffer_max_dwords -
-           command_writer->indirect_buffer->indirect_buffer_size_dwords) <
-          total_packet_dwords ||
-          (TERAKAN_BO_REFERENCE_WRITER_REFERENCE_COUNT -
-           command_writer->bo_reference_writer.reference_count) <
-          bo_count)) {
+   if (unlikely((indirect_buffer_max_dwords -
+                 command_writer->indirect_buffer->indirect_buffer_size_dwords) <
+                   total_packet_dwords ||
+                (TERAKAN_BO_REFERENCE_WRITER_REFERENCE_COUNT -
+                 command_writer->bo_reference_writer.reference_count) < bo_count)) {
       assert(
          !"A single command emission is too large, no space even after moving to the new indirect "
           "buffer");
-      vk_command_buffer_set_error(
-         &command_writer->command_buffer->vk, VK_ERROR_OUT_OF_HOST_MEMORY);
+      vk_command_buffer_set_error(&command_writer->command_buffer->vk, VK_ERROR_OUT_OF_HOST_MEMORY);
       return NULL;
    }
 
@@ -395,8 +387,8 @@ terakan_EndCommandBuffer(VkCommandBuffer const commandBuffer)
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
-terakan_BeginCommandBuffer(
-   VkCommandBuffer const commandBuffer, VkCommandBufferBeginInfo const * const pBeginInfo)
+terakan_BeginCommandBuffer(VkCommandBuffer const commandBuffer,
+                           VkCommandBufferBeginInfo const * const pBeginInfo)
 {
    struct terakan_command_buffer * const command_buffer =
       terakan_command_buffer_from_handle(commandBuffer);
@@ -408,14 +400,13 @@ terakan_BeginCommandBuffer(
 
    assert(command_buffer->command_writer == NULL);
    if (!list_is_empty(&command_pool->command_writers_free)) {
-      command_buffer->command_writer = list_first_entry(
-         &command_pool->command_writers_free, struct terakan_command_writer, free_link);
+      command_buffer->command_writer = list_first_entry(&command_pool->command_writers_free,
+                                                        struct terakan_command_writer, free_link);
       list_del(&command_buffer->command_writer->free_link);
    } else {
-      command_buffer->command_writer = vk_alloc(
-         &command_pool->vk.alloc, sizeof(*command_buffer->command_writer),
-         alignof(*command_buffer->command_writer),
-         VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+      command_buffer->command_writer =
+         vk_alloc(&command_pool->vk.alloc, sizeof(*command_buffer->command_writer),
+                  alignof(*command_buffer->command_writer), VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
       if (command_buffer->command_writer == NULL) {
          return vk_command_buffer_set_error(&command_buffer->vk, VK_ERROR_OUT_OF_HOST_MEMORY);
       }
@@ -436,23 +427,23 @@ terakan_BeginCommandBuffer(
 static void
 terakan_command_pool_trim_resources(struct terakan_command_pool * const command_pool)
 {
-   list_for_each_entry_safe(
-      struct terakan_command_writer, command_writer, &command_pool->command_writers_free,
-      free_link) {
+   list_for_each_entry_safe(struct terakan_command_writer, command_writer,
+                            &command_pool->command_writers_free, free_link)
+   {
       vk_free(&command_pool->vk.alloc, command_writer);
    }
    list_inithead(&command_pool->command_writers_free);
 
-   list_for_each_entry_safe(
-      struct terakan_command_buffer_submission_secondary_execution, submission,
-      &command_pool->secondary_executions_free, free_link) {
+   list_for_each_entry_safe(struct terakan_command_buffer_submission_secondary_execution,
+                            submission, &command_pool->secondary_executions_free, free_link)
+   {
       vk_free(&command_pool->vk.alloc, submission);
    }
    list_inithead(&command_pool->secondary_executions_free);
 
-   list_for_each_entry_safe(
-      struct terakan_command_buffer_submission_indirect_buffer, submission,
-      &command_pool->indirect_buffers_free, free_link) {
+   list_for_each_entry_safe(struct terakan_command_buffer_submission_indirect_buffer, submission,
+                            &command_pool->indirect_buffers_free, free_link)
+   {
       vk_free(&command_pool->vk.alloc, submission->indirect_buffer);
       vk_free(&command_pool->vk.alloc, submission->bo_references);
       vk_free(&command_pool->vk.alloc, submission);
@@ -461,9 +452,8 @@ terakan_command_pool_trim_resources(struct terakan_command_pool * const command_
 }
 
 VKAPI_ATTR void VKAPI_CALL
-terakan_TrimCommandPool(
-   VkDevice const deviceHandle, VkCommandPool const commandPool,
-   UNUSED VkCommandPoolTrimFlags const flags)
+terakan_TrimCommandPool(VkDevice const deviceHandle, VkCommandPool const commandPool,
+                        UNUSED VkCommandPoolTrimFlags const flags)
 {
    struct terakan_command_pool * const command_pool = terakan_command_pool_from_handle(commandPool);
 
@@ -473,9 +463,8 @@ terakan_TrimCommandPool(
 }
 
 VKAPI_ATTR void VKAPI_CALL
-terakan_DestroyCommandPool(
-   VkDevice const deviceHandle, VkCommandPool const commandPool,
-   VkAllocationCallbacks const * const pAllocator)
+terakan_DestroyCommandPool(VkDevice const deviceHandle, VkCommandPool const commandPool,
+                           VkAllocationCallbacks const * const pAllocator)
 {
    struct terakan_command_pool * const command_pool = terakan_command_pool_from_handle(commandPool);
 
@@ -497,17 +486,18 @@ terakan_DestroyCommandPool(
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
-terakan_CreateCommandPool(
-   VkDevice const deviceHandle, VkCommandPoolCreateInfo const * const pCreateInfo,
-   VkAllocationCallbacks const * const pAllocator, VkCommandPool * const pCommandPool)
+terakan_CreateCommandPool(VkDevice const deviceHandle,
+                          VkCommandPoolCreateInfo const * const pCreateInfo,
+                          VkAllocationCallbacks const * const pAllocator,
+                          VkCommandPool * const pCommandPool)
 {
    VkResult result;
 
    struct terakan_device * const device = terakan_device_from_handle(deviceHandle);
 
-   struct terakan_command_pool * const command_pool = vk_alloc2(
-      &device->vk.alloc, pAllocator, sizeof(*command_pool), alignof(*command_pool),
-      VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+   struct terakan_command_pool * const command_pool =
+      vk_alloc2(&device->vk.alloc, pAllocator, sizeof(*command_pool), alignof(*command_pool),
+                VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
    if (command_pool == NULL) {
       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
    }

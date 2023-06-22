@@ -77,20 +77,20 @@ struct terakan_winsys;
 struct terakan_winsys_bo;
 
 struct terakan_winsys_surface_fn {
-   bool (* translate_image_create_info)(
-      struct terakan_winsys const * winsys, VkImageCreateInfo const * image_create_info,
-      struct radeon_surf * surface_out);
+   bool (*translate_image_create_info)(struct terakan_winsys const * winsys,
+                                       VkImageCreateInfo const * image_create_info,
+                                       struct radeon_surf * surface_out);
 };
 
 struct terakan_winsys_fn {
-   struct vk_sync_type const * const * (* get_sync_types)(struct terakan_winsys * winsys);
+   struct vk_sync_type const * const * (*get_sync_types)(struct terakan_winsys * winsys);
 
-   void (* destroy)(struct terakan_winsys * winsys);
+   void (*destroy)(struct terakan_winsys * winsys);
 };
 
 struct terakan_winsys_bo_fn {
-   void * (* map)(struct terakan_winsys_bo * bo);
-   void (* unmap)(struct terakan_winsys_bo * bo);
+   void * (*map)(struct terakan_winsys_bo * bo);
+   void (*unmap)(struct terakan_winsys_bo * bo);
 
    /* Returns whether the wait was successful.
     * Waiting can be performed from any thread, however, the behavior is undefined while command
@@ -99,34 +99,34 @@ struct terakan_winsys_bo_fn {
     * submissions referencing this buffer.
     * In case of a GPU hang, must return in finite time.
     */
-   bool (* wait_idle)(struct terakan_winsys_bo * bo);
+   bool (*wait_idle)(struct terakan_winsys_bo * bo);
 
    /* If the buffer is currently mapped, freeing it implicitly unmaps it. */
-   void (* free)(struct terakan_winsys_bo * bo);
+   void (*free)(struct terakan_winsys_bo * bo);
 
-   struct terakan_winsys_bo * (* allocate_device_memory)(
-      struct terakan_winsys * winsys, VkDeviceSize size, VkDeviceSize alignment,
-      VkMemoryPropertyFlags flags);
+   struct terakan_winsys_bo * (*allocate_device_memory)(struct terakan_winsys * winsys,
+                                                        VkDeviceSize size, VkDeviceSize alignment,
+                                                        VkMemoryPropertyFlags flags);
 };
 
 struct terakan_winsys_cs_fn {
    /* BO references are winsys-specific objects whose size is
     * terakan_gpu_info::cs_bo_reference_size.
     */
-   void (* create_bo_reference)(
-      void * bo_reference, struct terakan_winsys_bo const * bo, bool is_reading, bool is_writing,
-      enum terakan_winsys_cs_bo_priority priority);
-   void (* update_bo_reference)(
-      void * bo_reference, struct terakan_winsys_bo const * bo, bool is_reading, bool is_writing,
-      enum terakan_winsys_cs_bo_priority priority);
+   void (*create_bo_reference)(void * bo_reference, struct terakan_winsys_bo const * bo,
+                               bool is_reading, bool is_writing,
+                               enum terakan_winsys_cs_bo_priority priority);
+   void (*update_bo_reference)(void * bo_reference, struct terakan_winsys_bo const * bo,
+                               bool is_reading, bool is_writing,
+                               enum terakan_winsys_cs_bo_priority priority);
 
    /* Not exposing queue priorities as the Linux Radeon 2.50.0 kernel driver only provides a
     * high-priority DMA ring on R9xx.
     */
-   VkResult (* submit)(
-      struct terakan_winsys * winsys, enum amd_ip_type ip_type, uint32_t bo_reference_count,
-      void const * bo_references, uint32_t indirect_buffer_size_dwords,
-      uint32_t const * indirect_buffer, bool is_end_of_frame);
+   VkResult (*submit)(struct terakan_winsys * winsys, enum amd_ip_type ip_type,
+                      uint32_t bo_reference_count, void const * bo_references,
+                      uint32_t indirect_buffer_size_dwords, uint32_t const * indirect_buffer,
+                      bool is_end_of_frame);
 };
 
 struct terakan_winsys {

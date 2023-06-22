@@ -21,10 +21,10 @@
  * IN THE SOFTWARE.
  */
 
+#include "terakan_draw.h"
 #include "terakan_buffer.h"
 #include "terakan_command_buffer.h"
 #include "terakan_entrypoints.h"
-#include "terakan_draw.h"
 #include "terakan_hw_state.h"
 #include "terakan_state.h"
 
@@ -37,9 +37,8 @@
 #include <stdint.h>
 
 VKAPI_ATTR void VKAPI_CALL
-terakan_CmdBindIndexBuffer(
-   VkCommandBuffer const commandBuffer, VkBuffer const bufferHandle, VkDeviceSize const offset,
-   VkIndexType const indexType)
+terakan_CmdBindIndexBuffer(VkCommandBuffer const commandBuffer, VkBuffer const bufferHandle,
+                           VkDeviceSize const offset, VkIndexType const indexType)
 {
    struct terakan_command_writer * const command_writer =
       terakan_command_buffer_from_handle(commandBuffer)->command_writer;
@@ -78,9 +77,8 @@ terakan_CmdBindIndexBuffer(
    command_writer->hw_state_draw.vgt_index_buffer_bo = buffer->bo;
    command_writer->hw_state_draw.vgt_index_buffer_base = vgt_index_buffer_base;
    command_writer->hw_state_draw.vgt_index_buffer_size = vgt_index_buffer_size;
-   terakan_hw_state_draw_written(
-      &command_writer->hw_state_draw, TERAKAN_HW_STATE_DRAW_VGT_INDEX_TYPE,
-      vgt_index_buffer_modified);
+   terakan_hw_state_draw_written(&command_writer->hw_state_draw,
+                                 TERAKAN_HW_STATE_DRAW_VGT_INDEX_TYPE, vgt_index_buffer_modified);
 }
 
 void
@@ -98,9 +96,9 @@ terakan_before_draw(struct terakan_command_writer * command_writer)
 }
 
 VKAPI_ATTR void VKAPI_CALL
-terakan_CmdDraw(
-   VkCommandBuffer const commandBuffer, uint32_t const vertexCount, uint32_t const instanceCount,
-   uint32_t const firstVertex, uint32_t const firstInstance)
+terakan_CmdDraw(VkCommandBuffer const commandBuffer, uint32_t const vertexCount,
+                uint32_t const instanceCount, uint32_t const firstVertex,
+                uint32_t const firstInstance)
 {
    struct terakan_command_writer * const command_writer =
       terakan_command_buffer_from_handle(commandBuffer)->command_writer;

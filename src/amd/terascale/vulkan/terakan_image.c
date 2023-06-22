@@ -24,14 +24,14 @@
  * IN THE SOFTWARE.
  */
 
+#include "terakan_image.h"
+#include "winsys/terakan_winsys.h"
 #include "terakan_device.h"
 #include "terakan_device_memory.h"
 #include "terakan_entrypoints.h"
 #include "terakan_format.h"
 #include "terakan_gpu_info.h"
-#include "terakan_image.h"
 #include "terakan_physical_device.h"
-#include "winsys/terakan_winsys.h"
 
 #include "gallium/drivers/r600/evergreend.h"
 #include "util/macros.h"
@@ -87,9 +87,9 @@ terakan_image_get_optimal_tiling_array_mode(VkImageCreateInfo const * const imag
 }
 
 VKAPI_ATTR void VKAPI_CALL
-terakan_GetDeviceImageMemoryRequirements(
-   VkDevice const deviceHandle, VkDeviceImageMemoryRequirements const * const pInfo,
-   VkMemoryRequirements2 * const pMemoryRequirements)
+terakan_GetDeviceImageMemoryRequirements(VkDevice const deviceHandle,
+                                         VkDeviceImageMemoryRequirements const * const pInfo,
+                                         VkMemoryRequirements2 * const pMemoryRequirements)
 {
    struct terakan_device const * const device = terakan_device_from_handle(deviceHandle);
    struct terakan_physical_device const * const physical_device =
@@ -112,14 +112,14 @@ terakan_GetDeviceImageMemoryRequirements(
 
 /* Skipping the translation into the surface structure if it has already been done. */
 VKAPI_ATTR void VKAPI_CALL
-terakan_GetImageMemoryRequirements2(
-   VkDevice const deviceHandle, VkImageMemoryRequirementsInfo2 const * const pInfo,
-   VkMemoryRequirements2 * const pMemoryRequirements)
+terakan_GetImageMemoryRequirements2(VkDevice const deviceHandle,
+                                    VkImageMemoryRequirementsInfo2 const * const pInfo,
+                                    VkMemoryRequirements2 * const pMemoryRequirements)
 {
    struct terakan_image const * const image = terakan_image_from_handle(pInfo->image);
    pMemoryRequirements->memoryRequirements.size = image->surface.total_size;
-   pMemoryRequirements->memoryRequirements.alignment =
-      (VkDeviceSize)1 << image->surface.alignment_log2;
+   pMemoryRequirements->memoryRequirements.alignment = (VkDeviceSize)1
+                                                       << image->surface.alignment_log2;
 
    struct terakan_device const * const device = terakan_device_from_handle(deviceHandle);
    struct terakan_physical_device const * const physical_device =
@@ -129,9 +129,9 @@ terakan_GetImageMemoryRequirements2(
 }
 
 VKAPI_ATTR void VKAPI_CALL
-terakan_GetImageSubresourceLayout(
-   VkDevice const device, VkImage const imageHandle, VkImageSubresource const * pSubresource,
-   VkSubresourceLayout * const pLayout)
+terakan_GetImageSubresourceLayout(VkDevice const device, VkImage const imageHandle,
+                                  VkImageSubresource const * pSubresource,
+                                  VkSubresourceLayout * const pLayout)
 {
    struct terakan_image const * const image = terakan_image_from_handle(imageHandle);
 
@@ -139,9 +139,8 @@ terakan_GetImageSubresourceLayout(
       pSubresource->aspectMask == VK_IMAGE_ASPECT_STENCIL_BIT &&
       terakan_image_ac_surface_has_separate_stencil_layout(image->vk.format);
    struct legacy_surf_level const * const level =
-      is_stencil_layout
-         ? &image->surface.u.legacy.zs.stencil_level[pSubresource->mipLevel]
-         : &image->surface.u.legacy.level[pSubresource->mipLevel];
+      is_stencil_layout ? &image->surface.u.legacy.zs.stencil_level[pSubresource->mipLevel]
+                        : &image->surface.u.legacy.level[pSubresource->mipLevel];
 
    VkDeviceSize const slice_size = sizeof(uint32_t) * (VkDeviceSize)level->slice_size_dw;
 
@@ -163,9 +162,8 @@ terakan_GetImageSubresourceLayout(
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
-terakan_BindImageMemory2(
-   VkDevice const device, uint32_t const bindInfoCount,
-   VkBindImageMemoryInfo const * const pBindInfos)
+terakan_BindImageMemory2(VkDevice const device, uint32_t const bindInfoCount,
+                         VkBindImageMemoryInfo const * const pBindInfos)
 {
    for (uint32_t bind_info_index = 0; bind_info_index < bindInfoCount; ++bind_info_index) {
       VkBindImageMemoryInfo const * const bind_info = &pBindInfos[bind_info_index];
@@ -214,8 +212,8 @@ terakan_image_create_color_descriptor(
       is_stencil_aspect && terakan_image_ac_surface_has_separate_stencil_layout(image->vk.format);
    struct legacy_surf_level const * const level =
       is_stencil_layout
-         ? &image->surface.u.legacy.zs.stencil_level[
-               image_view_create_info->subresourceRange.baseMipLevel]
+         ? &image->surface.u.legacy.zs
+               .stencil_level[image_view_create_info->subresourceRange.baseMipLevel]
          : &image->surface.u.legacy.level[image_view_create_info->subresourceRange.baseMipLevel];
    /* Only LINEAR_ALIGNED is currently supported for linear, not LINEAR_GENERAL. */
    assert(level->mode != (enum radeon_surf_mode)0);
@@ -235,7 +233,8 @@ terakan_image_create_color_descriptor(
          (image_view_create_info->subresourceRange.layerCount == VK_REMAINING_ARRAY_LAYERS
              ? image->vk.array_layers
              : image_view_create_info->subresourceRange.baseArrayLayer +
-               image_view_create_info->subresourceRange.layerCount) - 1);
+                  image_view_create_info->subresourceRange.layerCount) -
+         1);
 
    bool blend_clamp = false;
    uint32_t source_format = V_028C70_EXPORT_4C_32BPC;
@@ -256,13 +255,10 @@ terakan_image_create_color_descriptor(
    default:
       break;
    }
-   descriptor_out->info =
-      S_028C70_FORMAT(color_format) |
-      S_028C70_ARRAY_MODE(terakan_image_array_mode_ac_to_hw(level->mode)) |
-      S_028C70_NUMBER_TYPE(number_type) |
-      S_028C70_COMP_SWAP(swap) |
-      S_028C70_SIMPLE_FLOAT(1) |
-      S_028C70_SOURCE_FORMAT(source_format);
+   descriptor_out->info = S_028C70_FORMAT(color_format) |
+                          S_028C70_ARRAY_MODE(terakan_image_array_mode_ac_to_hw(level->mode)) |
+                          S_028C70_NUMBER_TYPE(number_type) | S_028C70_COMP_SWAP(swap) |
+                          S_028C70_SIMPLE_FLOAT(1) | S_028C70_SOURCE_FORMAT(source_format);
    if (terakan_format_color_is_blendable(color_format, number_type)) {
       descriptor_out->info |= S_028C70_BLEND_CLAMP(blend_clamp);
    } else {
@@ -270,12 +266,11 @@ terakan_image_create_color_descriptor(
    }
 
    struct terakan_gpu_info const * const gpu_info =
-      &container_of(image->vk.base.device->physical, struct terakan_physical_device const, vk)->
-          winsys->gpu_info;
+      &container_of(image->vk.base.device->physical, struct terakan_physical_device const, vk)
+          ->winsys->gpu_info;
    descriptor_out->attrib =
-      S_028C74_NON_DISP_TILING_ORDER(
-         level->mode <= RADEON_SURF_MODE_LINEAR_ALIGNED ||
-         vk_format_is_depth_or_stencil(image->vk.format)) |
+      S_028C74_NON_DISP_TILING_ORDER(level->mode <= RADEON_SURF_MODE_LINEAR_ALIGNED ||
+                                     vk_format_is_depth_or_stencil(image->vk.format)) |
       S_028C74_TILE_SPLIT(
          terakan_image_tile_split_bytes_to_hw(image->surface.u.legacy.tile_split)) |
       S_028C74_NUM_BANKS(gpu_info->tile_banks_log2 - 1) |
@@ -290,12 +285,11 @@ terakan_image_create_color_descriptor(
       unsigned const samples_log2 = util_logbase2((uint32_t)image->vk.samples);
       enum pipe_swizzle const alpha_swizzle =
          (enum pipe_swizzle)vk_format_description(image_view_create_info->format)->swizzle[3];
-      descriptor_out->attrib |=
-         S_028C74_NON_DISP_TILING_ORDER(image->surface.bpe >= 16) |
-         S_028C74_NUM_SAMPLES(samples_log2) |
-         S_028C74_NUM_FRAGMENTS(samples_log2) |
-         S_028C74_FORCE_DST_ALPHA_1(
-            alpha_swizzle == PIPE_SWIZZLE_1 || alpha_swizzle == PIPE_SWIZZLE_NONE);
+      descriptor_out->attrib |= S_028C74_NON_DISP_TILING_ORDER(image->surface.bpe >= 16) |
+                                S_028C74_NUM_SAMPLES(samples_log2) |
+                                S_028C74_NUM_FRAGMENTS(samples_log2) |
+                                S_028C74_FORCE_DST_ALPHA_1(alpha_swizzle == PIPE_SWIZZLE_1 ||
+                                                           alpha_swizzle == PIPE_SWIZZLE_NONE);
    }
 
    /* Allowing uncompressed views of compressed textures. */
@@ -303,11 +297,13 @@ terakan_image_create_color_descriptor(
       S_028C78_WIDTH_MAX(
          (u_minify(image->vk.extent.width, image_view_create_info->subresourceRange.baseMipLevel) +
           (image->surface.blk_w - 1)) /
-         image->surface.blk_w - 1) |
+            image->surface.blk_w -
+         1) |
       S_028C78_HEIGHT_MAX(
          (u_minify(image->vk.extent.height, image_view_create_info->subresourceRange.baseMipLevel) +
           (image->surface.blk_h - 1)) /
-         image->surface.blk_h - 1);
+            image->surface.blk_h -
+         1);
 
    if (meta_descriptor_out_opt != NULL) {
       meta_descriptor_out_opt->cmask = descriptor_out->base;
@@ -323,9 +319,8 @@ terakan_image_create_color_descriptor(
 }
 
 VKAPI_ATTR void VKAPI_CALL
-terakan_DestroyImage(
-   VkDevice const deviceHandle, VkImage const imageHandle,
-   VkAllocationCallbacks const * const pAllocator)
+terakan_DestroyImage(VkDevice const deviceHandle, VkImage const imageHandle,
+                     VkAllocationCallbacks const * const pAllocator)
 {
    struct terakan_image * const image = terakan_image_from_handle(imageHandle);
 
@@ -341,17 +336,16 @@ terakan_DestroyImage(
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
-terakan_CreateImage(
-   VkDevice const deviceHandle, VkImageCreateInfo const * const pCreateInfo,
-   VkAllocationCallbacks const * const pAllocator, VkImage * const pImage)
+terakan_CreateImage(VkDevice const deviceHandle, VkImageCreateInfo const * const pCreateInfo,
+                    VkAllocationCallbacks const * const pAllocator, VkImage * const pImage)
 {
    VkResult result;
 
    struct terakan_device * const device = terakan_device_from_handle(deviceHandle);
 
-   struct terakan_image * const image = vk_alloc2(
-      &device->vk.alloc, pAllocator, sizeof(*image), alignof(*image),
-      VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+   struct terakan_image * const image =
+      vk_alloc2(&device->vk.alloc, pAllocator, sizeof(*image), alignof(*image),
+                VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
    if (image == NULL) {
       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
    }
@@ -361,8 +355,8 @@ terakan_CreateImage(
    struct terakan_winsys const * const winsys =
       container_of(device->vk.physical, struct terakan_physical_device const, vk)->winsys;
    if (!winsys->surface_fn->translate_image_create_info(winsys, pCreateInfo, &image->surface)) {
-      result = vk_errorf(
-         device, VK_ERROR_UNKNOWN, "Failed to translate the image creation info into surface info");
+      result = vk_errorf(device, VK_ERROR_UNKNOWN,
+                         "Failed to translate the image creation info into surface info");
       goto fail_image;
    }
 
@@ -380,9 +374,8 @@ fail_image:
 }
 
 VKAPI_ATTR void VKAPI_CALL
-terakan_DestroyImageView(
-   VkDevice const deviceHandle, VkImageView const imageView,
-   VkAllocationCallbacks const * const pAllocator)
+terakan_DestroyImageView(VkDevice const deviceHandle, VkImageView const imageView,
+                         VkAllocationCallbacks const * const pAllocator)
 {
    struct terakan_image_view * const image_view = terakan_image_view_from_handle(imageView);
 
@@ -398,15 +391,15 @@ terakan_DestroyImageView(
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
-terakan_CreateImageView(
-   VkDevice const deviceHandle, VkImageViewCreateInfo const * const pCreateInfo,
-   VkAllocationCallbacks const * const pAllocator, VkImageView * const pView)
+terakan_CreateImageView(VkDevice const deviceHandle,
+                        VkImageViewCreateInfo const * const pCreateInfo,
+                        VkAllocationCallbacks const * const pAllocator, VkImageView * const pView)
 {
    struct terakan_device * const device = terakan_device_from_handle(deviceHandle);
 
-   struct terakan_image_view * const image_view = vk_alloc2(
-      &device->vk.alloc, pAllocator, sizeof(*image_view), alignof(*image_view),
-      VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+   struct terakan_image_view * const image_view =
+      vk_alloc2(&device->vk.alloc, pAllocator, sizeof(*image_view), alignof(*image_view),
+                VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
    if (image_view == NULL) {
       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
    }
@@ -420,8 +413,8 @@ terakan_CreateImageView(
 
    image_view->descriptor.bo = image->bo;
 
-   terakan_image_create_color_descriptor(
-      pCreateInfo, &image_view->descriptor.color, &image_view->color_meta);
+   terakan_image_create_color_descriptor(pCreateInfo, &image_view->descriptor.color,
+                                         &image_view->color_meta);
 
    /* TODO(Triang3l): Other descriptor types. */
 

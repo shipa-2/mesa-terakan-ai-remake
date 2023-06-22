@@ -24,15 +24,15 @@
 #ifndef TERAKAN_PHYSICAL_DEVICE_H
 #define TERAKAN_PHYSICAL_DEVICE_H
 
-#include "terakan_instance.h"
 #include "winsys/terakan_winsys.h"
+#include "terakan_instance.h"
 #include "wsi_common.h"
 
 #include "vk_physical_device.h"
 
 #if !defined(_WIN32)
-#include <sys/types.h>
 #include <xf86drm.h>
+#include <sys/types.h>
 #endif
 
 struct terakan_physical_device {
@@ -57,12 +57,12 @@ struct terakan_physical_device {
    struct wsi_device wsi_device;
 };
 
-VK_DEFINE_HANDLE_CASTS(
-   terakan_physical_device, vk.base, VkPhysicalDevice, VK_OBJECT_TYPE_PHYSICAL_DEVICE)
+VK_DEFINE_HANDLE_CASTS(terakan_physical_device, vk.base, VkPhysicalDevice,
+                       VK_OBJECT_TYPE_PHYSICAL_DEVICE)
 
-VkResult terakan_physical_device_try_create_for_drm(
-   struct vk_instance * instance, struct _drmDevice * drm_device,
-   struct vk_physical_device * * device_out);
+VkResult terakan_physical_device_try_create_for_drm(struct vk_instance * instance,
+                                                    struct _drmDevice * drm_device,
+                                                    struct vk_physical_device ** device_out);
 
 void terakan_physical_device_destroy(struct vk_physical_device * device);
 

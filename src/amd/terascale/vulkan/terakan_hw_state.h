@@ -24,9 +24,9 @@
 #ifndef TERAKAN_HW_STATE_H
 #define TERAKAN_HW_STATE_H
 
+#include "winsys/terakan_winsys.h"
 #include "terakan_descriptor.h"
 #include "terakan_limits.h"
-#include "winsys/terakan_winsys.h"
 
 #include "util/bitset.h"
 
@@ -102,9 +102,8 @@ struct terakan_command_writer;
  * time before the next draw.
  */
 static inline void
-terakan_hw_state_draw_written(
-   struct terakan_hw_state_draw * const state, enum terakan_hw_state_draw_index const state_index,
-   bool modified)
+terakan_hw_state_draw_written(struct terakan_hw_state_draw * const state,
+                              enum terakan_hw_state_draw_index const state_index, bool modified)
 {
    if (!BITSET_TEST(state->state_ever_written, state_index)) {
       BITSET_SET(state->state_ever_written, state_index);

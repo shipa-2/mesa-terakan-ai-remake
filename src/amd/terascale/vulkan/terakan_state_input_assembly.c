@@ -21,16 +21,16 @@
  * IN THE SOFTWARE.
  */
 
+#include "terakan_state_input_assembly.h"
 #include "terakan_command_buffer.h"
 #include "terakan_entrypoints.h"
 #include "terakan_state.h"
-#include "terakan_state_input_assembly.h"
 
 #include <stdbool.h>
 
 VKAPI_ATTR void VKAPI_CALL
-terakan_CmdSetPrimitiveTopology(
-   VkCommandBuffer const commandBuffer, VkPrimitiveTopology const primitiveTopology)
+terakan_CmdSetPrimitiveTopology(VkCommandBuffer const commandBuffer,
+                                VkPrimitiveTopology const primitiveTopology)
 {
    struct terakan_state_draw * const state_draw =
       &terakan_command_buffer_from_handle(commandBuffer)->command_writer->state_draw;

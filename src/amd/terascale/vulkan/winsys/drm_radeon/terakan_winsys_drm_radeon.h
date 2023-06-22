@@ -35,9 +35,9 @@
 #include "vk_sync_binary.h"
 
 #include <stddef.h>
-#include <radeon_surface.h>
-#include <vulkan/vulkan_core.h>
 #include <xf86drm.h>
+#include <vulkan/vulkan_core.h>
+#include <radeon_surface.h>
 
 struct terakan_winsys_drm_radeon_bo {
    struct terakan_winsys_bo base;

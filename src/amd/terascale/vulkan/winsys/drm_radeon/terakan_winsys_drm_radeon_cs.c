@@ -35,15 +35,16 @@
 #include <assert.h>
 #include <errno.h>
 #include <inttypes.h>
-#include <radeon_drm.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <xf86drm.h>
+#include <radeon_drm.h>
 
 static void
-terakan_winsys_drm_radeon_cs_create_bo_reference(
-   void * bo_reference_ptr, struct terakan_winsys_bo const * bo_base, bool is_reading,
-   bool is_writing, enum terakan_winsys_cs_bo_priority priority)
+terakan_winsys_drm_radeon_cs_create_bo_reference(void * bo_reference_ptr,
+                                                 struct terakan_winsys_bo const * bo_base,
+                                                 bool is_reading, bool is_writing,
+                                                 enum terakan_winsys_cs_bo_priority priority)
 {
    struct drm_radeon_cs_reloc * const bo_reference = (struct drm_radeon_cs_reloc *)bo_reference_ptr;
 
@@ -60,9 +61,10 @@ terakan_winsys_drm_radeon_cs_create_bo_reference(
 }
 
 static void
-terakan_winsys_drm_radeon_cs_update_bo_reference(
-   void * bo_reference_ptr, struct terakan_winsys_bo const * bo_base, bool is_reading,
-   bool is_writing, enum terakan_winsys_cs_bo_priority priority)
+terakan_winsys_drm_radeon_cs_update_bo_reference(void * bo_reference_ptr,
+                                                 struct terakan_winsys_bo const * bo_base,
+                                                 bool is_reading, bool is_writing,
+                                                 enum terakan_winsys_cs_bo_priority priority)
 {
    struct drm_radeon_cs_reloc * const bo_reference = (struct drm_radeon_cs_reloc *)bo_reference_ptr;
 
@@ -84,11 +86,13 @@ terakan_winsys_drm_radeon_cs_update_bo_reference(
 }
 
 static VkResult
-terakan_winsys_drm_radeon_cs_submit(
-   struct terakan_winsys * const winsys_base, enum amd_ip_type const ip_type,
-   uint32_t const bo_reference_count, void const * const bo_references,
-   uint32_t const indirect_buffer_size_dwords, uint32_t const * const indirect_buffer,
-   bool const is_end_of_frame)
+terakan_winsys_drm_radeon_cs_submit(struct terakan_winsys * const winsys_base,
+                                    enum amd_ip_type const ip_type,
+                                    uint32_t const bo_reference_count,
+                                    void const * const bo_references,
+                                    uint32_t const indirect_buffer_size_dwords,
+                                    uint32_t const * const indirect_buffer,
+                                    bool const is_end_of_frame)
 {
    if (indirect_buffer_size_dwords == 0) {
       /* The kernel driver returns -EINVAL for zero-length indirect buffers. */

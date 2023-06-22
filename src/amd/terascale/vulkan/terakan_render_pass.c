@@ -31,8 +31,8 @@
 #include <string.h>
 
 VKAPI_ATTR void VKAPI_CALL
-terakan_CmdBeginRendering(
-   VkCommandBuffer const commandBuffer, VkRenderingInfo const * const pRenderingInfo)
+terakan_CmdBeginRendering(VkCommandBuffer const commandBuffer,
+                          VkRenderingInfo const * const pRenderingInfo)
 {
    struct terakan_state_draw * const state_draw =
       &terakan_command_buffer_from_handle(commandBuffer)->command_writer->state_draw;
@@ -47,20 +47,17 @@ terakan_CmdBeginRendering(
          pRenderingInfo->pColorAttachments[color_attachment_index].imageView);
       if (color_view != NULL) {
          state_draw->cb_color_bo[color_attachment_index] = color_view->descriptor.bo;
-         memcpy(
-            &state_draw->cb_color[color_attachment_index], &color_view->descriptor.color,
-            sizeof(struct terakan_color_descriptor));
+         memcpy(&state_draw->cb_color[color_attachment_index], &color_view->descriptor.color,
+                sizeof(struct terakan_color_descriptor));
          terakan_color_descriptor_image_view_to_color_attachment(
             &state_draw->cb_color[color_attachment_index]);
-         memcpy(
-            &state_draw->cb_color_meta[color_attachment_index], &color_view->color_meta,
-            sizeof(struct terakan_color_meta_descriptor));
+         memcpy(&state_draw->cb_color_meta[color_attachment_index], &color_view->color_meta,
+                sizeof(struct terakan_color_meta_descriptor));
       } else {
          state_draw->cb_color_bo[color_attachment_index] = NULL;
       }
       terakan_state_draw_written(
-         state_draw,
-         (enum terakan_state_draw_index)(
-            (uint32_t)TERAKAN_STATE_DRAW_CB_COLOR_FIRST + color_attachment_index));
+         state_draw, (enum terakan_state_draw_index)((uint32_t)TERAKAN_STATE_DRAW_CB_COLOR_FIRST +
+                                                     color_attachment_index));
    }
 }

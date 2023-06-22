@@ -26,24 +26,24 @@
  * IN THE SOFTWARE.
  */
 
-#include "terakan_sync_completion.h"
 #include "terakan_winsys_drm_radeon.h"
+#include "terakan_sync_completion.h"
 
 #include "util/macros.h"
 #include "util/u_memory.h"
 
 #include <assert.h>
-#include <radeon_drm.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <xf86drm.h>
+#include <radeon_drm.h>
 
 static bool
-terakan_winsys_drm_radeon_get_drm_value(
-   int const fd, unsigned const request, char const * const error_name, uint32_t * const out)
+terakan_winsys_drm_radeon_get_drm_value(int const fd, unsigned const request,
+                                        char const * const error_name, uint32_t * const out)
 {
    struct drm_radeon_info info = {
       .request = request,
@@ -52,10 +52,9 @@ terakan_winsys_drm_radeon_get_drm_value(
    int const result = drmCommandWriteRead(fd, DRM_RADEON_INFO, &info, sizeof(info));
    if (result != 0) {
       if (error_name != NULL) {
-         fprintf(
-            stderr,
-            "terakan/drm_radeon: Failed to get %s from the kernel driver, error number %d.\n",
-            error_name, result);
+         fprintf(stderr,
+                 "terakan/drm_radeon: Failed to get %s from the kernel driver, error number %d.\n",
+                 error_name, result);
       }
       return false;
    }
@@ -95,9 +94,8 @@ terakan_winsys_drm_radeon_create(int const fd)
    {
       drmVersionPtr const drm_version = drmGetVersion(fd);
       if (drm_version == NULL) {
-         fputs(
-            "terakan/drm_radeon: Failed to get the kernel driver version for the DRM device.",
-            stderr);
+         fputs("terakan/drm_radeon: Failed to get the kernel driver version for the DRM device.",
+               stderr);
          return NULL;
       }
       if (drm_version->version_major != 2 || drm_version->version_minor < 50) {
@@ -115,8 +113,8 @@ terakan_winsys_drm_radeon_create(int const fd)
 
    /* Get the PCI device ID. */
    uint32_t pci_id;
-   if (!terakan_winsys_drm_radeon_get_drm_value(
-           fd, RADEON_INFO_DEVICE_ID, "PCI device ID", &pci_id)) {
+   if (!terakan_winsys_drm_radeon_get_drm_value(fd, RADEON_INFO_DEVICE_ID, "PCI device ID",
+                                                &pci_id)) {
       return NULL;
    }
 
@@ -142,8 +140,8 @@ terakan_winsys_drm_radeon_create(int const fd)
 
    /* Get tiling configuration. */
    uint32_t tiling_config;
-   if (!terakan_winsys_drm_radeon_get_drm_value(
-           fd, RADEON_INFO_TILING_CONFIG, "tiling configuration", &tiling_config)) {
+   if (!terakan_winsys_drm_radeon_get_drm_value(fd, RADEON_INFO_TILING_CONFIG,
+                                                "tiling configuration", &tiling_config)) {
       goto fail_alloc;
    }
    winsys->base.gpu_info.tile_pipes_log2 = tiling_config & 0xF;
@@ -160,10 +158,9 @@ terakan_winsys_drm_radeon_create(int const fd)
       int const read_gem_info_result =
          drmCommandWriteRead(fd, DRM_RADEON_GEM_INFO, &gem_info, sizeof(gem_info));
       if (read_gem_info_result != 0) {
-         fprintf(
-            stderr,
-            "terakan/drm_radeon: Failed to get the memory management info, error number %d.\n",
-            read_gem_info_result);
+         fprintf(stderr,
+                 "terakan/drm_radeon: Failed to get the memory management info, error number %d.\n",
+                 read_gem_info_result);
          goto fail_alloc;
       }
       winsys->base.gpu_info.gart_size = gem_info.gart_size;
@@ -184,9 +181,8 @@ terakan_winsys_drm_radeon_create(int const fd)
    winsys->base.gpu_info.cs_bo_reference_alignment = alignof(struct drm_radeon_cs_reloc);
 
    /* Get the timestamp frequency. In case of failure, timestamp queries will be disabled. */
-   if (!terakan_winsys_drm_radeon_get_drm_value(
-          fd, RADEON_INFO_CLOCK_CRYSTAL_FREQ, NULL,
-          &winsys->base.gpu_info.clock_crystal_frequency)) {
+   if (!terakan_winsys_drm_radeon_get_drm_value(fd, RADEON_INFO_CLOCK_CRYSTAL_FREQ, NULL,
+                                                &winsys->base.gpu_info.clock_crystal_frequency)) {
       winsys->base.gpu_info.clock_crystal_frequency = 0;
    }
 

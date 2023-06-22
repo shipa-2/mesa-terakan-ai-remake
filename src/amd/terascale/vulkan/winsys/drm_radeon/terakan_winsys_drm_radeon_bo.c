@@ -35,12 +35,12 @@
 #include <assert.h>
 #include <errno.h>
 #include <inttypes.h>
-#include <radeon_drm.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <xf86drm.h>
+#include <radeon_drm.h>
 
 static void *
 terakan_winsys_drm_radeon_bo_map(struct terakan_winsys_bo * const bo_base)
@@ -62,24 +62,23 @@ terakan_winsys_drm_radeon_bo_map(struct terakan_winsys_bo * const bo_base)
       .handle = bo->handle,
       .size = bo->size,
    };
-   int const gem_mmap_result = drmCommandWriteRead(
-      winsys->fd, DRM_RADEON_GEM_MMAP, &gem_mmap_arguments, sizeof(gem_mmap_arguments));
+   int const gem_mmap_result = drmCommandWriteRead(winsys->fd, DRM_RADEON_GEM_MMAP,
+                                                   &gem_mmap_arguments, sizeof(gem_mmap_arguments));
    if (gem_mmap_result != 0) {
-      fprintf(
-         stderr,
-         "terakan/drm_radeon: Failed to map the buffer 0x%" PRIX32 " in GEM, error number %d.\n",
-         (uint32_t)bo->handle, gem_mmap_result);
+      fprintf(stderr,
+              "terakan/drm_radeon: Failed to map the buffer 0x%" PRIX32
+              " in GEM, error number %d.\n",
+              (uint32_t)bo->handle, gem_mmap_result);
       return NULL;
    }
 
-   void * const mapping = os_mmap(
-      NULL, (size_t)bo->size, PROT_READ | PROT_WRITE, MAP_SHARED, winsys->fd,
-      (off_t)gem_mmap_arguments.addr_ptr);
+   void * const mapping = os_mmap(NULL, (size_t)bo->size, PROT_READ | PROT_WRITE, MAP_SHARED,
+                                  winsys->fd, (off_t)gem_mmap_arguments.addr_ptr);
    if (mapping == MAP_FAILED) {
-      fprintf(
-         stderr,
-         "terakan/drm_radeon: Failed to map the buffer 0x%" PRIX32 " in the OS, error number %d.\n",
-         (uint32_t)bo->handle, errno);
+      fprintf(stderr,
+              "terakan/drm_radeon: Failed to map the buffer 0x%" PRIX32
+              " in the OS, error number %d.\n",
+              (uint32_t)bo->handle, errno);
       return NULL;
    }
 
@@ -114,9 +113,8 @@ terakan_winsys_drm_radeon_bo_wait_idle(struct terakan_winsys_bo * const bo_base)
       .handle = bo->handle,
    };
    /* Returns -EBUSY in finite time in case of a hang (30-second timeout in Linux Radeon 2.50.0). */
-   return drmCommandWrite(
-      winsys->fd, DRM_RADEON_GEM_WAIT_IDLE, &gem_wait_idle_arguments,
-      sizeof(gem_wait_idle_arguments)) == 0;
+   return drmCommandWrite(winsys->fd, DRM_RADEON_GEM_WAIT_IDLE, &gem_wait_idle_arguments,
+                          sizeof(gem_wait_idle_arguments)) == 0;
 }
 
 static void
@@ -138,9 +136,10 @@ terakan_winsys_drm_radeon_bo_free(struct terakan_winsys_bo * const bo_base)
 }
 
 static struct terakan_winsys_bo *
-terakan_winsys_drm_radeon_bo_allocate_device_memory(
-   struct terakan_winsys * const winsys_base, VkDeviceSize const size, VkDeviceSize const alignment,
-   VkMemoryPropertyFlags const flags)
+terakan_winsys_drm_radeon_bo_allocate_device_memory(struct terakan_winsys * const winsys_base,
+                                                    VkDeviceSize const size,
+                                                    VkDeviceSize const alignment,
+                                                    VkMemoryPropertyFlags const flags)
 {
    struct terakan_winsys_drm_radeon * const winsys =
       container_of(winsys_base, struct terakan_winsys_drm_radeon, base);
@@ -176,25 +175,20 @@ terakan_winsys_drm_radeon_bo_allocate_device_memory(
    int const gem_create_result = drmCommandWriteRead(
       winsys->fd, DRM_RADEON_GEM_CREATE, &gem_create_arguments, sizeof(gem_create_arguments));
    if (gem_create_result != 0) {
-      fprintf(
-         stderr, "terakan/drm_radeon: Failed to allocate a buffer, error number %d:\n",
-         gem_create_result);
+      fprintf(stderr, "terakan/drm_radeon: Failed to allocate a buffer, error number %d:\n",
+              gem_create_result);
       fprintf(stderr, "terakan/drm_radeon:    Size: %" PRIu64 " bytes\n", size);
-      fprintf(
-         stderr, "terakan/drm_radeon:    Alignment: %" PRIu64 " bytes\n", alignment);
-      fprintf(
-         stderr, "terakan/drm_radeon:    Domains: 0x%" PRIX32 "\n", (uint32_t)initial_domains);
-      fprintf(
-         stderr, "terakan/drm_radeon:    Flags: 0x%" PRIX32 "\n",
-         (uint32_t)gem_create_arguments.flags);
+      fprintf(stderr, "terakan/drm_radeon:    Alignment: %" PRIu64 " bytes\n", alignment);
+      fprintf(stderr, "terakan/drm_radeon:    Domains: 0x%" PRIX32 "\n", (uint32_t)initial_domains);
+      fprintf(stderr, "terakan/drm_radeon:    Flags: 0x%" PRIX32 "\n",
+              (uint32_t)gem_create_arguments.flags);
       return NULL;
    }
 
    struct terakan_winsys_drm_radeon_bo * const bo = MALLOC_STRUCT(terakan_winsys_drm_radeon_bo);
    if (bo == NULL) {
-      fputs(
-         "terakan/drm_radeon: Failed to allocate memory for the winsys buffer structure.\n",
-         stderr);
+      fputs("terakan/drm_radeon: Failed to allocate memory for the winsys buffer structure.\n",
+            stderr);
       struct drm_gem_close gem_close_arguments = {
          .handle = bo->handle,
       };

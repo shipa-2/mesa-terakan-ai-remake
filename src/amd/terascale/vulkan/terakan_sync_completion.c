@@ -21,8 +21,8 @@
  * IN THE SOFTWARE.
  */
 
-#include "terakan_device.h"
 #include "terakan_sync_completion.h"
+#include "terakan_device.h"
 
 #include "util/macros.h"
 #include "util/timespec.h"
@@ -32,8 +32,8 @@
 #include <stdbool.h>
 
 static VkResult
-terakan_sync_completion_signal(
-   struct vk_device * const device_base, struct vk_sync * const sync_base, uint64_t const value)
+terakan_sync_completion_signal(struct vk_device * const device_base,
+                               struct vk_sync * const sync_base, uint64_t const value)
 {
    struct terakan_device * const device = container_of(device_base, struct terakan_device, vk);
    struct terakan_sync_completion * const sync =
@@ -51,8 +51,8 @@ terakan_sync_completion_signal(
 }
 
 static VkResult
-terakan_sync_completion_get_value(
-   struct vk_device * const device, struct vk_sync * const sync_base, uint64_t * const value_out)
+terakan_sync_completion_get_value(struct vk_device * const device, struct vk_sync * const sync_base,
+                                  uint64_t * const value_out)
 {
    struct terakan_sync_completion const * const sync =
       container_of(sync_base, struct terakan_sync_completion, vk);
@@ -63,10 +63,10 @@ terakan_sync_completion_get_value(
 }
 
 static VkResult
-terakan_sync_completion_wait_many(
-   struct vk_device * const device_base, uint32_t const wait_count,
-   struct vk_sync_wait const * const waits, enum vk_sync_wait_flags const wait_flags,
-   uint64_t const abs_timeout_ns)
+terakan_sync_completion_wait_many(struct vk_device * const device_base, uint32_t const wait_count,
+                                  struct vk_sync_wait const * const waits,
+                                  enum vk_sync_wait_flags const wait_flags,
+                                  uint64_t const abs_timeout_ns)
 {
    bool const wait_any = (wait_flags & VK_SYNC_WAIT_ANY) != 0;
 
@@ -127,8 +127,8 @@ terakan_sync_completion_wait_many(
       if (abs_timeout_ns == OS_TIMEOUT_INFINITE) {
          condition_wait_result = cnd_wait(&device->completion_condition, &device->completion_mutex);
       } else {
-         condition_wait_result = cnd_timedwait(
-            &device->completion_condition, &device->completion_mutex, &abs_timeout_timespec);
+         condition_wait_result = cnd_timedwait(&device->completion_condition,
+                                               &device->completion_mutex, &abs_timeout_timespec);
          if (condition_wait_result == thrd_timedout) {
             break;
          }
@@ -151,8 +151,8 @@ terakan_sync_completion_finish(struct vk_device * const device, struct vk_sync *
 }
 
 static VkResult
-terakan_sync_completion_init(
-   struct vk_device * const device, struct vk_sync * const sync_base, uint64_t const initial_value)
+terakan_sync_completion_init(struct vk_device * const device, struct vk_sync * const sync_base,
+                             uint64_t const initial_value)
 {
    struct terakan_sync_completion * const sync =
       container_of(sync_base, struct terakan_sync_completion, vk);
@@ -165,13 +165,8 @@ terakan_sync_completion_init(
 
 struct vk_sync_type const terakan_sync_completion_type = {
    .size = sizeof(struct terakan_sync_completion),
-   .features =
-      VK_SYNC_FEATURE_TIMELINE |
-      VK_SYNC_FEATURE_GPU_WAIT |
-      VK_SYNC_FEATURE_CPU_WAIT |
-      VK_SYNC_FEATURE_CPU_SIGNAL |
-      VK_SYNC_FEATURE_WAIT_ANY |
-      VK_SYNC_FEATURE_WAIT_PENDING,
+   .features = VK_SYNC_FEATURE_TIMELINE | VK_SYNC_FEATURE_GPU_WAIT | VK_SYNC_FEATURE_CPU_WAIT |
+               VK_SYNC_FEATURE_CPU_SIGNAL | VK_SYNC_FEATURE_WAIT_ANY | VK_SYNC_FEATURE_WAIT_PENDING,
    .init = terakan_sync_completion_init,
    .finish = terakan_sync_completion_finish,
    .signal = terakan_sync_completion_signal,

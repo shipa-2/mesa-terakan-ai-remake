@@ -76,8 +76,7 @@ struct terakan_gpu_info {
 /* Returns whether the GPU is supported by Terakan.
  * If it's not, the output info is unmodified.
  */
-bool terakan_gpu_info_init_chip_family(
-   struct terakan_gpu_info * info, uint32_t pci_id);
+bool terakan_gpu_info_init_chip_family(struct terakan_gpu_info * info, uint32_t pci_id);
 
 void terakan_gpu_info_init_complete(struct terakan_gpu_info * info);
 

@@ -32,16 +32,16 @@
  * IN THE SOFTWARE.
  */
 
-#include "terakan_entrypoints.h"
 #include "terakan_format.h"
+#include "terakan_entrypoints.h"
 #include "terakan_limits.h"
 #include "terakan_physical_device.h"
 
-#include "vk_format.h"
-#include "vk_util.h"
 #include "util/bitscan.h"
 #include "util/format/u_format.h"
 #include "util/u_endian.h"
+#include "vk_format.h"
+#include "vk_util.h"
 
 #include <assert.h>
 #include <stdbool.h>
@@ -576,7 +576,7 @@ terakan_format_data_get_number_format(VkFormat const format)
       }
       break;
 
-   /* Fixed-point formats are not supported. */
+      /* Fixed-point formats are not supported. */
 
    case UTIL_FORMAT_TYPE_FLOAT:
       return V_030010_SQ_NUM_FORMAT_NORM;
@@ -744,9 +744,9 @@ terakan_format_vertex_get_sign(VkFormat const format)
 }
 
 VKAPI_ATTR void VKAPI_CALL
-terakan_GetPhysicalDeviceFormatProperties2(
-   VkPhysicalDevice const physicalDevice, VkFormat const format,
-   VkFormatProperties2 * const pFormatProperties)
+terakan_GetPhysicalDeviceFormatProperties2(VkPhysicalDevice const physicalDevice,
+                                           VkFormat const format,
+                                           VkFormatProperties2 * const pFormatProperties)
 {
    struct terakan_physical_device const * const device =
       terakan_physical_device_from_handle(physicalDevice);
@@ -759,9 +759,9 @@ terakan_GetPhysicalDeviceFormatProperties2(
 
    uint32_t const color_format = terakan_format_color_get_format(format);
    uint32_t const color_number_type = terakan_format_color_get_number_type(format);
-   bool const color_supported =
-      color_format != V_028C70_COLOR_INVALID && color_number_type != UINT32_MAX &&
-      terakan_format_color_get_swap(format) != UINT32_MAX;
+   bool const color_supported = color_format != V_028C70_COLOR_INVALID &&
+                                color_number_type != UINT32_MAX &&
+                                terakan_format_color_get_swap(format) != UINT32_MAX;
 
    uint32_t const depth_format = terakan_format_depth_get_format(format);
    bool const has_stencil_8 = terakan_format_has_stencil_8(format);
@@ -798,10 +798,9 @@ terakan_GetPhysicalDeviceFormatProperties2(
          }
       }
       if (vertex_format != FMT_INVALID) {
-         buffer_features |=
-            VK_FORMAT_FEATURE_2_STORAGE_TEXEL_BUFFER_BIT |
-            VK_FORMAT_FEATURE_2_STORAGE_READ_WITHOUT_FORMAT_BIT |
-            VK_FORMAT_FEATURE_2_STORAGE_WRITE_WITHOUT_FORMAT_BIT;
+         buffer_features |= VK_FORMAT_FEATURE_2_STORAGE_TEXEL_BUFFER_BIT |
+                            VK_FORMAT_FEATURE_2_STORAGE_READ_WITHOUT_FORMAT_BIT |
+                            VK_FORMAT_FEATURE_2_STORAGE_WRITE_WITHOUT_FORMAT_BIT;
       }
       if (format == VK_FORMAT_R32_UINT || format == VK_FORMAT_R32_SINT) {
          image_features |= VK_FORMAT_FEATURE_2_STORAGE_IMAGE_ATOMIC_BIT;
@@ -877,8 +876,8 @@ terakan_GetPhysicalDeviceImageFormatProperties2(
    VkFormatProperties2 format_properties_2;
    format_properties_2.sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2;
    format_properties_2.pNext = &format_properties_3;
-   terakan_GetPhysicalDeviceFormatProperties2(
-      physicalDevice, pImageFormatInfo->format, &format_properties_2);
+   terakan_GetPhysicalDeviceFormatProperties2(physicalDevice, pImageFormatInfo->format,
+                                              &format_properties_2);
 
    VkFormatFeatureFlags2 features;
    switch (pImageFormatInfo->tiling) {
@@ -927,9 +926,8 @@ terakan_GetPhysicalDeviceImageFormatProperties2(
    /* Multisampled images must be 2D-tiled.
     * For linear-only formats, the optimal tiling is linear tiling, so check both conditions.
     */
-   if ((features &
-        (VK_FORMAT_FEATURE_2_COLOR_ATTACHMENT_BIT |
-         VK_FORMAT_FEATURE_2_DEPTH_STENCIL_ATTACHMENT_BIT)) &&
+   if ((features & (VK_FORMAT_FEATURE_2_COLOR_ATTACHMENT_BIT |
+                    VK_FORMAT_FEATURE_2_DEPTH_STENCIL_ATTACHMENT_BIT)) &&
        pImageFormatInfo->type == VK_IMAGE_TYPE_2D &&
        !(pImageFormatInfo->flags & VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT) &&
        pImageFormatInfo->tiling == VK_IMAGE_TILING_OPTIMAL &&

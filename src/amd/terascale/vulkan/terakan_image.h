@@ -24,13 +24,13 @@
 #ifndef TERAKAN_IMAGE_H
 #define TERAKAN_IMAGE_H
 
-#include "terakan_descriptor.h"
 #include "winsys/terakan_winsys.h"
+#include "terakan_descriptor.h"
 
-#include "ac_surface.h"
 #include "gallium/drivers/r600/evergreend.h"
 #include "util/bitscan.h"
 #include "util/u_math.h"
+#include "ac_surface.h"
 #include "vk_format.h"
 #include "vk_image.h"
 
@@ -55,10 +55,10 @@ terakan_image_array_mode_ac_to_hw(enum radeon_surf_mode const mode)
 }
 
 static inline unsigned
-terakan_image_tile_split_bytes_to_hw(uint32_t const tile_split) {
-   assert(
-      tile_split >= ((uint32_t)1 << 6) && tile_split <= ((uint32_t)1 << 12) &&
-      util_is_power_of_two_or_zero(tile_split));
+terakan_image_tile_split_bytes_to_hw(uint32_t const tile_split)
+{
+   assert(tile_split >= ((uint32_t)1 << 6) && tile_split <= ((uint32_t)1 << 12) &&
+          util_is_power_of_two_or_zero(tile_split));
    return util_logbase2(tile_split) - 6;
 }
 

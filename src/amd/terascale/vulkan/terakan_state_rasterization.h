@@ -30,7 +30,7 @@
 #include <stdint.h>
 #include <vulkan/vulkan_core.h>
 
-#define TERAKAN_STATE_DRAW_POLYGON_MODE_PA_SU_SC_MODE_CNTL_CLEAR \
+#define TERAKAN_STATE_DRAW_POLYGON_MODE_PA_SU_SC_MODE_CNTL_CLEAR                                   \
    ((uint32_t)(C_028814_POLY_MODE & C_028814_POLYMODE_FRONT_PTYPE & C_028814_POLYMODE_BACK_PTYPE))
 
 static inline uint32_t
@@ -51,15 +51,14 @@ terakan_state_draw_polygon_mode_pa_su_sc_mode_cntl(VkPolygonMode const polygon_m
       assert(!"Unsupported polygon mode");
       hw_polygon_mode = V_028814_X_DRAW_TRIANGLES;
    }
-   return S_028814_POLY_MODE(
-             hw_polygon_mode != V_028814_X_DRAW_TRIANGLES
-                ? V_028814_X_DUAL_MODE
-                : V_028814_X_DISABLE_POLY_MODE) |
+   return S_028814_POLY_MODE(hw_polygon_mode != V_028814_X_DRAW_TRIANGLES
+                                ? V_028814_X_DUAL_MODE
+                                : V_028814_X_DISABLE_POLY_MODE) |
           S_028814_POLYMODE_FRONT_PTYPE(hw_polygon_mode) |
           S_028814_POLYMODE_BACK_PTYPE(hw_polygon_mode);
 }
 
-#define TERAKAN_STATE_DRAW_CULL_MODE_PA_SU_SC_MODE_CNTL_CLEAR \
+#define TERAKAN_STATE_DRAW_CULL_MODE_PA_SU_SC_MODE_CNTL_CLEAR                                      \
    ((uint32_t)(C_028814_CULL_FRONT & C_028814_CULL_BACK))
 
 static inline uint32_t
@@ -77,21 +76,20 @@ terakan_state_draw_front_face_pa_su_sc_mode_cntl(VkFrontFace const front_face)
    return S_028814_FACE(front_face != VK_FRONT_FACE_COUNTER_CLOCKWISE);
 }
 
-#define TERAKAN_STATE_DRAW_PROVOKING_VERTEX_MODE_PA_SU_SC_MODE_CNTL_CLEAR \
+#define TERAKAN_STATE_DRAW_PROVOKING_VERTEX_MODE_PA_SU_SC_MODE_CNTL_CLEAR                          \
    ((uint32_t)C_028814_PROVOKING_VTX_LAST)
 
 static inline uint32_t
 terakan_state_draw_provoking_vertex_mode_pa_su_sc_mode_cntl(
    VkProvokingVertexModeEXT const provoking_vertex_mode)
 {
-   return S_028814_PROVOKING_VTX_LAST(
-             provoking_vertex_mode == VK_PROVOKING_VERTEX_MODE_LAST_VERTEX_EXT);
+   return S_028814_PROVOKING_VTX_LAST(provoking_vertex_mode ==
+                                      VK_PROVOKING_VERTEX_MODE_LAST_VERTEX_EXT);
 }
 
-#define TERAKAN_STATE_DRAW_DEPTH_BIAS_ENABLE_PA_SU_SC_MODE_CNTL_CLEAR \
-   ((uint32_t)( \
-       C_028814_POLY_OFFSET_FRONT_ENABLE & C_028814_POLY_OFFSET_BACK_ENABLE & \
-       C_028814_POLY_OFFSET_PARA_ENABLE))
+#define TERAKAN_STATE_DRAW_DEPTH_BIAS_ENABLE_PA_SU_SC_MODE_CNTL_CLEAR                              \
+   ((uint32_t)(C_028814_POLY_OFFSET_FRONT_ENABLE & C_028814_POLY_OFFSET_BACK_ENABLE &              \
+               C_028814_POLY_OFFSET_PARA_ENABLE))
 
 static inline uint32_t
 terakan_state_draw_depth_bias_enable_pa_su_sc_mode_cntl(VkBool32 const depth_bias_enable)

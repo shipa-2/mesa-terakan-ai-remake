@@ -21,8 +21,8 @@
  * IN THE SOFTWARE.
  */
 
-#include "terakan_command_buffer.h"
 #include "terakan_hw_state.h"
+#include "terakan_command_buffer.h"
 
 #include "gallium/drivers/r600/evergreend.h"
 #include "gallium/drivers/r600/r600d_common.h"
@@ -32,13 +32,12 @@
 #include <stdint.h>
 #include <string.h>
 
-typedef void (* terakan_hw_state_draw_emit_function)(
-   struct terakan_command_writer * command_writer, enum terakan_hw_state_draw_index state_index);
+typedef void (*terakan_hw_state_draw_emit_function)(struct terakan_command_writer * command_writer,
+                                                    enum terakan_hw_state_draw_index state_index);
 
 static void
-terakan_hw_state_draw_emit_vgt_index_type(
-   struct terakan_command_writer * const command_writer,
-   UNUSED enum terakan_hw_state_draw_index const state_index)
+terakan_hw_state_draw_emit_vgt_index_type(struct terakan_command_writer * const command_writer,
+                                          UNUSED enum terakan_hw_state_draw_index const state_index)
 {
    uint32_t * packet = terakan_command_writer_emit(command_writer, 2, 0, 0);
    if (unlikely(packet == NULL)) {
@@ -99,9 +98,8 @@ terakan_hw_state_draw_emit_pa_su_sc_mode_cntl(
 }
 
 static void
-terakan_hw_state_draw_emit_cb_blend_rgba(
-   struct terakan_command_writer * const command_writer,
-   UNUSED enum terakan_hw_state_draw_index const state_index)
+terakan_hw_state_draw_emit_cb_blend_rgba(struct terakan_command_writer * const command_writer,
+                                         UNUSED enum terakan_hw_state_draw_index const state_index)
 {
    uint32_t * packet = terakan_command_writer_emit(command_writer, 2 + 4, 0, 0);
    if (unlikely(packet == NULL)) {
@@ -113,9 +111,8 @@ terakan_hw_state_draw_emit_cb_blend_rgba(
 }
 
 static void
-terakan_hw_state_draw_emit_color(
-   struct terakan_command_writer * const command_writer,
-   enum terakan_hw_state_draw_index const state_index)
+terakan_hw_state_draw_emit_color(struct terakan_command_writer * const command_writer,
+                                 enum terakan_hw_state_draw_index const state_index)
 {
    uint32_t const color_index =
       (uint32_t)state_index - (uint32_t)TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST;
@@ -147,8 +144,8 @@ terakan_hw_state_draw_emit_color(
          return;
       }
 
-      *packet++ = PKT3(
-         PKT3_SET_CONTEXT_REG, cb_color_descriptor_dwords + cb_color_meta_descriptor_dwords, 0);
+      *packet++ = PKT3(PKT3_SET_CONTEXT_REG,
+                       cb_color_descriptor_dwords + cb_color_meta_descriptor_dwords, 0);
       *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028C60_CB_COLOR0_BASE + color_register_offset);
 
       /* TODO(Triang3l): Higher priority for multisampled color buffers (possibly pass the sample
@@ -158,9 +155,8 @@ terakan_hw_state_draw_emit_color(
        */
       uint32_t const color_bo_reference = terakan_bo_reference_writer_add_reference(
          &command_writer->bo_reference_writer, color_bo, true, true,
-         G_028C70_RAT(color_descriptor->info)
-            ? TERAKAN_WINSYS_CS_BO_PRIORITY_SHADER_RW_IMAGE
-            : TERAKAN_WINSYS_CS_BO_PRIORITY_COLOR_BUFFER);
+         G_028C70_RAT(color_descriptor->info) ? TERAKAN_WINSYS_CS_BO_PRIORITY_SHADER_RW_IMAGE
+                                              : TERAKAN_WINSYS_CS_BO_PRIORITY_COLOR_BUFFER);
 
       memcpy(packet, color_descriptor, sizeof(*color_descriptor));
       packet += sizeof(*color_descriptor) / sizeof(uint32_t);
@@ -188,9 +184,8 @@ terakan_hw_state_draw_emit_color(
 }
 
 static void
-terakan_hw_state_draw_emit_color_rat_only(
-   struct terakan_command_writer * const command_writer,
-   enum terakan_hw_state_draw_index const state_index)
+terakan_hw_state_draw_emit_color_rat_only(struct terakan_command_writer * const command_writer,
+                                          enum terakan_hw_state_draw_index const state_index)
 {
    uint32_t const color_rat_only_index =
       (uint32_t)state_index - ((uint32_t)TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 8);
@@ -244,25 +239,25 @@ terakan_hw_state_draw_emit_color_rat_only(
    }
 }
 
-static terakan_hw_state_draw_emit_function const terakan_hw_state_draw_emit_functions[
-   TERAKAN_HW_STATE_DRAW_COUNT] = {
-   [TERAKAN_HW_STATE_DRAW_VGT_INDEX_TYPE] = terakan_hw_state_draw_emit_vgt_index_type,
-   [TERAKAN_HW_STATE_DRAW_VGT_INDEX_BUFFER] = terakan_hw_state_draw_emit_vgt_index_buffer,
-   [TERAKAN_HW_STATE_DRAW_VGT_PRIMITIVE_TYPE] = terakan_hw_state_draw_emit_vgt_primitive_type,
-   [TERAKAN_HW_STATE_DRAW_PA_SU_SC_MODE_CNTL] = terakan_hw_state_draw_emit_pa_su_sc_mode_cntl,
-   [TERAKAN_HW_STATE_DRAW_CB_BLEND_RGBA] = terakan_hw_state_draw_emit_cb_blend_rgba,
-   [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST] = terakan_hw_state_draw_emit_color,
-   [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 1] = terakan_hw_state_draw_emit_color,
-   [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 2] = terakan_hw_state_draw_emit_color,
-   [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 3] = terakan_hw_state_draw_emit_color,
-   [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 4] = terakan_hw_state_draw_emit_color,
-   [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 5] = terakan_hw_state_draw_emit_color,
-   [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 6] = terakan_hw_state_draw_emit_color,
-   [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 7] = terakan_hw_state_draw_emit_color,
-   [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 8] = terakan_hw_state_draw_emit_color_rat_only,
-   [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 9] = terakan_hw_state_draw_emit_color_rat_only,
-   [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 10] = terakan_hw_state_draw_emit_color_rat_only,
-   [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 11] = terakan_hw_state_draw_emit_color_rat_only,
+static terakan_hw_state_draw_emit_function const
+   terakan_hw_state_draw_emit_functions[TERAKAN_HW_STATE_DRAW_COUNT] = {
+      [TERAKAN_HW_STATE_DRAW_VGT_INDEX_TYPE] = terakan_hw_state_draw_emit_vgt_index_type,
+      [TERAKAN_HW_STATE_DRAW_VGT_INDEX_BUFFER] = terakan_hw_state_draw_emit_vgt_index_buffer,
+      [TERAKAN_HW_STATE_DRAW_VGT_PRIMITIVE_TYPE] = terakan_hw_state_draw_emit_vgt_primitive_type,
+      [TERAKAN_HW_STATE_DRAW_PA_SU_SC_MODE_CNTL] = terakan_hw_state_draw_emit_pa_su_sc_mode_cntl,
+      [TERAKAN_HW_STATE_DRAW_CB_BLEND_RGBA] = terakan_hw_state_draw_emit_cb_blend_rgba,
+      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST] = terakan_hw_state_draw_emit_color,
+      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 1] = terakan_hw_state_draw_emit_color,
+      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 2] = terakan_hw_state_draw_emit_color,
+      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 3] = terakan_hw_state_draw_emit_color,
+      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 4] = terakan_hw_state_draw_emit_color,
+      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 5] = terakan_hw_state_draw_emit_color,
+      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 6] = terakan_hw_state_draw_emit_color,
+      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 7] = terakan_hw_state_draw_emit_color,
+      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 8] = terakan_hw_state_draw_emit_color_rat_only,
+      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 9] = terakan_hw_state_draw_emit_color_rat_only,
+      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 10] = terakan_hw_state_draw_emit_color_rat_only,
+      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 11] = terakan_hw_state_draw_emit_color_rat_only,
 };
 
 void
@@ -271,7 +266,8 @@ terakan_hw_state_draw_emit_all(struct terakan_command_writer * const command_wri
    struct terakan_hw_state_draw * const state = &command_writer->hw_state_draw;
    BITSET_ZERO(state->state_modified);
    unsigned state_index;
-   BITSET_FOREACH_SET(state_index, state->state_ever_written, TERAKAN_HW_STATE_DRAW_COUNT) {
+   BITSET_FOREACH_SET(state_index, state->state_ever_written, TERAKAN_HW_STATE_DRAW_COUNT)
+   {
       terakan_hw_state_draw_emit_functions[state_index](
          command_writer, (enum terakan_hw_state_draw_index)state_index);
    }
@@ -282,7 +278,8 @@ terakan_hw_state_draw_emit_modified(struct terakan_command_writer * const comman
 {
    struct terakan_hw_state_draw * const state = &command_writer->hw_state_draw;
    unsigned state_index;
-   BITSET_FOREACH_SET(state_index, state->state_modified, TERAKAN_HW_STATE_DRAW_COUNT) {
+   BITSET_FOREACH_SET(state_index, state->state_modified, TERAKAN_HW_STATE_DRAW_COUNT)
+   {
       terakan_hw_state_draw_emit_functions[state_index](
          command_writer, (enum terakan_hw_state_draw_index)state_index);
       if (unlikely(!BITSET_TEST(state->state_modified, state_index))) {

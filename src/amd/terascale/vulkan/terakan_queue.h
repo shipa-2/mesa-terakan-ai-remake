@@ -24,9 +24,9 @@
 #ifndef TERAKAN_QUEUE_H
 #define TERAKAN_QUEUE_H
 
+#include "winsys/terakan_winsys.h"
 #include "terakan_command_buffer.h"
 #include "terakan_sync_completion.h"
-#include "winsys/terakan_winsys.h"
 
 #include "c11/threads.h"
 #include "util/list.h"
@@ -91,8 +91,8 @@ VK_DEFINE_HANDLE_CASTS(terakan_queue, vk.base, VkQueue, VK_OBJECT_TYPE_QUEUE)
 
 void terakan_queue_destroy(struct terakan_queue * queue);
 
-VkResult terakan_queue_create(
-   struct terakan_device * device, VkDeviceQueueCreateInfo const * create_info,
-   uint32_t index_in_family, struct terakan_queue * * queue_out);
+VkResult terakan_queue_create(struct terakan_device * device,
+                              VkDeviceQueueCreateInfo const * create_info, uint32_t index_in_family,
+                              struct terakan_queue ** queue_out);
 
 #endif /* TERAKAN_QUEUE_H */

@@ -21,8 +21,8 @@
  * IN THE SOFTWARE.
  */
 
-#include "terakan_entrypoints.h"
 #include "terakan_instance.h"
+#include "terakan_entrypoints.h"
 #include "terakan_limits.h"
 #include "terakan_physical_device.h"
 
@@ -38,10 +38,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-static struct debug_control const terakan_debug_options[] = {
-   {"startup", TERAKAN_DEBUG_STARTUP},
-   {NULL, 0}
-};
+static struct debug_control const terakan_debug_options[] = {{"startup", TERAKAN_DEBUG_STARTUP},
+                                                             {NULL, 0}};
 
 static struct vk_instance_extension_table const terakan_instance_extensions_supported = {
    .KHR_get_physical_device_properties2 = true,
@@ -60,21 +58,21 @@ static struct vk_instance_extension_table const terakan_instance_extensions_supp
 };
 
 VKAPI_ATTR VkResult VKAPI_CALL
-terakan_EnumerateInstanceExtensionProperties(
-   char const * const pLayerName, uint32_t * const pPropertyCount,
-   VkExtensionProperties * const pProperties)
+terakan_EnumerateInstanceExtensionProperties(char const * const pLayerName,
+                                             uint32_t * const pPropertyCount,
+                                             VkExtensionProperties * const pProperties)
 {
    if (pLayerName != NULL) {
       return vk_error(NULL, VK_ERROR_LAYER_NOT_PRESENT);
    }
 
-   return vk_enumerate_instance_extension_properties(
-      &terakan_instance_extensions_supported, pPropertyCount, pProperties);
+   return vk_enumerate_instance_extension_properties(&terakan_instance_extensions_supported,
+                                                     pPropertyCount, pProperties);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
-terakan_EnumerateInstanceLayerProperties(
-   uint32_t * const pPropertyCount, VkLayerProperties * const pProperties)
+terakan_EnumerateInstanceLayerProperties(uint32_t * const pPropertyCount,
+                                         VkLayerProperties * const pProperties)
 {
    if (pProperties == NULL) {
       *pPropertyCount = 0;
@@ -100,8 +98,8 @@ terakan_GetInstanceProcAddr(VkInstance const instanceHandle, char const * const 
 }
 
 VKAPI_ATTR void VKAPI_CALL
-terakan_DestroyInstance(
-   VkInstance const instanceHandle, VkAllocationCallbacks const * const pAllocator)
+terakan_DestroyInstance(VkInstance const instanceHandle,
+                        VkAllocationCallbacks const * const pAllocator)
 {
    struct terakan_instance * const instance = terakan_instance_from_handle(instanceHandle);
 
@@ -114,9 +112,8 @@ terakan_DestroyInstance(
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
-terakan_CreateInstance(
-   VkInstanceCreateInfo const * const pCreateInfo, VkAllocationCallbacks const * pAllocator,
-   VkInstance * const pInstance)
+terakan_CreateInstance(VkInstanceCreateInfo const * const pCreateInfo,
+                       VkAllocationCallbacks const * pAllocator, VkInstance * const pInstance)
 {
    VkResult result;
 
@@ -124,21 +121,19 @@ terakan_CreateInstance(
       pAllocator = vk_default_allocator();
    }
 
-   struct terakan_instance * const instance =
-      vk_alloc(pAllocator, sizeof(*instance), alignof(*instance),
-      VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE);
+   struct terakan_instance * const instance = vk_alloc(
+      pAllocator, sizeof(*instance), alignof(*instance), VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE);
    if (instance == NULL) {
       return vk_error(NULL, VK_ERROR_OUT_OF_HOST_MEMORY);
    }
 
    struct vk_instance_dispatch_table dispatch_table;
-   vk_instance_dispatch_table_from_entrypoints(
-      &dispatch_table, &terakan_instance_entrypoints, true);
+   vk_instance_dispatch_table_from_entrypoints(&dispatch_table, &terakan_instance_entrypoints,
+                                               true);
    vk_instance_dispatch_table_from_entrypoints(&dispatch_table, &wsi_instance_entrypoints, false);
 
-   result = vk_instance_init(
-      &instance->vk, &terakan_instance_extensions_supported, &dispatch_table, pCreateInfo,
-      pAllocator);
+   result = vk_instance_init(&instance->vk, &terakan_instance_extensions_supported, &dispatch_table,
+                             pCreateInfo, pAllocator);
    if (result != VK_SUCCESS) {
       vk_free(pAllocator, instance);
       return vk_error(NULL, result);

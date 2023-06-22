@@ -32,16 +32,15 @@
 #include <stddef.h>
 
 bool
-terakan_gpu_info_init_chip_family(
-   struct terakan_gpu_info * const info, uint32_t const pci_id)
+terakan_gpu_info_init_chip_family(struct terakan_gpu_info * const info, uint32_t const pci_id)
 {
    enum radeon_family chip_family = CHIP_UNKNOWN;
    char const * chip_family_name = NULL;
    switch (pci_id) {
-#define CHIPSET(chipset_pci_id, chipset_name, chipset_family) \
-   case chipset_pci_id: \
-      chip_family = CHIP_##chipset_family; \
-      chip_family_name = #chipset_family; \
+#define CHIPSET(chipset_pci_id, chipset_name, chipset_family)                                      \
+   case chipset_pci_id:                                                                            \
+      chip_family = CHIP_##chipset_family;                                                         \
+      chip_family_name = #chipset_family;                                                          \
       break;
 #include "pci_ids/r600_pci_ids.h"
 #undef CHIPSET
@@ -132,9 +131,8 @@ terakan_gpu_info_init_complete(struct terakan_gpu_info * const info)
     * With the largest tile size, the bank width and height can be treated as 1.
     */
    VkDeviceSize const max_image_alignment =
-      (VkDeviceSize)1 <<
-      (MIN2(info->tile_row_bytes_log2, 3 + 3 + 3 + 4) + info->tile_banks_log2 +
-       info->tile_pipes_log2);
+      (VkDeviceSize)1 << (MIN2(info->tile_row_bytes_log2, 3 + 3 + 3 + 4) + info->tile_banks_log2 +
+                          info->tile_pipes_log2);
    info->buffer_image_bo_alignment =
       MAX2(TERAKAN_LIMITS_HW_CONSTANT_BUFFER_CACHE_LINE_BYTES, max_image_alignment);
 }

@@ -21,8 +21,8 @@
  * IN THE SOFTWARE.
  */
 
-#include "terakan_command_buffer.h"
 #include "terakan_pipeline_graphics.h"
+#include "terakan_command_buffer.h"
 #include "terakan_state.h"
 #include "terakan_state_input_assembly.h"
 #include "terakan_state_rasterization.h"
@@ -33,7 +33,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-typedef void (* terakan_pipeline_graphics_apply_state_function)(
+typedef void (*terakan_pipeline_graphics_apply_state_function)(
    struct terakan_command_writer * command_writer,
    struct terakan_pipeline_graphics const * pipeline,
    enum terakan_pipeline_graphics_state_index state_index);
@@ -54,38 +54,36 @@ terakan_pipeline_graphics_apply_pa_su_sc_mode_cntl(
    struct terakan_pipeline_graphics const * const pipeline,
    UNUSED enum terakan_pipeline_graphics_state_index const state_index)
 {
-   terakan_state_draw_replace_fields(
-      &command_writer->state_draw, TERAKAN_STATE_DRAW_PA_SU_SC_MODE_CNTL,
-      &command_writer->state_draw.pa_su_sc_mode_cntl,
-      pipeline->pre_rasterization.pa_su_sc_mode_cntl_clear,
-      pipeline->pre_rasterization.pa_su_sc_mode_cntl);
+   terakan_state_draw_replace_fields(&command_writer->state_draw,
+                                     TERAKAN_STATE_DRAW_PA_SU_SC_MODE_CNTL,
+                                     &command_writer->state_draw.pa_su_sc_mode_cntl,
+                                     pipeline->pre_rasterization.pa_su_sc_mode_cntl_clear,
+                                     pipeline->pre_rasterization.pa_su_sc_mode_cntl);
 }
 
 static terakan_pipeline_graphics_apply_state_function const
-terakan_pipeline_graphics_apply_state_functions[
-   TERAKAN_PIPELINE_GRAPHICS_STATE_COUNT] = {
-   [TERAKAN_PIPELINE_GRAPHICS_STATE_VGT_PRIMITIVE_TYPE] =
-      terakan_pipeline_graphics_apply_vgt_primitive_type,
-   [TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SU_SC_MODE_CNTL] =
-      terakan_pipeline_graphics_apply_pa_su_sc_mode_cntl,
+   terakan_pipeline_graphics_apply_state_functions[TERAKAN_PIPELINE_GRAPHICS_STATE_COUNT] = {
+      [TERAKAN_PIPELINE_GRAPHICS_STATE_VGT_PRIMITIVE_TYPE] =
+         terakan_pipeline_graphics_apply_vgt_primitive_type,
+      [TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SU_SC_MODE_CNTL] =
+         terakan_pipeline_graphics_apply_pa_su_sc_mode_cntl,
 };
 
 static void
-terakan_pipeline_graphics_bind(
-   struct terakan_command_writer * const command_writer,
-   struct terakan_pipeline_graphics const * const pipeline)
+terakan_pipeline_graphics_bind(struct terakan_command_writer * const command_writer,
+                               struct terakan_pipeline_graphics const * const pipeline)
 {
    unsigned state_index;
-   BITSET_FOREACH_SET(state_index, pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_COUNT) {
+   BITSET_FOREACH_SET(state_index, pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_COUNT)
+   {
       terakan_pipeline_graphics_apply_state_functions[state_index](
          command_writer, pipeline, (enum terakan_state_draw_index)state_index);
    }
 }
 
 static VkResult
-terakan_pipeline_graphics_vertex_input_init(
-   struct terakan_pipeline_graphics * const pipeline,
-   struct vk_graphics_pipeline_state const * const state)
+terakan_pipeline_graphics_vertex_input_init(struct terakan_pipeline_graphics * const pipeline,
+                                            struct vk_graphics_pipeline_state const * const state)
 {
    /* TERAKAN_PIPELINE_GRAPHICS_STATE_VGT_PRIMITIVE_TYPE */
    if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_IA_PRIMITIVE_TOPOLOGY)) {
@@ -135,9 +133,8 @@ terakan_pipeline_graphics_pre_rasterization_init(
       pipeline->pre_rasterization.pa_su_sc_mode_cntl |=
          terakan_state_draw_depth_bias_enable_pa_su_sc_mode_cntl(state->rs->depth_bias.enable);
    }
-   assert(
-      !(pipeline->pre_rasterization.pa_su_sc_mode_cntl &
-        pipeline->pre_rasterization.pa_su_sc_mode_cntl_clear));
+   assert(!(pipeline->pre_rasterization.pa_su_sc_mode_cntl &
+            pipeline->pre_rasterization.pa_su_sc_mode_cntl_clear));
    if (pipeline->pre_rasterization.pa_su_sc_mode_cntl_clear != UINT32_MAX) {
       BITSET_SET(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SU_SC_MODE_CNTL);
    }

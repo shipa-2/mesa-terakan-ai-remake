@@ -24,9 +24,9 @@
 #ifndef TERAKAN_STATE_H
 #define TERAKAN_STATE_H
 
+#include "winsys/terakan_winsys.h"
 #include "terakan_descriptor.h"
 #include "terakan_limits.h"
-#include "winsys/terakan_winsys.h"
 
 #include "gallium/drivers/r600/evergreend.h"
 #include "util/bitset.h"
@@ -58,21 +58,17 @@ enum terakan_state_draw_index {
  * from.
  */
 
-#define TERAKAN_STATE_DRAW_DEFAULT_PA_SU_SC_MODE_CNTL \
-   (/* cullMode = VK_CULL_MODE_NONE */ \
-    S_028814_CULL_FRONT(0) | \
-    S_028814_CULL_BACK(0) | \
-    /* frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE */ \
-    S_028814_FACE(0) | \
-    /* polygonMode = VK_POLYGON_MODE_FILL */ \
-    S_028814_POLY_MODE(V_028814_X_DISABLE_POLY_MODE) | \
-    S_028814_POLYMODE_FRONT_PTYPE(V_028814_X_DRAW_TRIANGLES) | \
-    S_028814_POLYMODE_BACK_PTYPE(V_028814_X_DRAW_TRIANGLES) | \
-    /* depthBiasEnable = VK_FALSE */ \
-    S_028814_POLY_OFFSET_FRONT_ENABLE(0) | \
-    S_028814_POLY_OFFSET_BACK_ENABLE(0) | \
-    S_028814_POLY_OFFSET_PARA_ENABLE(0) | \
-    /* provokingVertexMode = VK_PROVOKING_VERTEX_MODE_FIRST_VERTEX_EXT */ \
+#define TERAKAN_STATE_DRAW_DEFAULT_PA_SU_SC_MODE_CNTL                                              \
+   (/* cullMode = VK_CULL_MODE_NONE */                                                             \
+    S_028814_CULL_FRONT(0) |                                                                       \
+    S_028814_CULL_BACK(0) | /* frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE */                      \
+    S_028814_FACE(0) |      /* polygonMode = VK_POLYGON_MODE_FILL */                               \
+    S_028814_POLY_MODE(V_028814_X_DISABLE_POLY_MODE) |                                             \
+    S_028814_POLYMODE_FRONT_PTYPE(V_028814_X_DRAW_TRIANGLES) |                                     \
+    S_028814_POLYMODE_BACK_PTYPE(V_028814_X_DRAW_TRIANGLES) | /* depthBiasEnable = VK_FALSE */     \
+    S_028814_POLY_OFFSET_FRONT_ENABLE(0) | S_028814_POLY_OFFSET_BACK_ENABLE(0) |                   \
+    S_028814_POLY_OFFSET_PARA_ENABLE(                                                              \
+       0) | /* provokingVertexMode = VK_PROVOKING_VERTEX_MODE_FIRST_VERTEX_EXT */                  \
     S_028814_PROVOKING_VTX_LAST(0))
 
 /* State applied before performing application's draws, and marked for reapplication after internal
@@ -111,8 +107,8 @@ struct terakan_command_writer;
  * never been written yet.
  */
 static inline void
-terakan_state_draw_set_pending(
-   struct terakan_state_draw * const state, enum terakan_state_draw_index const state_index)
+terakan_state_draw_set_pending(struct terakan_state_draw * const state,
+                               enum terakan_state_draw_index const state_index)
 {
    if (BITSET_TEST(state->state_ever_written, state_index)) {
       BITSET_SET(state->state_pending, state_index);
@@ -120,17 +116,18 @@ terakan_state_draw_set_pending(
 }
 
 static inline void
-terakan_state_draw_written(
-   struct terakan_state_draw * const state, enum terakan_state_draw_index const state_index)
+terakan_state_draw_written(struct terakan_state_draw * const state,
+                           enum terakan_state_draw_index const state_index)
 {
    BITSET_SET(state->state_ever_written, state_index);
    BITSET_SET(state->state_pending, state_index);
 }
 
 static inline void
-terakan_state_draw_replace_fields(
-   struct terakan_state_draw * const state, enum terakan_state_draw_index const state_index,
-   uint32_t * const value, uint32_t const keep_fields, uint32_t const set_fields)
+terakan_state_draw_replace_fields(struct terakan_state_draw * const state,
+                                  enum terakan_state_draw_index const state_index,
+                                  uint32_t * const value, uint32_t const keep_fields,
+                                  uint32_t const set_fields)
 {
    /* The kept fields must have been initialized, otherwise they'd contain junk. */
    assert(!keep_fields || BITSET_TEST(state->state_ever_written, state_index));

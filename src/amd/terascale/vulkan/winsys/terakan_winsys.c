@@ -32,8 +32,8 @@ terakan_winsys_base_init(struct terakan_winsys * const winsys)
 }
 
 void
-terakan_winsys_bo_base_init(
-   struct terakan_winsys_bo * const bo, struct terakan_winsys * const winsys)
+terakan_winsys_bo_base_init(struct terakan_winsys_bo * const bo,
+                            struct terakan_winsys * const winsys)
 {
    bo->winsys = winsys;
 

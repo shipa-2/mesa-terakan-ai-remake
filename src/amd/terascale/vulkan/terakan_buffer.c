@@ -36,9 +36,9 @@
 #include <stdint.h>
 
 VKAPI_ATTR void VKAPI_CALL
-terakan_GetDeviceBufferMemoryRequirements(
-   VkDevice const deviceHandle, VkDeviceBufferMemoryRequirements const * const pInfo,
-   VkMemoryRequirements2 * const pMemoryRequirements)
+terakan_GetDeviceBufferMemoryRequirements(VkDevice const deviceHandle,
+                                          VkDeviceBufferMemoryRequirements const * const pInfo,
+                                          VkMemoryRequirements2 * const pMemoryRequirements)
 {
    pMemoryRequirements->memoryRequirements.size = pInfo->pCreateInfo->size;
 
@@ -66,9 +66,8 @@ terakan_GetDeviceBufferMemoryRequirements(
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
-terakan_BindBufferMemory2(
-   VkDevice const device, uint32_t const bindInfoCount,
-   VkBindBufferMemoryInfo const * const pBindInfos)
+terakan_BindBufferMemory2(VkDevice const device, uint32_t const bindInfoCount,
+                          VkBindBufferMemoryInfo const * const pBindInfos)
 {
    for (uint32_t bind_info_index = 0; bind_info_index < bindInfoCount; ++bind_info_index) {
       VkBindBufferMemoryInfo const * const bind_info = &pBindInfos[bind_info_index];
@@ -81,9 +80,8 @@ terakan_BindBufferMemory2(
 }
 
 VKAPI_ATTR void VKAPI_CALL
-terakan_DestroyBuffer(
-   VkDevice const deviceHandle, VkBuffer const bufferHandle,
-   VkAllocationCallbacks const * const pAllocator)
+terakan_DestroyBuffer(VkDevice const deviceHandle, VkBuffer const bufferHandle,
+                      VkAllocationCallbacks const * const pAllocator)
 {
    struct terakan_buffer * const buffer = terakan_buffer_from_handle(bufferHandle);
 
@@ -99,15 +97,14 @@ terakan_DestroyBuffer(
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
-terakan_CreateBuffer(
-   VkDevice const deviceHandle, VkBufferCreateInfo const * const pCreateInfo,
-   VkAllocationCallbacks const * const pAllocator, VkBuffer * const pBuffer)
+terakan_CreateBuffer(VkDevice const deviceHandle, VkBufferCreateInfo const * const pCreateInfo,
+                     VkAllocationCallbacks const * const pAllocator, VkBuffer * const pBuffer)
 {
    struct terakan_device * const device = terakan_device_from_handle(deviceHandle);
 
-   struct terakan_buffer * const buffer = vk_alloc2(
-      &device->vk.alloc, pAllocator, sizeof(*buffer), alignof(*buffer),
-      VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+   struct terakan_buffer * const buffer =
+      vk_alloc2(&device->vk.alloc, pAllocator, sizeof(*buffer), alignof(*buffer),
+                VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
    if (buffer == NULL) {
       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
    }

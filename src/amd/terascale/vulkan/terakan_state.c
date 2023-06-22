@@ -21,9 +21,9 @@
  * IN THE SOFTWARE.
  */
 
+#include "terakan_state.h"
 #include "terakan_command_buffer.h"
 #include "terakan_hw_state.h"
-#include "terakan_state.h"
 
 #include "util/macros.h"
 #include "util/u_endian.h"
@@ -33,53 +33,45 @@
 #include <stdint.h>
 #include <string.h>
 
-typedef void (* terakan_state_draw_apply_function)(
-   struct terakan_command_writer * command_writer, enum terakan_state_draw_index state_index);
+typedef void (*terakan_state_draw_apply_function)(struct terakan_command_writer * command_writer,
+                                                  enum terakan_state_draw_index state_index);
 
 static void
-terakan_state_draw_apply_vgt_index_type(
-   struct terakan_command_writer * const command_writer,
-   UNUSED enum terakan_state_draw_index const state_index)
+terakan_state_draw_apply_vgt_index_type(struct terakan_command_writer * const command_writer,
+                                        UNUSED enum terakan_state_draw_index const state_index)
 {
    bool const modified =
-      command_writer->hw_state_draw.vgt_index_type !=
-      command_writer->state_draw.vgt_index_type;
+      command_writer->hw_state_draw.vgt_index_type != command_writer->state_draw.vgt_index_type;
    command_writer->hw_state_draw.vgt_index_type = command_writer->state_draw.vgt_index_type;
-   terakan_hw_state_draw_written(
-      &command_writer->hw_state_draw, TERAKAN_HW_STATE_DRAW_VGT_INDEX_TYPE, modified);
+   terakan_hw_state_draw_written(&command_writer->hw_state_draw,
+                                 TERAKAN_HW_STATE_DRAW_VGT_INDEX_TYPE, modified);
 }
 
 static void
-terakan_state_draw_apply_vgt_primitive_type(
-   struct terakan_command_writer * const command_writer,
-   UNUSED enum terakan_state_draw_index const state_index)
+terakan_state_draw_apply_vgt_primitive_type(struct terakan_command_writer * const command_writer,
+                                            UNUSED enum terakan_state_draw_index const state_index)
 {
-   bool const modified =
-      command_writer->hw_state_draw.vgt_primitive_type !=
-      command_writer->state_draw.vgt_primitive_type;
-   command_writer->hw_state_draw.vgt_primitive_type =
-      command_writer->state_draw.vgt_primitive_type;
-   terakan_hw_state_draw_written(
-      &command_writer->hw_state_draw, TERAKAN_HW_STATE_DRAW_VGT_PRIMITIVE_TYPE, modified);
+   bool const modified = command_writer->hw_state_draw.vgt_primitive_type !=
+                         command_writer->state_draw.vgt_primitive_type;
+   command_writer->hw_state_draw.vgt_primitive_type = command_writer->state_draw.vgt_primitive_type;
+   terakan_hw_state_draw_written(&command_writer->hw_state_draw,
+                                 TERAKAN_HW_STATE_DRAW_VGT_PRIMITIVE_TYPE, modified);
 }
 
 static void
-terakan_state_draw_apply_pa_su_sc_mode_cntl(
-   struct terakan_command_writer * const command_writer,
-   UNUSED enum terakan_state_draw_index const state_index)
+terakan_state_draw_apply_pa_su_sc_mode_cntl(struct terakan_command_writer * const command_writer,
+                                            UNUSED enum terakan_state_draw_index const state_index)
 {
-   bool const modified =
-      command_writer->hw_state_draw.pa_su_sc_mode_cntl !=
-      command_writer->state_draw.pa_su_sc_mode_cntl;
+   bool const modified = command_writer->hw_state_draw.pa_su_sc_mode_cntl !=
+                         command_writer->state_draw.pa_su_sc_mode_cntl;
    command_writer->hw_state_draw.pa_su_sc_mode_cntl = command_writer->state_draw.pa_su_sc_mode_cntl;
-   terakan_hw_state_draw_written(
-      &command_writer->hw_state_draw, TERAKAN_HW_STATE_DRAW_PA_SU_SC_MODE_CNTL, modified);
+   terakan_hw_state_draw_written(&command_writer->hw_state_draw,
+                                 TERAKAN_HW_STATE_DRAW_PA_SU_SC_MODE_CNTL, modified);
 }
 
 static void
-terakan_state_draw_apply_color(
-   struct terakan_command_writer * const command_writer,
-   enum terakan_state_draw_index const state_index)
+terakan_state_draw_apply_color(struct terakan_command_writer * const command_writer,
+                               enum terakan_state_draw_index const state_index)
 {
    uint32_t const color_index = (uint32_t)state_index - (uint32_t)TERAKAN_STATE_DRAW_CB_COLOR_FIRST;
    struct terakan_winsys_bo const * const color_bo =
@@ -87,37 +79,30 @@ terakan_state_draw_apply_color(
    bool modified = command_writer->hw_state_draw.cb_color_bo[color_index] != color_bo;
    command_writer->hw_state_draw.cb_color_bo[color_index] = color_bo;
    if (color_bo != NULL) {
-      if (modified ||
-          (memcmp(
-              &command_writer->hw_state_draw.cb_color[color_index],
-              &command_writer->state_draw.cb_color[color_index],
-              sizeof(struct terakan_color_descriptor)) != 0 ||
-           memcmp(
-              &command_writer->hw_state_draw.cb_color_meta[color_index],
-              &command_writer->state_draw.cb_color_meta[color_index],
-              sizeof(struct terakan_color_meta_descriptor)) != 0)) {
+      if (modified || (memcmp(&command_writer->hw_state_draw.cb_color[color_index],
+                              &command_writer->state_draw.cb_color[color_index],
+                              sizeof(struct terakan_color_descriptor)) != 0 ||
+                       memcmp(&command_writer->hw_state_draw.cb_color_meta[color_index],
+                              &command_writer->state_draw.cb_color_meta[color_index],
+                              sizeof(struct terakan_color_meta_descriptor)) != 0)) {
          modified = true;
-         memcpy(
-            &command_writer->hw_state_draw.cb_color[color_index],
-            &command_writer->state_draw.cb_color[color_index],
-            sizeof(struct terakan_color_descriptor));
-         memcpy(
-            &command_writer->hw_state_draw.cb_color_meta[color_index],
-            &command_writer->state_draw.cb_color_meta[color_index],
-            sizeof(struct terakan_color_meta_descriptor));
+         memcpy(&command_writer->hw_state_draw.cb_color[color_index],
+                &command_writer->state_draw.cb_color[color_index],
+                sizeof(struct terakan_color_descriptor));
+         memcpy(&command_writer->hw_state_draw.cb_color_meta[color_index],
+                &command_writer->state_draw.cb_color_meta[color_index],
+                sizeof(struct terakan_color_meta_descriptor));
       }
    }
-   terakan_hw_state_draw_written(
-      &command_writer->hw_state_draw,
-      (enum terakan_hw_state_draw_index)(
-         (uint32_t)TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + color_index),
-      modified);
+   terakan_hw_state_draw_written(&command_writer->hw_state_draw,
+                                 (enum terakan_hw_state_draw_index)(
+                                    (uint32_t)TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + color_index),
+                                 modified);
 }
 
 static void
-terakan_state_draw_apply_color_rat_only(
-   struct terakan_command_writer * const command_writer,
-   enum terakan_state_draw_index const state_index)
+terakan_state_draw_apply_color_rat_only(struct terakan_command_writer * const command_writer,
+                                        enum terakan_state_draw_index const state_index)
 {
    uint32_t const color_index = (uint32_t)state_index - (uint32_t)TERAKAN_STATE_DRAW_CB_COLOR_FIRST;
    struct terakan_winsys_bo const * const color_bo =
@@ -125,42 +110,38 @@ terakan_state_draw_apply_color_rat_only(
    bool modified = command_writer->hw_state_draw.cb_color_bo[color_index] != color_bo;
    command_writer->hw_state_draw.cb_color_bo[color_index] = color_bo;
    if (color_bo != NULL) {
-      if (!modified &&
-          memcmp(
-             &command_writer->hw_state_draw.cb_color[color_index],
+      if (!modified && memcmp(&command_writer->hw_state_draw.cb_color[color_index],
+                              &command_writer->state_draw.cb_color[color_index],
+                              sizeof(struct terakan_color_descriptor)) != 0) {
+         modified = true;
+      }
+      memcpy(&command_writer->hw_state_draw.cb_color[color_index],
              &command_writer->state_draw.cb_color[color_index],
-             sizeof(struct terakan_color_descriptor)) != 0) {
-         modified = true;
-      }
-      memcpy(
-         &command_writer->hw_state_draw.cb_color[color_index],
-         &command_writer->state_draw.cb_color[color_index],
-         sizeof(struct terakan_color_descriptor));
+             sizeof(struct terakan_color_descriptor));
    }
-   terakan_hw_state_draw_written(
-      &command_writer->hw_state_draw,
-      (enum terakan_hw_state_draw_index)(
-         (uint32_t)TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + color_index),
-      modified);
+   terakan_hw_state_draw_written(&command_writer->hw_state_draw,
+                                 (enum terakan_hw_state_draw_index)(
+                                    (uint32_t)TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + color_index),
+                                 modified);
 }
 
-static terakan_state_draw_apply_function const terakan_state_draw_apply_functions[
-   TERAKAN_STATE_DRAW_COUNT] = {
-   [TERAKAN_STATE_DRAW_VGT_INDEX_TYPE] = terakan_state_draw_apply_vgt_index_type,
-   [TERAKAN_STATE_DRAW_VGT_PRIMITIVE_TYPE] = terakan_state_draw_apply_vgt_primitive_type,
-   [TERAKAN_STATE_DRAW_PA_SU_SC_MODE_CNTL] = terakan_state_draw_apply_pa_su_sc_mode_cntl,
-   [TERAKAN_STATE_DRAW_CB_COLOR_FIRST] = terakan_state_draw_apply_color,
-   [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 1] = terakan_state_draw_apply_color,
-   [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 2] = terakan_state_draw_apply_color,
-   [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 3] = terakan_state_draw_apply_color,
-   [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 4] = terakan_state_draw_apply_color,
-   [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 5] = terakan_state_draw_apply_color,
-   [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 6] = terakan_state_draw_apply_color,
-   [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 7] = terakan_state_draw_apply_color,
-   [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 8] = terakan_state_draw_apply_color_rat_only,
-   [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 9] = terakan_state_draw_apply_color_rat_only,
-   [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 10] = terakan_state_draw_apply_color_rat_only,
-   [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 11] = terakan_state_draw_apply_color_rat_only,
+static terakan_state_draw_apply_function const
+   terakan_state_draw_apply_functions[TERAKAN_STATE_DRAW_COUNT] = {
+      [TERAKAN_STATE_DRAW_VGT_INDEX_TYPE] = terakan_state_draw_apply_vgt_index_type,
+      [TERAKAN_STATE_DRAW_VGT_PRIMITIVE_TYPE] = terakan_state_draw_apply_vgt_primitive_type,
+      [TERAKAN_STATE_DRAW_PA_SU_SC_MODE_CNTL] = terakan_state_draw_apply_pa_su_sc_mode_cntl,
+      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST] = terakan_state_draw_apply_color,
+      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 1] = terakan_state_draw_apply_color,
+      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 2] = terakan_state_draw_apply_color,
+      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 3] = terakan_state_draw_apply_color,
+      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 4] = terakan_state_draw_apply_color,
+      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 5] = terakan_state_draw_apply_color,
+      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 6] = terakan_state_draw_apply_color,
+      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 7] = terakan_state_draw_apply_color,
+      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 8] = terakan_state_draw_apply_color_rat_only,
+      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 9] = terakan_state_draw_apply_color_rat_only,
+      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 10] = terakan_state_draw_apply_color_rat_only,
+      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 11] = terakan_state_draw_apply_color_rat_only,
 };
 
 void
@@ -182,8 +163,8 @@ terakan_state_draw_apply_pending(struct terakan_command_writer * const command_w
       }
       unsigned const state_index =
          BITSET_WORDBITS * next_state_word_index + (ffs(next_state_word_remaining) - 1);
-      terakan_state_draw_apply_functions[state_index](
-         command_writer, (enum terakan_state_draw_index)state_index);
+      terakan_state_draw_apply_functions[state_index](command_writer,
+                                                      (enum terakan_state_draw_index)state_index);
       BITSET_CLEAR(state->state_pending, state_index);
       next_state_index = state_index + 1;
    }
@@ -210,8 +191,7 @@ terakan_state_draw_reset(struct terakan_state_draw * const state)
 
    state->pa_su_sc_mode_cntl =
       /* cullMode = VK_CULL_MODE_NONE */
-      S_028814_CULL_FRONT(0) |
-      S_028814_CULL_BACK(0) |
+      S_028814_CULL_FRONT(0) | S_028814_CULL_BACK(0) |
       /* frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE */
       S_028814_FACE(0) |
       /* polygonMode = VK_POLYGON_MODE_FILL */
@@ -219,8 +199,7 @@ terakan_state_draw_reset(struct terakan_state_draw * const state)
       S_028814_POLYMODE_FRONT_PTYPE(V_028814_X_DRAW_TRIANGLES) |
       S_028814_POLYMODE_BACK_PTYPE(V_028814_X_DRAW_TRIANGLES) |
       /* depthBiasEnable = VK_FALSE */
-      S_028814_POLY_OFFSET_FRONT_ENABLE(0) |
-      S_028814_POLY_OFFSET_BACK_ENABLE(0) |
+      S_028814_POLY_OFFSET_FRONT_ENABLE(0) | S_028814_POLY_OFFSET_BACK_ENABLE(0) |
       S_028814_POLY_OFFSET_PARA_ENABLE(0) |
       /* provokingVertexMode = VK_PROVOKING_VERTEX_MODE_FIRST_VERTEX_EXT */
       S_028814_PROVOKING_VTX_LAST(0);

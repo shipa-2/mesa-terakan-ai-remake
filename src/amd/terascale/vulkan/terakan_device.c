@@ -21,8 +21,8 @@
  * IN THE SOFTWARE.
  */
 
-#include "terakan_command_buffer.h"
 #include "terakan_device.h"
+#include "terakan_command_buffer.h"
 #include "terakan_entrypoints.h"
 #include "terakan_physical_device.h"
 #include "terakan_queue.h"
@@ -68,18 +68,18 @@ terakan_DestroyDevice(VkDevice const deviceHandle, VkAllocationCallbacks const *
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
-terakan_CreateDevice(
-   VkPhysicalDevice const physicalDevice, VkDeviceCreateInfo const * const pCreateInfo,
-   VkAllocationCallbacks const * const pAllocator, VkDevice * const pDevice)
+terakan_CreateDevice(VkPhysicalDevice const physicalDevice,
+                     VkDeviceCreateInfo const * const pCreateInfo,
+                     VkAllocationCallbacks const * const pAllocator, VkDevice * const pDevice)
 {
    VkResult result;
 
    struct terakan_physical_device * const physical_device =
       terakan_physical_device_from_handle(physicalDevice);
 
-   struct terakan_device * const device = vk_alloc2(
-      &physical_device->vk.instance->alloc, pAllocator, sizeof(*device), alignof(*device),
-      VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
+   struct terakan_device * const device =
+      vk_alloc2(&physical_device->vk.instance->alloc, pAllocator, sizeof(*device), alignof(*device),
+                VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
    if (device == NULL) {
       return vk_error(physical_device->vk.instance, VK_ERROR_OUT_OF_HOST_MEMORY);
    }
@@ -97,15 +97,13 @@ terakan_CreateDevice(
    device->vk.command_buffer_ops = &terakan_command_buffer_ops;
 
    if (mtx_init(&device->completion_mutex, mtx_plain) != thrd_success) {
-      result = vk_errorf(
-         physical_device->vk.instance, VK_ERROR_OUT_OF_HOST_MEMORY,
-         "Failed to initialize the submission mutex");
+      result = vk_errorf(physical_device->vk.instance, VK_ERROR_OUT_OF_HOST_MEMORY,
+                         "Failed to initialize the submission mutex");
       goto fail_device;
    }
    if (cnd_init(&device->completion_condition) != thrd_success) {
-      result = vk_errorf(
-         physical_device->vk.instance, VK_ERROR_OUT_OF_HOST_MEMORY,
-         "Failed to initialize the submission condition variable");
+      result = vk_errorf(physical_device->vk.instance, VK_ERROR_OUT_OF_HOST_MEMORY,
+                         "Failed to initialize the submission condition variable");
       goto fail_completion_mutex;
    }
 
@@ -122,9 +120,8 @@ terakan_CreateDevice(
       if (queue_create_info->queueFamilyIndex == 0) {
          if (queue_create_info->queueCount != 1 || device->queue_graphics != NULL) {
             terakan_device_destroy(device);
-            return vk_errorf(
-               physical_device->vk.instance, VK_ERROR_INITIALIZATION_FAILED,
-               "Only one graphics queue can be created");
+            return vk_errorf(physical_device->vk.instance, VK_ERROR_INITIALIZATION_FAILED,
+                             "Only one graphics queue can be created");
          }
          result = terakan_queue_create(device, queue_create_info, 0, &device->queue_graphics);
          if (result != VK_SUCCESS) {
@@ -133,9 +130,8 @@ terakan_CreateDevice(
          }
       } else {
          terakan_device_destroy(device);
-         return vk_errorf(
-            physical_device->vk.instance, VK_ERROR_INITIALIZATION_FAILED,
-            "Unknown queue family requested");
+         return vk_errorf(physical_device->vk.instance, VK_ERROR_INITIALIZATION_FAILED,
+                          "Unknown queue family requested");
       }
    }
 

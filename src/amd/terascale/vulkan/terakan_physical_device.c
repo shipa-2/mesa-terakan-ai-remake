@@ -25,12 +25,12 @@
  * IN THE SOFTWARE.
  */
 
+#include "terakan_physical_device.h"
+#include "winsys/drm_radeon/terakan_winsys_drm_radeon.h"
 #include "terakan_entrypoints.h"
 #include "terakan_instance.h"
 #include "terakan_limits.h"
-#include "terakan_physical_device.h"
 #include "terakan_wsi.h"
-#include "winsys/drm_radeon/terakan_winsys_drm_radeon.h"
 
 #include "util/macros.h"
 #include "util/u_math.h"
@@ -49,8 +49,8 @@
 
 #if !defined(_WIN32)
 #include <fcntl.h>
-#include <sys/stat.h>
 #include <xf86drm.h>
+#include <sys/stat.h>
 
 #ifdef MAJOR_IN_MKDEV
 #include <sys/mkdev.h>
@@ -117,8 +117,7 @@ terakan_physical_device_get_supported_features(struct vk_features * const featur
 }
 
 static void
-terakan_physical_device_init_memory_properties(
-   struct terakan_physical_device * const device)
+terakan_physical_device_init_memory_properties(struct terakan_physical_device * const device)
 {
    /* Based on radv_physical_device_init_mem_types. */
 
@@ -178,10 +177,8 @@ terakan_physical_device_init_memory_properties(
       VkMemoryType * const type_vram =
          &memory_properties->memoryTypes[memory_properties->memoryTypeCount++];
       type_vram->propertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-      type_vram->heapIndex =
-         heap_index_vram_not_visible != UINT32_MAX
-            ? heap_index_vram_not_visible
-            : heap_index_vram_visible;
+      type_vram->heapIndex = heap_index_vram_not_visible != UINT32_MAX ? heap_index_vram_not_visible
+                                                                       : heap_index_vram_visible;
    }
    if (heap_index_gart != UINT32_MAX) {
       VkMemoryType * const type_gart_wc =
@@ -193,17 +190,17 @@ terakan_physical_device_init_memory_properties(
    if (heap_index_vram_visible != UINT32_MAX) {
       VkMemoryType * const type_vram_visible =
          &memory_properties->memoryTypes[memory_properties->memoryTypeCount++];
-      type_vram_visible->propertyFlags =
-         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+      type_vram_visible->propertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+                                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
       type_vram_visible->heapIndex = heap_index_vram_visible;
    }
    if (heap_index_gart != UINT32_MAX) {
       VkMemoryType * const type_gart_cached =
          &memory_properties->memoryTypes[memory_properties->memoryTypeCount++];
-      type_gart_cached->propertyFlags =
-         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
-         VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
+      type_gart_cached->propertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
+                                        VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
       type_gart_cached->heapIndex = heap_index_gart;
    }
 }
@@ -220,8 +217,8 @@ terakan_GetPhysicalDeviceMemoryProperties2(
 }
 
 VKAPI_ATTR void VKAPI_CALL
-terakan_GetPhysicalDeviceProperties(
-   VkPhysicalDevice const physicalDevice, VkPhysicalDeviceProperties * const pProperties)
+terakan_GetPhysicalDeviceProperties(VkPhysicalDevice const physicalDevice,
+                                    VkPhysicalDeviceProperties * const pProperties)
 {
    struct terakan_physical_device const * const device =
       terakan_physical_device_from_handle(physicalDevice);
@@ -233,13 +230,10 @@ terakan_GetPhysicalDeviceProperties(
    pProperties->driverVersion = vk_get_driver_version();
    pProperties->vendorID = TERAKAN_ATI_VENDOR_ID;
    pProperties->deviceID = gpu_info->pci_id;
-   pProperties->deviceType =
-      gpu_info->has_dedicated_vram
-         ? VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU
-         : VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
-   snprintf(
-      pProperties->deviceName, sizeof(pProperties->deviceName), "AMD R%cxx %s (Terakan)",
-      gpu_info->gfx_level >= CAYMAN ? '9' : '8', gpu_info->chip_family_name);
+   pProperties->deviceType = gpu_info->has_dedicated_vram ? VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU
+                                                          : VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
+   snprintf(pProperties->deviceName, sizeof(pProperties->deviceName), "AMD R%cxx %s (Terakan)",
+            gpu_info->gfx_level >= CAYMAN ? '9' : '8', gpu_info->chip_family_name);
    /* TODO(Triang3l): pipelineCacheUUID when pipeline cache is implemented. */
    memset(pProperties->pipelineCacheUUID, 0, sizeof(pProperties->pipelineCacheUUID));
    memset(&pProperties->sparseProperties, 0, sizeof(pProperties->sparseProperties));
@@ -279,10 +273,10 @@ terakan_GetPhysicalDeviceProperties(
    limits->maxBoundDescriptorSets = UINT32_MAX;
 
    limits->maxPerStageDescriptorSamplers = TERAKAN_LIMITS_HW_SAMPLER_COUNT;
-   limits->maxPerStageDescriptorUniformBuffers = MIN2(
-      instance->resource_base_sampled_images -
-      TERAKAN_LIMITS_VK_RESOURCE_UNIFORM_BUFFER_SAMPLED_IMAGE_INPUT_ATTACHMENT_BASE,
-      TERAKAN_LIMITS_VK_CONSTANT_BUFFER_UNIFORM_BUFFER_MAX_COUNT);
+   limits->maxPerStageDescriptorUniformBuffers =
+      MIN2(instance->resource_base_sampled_images -
+              TERAKAN_LIMITS_VK_RESOURCE_UNIFORM_BUFFER_SAMPLED_IMAGE_INPUT_ATTACHMENT_BASE,
+           TERAKAN_LIMITS_VK_CONSTANT_BUFFER_UNIFORM_BUFFER_MAX_COUNT);
    limits->maxPerStageDescriptorStorageBuffers = instance->storage_buffer_count;
    limits->maxPerStageDescriptorSampledImages =
       MIN2(instance->resource_base_input_attachments, TERAKAN_LIMITS_HW_RESOURCE_COUNT_VERTEX) -
@@ -445,8 +439,8 @@ terakan_GetPhysicalDeviceProperties(
 }
 
 VKAPI_ATTR void VKAPI_CALL
-terakan_GetPhysicalDeviceProperties2(
-   VkPhysicalDevice const physicalDevice, VkPhysicalDeviceProperties2 * const pProperties)
+terakan_GetPhysicalDeviceProperties2(VkPhysicalDevice const physicalDevice,
+                                     VkPhysicalDeviceProperties2 * const pProperties)
 {
    struct terakan_physical_device const * const device =
       terakan_physical_device_from_handle(physicalDevice);
@@ -565,8 +559,8 @@ terakan_GetPhysicalDeviceQueueFamilyProperties2(
    VkQueueFamilyProperties * const properties[] = {
       &pQueueFamilyProperties[0].queueFamilyProperties,
    };
-   terakan_physical_device_get_queue_family_properties(
-      device, pQueueFamilyPropertyCount, properties);
+   terakan_physical_device_get_queue_family_properties(device, pQueueFamilyPropertyCount,
+                                                       properties);
    assert(*pQueueFamilyPropertyCount <= ARRAY_SIZE(properties));
 }
 
@@ -590,14 +584,13 @@ terakan_physical_device_destroy(struct vk_physical_device * const device_base)
 }
 
 VkResult
-terakan_physical_device_try_create_for_drm(
-   struct vk_instance * const instance_base, struct _drmDevice * const drm_device,
-   struct vk_physical_device * * const device_out)
+terakan_physical_device_try_create_for_drm(struct vk_instance * const instance_base,
+                                           struct _drmDevice * const drm_device,
+                                           struct vk_physical_device ** const device_out)
 {
 #if defined(_WIN32)
-   return vk_errorf(
-      instance, VK_ERROR_INCOMPATIBLE_DRIVER,
-      "Radeon Software D3DKMT winsys is not supported currently");
+   return vk_errorf(instance, VK_ERROR_INCOMPATIBLE_DRIVER,
+                    "Radeon Software D3DKMT winsys is not supported currently");
 
 #else
    if (!(drm_device->available_nodes & (1 << DRM_NODE_RENDER)) ||
@@ -614,18 +607,17 @@ terakan_physical_device_try_create_for_drm(
    char const * const render_node_path = drm_device->nodes[DRM_NODE_RENDER];
    int const fd = open(render_node_path, O_RDWR | O_CLOEXEC);
    if (fd < 0) {
-      return vk_errorf(
-         instance, errno == ENOMEM ? VK_ERROR_OUT_OF_HOST_MEMORY : VK_ERROR_INCOMPATIBLE_DRIVER,
-         "Failed to open the DRM device '%s': %m", render_node_path);
+      return vk_errorf(instance,
+                       errno == ENOMEM ? VK_ERROR_OUT_OF_HOST_MEMORY : VK_ERROR_INCOMPATIBLE_DRIVER,
+                       "Failed to open the DRM device '%s': %m", render_node_path);
    }
    {
       drmVersionPtr const drm_version = drmGetVersion(fd);
       if (drm_version == NULL) {
          close(fd);
-         return vk_errorf(
-            instance, VK_ERROR_INCOMPATIBLE_DRIVER,
-            "Failed to get the kernel driver version for the DRM device '%s': %m",
-            render_node_path);
+         return vk_errorf(instance, VK_ERROR_INCOMPATIBLE_DRIVER,
+                          "Failed to get the kernel driver version for the DRM device '%s': %m",
+                          render_node_path);
       }
       if (strcmp(drm_version->name, "radeon") != 0) {
          drmFreeVersion(drm_version);
@@ -640,17 +632,17 @@ terakan_physical_device_try_create_for_drm(
 
    struct terakan_physical_device * const device =
       vk_alloc2(&instance->vk.alloc, NULL, sizeof(*device), alignof(*device),
-      VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE);
+                VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE);
    if (device == NULL) {
       result = vk_error(instance, VK_ERROR_OUT_OF_HOST_MEMORY);
       goto fail_fd;
    }
 
    struct vk_physical_device_dispatch_table dispatch_table;
-   vk_physical_device_dispatch_table_from_entrypoints(
-      &dispatch_table, &terakan_physical_device_entrypoints, true);
-   vk_physical_device_dispatch_table_from_entrypoints(
-      &dispatch_table, &wsi_physical_device_entrypoints, false);
+   vk_physical_device_dispatch_table_from_entrypoints(&dispatch_table,
+                                                      &terakan_physical_device_entrypoints, true);
+   vk_physical_device_dispatch_table_from_entrypoints(&dispatch_table,
+                                                      &wsi_physical_device_entrypoints, false);
 
    result = vk_physical_device_init(&device->vk, &instance->vk, NULL, NULL, NULL, &dispatch_table);
    if (result != VK_SUCCESS) {
@@ -674,9 +666,9 @@ terakan_physical_device_try_create_for_drm(
    if (drm_device->available_nodes & (1 << DRM_NODE_PRIMARY)) {
       struct stat primary_stat = {0};
       if (stat(drm_device->nodes[DRM_NODE_PRIMARY], &primary_stat) != 0) {
-         result = vk_errorf(
-            instance, VK_ERROR_INITIALIZATION_FAILED, "Failed to stat the DRM primary node '%s'",
-            drm_device->nodes[DRM_NODE_PRIMARY]);
+         result = vk_errorf(instance, VK_ERROR_INITIALIZATION_FAILED,
+                            "Failed to stat the DRM primary node '%s'",
+                            drm_device->nodes[DRM_NODE_PRIMARY]);
          goto fail_device;
       }
       device->drm_primary_devid = primary_stat.st_rdev;
@@ -686,9 +678,9 @@ terakan_physical_device_try_create_for_drm(
    if (drm_device->available_nodes & (1 << DRM_NODE_RENDER)) {
       struct stat render_stat = {0};
       if (stat(drm_device->nodes[DRM_NODE_RENDER], &render_stat) != 0) {
-         result = vk_errorf(
-            instance, VK_ERROR_INITIALIZATION_FAILED, "Failed to stat the DRM render node '%s'",
-            drm_device->nodes[DRM_NODE_RENDER]);
+         result = vk_errorf(instance, VK_ERROR_INITIALIZATION_FAILED,
+                            "Failed to stat the DRM render node '%s'",
+                            drm_device->nodes[DRM_NODE_RENDER]);
          goto fail_device;
       }
       device->drm_render_devid = render_stat.st_rdev;

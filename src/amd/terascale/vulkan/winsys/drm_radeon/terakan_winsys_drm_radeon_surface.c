@@ -35,9 +35,9 @@
 #include "vk_format.h"
 
 #include <assert.h>
-#include <radeon_surface.h>
 #include <stdint.h>
 #include <string.h>
+#include <radeon_surface.h>
 
 static void
 terakan_winsys_drm_radeon_surface_level_drm_to_ac(
@@ -51,8 +51,8 @@ terakan_winsys_drm_radeon_surface_level_drm_to_ac(
 }
 
 static void
-terakan_winsys_drm_radeon_surface_drm_to_ac(
-   struct radeon_surface const * const drm_surface, struct radeon_surf * const surface_out)
+terakan_winsys_drm_radeon_surface_drm_to_ac(struct radeon_surface const * const drm_surface,
+                                            struct radeon_surf * const surface_out)
 {
    memset(surface_out, 0, sizeof(*surface_out));
 
@@ -76,8 +76,8 @@ terakan_winsys_drm_radeon_surface_drm_to_ac(
    surface_out->u.legacy.tile_split = drm_surface->tile_split;
 
    for (uint32_t level = 0; level <= drm_surface->last_level; ++level) {
-      terakan_winsys_drm_radeon_surface_level_drm_to_ac(
-         &drm_surface->level[level], &surface_out->u.legacy.level[level]);
+      terakan_winsys_drm_radeon_surface_level_drm_to_ac(&drm_surface->level[level],
+                                                        &surface_out->u.legacy.level[level]);
       surface_out->u.legacy.tiling_index[level] = drm_surface->tiling_index[level];
    }
 
@@ -214,9 +214,8 @@ terakan_winsys_drm_radeon_surface_translate_image_create_info(
 
    terakan_winsys_drm_radeon_surface_drm_to_ac(&drm_surface, surface_out);
 
-   assert(
-      !(image_create_info->tiling == VK_IMAGE_TILING_LINEAR &&
-        surface_out->u.legacy.level[0].mode != RADEON_SURF_MODE_LINEAR_ALIGNED));
+   assert(!(image_create_info->tiling == VK_IMAGE_TILING_LINEAR &&
+            surface_out->u.legacy.level[0].mode != RADEON_SURF_MODE_LINEAR_ALIGNED));
 
    return true;
 }

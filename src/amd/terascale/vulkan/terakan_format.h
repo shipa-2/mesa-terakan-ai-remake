@@ -47,17 +47,18 @@ uint32_t terakan_format_color_get_number_type(VkFormat format);
 uint32_t terakan_format_color_get_swap(VkFormat format);
 bool terakan_format_color_is_blendable(uint32_t color_format, uint32_t number_type);
 
-#define TERAKAN_FORMAT_COLOR_16BPC_EXPORT_NORM_FORMATS \
-   (((uint64_t)1 << V_028C70_COLOR_8) | ((uint64_t)1 << V_028C70_COLOR_8_8) | \
-    ((uint64_t)1 << V_028C70_COLOR_5_6_5) | ((uint64_t)1 << V_028C70_COLOR_1_5_5_5) | \
-    ((uint64_t)1 << V_028C70_COLOR_4_4_4_4) | ((uint64_t)1 << V_028C70_COLOR_5_5_5_1) | \
-    ((uint64_t)1 << V_028C70_COLOR_2_10_10_10) | ((uint64_t)1 << V_028C70_COLOR_8_8_8_8) | \
+#define TERAKAN_FORMAT_COLOR_16BPC_EXPORT_NORM_FORMATS                                             \
+   (((uint64_t)1 << V_028C70_COLOR_8) | ((uint64_t)1 << V_028C70_COLOR_8_8) |                      \
+    ((uint64_t)1 << V_028C70_COLOR_5_6_5) | ((uint64_t)1 << V_028C70_COLOR_1_5_5_5) |              \
+    ((uint64_t)1 << V_028C70_COLOR_4_4_4_4) | ((uint64_t)1 << V_028C70_COLOR_5_5_5_1) |            \
+    ((uint64_t)1 << V_028C70_COLOR_2_10_10_10) | ((uint64_t)1 << V_028C70_COLOR_8_8_8_8) |         \
     ((uint64_t)1 << V_028C70_COLOR_10_10_10_2))
-#define TERAKAN_FORMAT_COLOR_16BPC_EXPORT_FLOAT_FORMATS \
-   (((uint64_t)1 << V_028C70_COLOR_16) | ((uint64_t)1 << V_028C70_COLOR_16_FLOAT) | \
-    ((uint64_t)1 << V_028C70_COLOR_16_16) | ((uint64_t)1 << V_028C70_COLOR_16_16_FLOAT) | \
-    ((uint64_t)1 << V_028C70_COLOR_10_11_11) | ((uint64_t)1 << V_028C70_COLOR_10_11_11_FLOAT) | \
-    ((uint64_t)1 << V_028C70_COLOR_16_16_16_16) | ((uint64_t)1 << V_028C70_COLOR_16_16_16_16_FLOAT))
+#define TERAKAN_FORMAT_COLOR_16BPC_EXPORT_FLOAT_FORMATS                                            \
+   (((uint64_t)1 << V_028C70_COLOR_16) | ((uint64_t)1 << V_028C70_COLOR_16_FLOAT) |                \
+    ((uint64_t)1 << V_028C70_COLOR_16_16) | ((uint64_t)1 << V_028C70_COLOR_16_16_FLOAT) |          \
+    ((uint64_t)1 << V_028C70_COLOR_10_11_11) | ((uint64_t)1 << V_028C70_COLOR_10_11_11_FLOAT) |    \
+    ((uint64_t)1 << V_028C70_COLOR_16_16_16_16) |                                                  \
+    ((uint64_t)1 << V_028C70_COLOR_16_16_16_16_FLOAT))
 
 /* Depth and stencil are always stored in memory separately, with the stencil buffer being 8-bit.
  * VK_FORMAT_D16_UNORM_S8_UINT = 16 UNORM + 8 UINT.
@@ -69,22 +70,22 @@ bool terakan_format_color_is_blendable(uint32_t color_format, uint32_t number_ty
 uint32_t terakan_format_depth_get_format(VkFormat format);
 bool terakan_format_has_stencil_8(VkFormat format);
 
-#define TERAKAN_FORMAT_DATA_VERTEX_ONLY_FORMATS \
-   (((uint64_t)1 << FMT_3_3_2) | ((uint64_t)1 << FMT_8_24_FLOAT) | \
-    ((uint64_t)1 << FMT_24_8_FLOAT) | ((uint64_t)1 << FMT_10_11_11) | \
-    ((uint64_t)1 << FMT_11_11_10) | ((uint64_t)1 << FMT_11_11_10_FLOAT) | \
-    ((uint64_t)1 << FMT_8_8_8) | ((uint64_t)1 << FMT_16_16_16) | \
+#define TERAKAN_FORMAT_DATA_VERTEX_ONLY_FORMATS                                                    \
+   (((uint64_t)1 << FMT_3_3_2) | ((uint64_t)1 << FMT_8_24_FLOAT) |                                 \
+    ((uint64_t)1 << FMT_24_8_FLOAT) | ((uint64_t)1 << FMT_10_11_11) |                              \
+    ((uint64_t)1 << FMT_11_11_10) | ((uint64_t)1 << FMT_11_11_10_FLOAT) |                          \
+    ((uint64_t)1 << FMT_8_8_8) | ((uint64_t)1 << FMT_16_16_16) |                                   \
     ((uint64_t)1 << FMT_16_16_16_FLOAT))
 
-#define TERAKAN_FORMAT_DATA_SUBSAMPLED_FORMATS \
+#define TERAKAN_FORMAT_DATA_SUBSAMPLED_FORMATS                                                     \
    (((uint64_t)1 << FMT_GB_GR) | ((uint64_t)1 << FMT_BG_RG))
 
-#define TERAKAN_FORMAT_DATA_BLOCK_COMPRESSED_FORMATS \
-   (((uint64_t)1 << FMT_BC1) | ((uint64_t)1 << FMT_BC2) | ((uint64_t)1 << FMT_BC3) | \
-    ((uint64_t)1 << FMT_BC4) | ((uint64_t)1 << FMT_BC5) | ((uint64_t)1 << FMT_BC6) | \
+#define TERAKAN_FORMAT_DATA_BLOCK_COMPRESSED_FORMATS                                               \
+   (((uint64_t)1 << FMT_BC1) | ((uint64_t)1 << FMT_BC2) | ((uint64_t)1 << FMT_BC3) |               \
+    ((uint64_t)1 << FMT_BC4) | ((uint64_t)1 << FMT_BC5) | ((uint64_t)1 << FMT_BC6) |               \
     ((uint64_t)1 << FMT_BC7))
 
-#define TERAKAN_FORMAT_DATA_TEXTURE_ONLY_FORMATS \
+#define TERAKAN_FORMAT_DATA_TEXTURE_ONLY_FORMATS                                                   \
    (TERAKAN_FORMAT_DATA_SUBSAMPLED_FORMATS | TERAKAN_FORMAT_DATA_BLOCK_COMPRESSED_FORMATS)
 
 /* For images with both depth and stencil, these functions always return the values for the depth

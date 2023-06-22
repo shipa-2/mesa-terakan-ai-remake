@@ -65,10 +65,9 @@ static inline void
 terakan_color_descriptor_image_view_to_storage_image(
    struct terakan_color_descriptor * const descriptor, uint32_t const resource_type)
 {
-   descriptor->info =
-      (descriptor->info & (C_028C70_FAST_CLEAR & C_028C70_SOURCE_FORMAT)) |
-      S_028C70_SOURCE_FORMAT(V_028C70_EXPORT_4C_32BPC) | S_028C70_RAT(1) |
-      S_028C70_RESOURCE_TYPE(resource_type);
+   descriptor->info = (descriptor->info & (C_028C70_FAST_CLEAR & C_028C70_SOURCE_FORMAT)) |
+                      S_028C70_SOURCE_FORMAT(V_028C70_EXPORT_4C_32BPC) | S_028C70_RAT(1) |
+                      S_028C70_RESOURCE_TYPE(resource_type);
    descriptor->attrib &= C_028C74_FORCE_DST_ALPHA_1;
 }
 

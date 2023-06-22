@@ -31,8 +31,7 @@
 #include <string.h>
 
 VKAPI_ATTR void VKAPI_CALL
-terakan_CmdSetBlendConstants(
-   VkCommandBuffer const commandBuffer, float const blendConstants[4])
+terakan_CmdSetBlendConstants(VkCommandBuffer const commandBuffer, float const blendConstants[4])
 {
    struct terakan_hw_state_draw * const hw_state_draw =
       &terakan_command_buffer_from_handle(commandBuffer)->command_writer->hw_state_draw;

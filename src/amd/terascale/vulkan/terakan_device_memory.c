@@ -21,37 +21,35 @@
  * IN THE SOFTWARE.
  */
 
-#include "terakan_device.h"
 #include "terakan_device_memory.h"
+#include "winsys/terakan_winsys.h"
+#include "terakan_device.h"
 #include "terakan_entrypoints.h"
 #include "terakan_physical_device.h"
-#include "winsys/terakan_winsys.h"
 
+#include "util/macros.h"
 #include "vk_alloc.h"
 #include "vk_log.h"
-#include "util/macros.h"
 
 VKAPI_ATTR VkResult VKAPI_CALL
-terakan_FlushMappedMemoryRanges(
-   VkDevice const device, uint32_t const memoryRangeCount,
-   VkMappedMemoryRange const * const pMemoryRanges)
+terakan_FlushMappedMemoryRanges(VkDevice const device, uint32_t const memoryRangeCount,
+                                VkMappedMemoryRange const * const pMemoryRanges)
 {
    /* All host-visible memory types are host-coherent currently. */
    return VK_SUCCESS;
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
-terakan_InvalidateMappedMemoryRanges(
-   VkDevice const device, uint32_t const memoryRangeCount,
-   VkMappedMemoryRange const * const pMemoryRanges)
+terakan_InvalidateMappedMemoryRanges(VkDevice const device, uint32_t const memoryRangeCount,
+                                     VkMappedMemoryRange const * const pMemoryRanges)
 {
    /* All host-visible memory types are host-coherent currently. */
    return VK_SUCCESS;
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
-terakan_UnmapMemory2KHR(
-   VkDevice const deviceHandle, VkMemoryUnmapInfoKHR const * const pMemoryUnmapInfo)
+terakan_UnmapMemory2KHR(VkDevice const deviceHandle,
+                        VkMemoryUnmapInfoKHR const * const pMemoryUnmapInfo)
 {
    struct terakan_device_memory * const device_memory =
       terakan_device_memory_from_handle(pMemoryUnmapInfo->memory);
@@ -68,9 +66,8 @@ terakan_UnmapMemory2KHR(
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
-terakan_MapMemory2KHR(
-   VkDevice const deviceHandle, VkMemoryMapInfoKHR const * const pMemoryMapInfo,
-   void * * const ppData)
+terakan_MapMemory2KHR(VkDevice const deviceHandle, VkMemoryMapInfoKHR const * const pMemoryMapInfo,
+                      void ** const ppData)
 {
    struct terakan_device_memory * const device_memory =
       terakan_device_memory_from_handle(pMemoryMapInfo->memory);
@@ -92,9 +89,8 @@ terakan_MapMemory2KHR(
 }
 
 VKAPI_ATTR void VKAPI_CALL
-terakan_FreeMemory(
-   VkDevice const deviceHandle, VkDeviceMemory const deviceMemory,
-   VkAllocationCallbacks const * const pAllocator)
+terakan_FreeMemory(VkDevice const deviceHandle, VkDeviceMemory const deviceMemory,
+                   VkAllocationCallbacks const * const pAllocator)
 {
    struct terakan_device_memory * const device_memory =
       terakan_device_memory_from_handle(deviceMemory);
@@ -113,9 +109,9 @@ terakan_FreeMemory(
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
-terakan_AllocateMemory(
-   VkDevice const deviceHandle, VkMemoryAllocateInfo const * const pAllocateInfo,
-   VkAllocationCallbacks const * pAllocator, VkDeviceMemory * const pMemory)
+terakan_AllocateMemory(VkDevice const deviceHandle,
+                       VkMemoryAllocateInfo const * const pAllocateInfo,
+                       VkAllocationCallbacks const * pAllocator, VkDeviceMemory * const pMemory)
 {
    struct terakan_device * const device = terakan_device_from_handle(deviceHandle);
 
