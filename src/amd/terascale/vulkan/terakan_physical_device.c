@@ -227,7 +227,9 @@ terakan_GetPhysicalDeviceProperties(VkPhysicalDevice const physicalDevice,
    struct terakan_gpu_info const * const gpu_info = &device->winsys->gpu_info;
 
    pProperties->apiVersion = TERAKAN_API_VERSION;
-   pProperties->driverVersion = vk_get_driver_version();
+   /* TODO(Triang3l): Change to vk_get_driver_version() when Vulkan 1.0 compatibility is achieved.
+    */
+   pProperties->driverVersion = VK_MAKE_API_VERSION(0, 0, 0, 1);
    pProperties->vendorID = TERAKAN_ATI_VENDOR_ID;
    pProperties->deviceID = gpu_info->pci_id;
    pProperties->deviceType = gpu_info->has_dedicated_vram ? VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU
