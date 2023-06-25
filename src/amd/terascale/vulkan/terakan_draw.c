@@ -82,13 +82,13 @@ terakan_CmdBindIndexBuffer(VkCommandBuffer const commandBuffer, VkBuffer const b
 }
 
 void
-terakan_before_hw_draw(struct terakan_gfx_command_writer * command_writer)
+terakan_before_hw_draw(struct terakan_gfx_command_writer * const command_writer)
 {
    terakan_hw_state_draw_emit_modified(command_writer);
 }
 
 static void
-terakan_before_draw(struct terakan_gfx_command_writer * command_writer)
+terakan_before_draw(struct terakan_gfx_command_writer * const command_writer)
 {
    terakan_state_draw_apply_pending(command_writer);
 
