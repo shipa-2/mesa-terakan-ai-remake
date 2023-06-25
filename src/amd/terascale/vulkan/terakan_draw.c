@@ -81,6 +81,22 @@ terakan_CmdBindIndexBuffer(VkCommandBuffer const commandBuffer, VkBuffer const b
                                  TERAKAN_HW_STATE_DRAW_VGT_INDEX_TYPE, vgt_index_buffer_modified);
 }
 
+static void
+terakan_set_vertex_instance_offsets(struct terakan_gfx_command_writer * const command_writer,
+                                    uint32_t const vertex_offset, uint32_t const instance_offset)
+{
+   command_writer->state_draw.vgt_index_offset = vertex_offset;
+   terakan_state_draw_written(&command_writer->state_draw, TERAKAN_STATE_DRAW_VGT_INDEX_OFFSET);
+
+   /* The instance offset is not needed by internal draws, modify hw_state_draw directly. */
+   bool const sq_vtx_start_inst_loc_modified =
+      command_writer->hw_state_draw.sq_vtx_start_inst_loc != instance_offset;
+   command_writer->hw_state_draw.sq_vtx_start_inst_loc = instance_offset;
+   terakan_hw_state_draw_written(&command_writer->hw_state_draw,
+                                 TERAKAN_HW_STATE_DRAW_SQ_VTX_START_INST_LOC,
+                                 sq_vtx_start_inst_loc_modified);
+}
+
 void
 terakan_before_hw_draw(struct terakan_gfx_command_writer * const command_writer)
 {
@@ -102,6 +118,23 @@ terakan_CmdDraw(VkCommandBuffer const commandBuffer, uint32_t const vertexCount,
 {
    struct terakan_gfx_command_writer * const command_writer =
       terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx;
+
+   terakan_set_vertex_instance_offsets(command_writer, firstVertex, firstInstance);
+
+   terakan_before_draw(command_writer);
+
+   /* TODO(Triang3l): Draw. */
+}
+
+VKAPI_ATTR void VKAPI_CALL
+terakan_CmdDrawIndexed(VkCommandBuffer const commandBuffer, uint32_t const indexCount,
+                       uint32_t const instanceCount, uint32_t const firstIndex,
+                       int32_t const vertexOffset, uint32_t const firstInstance)
+{
+   struct terakan_gfx_command_writer * const command_writer =
+      terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx;
+
+   terakan_set_vertex_instance_offsets(command_writer, (uint32_t)vertexOffset, firstInstance);
 
    terakan_before_draw(command_writer);
 

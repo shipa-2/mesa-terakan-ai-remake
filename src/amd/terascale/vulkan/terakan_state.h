@@ -45,6 +45,8 @@ enum terakan_state_draw_index {
 
    TERAKAN_STATE_DRAW_VGT_PRIMITIVE_TYPE,
 
+   TERAKAN_STATE_DRAW_VGT_INDEX_OFFSET,
+
    TERAKAN_STATE_DRAW_PA_SU_SC_MODE_CNTL,
 
    TERAKAN_STATE_DRAW_CB_COLOR_FIRST,
@@ -90,6 +92,9 @@ struct terakan_state_draw {
 
    /* TERAKAN_STATE_DRAW_VGT_PRIMITIVE_TYPE */
    uint32_t vgt_primitive_type;
+
+   /* TERAKAN_STATE_DRAW_VGT_INDEX_OFFSET */
+   uint32_t vgt_index_offset;
 
    /* TERAKAN_STATE_DRAW_PA_SU_SC_MODE_CNTL */
    uint32_t pa_su_sc_mode_cntl;
