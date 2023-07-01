@@ -52,6 +52,8 @@ enum terakan_hw_state_draw_index {
 
    TERAKAN_HW_STATE_DRAW_PA_SU_SC_MODE_CNTL,
 
+   TERAKAN_HW_STATE_DRAW_PA_SC_AA_SAMPLES,
+
    TERAKAN_HW_STATE_DRAW_CB_BLEND_RGBA,
 
    TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST,
@@ -60,6 +62,9 @@ enum terakan_hw_state_draw_index {
 
    TERAKAN_HW_STATE_DRAW_COUNT,
 };
+
+extern uint32_t const terakan_standard_sample_locs[5][16 / 4];
+extern uint32_t const terakan_standard_sample_max_dists[5];
 
 /* State applied before performing application's or internal draws, and reapplied when switching to
  * a new indirect buffer in the Vulkan command buffer.
@@ -95,6 +100,11 @@ struct terakan_hw_state_draw {
 
    /* TERAKAN_HW_STATE_DRAW_PA_SU_SC_MODE_CNTL */
    uint32_t pa_su_sc_mode_cntl;
+
+   /* TERAKAN_HW_STATE_DRAW_PA_SC_AA_SAMPLES */
+   struct {
+      uint32_t num_samples_log2;
+   } pa_sc_aa_samples;
 
    /* TERAKAN_HW_STATE_DRAW_CB_BLEND_RGBA */
    float cb_blend_rgba[4];
