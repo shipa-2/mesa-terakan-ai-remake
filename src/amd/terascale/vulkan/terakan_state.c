@@ -175,6 +175,10 @@ terakan_state_draw_apply_pending(struct terakan_gfx_command_writer * const comma
       }
       unsigned const state_index =
          BITSET_WORDBITS * next_state_word_index + (ffs(next_state_word_remaining) - 1);
+      if (state_index >= TERAKAN_STATE_DRAW_COUNT) {
+         /* Ignore the bits beyond the end of the bitset. */
+         break;
+      }
       terakan_state_draw_apply_functions[state_index](command_writer,
                                                       (enum terakan_state_draw_index)state_index);
       BITSET_CLEAR(state->state_pending, state_index);
