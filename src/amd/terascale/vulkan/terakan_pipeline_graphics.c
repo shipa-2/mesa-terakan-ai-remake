@@ -49,6 +49,19 @@ terakan_pipeline_graphics_apply_vgt_primitive_type(
 }
 
 static void
+terakan_pipeline_graphics_apply_pa_cl_clip_cntl(
+   struct terakan_gfx_command_writer * const command_writer,
+   struct terakan_pipeline_graphics const * const pipeline,
+   UNUSED enum terakan_pipeline_graphics_state_index const state_index)
+{
+   terakan_state_draw_replace_fields(&command_writer->state_draw,
+                                     TERAKAN_STATE_DRAW_PA_CL_CLIP_CNTL,
+                                     &command_writer->state_draw.pa_cl_clip_cntl,
+                                     pipeline->pre_rasterization.pa_cl_clip_cntl_clear,
+                                     pipeline->pre_rasterization.pa_cl_clip_cntl);
+}
+
+static void
 terakan_pipeline_graphics_apply_pa_su_sc_mode_cntl(
    struct terakan_gfx_command_writer * const command_writer,
    struct terakan_pipeline_graphics const * const pipeline,
@@ -65,6 +78,8 @@ static terakan_pipeline_graphics_apply_state_function const
    terakan_pipeline_graphics_apply_state_functions[TERAKAN_PIPELINE_GRAPHICS_STATE_COUNT] = {
       [TERAKAN_PIPELINE_GRAPHICS_STATE_VGT_PRIMITIVE_TYPE] =
          terakan_pipeline_graphics_apply_vgt_primitive_type,
+      [TERAKAN_PIPELINE_GRAPHICS_STATE_PA_CL_CLIP_CNTL] =
+         terakan_pipeline_graphics_apply_pa_cl_clip_cntl,
       [TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SU_SC_MODE_CNTL] =
          terakan_pipeline_graphics_apply_pa_su_sc_mode_cntl,
 };
