@@ -28,7 +28,6 @@
 #include "terakan_descriptor.h"
 #include "terakan_limits.h"
 
-#include "gallium/drivers/r600/evergreend.h"
 #include "util/bitset.h"
 
 #include <assert.h>
@@ -55,23 +54,6 @@ enum terakan_state_draw_index {
 
    TERAKAN_STATE_DRAW_COUNT,
 };
-
-/* Defaults correspond to zeroed (like via memset) values in Vulkan structures they're obtained
- * from.
- */
-
-#define TERAKAN_STATE_DRAW_DEFAULT_PA_SU_SC_MODE_CNTL                                              \
-   (/* cullMode = VK_CULL_MODE_NONE */                                                             \
-    S_028814_CULL_FRONT(0) |                                                                       \
-    S_028814_CULL_BACK(0) | /* frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE */                      \
-    S_028814_FACE(0) |      /* polygonMode = VK_POLYGON_MODE_FILL */                               \
-    S_028814_POLY_MODE(V_028814_X_DISABLE_POLY_MODE) |                                             \
-    S_028814_POLYMODE_FRONT_PTYPE(V_028814_X_DRAW_TRIANGLES) |                                     \
-    S_028814_POLYMODE_BACK_PTYPE(V_028814_X_DRAW_TRIANGLES) | /* depthBiasEnable = VK_FALSE */     \
-    S_028814_POLY_OFFSET_FRONT_ENABLE(0) | S_028814_POLY_OFFSET_BACK_ENABLE(0) |                   \
-    S_028814_POLY_OFFSET_PARA_ENABLE(                                                              \
-       0) | /* provokingVertexMode = VK_PROVOKING_VERTEX_MODE_FIRST_VERTEX_EXT */                  \
-    S_028814_PROVOKING_VTX_LAST(0))
 
 /* State applied before performing application's draws, and marked for reapplication after internal
  * draws.

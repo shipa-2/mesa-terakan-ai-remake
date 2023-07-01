@@ -25,6 +25,7 @@
 #include "terakan_command_buffer.h"
 #include "terakan_hw_state.h"
 
+#include "gallium/drivers/r600/evergreend.h"
 #include "util/macros.h"
 #include "util/u_endian.h"
 
