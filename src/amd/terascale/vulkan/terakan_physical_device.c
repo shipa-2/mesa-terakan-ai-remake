@@ -115,6 +115,7 @@ terakan_physical_device_get_supported_features(struct vk_features * const featur
    /* VK_EXT_extended_dynamic_state3 */
    features_out->extendedDynamicState3DepthClampEnable = true;
    features_out->extendedDynamicState3PolygonMode = true;
+   features_out->extendedDynamicState3SampleMask = true;
    features_out->extendedDynamicState3ProvokingVertexMode = true;
    features_out->extendedDynamicState3DepthClipEnable = true;
    features_out->extendedDynamicState3DepthClipNegativeOneToOne = true;

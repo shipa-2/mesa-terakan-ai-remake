@@ -93,6 +93,17 @@ terakan_state_draw_apply_pa_su_sc_mode_cntl(struct terakan_gfx_command_writer * 
 }
 
 static void
+terakan_state_draw_apply_pa_sc_aa_mask(struct terakan_gfx_command_writer * const command_writer,
+                                       UNUSED enum terakan_state_draw_index const state_index)
+{
+   bool const modified =
+      command_writer->hw_state_draw.pa_sc_aa_mask != command_writer->state_draw.pa_sc_aa_mask;
+   command_writer->hw_state_draw.pa_sc_aa_mask = command_writer->state_draw.pa_sc_aa_mask;
+   terakan_hw_state_draw_written(&command_writer->hw_state_draw,
+                                 TERAKAN_HW_STATE_DRAW_PA_SC_AA_MASK, modified);
+}
+
+static void
 terakan_state_draw_apply_color(struct terakan_gfx_command_writer * const command_writer,
                                enum terakan_state_draw_index const state_index)
 {
@@ -155,6 +166,7 @@ static terakan_state_draw_apply_function const
       [TERAKAN_STATE_DRAW_VGT_INDEX_OFFSET] = terakan_state_draw_apply_vgt_index_offset,
       [TERAKAN_STATE_DRAW_PA_CL_CLIP_CNTL] = terakan_state_draw_apply_pa_cl_clip_cntl,
       [TERAKAN_STATE_DRAW_PA_SU_SC_MODE_CNTL] = terakan_state_draw_apply_pa_su_sc_mode_cntl,
+      [TERAKAN_STATE_DRAW_PA_SC_AA_MASK] = terakan_state_draw_apply_pa_sc_aa_mask,
       [TERAKAN_STATE_DRAW_CB_COLOR_FIRST] = terakan_state_draw_apply_color,
       [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 1] = terakan_state_draw_apply_color,
       [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 2] = terakan_state_draw_apply_color,

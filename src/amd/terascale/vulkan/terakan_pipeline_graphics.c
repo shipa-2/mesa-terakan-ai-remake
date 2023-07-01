@@ -74,6 +74,16 @@ terakan_pipeline_graphics_apply_pa_su_sc_mode_cntl(
                                      pipeline->pre_rasterization.pa_su_sc_mode_cntl);
 }
 
+static void
+terakan_pipeline_graphics_apply_pa_sc_aa_mask(
+   struct terakan_gfx_command_writer * const command_writer,
+   struct terakan_pipeline_graphics const * const pipeline,
+   UNUSED enum terakan_pipeline_graphics_state_index const state_index)
+{
+   command_writer->state_draw.pa_sc_aa_mask = pipeline->multisample.pa_sc_aa_mask;
+   terakan_state_draw_written(&command_writer->state_draw, TERAKAN_STATE_DRAW_PA_SC_AA_MASK);
+}
+
 static terakan_pipeline_graphics_apply_state_function const
    terakan_pipeline_graphics_apply_state_functions[TERAKAN_PIPELINE_GRAPHICS_STATE_COUNT] = {
       [TERAKAN_PIPELINE_GRAPHICS_STATE_VGT_PRIMITIVE_TYPE] =
@@ -82,6 +92,8 @@ static terakan_pipeline_graphics_apply_state_function const
          terakan_pipeline_graphics_apply_pa_cl_clip_cntl,
       [TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SU_SC_MODE_CNTL] =
          terakan_pipeline_graphics_apply_pa_su_sc_mode_cntl,
+      [TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SC_AA_MASK] =
+         terakan_pipeline_graphics_apply_pa_sc_aa_mask,
 };
 
 static void
@@ -199,4 +211,15 @@ terakan_pipeline_graphics_pre_rasterization_init(
    }
 
    return VK_SUCCESS;
+}
+
+static void
+terakan_pipeline_graphics_multisample_init(struct terakan_pipeline_graphics * const pipeline,
+                                           struct vk_graphics_pipeline_state const * const state)
+{
+   /* TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SC_AA_MASK */
+   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_MS_SAMPLE_MASK)) {
+      pipeline->multisample.pa_sc_aa_mask = (uint16_t)state->ms->sample_mask;
+      BITSET_SET(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SC_AA_MASK);
+   }
 }

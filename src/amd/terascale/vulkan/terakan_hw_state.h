@@ -54,6 +54,8 @@ enum terakan_hw_state_draw_index {
 
    TERAKAN_HW_STATE_DRAW_PA_SC_AA_SAMPLES,
 
+   TERAKAN_HW_STATE_DRAW_PA_SC_AA_MASK,
+
    TERAKAN_HW_STATE_DRAW_CB_BLEND_RGBA,
 
    TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST,
@@ -107,6 +109,9 @@ struct terakan_hw_state_draw {
    struct {
       uint32_t num_samples_log2;
    } pa_sc_aa_samples;
+
+   /* TERAKAN_HW_STATE_DRAW_PA_SC_AA_MASK */
+   uint16_t pa_sc_aa_mask;
 
    /* TERAKAN_HW_STATE_DRAW_CB_BLEND_RGBA */
    float cb_blend_rgba[4];

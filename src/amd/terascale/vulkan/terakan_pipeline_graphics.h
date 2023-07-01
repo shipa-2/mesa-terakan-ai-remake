@@ -36,6 +36,8 @@ enum terakan_pipeline_graphics_state_index {
 
    TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SU_SC_MODE_CNTL,
 
+   TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SC_AA_MASK,
+
    TERAKAN_PIPELINE_GRAPHICS_STATE_COUNT,
 };
 
@@ -56,6 +58,11 @@ struct terakan_pipeline_graphics_pre_rasterization {
    uint32_t pa_su_sc_mode_cntl;
 };
 
+struct terakan_pipeline_graphics_multisample {
+   /* TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SC_AA_MASK */
+   uint16_t pa_sc_aa_mask;
+};
+
 struct terakan_pipeline_graphics {
    struct vk_object_base base;
 
@@ -66,6 +73,11 @@ struct terakan_pipeline_graphics {
    struct terakan_pipeline_graphics_vertex_input vertex_input;
 
    struct terakan_pipeline_graphics_pre_rasterization pre_rasterization;
+
+   /* Part of the fragment shader state if sample shading is enabled or the render pass is static,
+    * and of the fragment output state.
+    */
+   struct terakan_pipeline_graphics_multisample multisample;
 };
 
 #endif /* TERAKAN_PIPELINE_GRAPHICS_H */

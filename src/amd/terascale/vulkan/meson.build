@@ -70,6 +70,7 @@ libterakan_files = files(
   'terakan_state_color.c',
   'terakan_state_input_assembly.c',
   'terakan_state_input_assembly.h',
+  'terakan_state_multisample.c',
   'terakan_state_rasterization.c',
   'terakan_state_rasterization.h',
   'terakan_sync_completion.c',

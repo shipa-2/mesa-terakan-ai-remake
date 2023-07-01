@@ -244,6 +244,38 @@ terakan_hw_state_draw_emit_pa_sc_aa_samples(
 }
 
 static void
+terakan_hw_state_draw_emit_pa_sc_aa_mask(struct terakan_gfx_command_writer * const command_writer,
+                                         UNUSED enum terakan_hw_state_draw_index const state_index)
+{
+   uint32_t aa_mask = command_writer->hw_state_draw.pa_sc_aa_mask;
+   aa_mask |= aa_mask << 16;
+
+   if (container_of(command_writer->base.command_buffer->vk.base.device->physical,
+                    struct terakan_physical_device const, vk)
+          ->winsys->gpu_info.gfx_level >= CAYMAN) {
+      uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 2, 0, 0);
+      if (unlikely(packet == NULL)) {
+         return;
+      }
+      *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 2, 0);
+      *packet++ = TERAKAN_CONTEXT_REG_OFFSET(CM_R_028C38_PA_SC_AA_MASK_X0Y0_X1Y0);
+      *packet++ = aa_mask;
+      *packet++ = aa_mask;
+   } else {
+      aa_mask &= (((uint32_t)1 << 8) - 1) | ((((uint32_t)1 << 8) - 1) << 16);
+      aa_mask |= aa_mask << 8;
+
+      uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, 0, 0);
+      if (unlikely(packet == NULL)) {
+         return;
+      }
+      *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
+      *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028C3C_PA_SC_AA_MASK);
+      *packet++ = aa_mask;
+   }
+}
+
+static void
 terakan_hw_state_draw_emit_cb_blend_rgba(struct terakan_gfx_command_writer * const command_writer,
                                          UNUSED enum terakan_hw_state_draw_index const state_index)
 {
@@ -396,6 +428,7 @@ static terakan_hw_state_draw_emit_function const
       [TERAKAN_HW_STATE_DRAW_PA_CL_CLIP_CNTL] = terakan_hw_state_draw_emit_pa_cl_clip_cntl,
       [TERAKAN_HW_STATE_DRAW_PA_SU_SC_MODE_CNTL] = terakan_hw_state_draw_emit_pa_su_sc_mode_cntl,
       [TERAKAN_HW_STATE_DRAW_PA_SC_AA_SAMPLES] = terakan_hw_state_draw_emit_pa_sc_aa_samples,
+      [TERAKAN_HW_STATE_DRAW_PA_SC_AA_MASK] = terakan_hw_state_draw_emit_pa_sc_aa_mask,
       [TERAKAN_HW_STATE_DRAW_CB_BLEND_RGBA] = terakan_hw_state_draw_emit_cb_blend_rgba,
       [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST] = terakan_hw_state_draw_emit_color,
       [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 1] = terakan_hw_state_draw_emit_color,

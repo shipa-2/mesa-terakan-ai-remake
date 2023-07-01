@@ -50,6 +50,8 @@ enum terakan_state_draw_index {
 
    TERAKAN_STATE_DRAW_PA_SU_SC_MODE_CNTL,
 
+   TERAKAN_STATE_DRAW_PA_SC_AA_MASK,
+
    TERAKAN_STATE_DRAW_CB_COLOR_FIRST,
    TERAKAN_STATE_DRAW_CB_COLOR_LAST =
       TERAKAN_STATE_DRAW_CB_COLOR_FIRST + TERAKAN_LIMITS_HW_COLOR_RAT_COUNT - 1,
@@ -88,6 +90,9 @@ struct terakan_state_draw {
 
    /* TERAKAN_STATE_DRAW_PA_SU_SC_MODE_CNTL */
    uint32_t pa_su_sc_mode_cntl;
+
+   /* TERAKAN_STATE_DRAW_PA_SC_AA_MASK */
+   uint16_t pa_sc_aa_mask;
 
    /* TERAKAN_STATE_DRAW_CB_COLOR_FIRST...LAST */
    struct terakan_winsys_bo const * cb_color_bo[TERAKAN_LIMITS_HW_COLOR_RAT_COUNT];
