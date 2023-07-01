@@ -89,8 +89,8 @@ struct terakan_winsys_fn {
 };
 
 struct terakan_winsys_bo_fn {
-   void * (*map)(struct terakan_winsys_bo * bo);
-   void (*unmap)(struct terakan_winsys_bo * bo);
+   void * (*map_impl)(struct terakan_winsys_bo * bo);
+   void (*unmap_impl)(struct terakan_winsys_bo * bo);
 
    /* Returns whether the wait was successful.
     * Waiting can be performed from any thread, however, the behavior is undefined while command
@@ -101,8 +101,7 @@ struct terakan_winsys_bo_fn {
     */
    bool (*wait_idle)(struct terakan_winsys_bo * bo);
 
-   /* If the buffer is currently mapped, freeing it implicitly unmaps it. */
-   void (*free)(struct terakan_winsys_bo * bo);
+   void (*free_impl)(struct terakan_winsys_bo * bo);
 
    /* For host-visible device-local memory, it's assumed that the kernel driver can evict
     * allocations to the GART automatically, and that host-visible device-local memory should be
@@ -157,7 +156,15 @@ struct terakan_winsys_bo {
     * around.
     */
    uint32_t creation_number;
+
+   void * mapping;
 };
+
+void * terakan_winsys_bo_map(struct terakan_winsys_bo * bo);
+void terakan_winsys_bo_unmap(struct terakan_winsys_bo * bo);
+
+/* If the buffer is currently mapped, freeing it implicitly unmaps it. */
+void terakan_winsys_bo_free(struct terakan_winsys_bo * bo);
 
 void terakan_winsys_bo_base_init(struct terakan_winsys_bo * bo, struct terakan_winsys * winsys);
 

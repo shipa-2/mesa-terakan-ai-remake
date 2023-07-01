@@ -43,15 +43,10 @@
 #include <radeon_drm.h>
 
 static void *
-terakan_winsys_drm_radeon_bo_map(struct terakan_winsys_bo * const bo_base)
+terakan_winsys_drm_radeon_bo_map_impl(struct terakan_winsys_bo * const bo_base)
 {
    struct terakan_winsys_drm_radeon_bo * const bo =
       container_of(bo_base, struct terakan_winsys_drm_radeon_bo, base);
-
-   if (bo->mapping != NULL) {
-      return bo->mapping;
-   }
-
    struct terakan_winsys_drm_radeon const * const winsys =
       container_of(bo->base.winsys, struct terakan_winsys_drm_radeon const, base);
 
@@ -82,23 +77,16 @@ terakan_winsys_drm_radeon_bo_map(struct terakan_winsys_bo * const bo_base)
       return NULL;
    }
 
-   bo->mapping = mapping;
-
    return mapping;
 }
 
 static void
-terakan_winsys_drm_radeon_bo_unmap(struct terakan_winsys_bo * const bo_base)
+terakan_winsys_drm_radeon_bo_unmap_impl(struct terakan_winsys_bo * const bo_base)
 {
    struct terakan_winsys_drm_radeon_bo * const bo =
       container_of(bo_base, struct terakan_winsys_drm_radeon_bo, base);
 
-   if (bo->mapping == NULL) {
-      return;
-   }
-
-   os_munmap(bo->mapping, (size_t)bo->size);
-   bo->mapping = NULL;
+   os_munmap(bo_base->mapping, (size_t)bo->size);
 }
 
 static bool
@@ -118,14 +106,12 @@ terakan_winsys_drm_radeon_bo_wait_idle(struct terakan_winsys_bo * const bo_base)
 }
 
 static void
-terakan_winsys_drm_radeon_bo_free(struct terakan_winsys_bo * const bo_base)
+terakan_winsys_drm_radeon_bo_free_impl(struct terakan_winsys_bo * const bo_base)
 {
    struct terakan_winsys_drm_radeon_bo * const bo =
       container_of(bo_base, struct terakan_winsys_drm_radeon_bo, base);
    struct terakan_winsys_drm_radeon const * const winsys =
       container_of(bo->base.winsys, struct terakan_winsys_drm_radeon const, base);
-
-   terakan_winsys_drm_radeon_bo_unmap(&bo->base);
 
    struct drm_gem_close gem_close_arguments = {
       .handle = bo->handle,
@@ -204,15 +190,13 @@ terakan_winsys_drm_radeon_bo_allocate_device_memory(struct terakan_winsys * cons
 
    bo->handle = gem_create_arguments.handle;
 
-   bo->mapping = NULL;
-
    return &bo->base;
 }
 
 struct terakan_winsys_bo_fn const terakan_winsys_drm_radeon_bo_fn = {
-   .map = terakan_winsys_drm_radeon_bo_map,
-   .unmap = terakan_winsys_drm_radeon_bo_unmap,
-   .free = terakan_winsys_drm_radeon_bo_free,
+   .map_impl = terakan_winsys_drm_radeon_bo_map_impl,
+   .unmap_impl = terakan_winsys_drm_radeon_bo_unmap_impl,
    .wait_idle = terakan_winsys_drm_radeon_bo_wait_idle,
+   .free_impl = terakan_winsys_drm_radeon_bo_free_impl,
    .allocate_device_memory = terakan_winsys_drm_radeon_bo_allocate_device_memory,
 };

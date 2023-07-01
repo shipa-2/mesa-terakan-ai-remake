@@ -54,13 +54,7 @@ terakan_UnmapMemory2KHR(VkDevice const deviceHandle,
    struct terakan_device_memory * const device_memory =
       terakan_device_memory_from_handle(pMemoryUnmapInfo->memory);
 
-   if (device_memory->mapping != NULL) {
-      struct terakan_device const * const device = terakan_device_from_handle(deviceHandle);
-      struct terakan_physical_device const * const physical_device =
-         container_of(device->vk.physical, struct terakan_physical_device const, vk);
-
-      physical_device->winsys->bo_fn->unmap(device_memory->bo);
-   }
+   terakan_winsys_bo_unmap(device_memory->bo);
 
    return VK_SUCCESS;
 }
@@ -72,18 +66,12 @@ terakan_MapMemory2KHR(VkDevice const deviceHandle, VkMemoryMapInfoKHR const * co
    struct terakan_device_memory * const device_memory =
       terakan_device_memory_from_handle(pMemoryMapInfo->memory);
 
-   if (device_memory->mapping == NULL) {
-      struct terakan_device const * const device = terakan_device_from_handle(deviceHandle);
-      struct terakan_physical_device const * const physical_device =
-         container_of(device->vk.physical, struct terakan_physical_device const, vk);
-
-      device_memory->mapping = physical_device->winsys->bo_fn->map(device_memory->bo);
-      if (device_memory->mapping == NULL) {
-         return vk_error(device, VK_ERROR_MEMORY_MAP_FAILED);
-      }
+   void * const mapping = terakan_winsys_bo_map(device_memory->bo);
+   if (mapping == NULL) {
+      return vk_error(terakan_device_from_handle(deviceHandle), VK_ERROR_MEMORY_MAP_FAILED);
    }
 
-   *ppData = device_memory->mapping;
+   *ppData = mapping;
 
    return VK_SUCCESS;
 }
@@ -99,13 +87,9 @@ terakan_FreeMemory(VkDevice const deviceHandle, VkDeviceMemory const deviceMemor
       return;
    }
 
-   struct terakan_device * const device = terakan_device_from_handle(deviceHandle);
-   struct terakan_physical_device const * const physical_device =
-      container_of(device->vk.physical, struct terakan_physical_device const, vk);
+   terakan_winsys_bo_free(device_memory->bo);
 
-   physical_device->winsys->bo_fn->free(device_memory->bo);
-
-   vk_object_free(&device->vk, pAllocator, device_memory);
+   vk_object_free(&terakan_device_from_handle(deviceHandle)->vk, pAllocator, device_memory);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
@@ -136,8 +120,6 @@ terakan_AllocateMemory(VkDevice const deviceHandle,
       vk_object_free(&device->vk, pAllocator, device_memory);
       return vk_error(device, VK_ERROR_OUT_OF_DEVICE_MEMORY);
    }
-
-   device_memory->mapping = NULL;
 
    *pMemory = terakan_device_memory_to_handle(device_memory);
 

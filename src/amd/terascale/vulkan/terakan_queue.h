@@ -49,7 +49,6 @@ struct terakan_queue_completion_submission {
    struct list_head link;
 
    struct terakan_winsys_bo * bo;
-   uint64_t volatile * bo_mapping;
 
    uint64_t expected_bo_data;
 

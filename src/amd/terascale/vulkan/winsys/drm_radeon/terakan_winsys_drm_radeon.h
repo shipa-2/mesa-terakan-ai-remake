@@ -47,8 +47,6 @@ struct terakan_winsys_drm_radeon_bo {
    __u32 domains;
 
    __u32 handle;
-
-   void * mapping;
 };
 
 extern struct terakan_winsys_surface_fn const terakan_winsys_drm_radeon_surface_fn;

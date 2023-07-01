@@ -25,10 +25,38 @@
 
 #include "util/u_atomic.h"
 
+#include <stddef.h>
+
 void
 terakan_winsys_base_init(struct terakan_winsys * const winsys)
 {
    winsys->last_bo_creation_number = 0;
+}
+
+void *
+terakan_winsys_bo_map(struct terakan_winsys_bo * const bo)
+{
+   if (bo->mapping == NULL) {
+      bo->mapping = bo->winsys->bo_fn->map_impl(bo);
+   }
+   return bo->mapping;
+}
+
+void
+terakan_winsys_bo_unmap(struct terakan_winsys_bo * const bo)
+{
+   if (bo->mapping == NULL) {
+      return;
+   }
+   bo->winsys->bo_fn->unmap_impl(bo);
+   bo->mapping = NULL;
+}
+
+void
+terakan_winsys_bo_free(struct terakan_winsys_bo * const bo)
+{
+   terakan_winsys_bo_unmap(bo);
+   bo->winsys->bo_fn->free_impl(bo);
 }
 
 void
@@ -38,4 +66,6 @@ terakan_winsys_bo_base_init(struct terakan_winsys_bo * const bo,
    bo->winsys = winsys;
 
    bo->creation_number = p_atomic_inc_return(&winsys->last_bo_creation_number);
+
+   bo->mapping = NULL;
 }

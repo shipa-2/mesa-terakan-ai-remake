@@ -85,8 +85,9 @@ terakan_queue_completion_thread_func(void * queue_ptr)
          &queue->completion_submissions_pending, struct terakan_queue_completion_submission, link);
       list_del(&submission->link);
       mtx_unlock(&device->completion_mutex);
-      bool const awaited = bo_fn->wait_idle(submission->bo) &&
-                           *submission->bo_mapping == submission->expected_bo_data;
+      bool const awaited =
+         bo_fn->wait_idle(submission->bo) &&
+         *(uint64_t const volatile *)submission->bo->mapping == submission->expected_bo_data;
       mtx_lock(&device->completion_mutex);
       if (unlikely(!awaited)) {
          vk_device_set_lost(
@@ -299,11 +300,10 @@ terakan_queue_submit(struct vk_queue * const queue_base, struct vk_queue_submit 
          cnd_broadcast(&device->completion_condition);
          return VK_ERROR_DEVICE_LOST;
       }
-      completion_submission->bo_mapping = winsys->bo_fn->map(completion_submission->bo);
-      if (completion_submission->bo_mapping == NULL) {
+      if (terakan_winsys_bo_map(completion_submission->bo) == NULL) {
          vk_device_set_lost(&device->vk,
                             "Failed to map the submission completion fence buffer object");
-         winsys->bo_fn->free(completion_submission->bo);
+         terakan_winsys_bo_free(completion_submission->bo);
          vk_free(&device->vk.alloc, completion_submission);
          mtx_lock(&device->completion_mutex);
          list_splice(&completion_signals, &queue->completion_signals_free);
@@ -312,7 +312,7 @@ terakan_queue_submit(struct vk_queue * const queue_base, struct vk_queue_submit 
          cnd_broadcast(&device->completion_condition);
          return VK_ERROR_DEVICE_LOST;
       }
-      *completion_submission->bo_mapping = queue->next_completion_bo_data - 1;
+      *(uint64_t volatile *)completion_submission->bo->mapping = queue->next_completion_bo_data - 1;
    }
    completion_submission->expected_bo_data = queue->next_completion_bo_data;
    list_replace(&completion_signals, &completion_submission->signals);
@@ -394,8 +394,6 @@ terakan_queue_destroy(struct terakan_queue * const queue)
 {
    struct terakan_device * const device =
       container_of(queue->vk.base.device, struct terakan_device, vk);
-   struct terakan_winsys_bo_fn const * const bo_fn =
-      container_of(device->vk.physical, struct terakan_physical_device const, vk)->winsys->bo_fn;
 
    mtx_lock(&device->completion_mutex);
    queue->shutdown_competion_thread = true;
@@ -412,12 +410,12 @@ terakan_queue_destroy(struct terakan_queue * const queue)
                                 link) {
          vk_free(&device->vk.alloc, completion_signal);
       }
-      bo_fn->free(completion_submission->bo);
+      terakan_winsys_bo_free(completion_submission->bo);
       vk_free(&device->vk.alloc, completion_submission);
    }
    LIST_FOR_EACH_ENTRY_SAFE (completion_submission, next_submission,
                              &queue->completion_submissions_free, link) {
-      bo_fn->free(completion_submission->bo);
+      terakan_winsys_bo_free(completion_submission->bo);
       vk_free(&device->vk.alloc, completion_submission);
    }
    LIST_FOR_EACH_ENTRY_SAFE (completion_signal, next_signal, &queue->completion_signals_free,
