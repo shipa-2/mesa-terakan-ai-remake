@@ -99,6 +99,7 @@ terakan_physical_device_get_supported_features(struct vk_features * const featur
    features_out->robustBufferAccess = true;
    features_out->fullDrawIndexUint32 = true;
    features_out->depthClamp = true;
+   features_out->fillModeNonSolid = true;
    features_out->textureCompressionBC = true;
 
    /* VK_EXT_4444_formats */
