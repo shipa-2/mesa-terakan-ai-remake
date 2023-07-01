@@ -46,6 +46,8 @@ enum terakan_state_draw_index {
 
    TERAKAN_STATE_DRAW_VGT_INDEX_OFFSET,
 
+   TERAKAN_STATE_DRAW_PA_CL_CLIP_CNTL,
+
    TERAKAN_STATE_DRAW_PA_SU_SC_MODE_CNTL,
 
    TERAKAN_STATE_DRAW_CB_COLOR_FIRST,
@@ -69,6 +71,9 @@ struct terakan_state_draw {
     */
    BITSET_DECLARE(state_pending, TERAKAN_STATE_DRAW_COUNT);
 
+   /* Configuration of state setting commands themselves. */
+   bool cmd_set_depth_clamp_enable_sets_depth_clip_enable;
+
    /* TERAKAN_STATE_DRAW_VGT_INDEX_TYPE */
    uint32_t vgt_index_type;
 
@@ -77,6 +82,9 @@ struct terakan_state_draw {
 
    /* TERAKAN_STATE_DRAW_VGT_INDEX_OFFSET */
    uint32_t vgt_index_offset;
+
+   /* TERAKAN_STATE_DRAW_PA_CL_CLIP_CNTL */
+   uint32_t pa_cl_clip_cntl;
 
    /* TERAKAN_STATE_DRAW_PA_SU_SC_MODE_CNTL */
    uint32_t pa_su_sc_mode_cntl;

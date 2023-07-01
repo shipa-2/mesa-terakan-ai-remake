@@ -32,6 +32,8 @@
 enum terakan_pipeline_graphics_state_index {
    TERAKAN_PIPELINE_GRAPHICS_STATE_VGT_PRIMITIVE_TYPE,
 
+   TERAKAN_PIPELINE_GRAPHICS_STATE_PA_CL_CLIP_CNTL,
+
    TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SU_SC_MODE_CNTL,
 
    TERAKAN_PIPELINE_GRAPHICS_STATE_COUNT,
@@ -43,6 +45,12 @@ struct terakan_pipeline_graphics_vertex_input {
 };
 
 struct terakan_pipeline_graphics_pre_rasterization {
+   bool cmd_set_depth_clamp_enable_sets_depth_clip_enable;
+
+   /* TERAKAN_PIPELINE_GRAPHICS_STATE_PA_CL_CLIP_CNTL */
+   uint32_t pa_cl_clip_cntl_clear;
+   uint32_t pa_cl_clip_cntl;
+
    /* TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SU_SC_MODE_CNTL */
    uint32_t pa_su_sc_mode_cntl_clear;
    uint32_t pa_su_sc_mode_cntl;

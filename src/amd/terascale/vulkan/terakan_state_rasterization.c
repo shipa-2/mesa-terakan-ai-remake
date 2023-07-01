@@ -29,6 +29,57 @@
 #include <stdint.h>
 
 VKAPI_ATTR void VKAPI_CALL
+terakan_CmdSetDepthClipNegativeOneToOneEXT(VkCommandBuffer const commandBuffer,
+                                           VkBool32 const negativeOneToOne)
+{
+   struct terakan_state_draw * const state_draw =
+      &terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx->state_draw;
+   terakan_state_draw_replace_fields(
+      state_draw, TERAKAN_STATE_DRAW_PA_CL_CLIP_CNTL, &state_draw->pa_cl_clip_cntl,
+      TERAKAN_STATE_DRAW_DEPTH_CLIP_NEGATIVE_ONE_TO_ONE_PA_CL_CLIP_CNTL_CLEAR,
+      terakan_state_draw_depth_clip_negative_one_to_one_pa_cl_clip_cntl(negativeOneToOne));
+}
+
+VKAPI_ATTR void VKAPI_CALL
+terakan_CmdSetRasterizerDiscardEnable(VkCommandBuffer const commandBuffer,
+                                      VkBool32 const rasterizerDiscardEnable)
+{
+   struct terakan_state_draw * const state_draw =
+      &terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx->state_draw;
+   terakan_state_draw_replace_fields(
+      state_draw, TERAKAN_STATE_DRAW_PA_CL_CLIP_CNTL, &state_draw->pa_cl_clip_cntl,
+      TERAKAN_STATE_DRAW_RASTERIZER_DISCARD_ENABLE_PA_CL_CLIP_CNTL_CLEAR,
+      terakan_state_draw_rasterizer_discard_enable_pa_cl_clip_cntl(rasterizerDiscardEnable));
+}
+
+VKAPI_ATTR void VKAPI_CALL
+terakan_CmdSetDepthClampEnableEXT(VkCommandBuffer const commandBuffer,
+                                  VkBool32 const depthClampEnable)
+{
+   struct terakan_state_draw * const state_draw =
+      &terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx->state_draw;
+   if (state_draw->cmd_set_depth_clamp_enable_sets_depth_clip_enable) {
+      terakan_state_draw_replace_fields(
+         state_draw, TERAKAN_STATE_DRAW_PA_CL_CLIP_CNTL, &state_draw->pa_cl_clip_cntl,
+         TERAKAN_STATE_DRAW_DEPTH_CLIP_ENABLE_PA_CL_CLIP_CNTL_CLEAR,
+         terakan_state_draw_depth_clip_enable_pa_cl_clip_cntl(!depthClampEnable));
+   }
+   /* TODO(Triang3l): DB_RENDER_OVERRIDE.DISABLE_VIEWPORT_CLAMP. */
+}
+
+VKAPI_ATTR void VKAPI_CALL
+terakan_CmdSetDepthClipEnableEXT(VkCommandBuffer const commandBuffer,
+                                 VkBool32 const depthClipEnable)
+{
+   struct terakan_state_draw * const state_draw =
+      &terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx->state_draw;
+   terakan_state_draw_replace_fields(
+      state_draw, TERAKAN_STATE_DRAW_PA_CL_CLIP_CNTL, &state_draw->pa_cl_clip_cntl,
+      TERAKAN_STATE_DRAW_DEPTH_CLIP_ENABLE_PA_CL_CLIP_CNTL_CLEAR,
+      terakan_state_draw_depth_clip_enable_pa_cl_clip_cntl(depthClipEnable));
+}
+
+VKAPI_ATTR void VKAPI_CALL
 terakan_CmdSetPolygonModeEXT(VkCommandBuffer const commandBuffer, VkPolygonMode const polygonMode)
 {
    struct terakan_state_draw * const state_draw =

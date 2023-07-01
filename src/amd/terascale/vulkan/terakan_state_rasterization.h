@@ -27,8 +27,37 @@
 #include "gallium/drivers/r600/evergreend.h"
 
 #include <assert.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <vulkan/vulkan_core.h>
+
+#define TERAKAN_STATE_DRAW_DEPTH_CLIP_NEGATIVE_ONE_TO_ONE_PA_CL_CLIP_CNTL_CLEAR                    \
+   ((uint32_t)C_028810_DX_CLIP_SPACE_DEF)
+
+static inline uint32_t
+terakan_state_draw_depth_clip_negative_one_to_one_pa_cl_clip_cntl(bool const negative_one_to_one)
+{
+   return S_028810_DX_CLIP_SPACE_DEF(!negative_one_to_one);
+}
+
+#define TERAKAN_STATE_DRAW_RASTERIZER_DISCARD_ENABLE_PA_CL_CLIP_CNTL_CLEAR                         \
+   ((uint32_t)C_028810_DX_RASTERIZATION_KILL)
+
+static inline uint32_t
+terakan_state_draw_rasterizer_discard_enable_pa_cl_clip_cntl(bool const rasterizer_discard_enable)
+{
+   return S_028810_DX_RASTERIZATION_KILL(rasterizer_discard_enable);
+}
+
+#define TERAKAN_STATE_DRAW_DEPTH_CLIP_ENABLE_PA_CL_CLIP_CNTL_CLEAR                                 \
+   ((uint32_t)(C_028810_ZCLIP_NEAR_DISABLE & C_028810_ZCLIP_FAR_DISABLE))
+
+static inline uint32_t
+terakan_state_draw_depth_clip_enable_pa_cl_clip_cntl(bool const depth_clip_enable)
+{
+   return S_028810_ZCLIP_NEAR_DISABLE(!depth_clip_enable) |
+          S_028810_ZCLIP_FAR_DISABLE(!depth_clip_enable);
+}
 
 #define TERAKAN_STATE_DRAW_POLYGON_MODE_PA_SU_SC_MODE_CNTL_CLEAR                                   \
    ((uint32_t)(C_028814_POLY_MODE & C_028814_POLYMODE_FRONT_PTYPE & C_028814_POLYMODE_BACK_PTYPE))
@@ -92,7 +121,7 @@ terakan_state_draw_provoking_vertex_mode_pa_su_sc_mode_cntl(
                C_028814_POLY_OFFSET_PARA_ENABLE))
 
 static inline uint32_t
-terakan_state_draw_depth_bias_enable_pa_su_sc_mode_cntl(VkBool32 const depth_bias_enable)
+terakan_state_draw_depth_bias_enable_pa_su_sc_mode_cntl(bool const depth_bias_enable)
 {
    return S_028814_POLY_OFFSET_FRONT_ENABLE(depth_bias_enable) |
           S_028814_POLY_OFFSET_BACK_ENABLE(depth_bias_enable) |

@@ -67,6 +67,8 @@ terakan_physical_device_get_supported_extensions(
    memset(extensions_out, 0, sizeof(*extensions_out));
 
    extensions_out->EXT_4444_formats = true;
+   extensions_out->EXT_depth_clip_control = true;
+   extensions_out->EXT_depth_clip_enable = true;
    extensions_out->EXT_extended_dynamic_state = true;
    extensions_out->EXT_extended_dynamic_state2 = true;
    extensions_out->EXT_extended_dynamic_state3 = true;
@@ -96,15 +98,25 @@ terakan_physical_device_get_supported_features(struct vk_features * const featur
    /* Vulkan 1.0 */
    features_out->robustBufferAccess = true;
    features_out->fullDrawIndexUint32 = true;
+   features_out->depthClamp = true;
    features_out->textureCompressionBC = true;
 
    /* VK_EXT_4444_formats */
    features_out->formatA4R4G4B4 = true;
    features_out->formatA4B4G4R4 = true;
 
+   /* VK_EXT_depth_clip_control */
+   features_out->depthClipControl = true;
+
+   /* VK_EXT_depth_clip_enable */
+   features_out->depthClipEnable = true;
+
    /* VK_EXT_extended_dynamic_state3 */
+   features_out->extendedDynamicState3DepthClampEnable = true;
    features_out->extendedDynamicState3PolygonMode = true;
    features_out->extendedDynamicState3ProvokingVertexMode = true;
+   features_out->extendedDynamicState3DepthClipEnable = true;
+   features_out->extendedDynamicState3DepthClipNegativeOneToOne = true;
 
    /* VK_EXT_provoking_vertex */
    features_out->provokingVertexLast = true;

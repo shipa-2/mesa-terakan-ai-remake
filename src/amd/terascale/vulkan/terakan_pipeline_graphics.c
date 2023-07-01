@@ -73,6 +73,9 @@ static void
 terakan_pipeline_graphics_bind(struct terakan_gfx_command_writer * const command_writer,
                                struct terakan_pipeline_graphics const * const pipeline)
 {
+   command_writer->state_draw.cmd_set_depth_clamp_enable_sets_depth_clip_enable =
+      pipeline->pre_rasterization.cmd_set_depth_clamp_enable_sets_depth_clip_enable;
+
    unsigned state_index;
    BITSET_FOREACH_SET(state_index, pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_COUNT)
    {
@@ -100,6 +103,47 @@ terakan_pipeline_graphics_pre_rasterization_init(
    struct terakan_pipeline_graphics * const pipeline,
    struct vk_graphics_pipeline_state const * const state)
 {
+   /* TERAKAN_PIPELINE_GRAPHICS_STATE_PA_CL_CLIP_CNTL */
+   pipeline->pre_rasterization.pa_cl_clip_cntl_clear = UINT32_MAX;
+   pipeline->pre_rasterization.pa_cl_clip_cntl = 0;
+   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_VP_DEPTH_CLIP_NEGATIVE_ONE_TO_ONE)) {
+      pipeline->pre_rasterization.pa_cl_clip_cntl_clear &=
+         TERAKAN_STATE_DRAW_DEPTH_CLIP_NEGATIVE_ONE_TO_ONE_PA_CL_CLIP_CNTL_CLEAR;
+      pipeline->pre_rasterization.pa_cl_clip_cntl |=
+         terakan_state_draw_depth_clip_negative_one_to_one_pa_cl_clip_cntl(
+            state->vp->depth_clip_negative_one_to_one);
+   }
+   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_RS_RASTERIZER_DISCARD_ENABLE)) {
+      pipeline->pre_rasterization.pa_cl_clip_cntl_clear &=
+         TERAKAN_STATE_DRAW_RASTERIZER_DISCARD_ENABLE_PA_CL_CLIP_CNTL_CLEAR;
+      pipeline->pre_rasterization.pa_cl_clip_cntl |=
+         terakan_state_draw_rasterizer_discard_enable_pa_cl_clip_cntl(
+            state->rs->rasterizer_discard_enable);
+   }
+   pipeline->pre_rasterization.cmd_set_depth_clamp_enable_sets_depth_clip_enable = false;
+   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_RS_DEPTH_CLIP_ENABLE)) {
+      if (state->rs->depth_clip_enable == VK_MESA_DEPTH_CLIP_ENABLE_NOT_CLAMP) {
+         pipeline->pre_rasterization.cmd_set_depth_clamp_enable_sets_depth_clip_enable = true;
+         if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_RS_DEPTH_CLAMP_ENABLE)) {
+            pipeline->pre_rasterization.pa_cl_clip_cntl_clear &=
+               TERAKAN_STATE_DRAW_DEPTH_CLIP_ENABLE_PA_CL_CLIP_CNTL_CLEAR;
+            pipeline->pre_rasterization.pa_cl_clip_cntl |=
+               terakan_state_draw_depth_clip_enable_pa_cl_clip_cntl(!state->rs->depth_clamp_enable);
+         }
+      } else {
+         pipeline->pre_rasterization.pa_cl_clip_cntl_clear &=
+            TERAKAN_STATE_DRAW_DEPTH_CLIP_ENABLE_PA_CL_CLIP_CNTL_CLEAR;
+         pipeline->pre_rasterization.pa_cl_clip_cntl |=
+            terakan_state_draw_depth_clip_enable_pa_cl_clip_cntl(state->rs->depth_clip_enable ==
+                                                                 VK_MESA_DEPTH_CLIP_ENABLE_TRUE);
+      }
+   }
+   assert(!(pipeline->pre_rasterization.pa_cl_clip_cntl &
+            pipeline->pre_rasterization.pa_cl_clip_cntl_clear));
+   if (pipeline->pre_rasterization.pa_cl_clip_cntl_clear != UINT32_MAX) {
+      BITSET_SET(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_PA_CL_CLIP_CNTL);
+   }
+
    /* TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SU_SC_MODE_CNTL */
    pipeline->pre_rasterization.pa_su_sc_mode_cntl_clear = UINT32_MAX;
    pipeline->pre_rasterization.pa_su_sc_mode_cntl = 0;

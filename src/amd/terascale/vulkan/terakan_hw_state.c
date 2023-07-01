@@ -113,6 +113,19 @@ terakan_hw_state_draw_emit_sq_vtx_start_inst_loc(
 }
 
 static void
+terakan_hw_state_draw_emit_pa_cl_clip_cntl(struct terakan_gfx_command_writer * const command_writer,
+                                           UNUSED enum terakan_hw_state_draw_index const state_index)
+{
+   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, 0, 0);
+   if (unlikely(packet == NULL)) {
+      return;
+   }
+   *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
+   *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028810_PA_CL_CLIP_CNTL);
+   *packet++ = command_writer->hw_state_draw.pa_cl_clip_cntl;
+}
+
+static void
 terakan_hw_state_draw_emit_pa_su_sc_mode_cntl(
    struct terakan_gfx_command_writer * const command_writer,
    UNUSED enum terakan_hw_state_draw_index const state_index)
@@ -276,6 +289,7 @@ static terakan_hw_state_draw_emit_function const
       [TERAKAN_HW_STATE_DRAW_VGT_INDEX_OFFSET] = terakan_hw_state_draw_emit_vgt_index_offset,
       [TERAKAN_HW_STATE_DRAW_SQ_VTX_START_INST_LOC] =
          terakan_hw_state_draw_emit_sq_vtx_start_inst_loc,
+      [TERAKAN_HW_STATE_DRAW_PA_CL_CLIP_CNTL] = terakan_hw_state_draw_emit_pa_cl_clip_cntl,
       [TERAKAN_HW_STATE_DRAW_PA_SU_SC_MODE_CNTL] = terakan_hw_state_draw_emit_pa_su_sc_mode_cntl,
       [TERAKAN_HW_STATE_DRAW_CB_BLEND_RGBA] = terakan_hw_state_draw_emit_cb_blend_rgba,
       [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST] = terakan_hw_state_draw_emit_color,

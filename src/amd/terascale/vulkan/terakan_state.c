@@ -71,6 +71,17 @@ terakan_state_draw_apply_vgt_index_offset(struct terakan_gfx_command_writer * co
 }
 
 static void
+terakan_state_draw_apply_pa_cl_clip_cntl(struct terakan_gfx_command_writer * const command_writer,
+                                         UNUSED enum terakan_state_draw_index const state_index)
+{
+   bool const modified =
+      command_writer->hw_state_draw.pa_cl_clip_cntl != command_writer->state_draw.pa_cl_clip_cntl;
+   command_writer->hw_state_draw.pa_cl_clip_cntl = command_writer->state_draw.pa_cl_clip_cntl;
+   terakan_hw_state_draw_written(&command_writer->hw_state_draw,
+                                 TERAKAN_HW_STATE_DRAW_PA_CL_CLIP_CNTL, modified);
+}
+
+static void
 terakan_state_draw_apply_pa_su_sc_mode_cntl(struct terakan_gfx_command_writer * const command_writer,
                                             UNUSED enum terakan_state_draw_index const state_index)
 {
@@ -142,6 +153,7 @@ static terakan_state_draw_apply_function const
       [TERAKAN_STATE_DRAW_VGT_INDEX_TYPE] = terakan_state_draw_apply_vgt_index_type,
       [TERAKAN_STATE_DRAW_VGT_PRIMITIVE_TYPE] = terakan_state_draw_apply_vgt_primitive_type,
       [TERAKAN_STATE_DRAW_VGT_INDEX_OFFSET] = terakan_state_draw_apply_vgt_index_offset,
+      [TERAKAN_STATE_DRAW_PA_CL_CLIP_CNTL] = terakan_state_draw_apply_pa_cl_clip_cntl,
       [TERAKAN_STATE_DRAW_PA_SU_SC_MODE_CNTL] = terakan_state_draw_apply_pa_su_sc_mode_cntl,
       [TERAKAN_STATE_DRAW_CB_COLOR_FIRST] = terakan_state_draw_apply_color,
       [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 1] = terakan_state_draw_apply_color,
@@ -192,12 +204,16 @@ terakan_state_draw_reset(struct terakan_state_draw * const state)
 {
    BITSET_ZERO(state->state_ever_written);
 
-   /* Initialize state that setters modify partially (such as via
+   /* Initialize state setters themselves, and state that setters modify partially (such as via
     * terakan_state_draw_replace_fields), as well as state that other state depends on, to values
     * corresponding to their original Vulkan state values being zero (like zeroed via memset), or,
     * for state items from extensions, to their values without the structure containing the field
     * being in the pNext chain.
     */
+
+   /* No VK_DYNAMIC_STATE_DEPTH_CLIP_ENABLE_EXT,
+    * no VkPipelineRasterizationDepthClipStateCreateInfoEXT */
+   state->cmd_set_depth_clamp_enable_sets_depth_clip_enable = true;
 
 #if UTIL_ARCH_BIG_ENDIAN
    state->vgt_index_type = VGT_INDEX_16 | VGT_DMA_SWAP_16_BIT;
@@ -205,6 +221,17 @@ terakan_state_draw_reset(struct terakan_state_draw * const state)
    state->vgt_index_type = VGT_INDEX_16;
 #endif
    BITSET_SET(state->state_ever_written, TERAKAN_STATE_DRAW_VGT_INDEX_TYPE);
+
+   state->pa_cl_clip_cntl =
+      /* negativeOneToOne = VK_FALSE */
+      S_028810_DX_CLIP_SPACE_DEF(1) |
+      /* rasterizerDiscardEnable = VK_FALSE */
+      S_028810_DX_RASTERIZATION_KILL(0) |
+      /* Always enabled. */
+      S_028810_DX_LINEAR_ATTR_CLIP_ENA(1) |
+      /* depthClampEnable = VK_FALSE, no VkPipelineRasterizationDepthClipStateCreateInfoEXT */
+      S_028810_ZCLIP_NEAR_DISABLE(0) | S_028810_ZCLIP_FAR_DISABLE(0);
+   BITSET_SET(state->state_ever_written, TERAKAN_STATE_DRAW_PA_CL_CLIP_CNTL);
 
    state->pa_su_sc_mode_cntl =
       /* cullMode = VK_CULL_MODE_NONE */

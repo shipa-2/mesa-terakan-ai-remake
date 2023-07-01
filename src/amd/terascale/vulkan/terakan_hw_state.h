@@ -48,6 +48,8 @@ enum terakan_hw_state_draw_index {
 
    TERAKAN_HW_STATE_DRAW_SQ_VTX_START_INST_LOC,
 
+   TERAKAN_HW_STATE_DRAW_PA_CL_CLIP_CNTL,
+
    TERAKAN_HW_STATE_DRAW_PA_SU_SC_MODE_CNTL,
 
    TERAKAN_HW_STATE_DRAW_CB_BLEND_RGBA,
@@ -87,6 +89,9 @@ struct terakan_hw_state_draw {
 
    /* TERAKAN_HW_STATE_DRAW_SQ_VTX_START_INST_LOC */
    uint32_t sq_vtx_start_inst_loc;
+
+   /* TERAKAN_HW_STATE_DRAW_PA_CL_CLIP_CNTL */
+   uint32_t pa_cl_clip_cntl;
 
    /* TERAKAN_HW_STATE_DRAW_PA_SU_SC_MODE_CNTL */
    uint32_t pa_su_sc_mode_cntl;
