@@ -81,10 +81,12 @@ struct terakan_hw_state_draw {
    uint32_t vgt_index_type;
 
    /* TERAKAN_HW_STATE_DRAW_VGT_INDEX_BUFFER */
-   struct terakan_winsys_bo const * vgt_index_buffer_bo;
-   uint64_t vgt_index_buffer_base;
-   /* In units of indices. */
-   uint32_t vgt_index_buffer_size;
+   struct {
+      struct terakan_winsys_bo const * bo;
+      uint64_t base;
+      /* In units of indices. */
+      uint32_t size;
+   } vgt_index_buffer;
 
    /* TERAKAN_HW_STATE_DRAW_VGT_PRIMITIVE_TYPE */
    uint32_t vgt_primitive_type;

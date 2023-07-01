@@ -91,15 +91,15 @@ terakan_hw_state_draw_emit_vgt_index_buffer(
    }
 
    *packet++ = PKT3(EG_PKT3_INDEX_BASE, 2 - 1, 0);
-   *packet++ = (uint32_t)command_writer->hw_state_draw.vgt_index_buffer_base;
-   *packet++ = (uint32_t)(command_writer->hw_state_draw.vgt_index_buffer_base >> 32);
+   *packet++ = (uint32_t)command_writer->hw_state_draw.vgt_index_buffer.base;
+   *packet++ = (uint32_t)(command_writer->hw_state_draw.vgt_index_buffer.base >> 32);
    *packet++ = PKT3(PKT3_NOP, 0, 0);
    *packet++ = terakan_bo_reference_writer_add_reference(
-      &command_writer->base.bo_reference_writer, command_writer->hw_state_draw.vgt_index_buffer_bo,
+      &command_writer->base.bo_reference_writer, command_writer->hw_state_draw.vgt_index_buffer.bo,
       true, false, TERAKAN_WINSYS_CS_BO_PRIORITY_INDEX_BUFFER);
 
    *packet++ = PKT3(EG_PKT3_INDEX_BUFFER_SIZE, 1 - 1, 0);
-   *packet++ = command_writer->hw_state_draw.vgt_index_buffer_size;
+   *packet++ = command_writer->hw_state_draw.vgt_index_buffer.size;
 }
 
 static void
