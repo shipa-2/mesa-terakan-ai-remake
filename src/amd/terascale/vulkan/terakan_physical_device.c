@@ -417,8 +417,10 @@ terakan_GetPhysicalDeviceProperties(VkPhysicalDevice const physicalDevice,
    limits->framebufferColorSampleCounts = sample_counts;
    limits->framebufferDepthSampleCounts = sample_counts;
    limits->framebufferStencilSampleCounts = sample_counts;
-   /* TODO(Triang3l): Is 16x supported without attachments? */
    limits->framebufferNoAttachmentsSampleCounts = sample_counts;
+   if (gpu_info->gfx_level >= CAYMAN) {
+      limits->framebufferNoAttachmentsSampleCounts |= VK_SAMPLE_COUNT_16_BIT;
+   }
 
    limits->sampledImageColorSampleCounts = sample_counts;
    limits->sampledImageIntegerSampleCounts = sample_counts;
