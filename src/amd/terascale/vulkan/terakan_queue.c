@@ -106,6 +106,7 @@ terakan_queue_completion_thread_func(void * queue_ptr)
 
       /* Recycle the submission. */
       list_splice(&submission->signals, &queue->completion_signals_free);
+      list_inithead(&submission->signals);
       list_add(&submission->link, &queue->completion_submissions_free);
 
       /* Notify signal waits of new semaphore values or the failure. */
@@ -357,6 +358,7 @@ terakan_queue_submit(struct vk_queue * const queue_base, struct vk_queue_submit 
                          vk_Result_to_str(signal_submit_result));
       mtx_lock(&device->completion_mutex);
       list_splice(&completion_submission->signals, &queue->completion_signals_free);
+      list_inithead(&completion_submission->signals);
       list_add(&completion_submission->link, &queue->completion_submissions_free);
       device->completion_lost = true;
       mtx_unlock(&device->completion_mutex);
