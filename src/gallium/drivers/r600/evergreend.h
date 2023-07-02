@@ -1864,6 +1864,11 @@
 #define   S_0286D4_PNT_SPRITE_OVRD_X(x)                (((unsigned)(x) & 0x7) << 2)
 #define   G_0286D4_PNT_SPRITE_OVRD_X(x)                (((x) >> 2) & 0x7)
 #define   C_0286D4_PNT_SPRITE_OVRD_X                   0xFFFFFFE3
+#define     V_0286D4_SPI_PNT_SPRITE_SEL_0              0x00
+#define     V_0286D4_SPI_PNT_SPRITE_SEL_1              0x01
+#define     V_0286D4_SPI_PNT_SPRITE_SEL_S              0x02
+#define     V_0286D4_SPI_PNT_SPRITE_SEL_T              0x03
+#define     V_0286D4_SPI_PNT_SPRITE_SEL_NONE           0x04
 #define   S_0286D4_PNT_SPRITE_OVRD_Y(x)                (((unsigned)(x) & 0x7) << 5)
 #define   G_0286D4_PNT_SPRITE_OVRD_Y(x)                (((x) >> 5) & 0x7)
 #define   C_0286D4_PNT_SPRITE_OVRD_Y                   0xFFFFFF1F
