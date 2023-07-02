@@ -24,6 +24,7 @@
 #include "terakan_command_buffer.h"
 #include "terakan_device.h"
 #include "terakan_entrypoints.h"
+#include "terakan_limits.h"
 #include "terakan_physical_device.h"
 
 #include "gallium/drivers/r600/r600d_common.h"
@@ -129,6 +130,108 @@ terakan_bo_reference_writer_add_reference(struct terakan_bo_reference_writer * c
    return (uint32_t)(reference_size / sizeof(uint32_t)) * reference_index;
 }
 
+void *
+terakan_command_buffer_allocate_push_constants(struct terakan_command_buffer * const command_buffer,
+                                               uint32_t const size_bytes,
+                                               struct terakan_winsys_bo const ** const bo_out,
+                                               VkDeviceSize * const offset_bytes_out)
+{
+   assert(size_bytes <= TERAKAN_LIMITS_HW_CONSTANT_BUFFER_SIZE_BYTES);
+
+   uint32_t const size_cache_lines =
+      (size_bytes + (TERAKAN_LIMITS_HW_CONSTANT_BUFFER_CACHE_LINE_BYTES - 1)) /
+      TERAKAN_LIMITS_HW_CONSTANT_BUFFER_CACHE_LINE_BYTES;
+
+   /* One constant buffer of the maximum possible size.
+    * Because allocation is linear, there may be a lot of fragmentation if requested push constant
+    * amounts are large.
+    * However, it's expected that very large push constants are rare, so it's more preferable not to
+    * allocate too much memory for push constants in small command buffers instead of creating
+    * larger BOs.
+    * Fragmentation can also be filled with 1-cache-line push constants.
+    */
+   uint32_t const buffer_size_cache_lines = TERAKAN_LIMITS_HW_CONSTANT_BUFFER_CACHE_LINE_COUNT;
+
+   if (!list_is_empty(&command_buffer->push_constant_buffers_with_free_space) &&
+       list_first_entry(&command_buffer->push_constant_buffers_with_free_space,
+                        struct terakan_push_constant_buffer, link)
+             ->cache_lines_free >= size_cache_lines) {
+      /* Small buffers (not larger than 1 constant cache line) are expected to be the most common,
+       * and they are allocated from the tail rather than from the head to fill the fragmentation
+       * padding.
+       */
+      struct terakan_push_constant_buffer * const existing_buffer =
+         size_cache_lines <= 1
+            ? list_last_entry(&command_buffer->push_constant_buffers_with_free_space,
+                              struct terakan_push_constant_buffer, link)
+            : list_first_entry(&command_buffer->push_constant_buffers_with_free_space,
+                               struct terakan_push_constant_buffer, link);
+      uint32_t const existing_buffer_offset_bytes =
+         (buffer_size_cache_lines - existing_buffer->cache_lines_free) *
+         TERAKAN_LIMITS_HW_CONSTANT_BUFFER_CACHE_LINE_BYTES;
+
+      existing_buffer->cache_lines_free -= size_cache_lines;
+      if (existing_buffer->cache_lines_free == 0) {
+         list_move_to(&existing_buffer->link, &command_buffer->push_constant_buffers_full);
+      }
+
+      *bo_out = existing_buffer->bo;
+      *offset_bytes_out = existing_buffer_offset_bytes;
+      return (char *)existing_buffer->bo->mapping + existing_buffer_offset_bytes;
+   }
+
+   struct terakan_push_constant_buffer * new_buffer;
+
+   struct terakan_command_pool * const command_pool =
+      container_of(command_buffer->vk.pool, struct terakan_command_pool, vk);
+   if (!list_is_empty(&command_pool->push_constant_buffers_free)) {
+      new_buffer = list_first_entry(&command_pool->push_constant_buffers_free,
+                                    struct terakan_push_constant_buffer, link);
+      list_del(&new_buffer->link);
+   } else {
+      new_buffer = vk_alloc(&command_pool->vk.alloc, sizeof(*new_buffer), alignof(*new_buffer),
+                            VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+      if (new_buffer == NULL) {
+         vk_command_buffer_set_error(&command_buffer->vk, VK_ERROR_OUT_OF_HOST_MEMORY);
+         return NULL;
+      }
+
+      struct terakan_winsys * const winsys =
+         container_of(command_buffer->vk.pool->base.device->physical,
+                      struct terakan_physical_device const, vk)
+            ->winsys;
+
+      new_buffer->bo = winsys->bo_fn->allocate_device_memory(
+         winsys, TERAKAN_LIMITS_HW_CONSTANT_BUFFER_CACHE_LINE_BYTES * buffer_size_cache_lines,
+         TERAKAN_LIMITS_HW_CONSTANT_BUFFER_CACHE_LINE_BYTES,
+         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+      if (new_buffer->bo == NULL) {
+         vk_command_buffer_set_error(&command_buffer->vk, VK_ERROR_OUT_OF_DEVICE_MEMORY);
+         vk_free(&command_pool->vk.alloc, new_buffer);
+         return NULL;
+      }
+
+      if (terakan_winsys_bo_map(new_buffer->bo) == NULL) {
+         vk_command_buffer_set_error(&command_buffer->vk, VK_ERROR_OUT_OF_HOST_MEMORY);
+         terakan_winsys_bo_free(new_buffer->bo);
+         vk_free(&command_pool->vk.alloc, new_buffer);
+         return NULL;
+      }
+   }
+
+   if (size_cache_lines < buffer_size_cache_lines) {
+      new_buffer->cache_lines_free = buffer_size_cache_lines - size_cache_lines;
+      list_add(&new_buffer->link, &command_buffer->push_constant_buffers_with_free_space);
+   } else {
+      list_add(&new_buffer->link, &command_buffer->push_constant_buffers_full);
+   }
+
+   *bo_out = new_buffer->bo;
+   *offset_bytes_out = 0;
+   return new_buffer->bo->mapping;
+}
+
 static struct terakan_command_buffer_submission_indirect_buffer *
 terakan_command_buffer_new_indirect_buffer(struct terakan_command_buffer * const command_buffer)
 {
@@ -219,6 +322,13 @@ terakan_command_buffer_release_resources(struct terakan_command_buffer * const c
          list_add(&submission->free_link, &command_pool->indirect_buffers_free);
       }
    }
+
+   list_splice(&command_buffer->push_constant_buffers_full,
+               &command_pool->push_constant_buffers_free);
+   list_inithead(&command_buffer->push_constant_buffers_full);
+   list_splice(&command_buffer->push_constant_buffers_with_free_space,
+               &command_pool->push_constant_buffers_free);
+   list_inithead(&command_buffer->push_constant_buffers_with_free_space);
 }
 
 static void
@@ -266,6 +376,9 @@ terakan_command_buffer_create(struct vk_command_pool * const command_pool,
       vk_free(&command_pool->alloc, command_buffer);
       return result;
    }
+
+   list_inithead(&command_buffer->push_constant_buffers_with_free_space);
+   list_inithead(&command_buffer->push_constant_buffers_full);
 
    list_inithead(&command_buffer->submissions);
 
@@ -460,6 +573,13 @@ terakan_command_pool_trim_resources(struct terakan_command_pool * const command_
       vk_free(&command_pool->vk.alloc, submission);
    }
    list_inithead(&command_pool->indirect_buffers_free);
+
+   list_for_each_entry_safe (struct terakan_push_constant_buffer, push_constant_buffer,
+                             &command_pool->push_constant_buffers_free, link) {
+      terakan_winsys_bo_free(push_constant_buffer->bo);
+      vk_free(&command_pool->vk.alloc, push_constant_buffer);
+   }
+   list_inithead(&command_pool->push_constant_buffers_free);
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -512,6 +632,8 @@ terakan_CreateCommandPool(VkDevice const deviceHandle,
    if (command_pool == NULL) {
       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
    }
+
+   list_inithead(&command_pool->push_constant_buffers_free);
 
    list_inithead(&command_pool->indirect_buffers_free);
 

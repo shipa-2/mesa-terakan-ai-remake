@@ -107,6 +107,14 @@ uint32_t terakan_bo_reference_writer_add_reference(struct terakan_bo_reference_w
                                                    bool is_reading, bool is_writing,
                                                    enum terakan_winsys_cs_bo_priority priority);
 
+struct terakan_push_constant_buffer {
+   struct terakan_winsys_bo * bo;
+
+   uint32_t cache_lines_free;
+
+   struct list_head link;
+};
+
 struct terakan_command_buffer_submission {
    bool is_secondary_execution;
 
@@ -141,6 +149,9 @@ struct terakan_gfx_command_writer;
 struct terakan_command_buffer {
    struct vk_command_buffer vk;
 
+   struct list_head push_constant_buffers_with_free_space;
+   struct list_head push_constant_buffers_full;
+
    struct list_head submissions;
 
    union {
@@ -150,6 +161,11 @@ struct terakan_command_buffer {
 
 VK_DEFINE_HANDLE_CASTS(terakan_command_buffer, vk.base, VkCommandBuffer,
                        VK_OBJECT_TYPE_COMMAND_BUFFER)
+
+/* Returns the mapping, or NULL if failed. */
+void * terakan_command_buffer_allocate_push_constants(
+   struct terakan_command_buffer * command_buffer, uint32_t size_bytes,
+   struct terakan_winsys_bo const ** bo_out, VkDeviceSize * offset_bytes_out);
 
 extern struct vk_command_buffer_ops const terakan_command_buffer_ops;
 
@@ -194,6 +210,8 @@ uint32_t * terakan_gfx_command_writer_emit(struct terakan_gfx_command_writer * c
 
 struct terakan_command_pool {
    struct vk_command_pool vk;
+
+   struct list_head push_constant_buffers_free;
 
    struct list_head indirect_buffers_free;
 
