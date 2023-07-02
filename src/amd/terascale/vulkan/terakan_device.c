@@ -22,6 +22,7 @@
  */
 
 #include "terakan_device.h"
+#include "winsys/terakan_winsys.h"
 #include "terakan_command_buffer.h"
 #include "terakan_entrypoints.h"
 #include "terakan_physical_device.h"
@@ -34,6 +35,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <string.h>
 
 static void
 terakan_device_destroy(struct terakan_device * const device)
@@ -49,6 +51,8 @@ terakan_device_destroy(struct terakan_device * const device)
 
    cnd_destroy(&device->completion_condition);
    mtx_destroy(&device->completion_mutex);
+
+   terakan_winsys_bo_free(device->meta_shaders_bo);
 
    vk_device_finish(&device->vk);
 
@@ -96,10 +100,60 @@ terakan_CreateDevice(VkPhysicalDevice const physicalDevice,
 
    device->vk.command_buffer_ops = &terakan_command_buffer_ops;
 
+   bool const is_r9xx = physical_device->winsys->gpu_info.gfx_level >= CAYMAN;
+
+   VkDeviceSize meta_shaders_bo_size = 0;
+   for (size_t meta_shader_index = 0; meta_shader_index < TERAKAN_META_SHADER_COUNT;
+        ++meta_shader_index) {
+      struct terakan_shader_static * const device_meta_shader =
+         &device->meta_shaders[meta_shader_index];
+      struct terakan_meta_shader const * const meta_shader =
+         terakan_meta_shaders[meta_shader_index];
+      struct terakan_meta_shader_description const * const meta_shader_description =
+         is_r9xx ? &meta_shader->r9xx : &meta_shader->r8xx;
+      *device_meta_shader = meta_shader_description->static_registers;
+      VkDeviceSize const meta_shader_offset =
+         ALIGN_POT(meta_shaders_bo_size, (VkDeviceSize)TERAKAN_SHADER_PROGRAM_ALIGNMENT);
+      device_meta_shader->program_base =
+         meta_shader_offset >> TERAKAN_SHADER_PROGRAM_ALIGNMENT_LOG2;
+      meta_shaders_bo_size = meta_shader_offset + meta_shader_description->program_size_bytes;
+   }
+   device->meta_shaders_bo = physical_device->winsys->bo_fn->allocate_device_memory(
+      physical_device->winsys, meta_shaders_bo_size, TERAKAN_SHADER_PROGRAM_ALIGNMENT,
+      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+   if (device->meta_shaders_bo == NULL) {
+      result = vk_errorf(physical_device->vk.instance, VK_ERROR_OUT_OF_DEVICE_MEMORY,
+                         "Failed to allocate memory for internal shaders");
+      goto fail_device;
+   }
+   {
+      char * const meta_shaders_bo_mapping = terakan_winsys_bo_map(device->meta_shaders_bo);
+      if (meta_shaders_bo_mapping == NULL) {
+         result = vk_errorf(physical_device->vk.instance, VK_ERROR_OUT_OF_HOST_MEMORY,
+                            "Failed to map the internal shaders buffer object");
+         goto fail_meta_shaders_bo;
+      }
+      for (size_t meta_shader_index = 0; meta_shader_index < TERAKAN_META_SHADER_COUNT;
+           ++meta_shader_index) {
+         struct terakan_shader_static * const device_meta_shader =
+            &device->meta_shaders[meta_shader_index];
+         device_meta_shader->program_bo = device->meta_shaders_bo;
+         struct terakan_meta_shader const * const meta_shader =
+            terakan_meta_shaders[meta_shader_index];
+         struct terakan_meta_shader_description const * const meta_shader_description =
+            is_r9xx ? &meta_shader->r9xx : &meta_shader->r8xx;
+         memcpy(meta_shaders_bo_mapping + ((VkDeviceSize)device_meta_shader->program_base
+                                           << TERAKAN_SHADER_PROGRAM_ALIGNMENT_LOG2),
+                meta_shader_description->program, meta_shader_description->program_size_bytes);
+      }
+      terakan_winsys_bo_unmap(device->meta_shaders_bo);
+   }
+
    if (mtx_init(&device->completion_mutex, mtx_plain) != thrd_success) {
       result = vk_errorf(physical_device->vk.instance, VK_ERROR_OUT_OF_HOST_MEMORY,
                          "Failed to initialize the submission mutex");
-      goto fail_device;
+      goto fail_meta_shaders_bo;
    }
    if (cnd_init(&device->completion_condition) != thrd_success) {
       result = vk_errorf(physical_device->vk.instance, VK_ERROR_OUT_OF_HOST_MEMORY,
@@ -141,6 +195,8 @@ terakan_CreateDevice(VkPhysicalDevice const physicalDevice,
 
 fail_completion_mutex:
    mtx_destroy(&device->completion_mutex);
+fail_meta_shaders_bo:
+   terakan_winsys_bo_free(device->meta_shaders_bo);
 fail_device:
    vk_device_finish(&device->vk);
 fail_alloc:

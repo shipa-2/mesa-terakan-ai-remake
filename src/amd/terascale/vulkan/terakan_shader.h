@@ -21,41 +21,35 @@
  * IN THE SOFTWARE.
  */
 
-#ifndef TERAKAN_DEVICE_H
-#define TERAKAN_DEVICE_H
+#ifndef TERAKAN_SHADER_H
+#define TERAKAN_SHADER_H
 
-#include "meta/terakan_meta.h"
 #include "winsys/terakan_winsys.h"
-#include "terakan_queue.h"
-#include "terakan_shader.h"
 
-#include "c11/threads.h"
-#include "vk_device.h"
+#include <stdint.h>
 
-#include <stdbool.h>
+#define TERAKAN_SHADER_PROGRAM_ALIGNMENT_LOG2 8
+#define TERAKAN_SHADER_PROGRAM_ALIGNMENT      (1 << TERAKAN_SHADER_PROGRAM_ALIGNMENT_LOG2)
 
-struct terakan_device {
-   struct vk_device vk;
+/* Fields that don't depend on any other state. */
+struct terakan_shader_static {
+   struct terakan_winsys_bo const * program_bo;
+   uint32_t program_base;
 
-   struct terakan_winsys_bo * meta_shaders_bo;
-   struct terakan_shader_static meta_shaders[TERAKAN_META_SHADER_COUNT];
+   uint32_t sq_pgm_resources[2];
 
-   /* Mutex and condition variable for terakan_sync_completion timeline semaphore value updates and
-    * controlling submission completion waits.
-    */
-   mtx_t completion_mutex;
-   cnd_t completion_condition;
+   union {
+      struct {
+         uint32_t spi_vs_out_config;
+      } vs;
 
-   /* Whether awaiting submission completion isn't possible anymore, as a result of device
-    * destruction or submission-related device loss.
-    * Protected by completion_mutex, broadcast completion_condition when setting.
-    */
-   bool completion_lost;
-
-   /* Each queue is optional, if requested by the application. */
-   struct terakan_queue * queue_graphics;
+      struct {
+         uint32_t spi_ps_in_control[2];
+         uint32_t spi_input_z;
+         uint32_t spi_baryc_cntl;
+         uint32_t cb_shader_mask;
+      } ps;
+   } stage;
 };
 
-VK_DEFINE_HANDLE_CASTS(terakan_device, vk.base, VkDevice, VK_OBJECT_TYPE_DEVICE)
-
-#endif /* TERAKAN_DEVICE_H */
+#endif /* TERAKAN_SHADER_H */

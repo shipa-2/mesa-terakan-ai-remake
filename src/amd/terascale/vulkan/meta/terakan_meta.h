@@ -21,41 +21,38 @@
  * IN THE SOFTWARE.
  */
 
-#ifndef TERAKAN_DEVICE_H
-#define TERAKAN_DEVICE_H
+#ifndef TERAKAN_META_H
+#define TERAKAN_META_H
 
-#include "meta/terakan_meta.h"
-#include "winsys/terakan_winsys.h"
-#include "terakan_queue.h"
 #include "terakan_shader.h"
 
-#include "c11/threads.h"
-#include "vk_device.h"
+#include "gallium/drivers/r600/evergreend.h"
 
-#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
 
-struct terakan_device {
-   struct vk_device vk;
+#define TERAKAN_META_SQ_PGM_RESOURCES_COMMON S_028844_DX10_CLAMP(1)
+#define TERAKAN_META_SQ_PGM_RESOURCES_2_COMMON                                                     \
+   (S_028848_SINGLE_ROUND(V_SQ_ROUND_NEAREST_EVEN) | S_028848_DOUBLE_ROUND(V_SQ_ROUND_NEAREST_EVEN))
 
-   struct terakan_winsys_bo * meta_shaders_bo;
-   struct terakan_shader_static meta_shaders[TERAKAN_META_SHADER_COUNT];
-
-   /* Mutex and condition variable for terakan_sync_completion timeline semaphore value updates and
-    * controlling submission completion waits.
-    */
-   mtx_t completion_mutex;
-   cnd_t completion_condition;
-
-   /* Whether awaiting submission completion isn't possible anymore, as a result of device
-    * destruction or submission-related device loss.
-    * Protected by completion_mutex, broadcast completion_condition when setting.
-    */
-   bool completion_lost;
-
-   /* Each queue is optional, if requested by the application. */
-   struct terakan_queue * queue_graphics;
+struct terakan_meta_shader_description {
+   uint32_t const * program;
+   size_t program_size_bytes;
+   struct terakan_shader_static static_registers;
 };
 
-VK_DEFINE_HANDLE_CASTS(terakan_device, vk.base, VkDevice, VK_OBJECT_TYPE_DEVICE)
+struct terakan_meta_shader {
+   struct terakan_meta_shader_description r8xx;
+   struct terakan_meta_shader_description r9xx;
+};
 
-#endif /* TERAKAN_DEVICE_H */
+enum terakan_meta_shader_index {
+   /* Vertex index unpacked as X16Y16 into the position. */
+   TERAKAN_META_SHADER_POSITION_FROM_INDEX_VS,
+
+   TERAKAN_META_SHADER_COUNT,
+};
+
+extern struct terakan_meta_shader const * const terakan_meta_shaders[TERAKAN_META_SHADER_COUNT];
+
+#endif /* TERAKAN_META_H */

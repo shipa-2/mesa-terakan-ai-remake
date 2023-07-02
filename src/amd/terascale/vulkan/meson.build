@@ -36,6 +36,8 @@ terakan_entrypoints = custom_target(
 )
 
 libterakan_files = files(
+  'meta/terakan_meta.c',
+  'meta/terakan_meta.h',
   'terakan_buffer.c',
   'terakan_buffer.h',
   'terakan_command_buffer.c',
@@ -65,6 +67,7 @@ libterakan_files = files(
   'terakan_render_pass.c',
   'terakan_queue.c',
   'terakan_queue.h',
+  'terakan_shader.h',
   'terakan_state.c',
   'terakan_state.h',
   'terakan_state_color.c',
