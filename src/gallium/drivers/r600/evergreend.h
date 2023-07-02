@@ -2024,6 +2024,27 @@
 #define R_028228_PA_SC_CLIPRECT_3_TL                 0x00028228
 #define R_02822C_PA_SC_CLIPRECT_3_BR                 0x0002822C
 #define R_028230_PA_SC_EDGERULE                      0x00028230
+#define   S_028230_ER_TRI(x)                           (((unsigned)(x) & 0xF) << 0)
+#define   G_028230_ER_TRI(x)                           (((x) >> 0) & 0xF)
+#define   C_028230_ER_TRI                              0xFFFFFFF0
+#define   S_028230_ER_POINT(x)                         (((unsigned)(x) & 0xF) << 4)
+#define   G_028230_ER_POINT(x)                         (((x) >> 4) & 0xF)
+#define   C_028230_ER_POINT                            0xFFFFFF0F
+#define   S_028230_ER_RECT(x)                          (((unsigned)(x) & 0xF) << 8)
+#define   G_028230_ER_RECT(x)                          (((x) >> 8) & 0xF)
+#define   C_028230_ER_RECT                             0xFFFFF0FF
+#define   S_028230_ER_LINE_LR(x)                       (((unsigned)(x) & 0x3F) << 12)
+#define   G_028230_ER_LINE_LR(x)                       (((x) >> 12) & 0x3F)
+#define   C_028230_ER_LINE_LR                          0xFFFC0FFF
+#define   S_028230_ER_LINE_RL(x)                       (((unsigned)(x) & 0x3F) << 18)
+#define   G_028230_ER_LINE_RL(x)                       (((x) >> 18) & 0x3F)
+#define   C_028230_ER_LINE_RL                          0xFF03FFFF
+#define   S_028230_ER_LINE_TB(x)                       (((unsigned)(x) & 0xF) << 24)
+#define   G_028230_ER_LINE_TB(x)                       (((x) >> 24) & 0xF)
+#define   C_028230_ER_LINE_TB                          0xF0FFFFFF
+#define   S_028230_ER_LINE_BT(x)                       (((unsigned)(x) & 0xF) << 28)
+#define   G_028230_ER_LINE_BT(x)                       (((x) >> 28) & 0xF)
+#define   C_028230_ER_LINE_BT                          0x0FFFFFFF
 #define R_028234_PA_SU_HARDWARE_SCREEN_OFFSET        0x00028234
 #define R_028238_CB_TARGET_MASK                      0x00028238
 #define R_02823C_CB_SHADER_MASK                      0x0002823C
