@@ -31,6 +31,7 @@
 #include "util/bitscan.h"
 #include "util/u_math.h"
 #include "ac_surface.h"
+#include "amd_family.h"
 #include "vk_format.h"
 #include "vk_image.h"
 
@@ -96,6 +97,14 @@ struct terakan_image {
 };
 
 VK_DEFINE_HANDLE_CASTS(terakan_image, vk.base, VkImage, VK_OBJECT_TYPE_IMAGE)
+
+bool terakan_image_uses_tc_non_display_tiling(enum amd_gfx_level gfx_level, VkFormat image_format,
+                                              bool level_is_linear);
+bool terakan_image_uses_cb_non_display_tiling(enum amd_gfx_level gfx_level, VkFormat image_format,
+                                              bool level_is_linear);
+
+bool terakan_image_create_resource_descriptor(VkImageViewCreateInfo const * image_view_create_info,
+                                              uint32_t descriptor_out[8]);
 
 bool terakan_image_create_color_descriptor(
    VkImageViewCreateInfo const * image_view_create_info,

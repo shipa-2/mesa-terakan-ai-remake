@@ -34,6 +34,7 @@
 #include "terakan_physical_device.h"
 
 #include "gallium/drivers/r600/evergreend.h"
+#include "util/bitscan.h"
 #include "util/macros.h"
 #include "util/u_math.h"
 #include "vk_alloc.h"
@@ -176,6 +177,239 @@ terakan_BindImageMemory2(VkDevice const device, uint32_t const bindInfoCount,
 }
 
 bool
+terakan_image_uses_tc_non_display_tiling(enum amd_gfx_level const gfx_level,
+                                         VkFormat const image_format, bool const level_is_linear)
+{
+   if (level_is_linear) {
+      /* Linear textures must use display tiling, but it's not supported for 128bpp at all on R9xx.
+       */
+      return gfx_level >= CAYMAN && vk_format_get_blocksizebits(image_format) >= 128;
+   }
+   /* Depth, stencil and FMask implicitly utilize non-display tiling. */
+   if (vk_format_is_depth_or_stencil(image_format)) {
+      return true;
+   }
+   /* Non-display tiling is supported for 8, 16, 32, 64 and 128bpe textures. */
+   unsigned const block_size_bits = vk_format_get_blocksizebits(image_format);
+   return block_size_bits >= 8 && util_is_power_of_two_or_zero(block_size_bits);
+}
+
+bool
+terakan_image_uses_cb_non_display_tiling(enum amd_gfx_level const gfx_level,
+                                         VkFormat const image_format, bool const level_is_linear)
+{
+   return level_is_linear || vk_format_is_depth_or_stencil(image_format) ||
+          (gfx_level >= CAYMAN && vk_format_get_blocksizebits(image_format) >= 128);
+}
+
+bool
+terakan_image_create_resource_descriptor(VkImageViewCreateInfo const * const image_view_create_info,
+                                         uint32_t descriptor_out[8])
+{
+   struct terakan_image const * const image =
+      terakan_image_from_handle(image_view_create_info->image);
+
+   uint32_t dimension;
+   uint32_t layer_count = 1;
+   switch (image_view_create_info->viewType) {
+   case VK_IMAGE_VIEW_TYPE_1D:
+      dimension = V_030000_SQ_TEX_DIM_1D_ARRAY;
+      break;
+   case VK_IMAGE_VIEW_TYPE_2D:
+      dimension = image->vk.samples > VK_SAMPLE_COUNT_1_BIT ? V_030000_SQ_TEX_DIM_2D_ARRAY_MSAA
+                                                            : V_030000_SQ_TEX_DIM_2D_ARRAY;
+      break;
+   case VK_IMAGE_VIEW_TYPE_3D:
+      dimension = V_030000_SQ_TEX_DIM_3D;
+      break;
+   case VK_IMAGE_VIEW_TYPE_CUBE:
+      dimension = V_030000_SQ_TEX_DIM_CUBEMAP;
+      layer_count = 6;
+      break;
+   case VK_IMAGE_VIEW_TYPE_1D_ARRAY:
+      dimension = V_030000_SQ_TEX_DIM_1D_ARRAY;
+      layer_count = image_view_create_info->subresourceRange.layerCount;
+      break;
+   case VK_IMAGE_VIEW_TYPE_2D_ARRAY:
+      dimension = image->vk.samples > VK_SAMPLE_COUNT_1_BIT
+                     ? V_030000_SQ_TEX_DIM_2D_ARRAY_MSAA
+                     : V_030000_SQ_TEX_DIM_2D_ARRAY;
+      layer_count = image_view_create_info->subresourceRange.layerCount;
+      break;
+   case VK_IMAGE_VIEW_TYPE_CUBE_ARRAY:
+      dimension = V_030000_SQ_TEX_DIM_CUBEMAP;
+      layer_count = image_view_create_info->subresourceRange.layerCount;
+      break;
+   default:
+      assert(!"Unsupported image view type");
+      return false;
+   }
+   if (image->vk.array_layers <= 1) {
+      switch (dimension) {
+      case V_030000_SQ_TEX_DIM_1D_ARRAY:
+         dimension = V_030000_SQ_TEX_DIM_1D;
+         break;
+      case V_030000_SQ_TEX_DIM_2D_ARRAY:
+         dimension = V_030000_SQ_TEX_DIM_2D;
+         break;
+      case V_030000_SQ_TEX_DIM_2D_ARRAY_MSAA:
+         dimension = V_030000_SQ_TEX_DIM_2D_MSAA;
+         break;
+      default:
+         break;
+      }
+   }
+
+   bool const is_stencil_aspect =
+      image_view_create_info->subresourceRange.aspectMask == VK_IMAGE_ASPECT_STENCIL_BIT;
+
+   uint32_t data_format, signs, number_format;
+   if (is_stencil_aspect && vk_format_has_depth(image_view_create_info->format)) {
+      /* The getters return the values for the depth aspect, not stencil. */
+      data_format = FMT_8;
+      number_format = V_030010_SQ_NUM_FORMAT_INT;
+      signs = S_030010_FORMAT_COMP_X(V_030010_SQ_FORMAT_COMP_UNSIGNED);
+   } else {
+      data_format = terakan_format_texture_get_format(image_view_create_info->format);
+      if (data_format == FMT_INVALID) {
+         return false;
+      }
+      number_format = terakan_format_data_get_number_format(image_view_create_info->format);
+      if (number_format == UINT32_MAX) {
+         return false;
+      }
+      signs = terakan_format_texture_get_word4_signs(image_view_create_info->format);
+   }
+
+   bool const is_stencil_layout =
+      is_stencil_aspect && terakan_image_ac_surface_has_separate_stencil_layout(image->vk.format);
+   struct legacy_surf_level const * const level =
+      is_stencil_layout
+         ? &image->surface.u.legacy.zs
+               .stencil_level[image_view_create_info->subresourceRange.baseMipLevel]
+         : &image->surface.u.legacy.level[image_view_create_info->subresourceRange.baseMipLevel];
+
+   struct terakan_gpu_info const * const gpu_info =
+      &container_of(image->vk.base.device->physical, struct terakan_physical_device const, vk)
+          ->winsys->gpu_info;
+
+   bool const non_display_tiling = terakan_image_uses_tc_non_display_tiling(
+      gpu_info->gfx_level, image->vk.format, level->mode <= RADEON_SURF_MODE_LINEAR_ALIGNED);
+
+   uint32_t width =
+      u_minify(image->vk.extent.width, image_view_create_info->subresourceRange.baseMipLevel);
+   uint32_t height =
+      u_minify(image->vk.extent.height, image_view_create_info->subresourceRange.baseMipLevel);
+   /* Allowing uncompressed views of compressed and subsampled images. */
+   if (!vk_format_is_compressed(image_view_create_info->format)) {
+      width = (width + (image->surface.blk_w - 1)) / image->surface.blk_w;
+      height = (height + (image->surface.blk_h - 1)) / image->surface.blk_h;
+   }
+
+   /* nblk is expected to have already been aligned appropriately in the surface computation. */
+   descriptor_out[0] =
+      S_030000_DIM(dimension) |
+      (gpu_info->gfx_level >= CAYMAN ? CM_S_030000_NON_DISP_TILING_ORDER(non_display_tiling)
+                                     : S_030000_NON_DISP_TILING_ORDER(non_display_tiling)) |
+      S_030000_PITCH(level->nblk_x / 8 - 1) | S_030000_TEX_WIDTH(width - 1);
+
+   descriptor_out[1] = S_030004_ARRAY_MODE(terakan_image_array_mode_ac_to_hw(level->mode));
+   if (dimension != V_030000_SQ_TEX_DIM_1D) {
+      if (dimension == V_030000_SQ_TEX_DIM_1D_ARRAY) {
+         descriptor_out[1] |= S_030004_TEX_HEIGHT(image->vk.array_layers - 1);
+      } else {
+         descriptor_out[1] |= S_030004_TEX_HEIGHT(height - 1);
+         if (image->vk.image_type == VK_IMAGE_TYPE_3D) {
+            assert(image_view_create_info->viewType == VK_IMAGE_VIEW_TYPE_2D ||
+                  image_view_create_info->viewType == VK_IMAGE_VIEW_TYPE_2D_ARRAY ||
+                  image_view_create_info->viewType == VK_IMAGE_VIEW_TYPE_3D);
+            descriptor_out[1] |= S_030004_TEX_DEPTH(image->vk.extent.depth - 1);
+         } else {
+            descriptor_out[1] |= S_030004_TEX_DEPTH(image->vk.array_layers - 1);
+         }
+      }
+   }
+
+   uint32_t const image_bo_offset_256b = image->bo_offset / 256;
+
+   /* Base level is 0 - offsetting the base address instead, so single-level 2D views of 3D images
+    * can be created.
+    */
+   descriptor_out[2] = S_030008_BASE_ADDRESS(image_bo_offset_256b + level->offset_256B);
+
+   unsigned char const * const format_swizzle =
+      terakan_format_data_get_swizzle(image_view_create_info->format);
+
+   descriptor_out[4] =
+      signs | S_030010_NUM_FORMAT_ALL(number_format) |
+      S_030010_SRF_MODE_ALL(V_030010_SRF_MODE_ZERO_CLAMP_MINUS_ONE) |
+      S_030010_FORCE_DEGAMMA(vk_format_description(image_view_create_info->format)->colorspace ==
+                             UTIL_FORMAT_COLORSPACE_SRGB) |
+      S_030010_DST_SEL_X(terakan_format_data_component_swizzle_to_dst_sel(
+         image_view_create_info->components.r, VK_COMPONENT_SWIZZLE_R, format_swizzle)) |
+      S_030010_DST_SEL_Y(terakan_format_data_component_swizzle_to_dst_sel(
+         image_view_create_info->components.g, VK_COMPONENT_SWIZZLE_G, format_swizzle)) |
+      S_030010_DST_SEL_Z(terakan_format_data_component_swizzle_to_dst_sel(
+         image_view_create_info->components.b, VK_COMPONENT_SWIZZLE_B, format_swizzle)) |
+      S_030010_DST_SEL_W(terakan_format_data_component_swizzle_to_dst_sel(
+         image_view_create_info->components.a, VK_COMPONENT_SWIZZLE_A, format_swizzle));
+
+   descriptor_out[5] =
+      S_030014_BASE_ARRAY(image_view_create_info->subresourceRange.baseArrayLayer) |
+      S_030014_LAST_ARRAY(
+         (layer_count == VK_REMAINING_ARRAY_LAYERS
+             ? image->vk.array_layers
+             : image_view_create_info->subresourceRange.baseArrayLayer + layer_count) -
+         1);
+
+   descriptor_out[6] =
+      S_030018_TILE_SPLIT(terakan_image_tile_split_bytes_to_hw(image->surface.u.legacy.tile_split));
+
+   descriptor_out[7] =
+      S_03001C_DATA_FORMAT(data_format) |
+      S_03001C_MACRO_TILE_ASPECT(util_logbase2(image->surface.u.legacy.mtilea)) |
+      S_03001C_BANK_WIDTH(util_logbase2(image->surface.u.legacy.bankw)) |
+      S_03001C_BANK_HEIGHT(util_logbase2(image->surface.u.legacy.bankh)) |
+      S_03001C_DEPTH_SAMPLE_ORDER(vk_format_is_depth_or_stencil(image->vk.format) &&
+                                  level->mode > RADEON_SURF_MODE_LINEAR_ALIGNED) |
+      S_03001C_NUM_BANKS(gpu_info->tile_banks_log2 - 1) |
+      S_03001C_TYPE(V_03001C_SQ_TEX_VTX_VALID_TEXTURE);
+
+   if (dimension == V_030000_SQ_TEX_DIM_2D_MSAA || dimension == V_030000_SQ_TEX_DIM_2D_ARRAY_MSAA) {
+      /* MIP_ADDRESS is used for the FMask address instead. */
+      /* TODO(Triang3l): FMask. */
+      descriptor_out[3] = S_03000C_MIP_ADDRESS(0);
+
+      unsigned const samples_log2 = util_logbase2((uint32_t)image->vk.samples);
+      if (gpu_info->gfx_level >= CAYMAN) {
+         descriptor_out[4] |= S_030010_LOG2_NUM_FRAGMENTS(samples_log2);
+      }
+      /* LAST_LEVEL is used for the sample count instead. */
+      descriptor_out[5] |= S_030014_LAST_LEVEL(samples_log2);
+   } else {
+      uint32_t const second_level_index =
+         MIN2(image_view_create_info->subresourceRange.baseMipLevel + 1, image->vk.mip_levels - 1);
+      descriptor_out[3] = S_03000C_MIP_ADDRESS(
+         image_bo_offset_256b +
+         (is_stencil_layout
+             ? image->surface.u.legacy.zs.stencil_level[second_level_index].offset_256B
+             : image->surface.u.legacy.level[second_level_index].offset_256B));
+
+      uint32_t const last_level =
+         (image_view_create_info->subresourceRange.levelCount == VK_REMAINING_MIP_LEVELS
+             ? image->vk.mip_levels - image_view_create_info->subresourceRange.baseMipLevel
+             : image_view_create_info->subresourceRange.levelCount) -
+         1;
+      if (last_level != 0) {
+         descriptor_out[5] |= S_030014_LAST_LEVEL(last_level);
+         descriptor_out[6] |= S_030018_MAX_ANISO_RATIO(4);
+      }
+   }
+
+   return true;
+}
+
+bool
 terakan_image_create_color_descriptor(
    VkImageViewCreateInfo const * const image_view_create_info,
    struct terakan_color_descriptor * const descriptor_out,
@@ -268,8 +502,8 @@ terakan_image_create_color_descriptor(
       &container_of(image->vk.base.device->physical, struct terakan_physical_device const, vk)
           ->winsys->gpu_info;
    descriptor_out->attrib =
-      S_028C74_NON_DISP_TILING_ORDER(level->mode <= RADEON_SURF_MODE_LINEAR_ALIGNED ||
-                                     vk_format_is_depth_or_stencil(image->vk.format)) |
+      S_028C74_NON_DISP_TILING_ORDER(terakan_image_uses_cb_non_display_tiling(
+         gpu_info->gfx_level, image->vk.format, level->mode <= RADEON_SURF_MODE_LINEAR_ALIGNED)) |
       S_028C74_TILE_SPLIT(
          terakan_image_tile_split_bytes_to_hw(image->surface.u.legacy.tile_split)) |
       S_028C74_NUM_BANKS(gpu_info->tile_banks_log2 - 1) |
@@ -284,14 +518,13 @@ terakan_image_create_color_descriptor(
       unsigned const samples_log2 = util_logbase2((uint32_t)image->vk.samples);
       enum pipe_swizzle const alpha_swizzle =
          (enum pipe_swizzle)vk_format_description(image_view_create_info->format)->swizzle[3];
-      descriptor_out->attrib |= S_028C74_NON_DISP_TILING_ORDER(image->surface.bpe >= 16) |
-                                S_028C74_NUM_SAMPLES(samples_log2) |
+      descriptor_out->attrib |= S_028C74_NUM_SAMPLES(samples_log2) |
                                 S_028C74_NUM_FRAGMENTS(samples_log2) |
                                 S_028C74_FORCE_DST_ALPHA_1(alpha_swizzle == PIPE_SWIZZLE_1 ||
                                                            alpha_swizzle == PIPE_SWIZZLE_NONE);
    }
 
-   /* Allowing uncompressed views of compressed textures. */
+   /* Allowing uncompressed views of compressed and subsampled images. */
    descriptor_out->dim =
       S_028C78_WIDTH_MAX(
          (u_minify(image->vk.extent.width, image_view_create_info->subresourceRange.baseMipLevel) +
@@ -411,6 +644,8 @@ terakan_CreateImageView(VkDevice const deviceHandle,
    struct terakan_image const * const image = terakan_image_from_handle(pCreateInfo->image);
 
    image_view->descriptor.bo = image->bo;
+
+   terakan_image_create_resource_descriptor(pCreateInfo, image_view->descriptor.resource);
 
    terakan_image_create_color_descriptor(pCreateInfo, &image_view->descriptor.color,
                                          &image_view->color_meta);

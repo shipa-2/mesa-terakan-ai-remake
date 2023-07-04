@@ -99,6 +99,10 @@ bool terakan_format_has_stencil_8(VkFormat format);
 uint32_t terakan_format_data_get_common_format(VkFormat format);
 /* Returns UINT32_MAX if invalid. */
 uint32_t terakan_format_data_get_number_format(VkFormat format);
+unsigned char const * terakan_format_data_get_swizzle(VkFormat format);
+uint32_t terakan_format_data_component_swizzle_to_dst_sel(VkComponentSwizzle component_swizzle,
+                                                          VkComponentSwizzle identity_swizzle,
+                                                          unsigned char const format_swizzle[4]);
 
 /* Returns FMT_INVALID if invalid. */
 uint32_t terakan_format_texture_get_format(VkFormat format);
