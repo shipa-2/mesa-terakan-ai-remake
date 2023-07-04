@@ -221,11 +221,10 @@ terakan_image_create_color_descriptor(
    descriptor_out->base = image->bo_offset / 256 + level->offset_256B;
 
    /* nblk is expected to have already been aligned appropriately in the surface computation. */
-   uint32_t pitch_elements = level->nblk_x * (uint32_t)image->vk.samples;
-   descriptor_out->pitch = S_028C64_PITCH_TILE_MAX(pitch_elements / 8 - 1);
+   descriptor_out->pitch = S_028C64_PITCH_TILE_MAX(level->nblk_x / 8 - 1);
 
    /* Linear pitch is always at least 64 elements, micro-tiles are 8x8. */
-   descriptor_out->slice = S_028C68_SLICE_TILE_MAX(pitch_elements * level->nblk_y / 64 - 1);
+   descriptor_out->slice = S_028C68_SLICE_TILE_MAX(level->nblk_x * level->nblk_y / 64 - 1);
 
    descriptor_out->view =
       S_028C6C_SLICE_START(image_view_create_info->subresourceRange.baseArrayLayer) |
