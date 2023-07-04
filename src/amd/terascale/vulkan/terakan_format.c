@@ -79,7 +79,8 @@ terakan_format_is_linear_only(VkFormat const format)
     * Copying to linear images is done using a buffer random access target, to which the three
     * components can be written separately.
     */
-   if (!util_is_power_of_two_nonzero(vk_format_get_blocksizebits(format) / 8)) {
+   unsigned const block_size_bits = vk_format_get_blocksizebits(format);
+   if (block_size_bits < 8 || !util_is_power_of_two_or_zero(block_size_bits)) {
       return true;
    }
 
