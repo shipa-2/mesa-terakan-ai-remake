@@ -22,6 +22,7 @@
  */
 
 #include "terakan_instance.h"
+#include "terakan_descriptor.h"
 #include "terakan_entrypoints.h"
 #include "terakan_limits.h"
 #include "terakan_physical_device.h"
@@ -163,17 +164,17 @@ terakan_CreateInstance(VkInstanceCreateInfo const * const pCreateInfo,
     * storage buffer slots, and the translation layer may use one of them to store counters of all
     * of the bound UAVs.
     */
-   instance->storage_buffer_count = 4;
+   instance->max_per_stage_storage_buffers = 4;
 
-   uint32_t const uniform_buffer_count = TERAKAN_LIMITS_VK_CONSTANT_BUFFER_UNIFORM_BUFFER_MAX_COUNT;
-   instance->resource_base_sampled_images =
-      TERAKAN_LIMITS_VK_RESOURCE_UNIFORM_BUFFER_SAMPLED_IMAGE_INPUT_ATTACHMENT_BASE +
-      uniform_buffer_count;
-
-   uint32_t const input_attachment_count = 4;
-   instance->resource_base_input_attachments =
-      TERAKAN_LIMITS_VK_RESOURCE_UNIFORM_BUFFER_SAMPLED_IMAGE_INPUT_ATTACHMENT_END -
-      input_attachment_count;
+   /* Direct3D 11 limit. */
+   instance->max_per_stage_uniform_buffers = 15;
+   /* Vulkan minimum. */
+   instance->max_per_stage_input_attachments = 4;
+   instance->max_per_stage_sampled_images =
+      MIN2(TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_NON_PIXEL - TERAKAN_LIMITS_HW_COLOR_RAT_COUNT -
+              instance->max_per_stage_uniform_buffers,
+           TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL - TERAKAN_LIMITS_HW_COLOR_RAT_COUNT -
+              instance->max_per_stage_uniform_buffers - instance->max_per_stage_input_attachments);
 
    /* Initialize physical device management. */
 

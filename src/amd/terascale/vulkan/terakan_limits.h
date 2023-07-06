@@ -48,10 +48,6 @@
    (1 << TERAKAN_LIMITS_HW_CONSTANT_BUFFER_SIZE_BYTES_LOG2)
 #define TERAKAN_LIMITS_HW_CONSTANT_BUFFER_COUNT 16
 
-#define TERAKAN_LIMITS_HW_RESOURCE_COUNT_PIXEL_COMPUTE 176
-#define TERAKAN_LIMITS_HW_RESOURCE_COUNT_VERTEX        160
-#define TERAKAN_LIMITS_HW_RESOURCE_COUNT_FETCH         32
-
 #define TERAKAN_LIMITS_HW_SAMPLER_COUNT 18
 
 #define TERAKAN_LIMITS_HW_PARAMETER_CACHE_VECTOR_COUNT 32
@@ -89,60 +85,5 @@ static_assert(
 static_assert(
    TERAKAN_LIMITS_VK_CONSTANT_BUFFER_UNIFORM_BUFFER_MAX_COUNT >= 15,
    "There should be enough constant buffer bindings for the Direct3D 11 constant buffer count.");
-
-/* Start of the shader resource space. */
-/* Read-only vertex pipeline storage buffers/images, read-only non-aliased storage buffers/images,
- * and storage buffer/image query bindings.
- */
-#define TERAKAN_LIMITS_VK_RESOURCE_STORAGE_BASE 0
-/* Dynamically indexed immediate constant arrays in shader code. */
-#define TERAKAN_LIMITS_VK_RESOURCE_CONSTANT_ARRAYS                                                 \
-   (TERAKAN_LIMITS_VK_RESOURCE_STORAGE_BASE + TERAKAN_LIMITS_HW_COLOR_RAT_COUNT)
-/* Dynamically indexed TERAKAN_LIMITS_VK_CONSTANT_BUFFER_HIGH_FREQUENCY. */
-#define TERAKAN_LIMITS_VK_RESOURCE_HIGH_FREQUENCY_CONSTANTS                                        \
-   (TERAKAN_LIMITS_VK_RESOURCE_CONSTANT_ARRAYS + 1)
-/* End of the shader resource space.
- * The 16 resources that fragment and compute shaders provide beyond the 160 available in vertex
- * stages can be fully allocated for resources needed only in those stages: 4 input attachments (the
- * minimum required by Vulkan) and 12 RAT IMMED buffers.
- */
-#define TERAKAN_LIMITS_VK_RESOURCE_STORAGE_IMMEDIATE_BASE                                          \
-   (TERAKAN_LIMITS_HW_RESOURCE_COUNT_PIXEL_COMPUTE - TERAKAN_LIMITS_HW_COLOR_RAT_COUNT)
-/* Configurable range between the start and the end.
- * Includes dynamically indexed uniform buffers, sampled images, and input attachments, in this
- * order.
- * Uniform buffers and sampled images must stay within the 160 resources available in all stages,
- * input attachments can be in the 160...175 tail available in fragment shaders.
- */
-#define TERAKAN_LIMITS_VK_RESOURCE_UNIFORM_BUFFER_SAMPLED_IMAGE_INPUT_ATTACHMENT_BASE              \
-   (TERAKAN_LIMITS_VK_RESOURCE_HIGH_FREQUENCY_CONSTANTS + 1)
-#define TERAKAN_LIMITS_VK_RESOURCE_UNIFORM_BUFFER_SAMPLED_IMAGE_INPUT_ATTACHMENT_END               \
-   TERAKAN_LIMITS_VK_RESOURCE_STORAGE_IMMEDIATE_BASE
-static_assert(
-   MIN2(TERAKAN_LIMITS_VK_RESOURCE_UNIFORM_BUFFER_SAMPLED_IMAGE_INPUT_ATTACHMENT_END,
-        TERAKAN_LIMITS_HW_RESOURCE_COUNT_VERTEX) -
-         TERAKAN_LIMITS_VK_RESOURCE_UNIFORM_BUFFER_SAMPLED_IMAGE_INPUT_ATTACHMENT_BASE >=
-      12 + 16,
-   "There must be enough resource bindings for the minimum Vulkan uniform buffer and sampled image "
-   "counts.");
-static_assert(
-   TERAKAN_LIMITS_VK_RESOURCE_UNIFORM_BUFFER_SAMPLED_IMAGE_INPUT_ATTACHMENT_END -
-         TERAKAN_LIMITS_VK_RESOURCE_UNIFORM_BUFFER_SAMPLED_IMAGE_INPUT_ATTACHMENT_BASE >=
-      12 + 16 + 4,
-   "There must be enough resource bindings for the minimum Vulkan uniform buffer, sampled image "
-   "and input attachment counts.");
-static_assert(
-   MIN2(TERAKAN_LIMITS_VK_RESOURCE_UNIFORM_BUFFER_SAMPLED_IMAGE_INPUT_ATTACHMENT_END,
-        TERAKAN_LIMITS_HW_RESOURCE_COUNT_VERTEX) -
-         TERAKAN_LIMITS_VK_RESOURCE_UNIFORM_BUFFER_SAMPLED_IMAGE_INPUT_ATTACHMENT_BASE >=
-      15 + 128,
-   "There should be enough resource bindings for the Direct3D 11 constant buffer and shader "
-   "resource counts.");
-static_assert(
-   TERAKAN_LIMITS_VK_RESOURCE_UNIFORM_BUFFER_SAMPLED_IMAGE_INPUT_ATTACHMENT_END -
-         TERAKAN_LIMITS_VK_RESOURCE_UNIFORM_BUFFER_SAMPLED_IMAGE_INPUT_ATTACHMENT_BASE >=
-      15 + 128 + 4,
-   "There should be enough resource bindings for the Direct3D 11 constant buffer and shader "
-   "resource counts and the minimum Vulkan input attachment count.");
 
 #endif /* TERAKAN_LIMITS_H */

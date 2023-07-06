@@ -25,10 +25,67 @@
 #define TERAKAN_DESCRIPTOR_H
 
 #include "winsys/terakan_winsys.h"
+#include "terakan_limits.h"
 
 #include "gallium/drivers/r600/evergreend.h"
 
 #include <stdint.h>
+
+#define TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE 176
+#define TERAKAN_RESOURCE_HW_COUNT_VERTEX        160
+#define TERAKAN_RESOURCE_HW_COUNT_FETCH         32
+
+#define TERAKAN_RESOURCE_HW_OFFSET_PS 0
+#define TERAKAN_RESOURCE_HW_OFFSET_VSES                                                            \
+   (TERAKAN_RESOURCE_HW_OFFSET_PS + TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE)
+#define TERAKAN_RESOURCE_HW_OFFSET_GS                                                              \
+   (TERAKAN_RESOURCE_HW_OFFSET_VSES + TERAKAN_RESOURCE_HW_COUNT_VERTEX)
+#define TERAKAN_RESOURCE_HW_OFFSET_HS                                                              \
+   (TERAKAN_RESOURCE_HW_OFFSET_GS + TERAKAN_RESOURCE_HW_COUNT_VERTEX)
+#define TERAKAN_RESOURCE_HW_OFFSET_LS                                                              \
+   (TERAKAN_RESOURCE_HW_OFFSET_HS + TERAKAN_RESOURCE_HW_COUNT_VERTEX)
+#define TERAKAN_RESOURCE_HW_OFFSET_CS                                                              \
+   (TERAKAN_RESOURCE_HW_OFFSET_LS + TERAKAN_RESOURCE_HW_COUNT_VERTEX)
+#define TERAKAN_RESOURCE_HW_OFFSET_FS                                                              \
+   (TERAKAN_RESOURCE_HW_OFFSET_CS + TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE)
+#define TERAKAN_RESOURCE_HW_COUNT (TERAKAN_RESOURCE_HW_OFFSET_FS + TERAKAN_RESOURCE_HW_COUNT_FETCH)
+
+/* Dynamically indexable immediate constant arrays in shader code. */
+#define TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS 0
+/* Dynamically indexable internal and application's push constants. */
+#define TERAKAN_RESOURCE_RANGE_PUSH_CONSTANTS (TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS + 1)
+/* The 16 resources that fragment and compute shaders provide beyond the 160 available in vertex
+ * stages can be fully allocated for resources needed only in those stages: 4 input attachments (the
+ * minimum required by Vulkan) and 12 RAT IMMED buffers.
+ */
+#define TERAKAN_RESOURCE_RANGE_RAT_IMMEDIATE_BASE                                                  \
+   (TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE - TERAKAN_LIMITS_HW_COLOR_RAT_COUNT)
+/* Resources from the application's pipeline layout:
+ * - Sampled images, uniform texel buffers.
+ * - Storage images, storage texel buffers, storage buffers - read-only when coherence with writable
+ *   ones is not needed (vertex stages, or `restrict readonly` without `coherent`), as well as for
+ *   RAT info queries.
+ * - Uniform buffers - for dynamic indexing.
+ * - Input attachments.
+ */
+#define TERAKAN_RESOURCE_RANGE_MUTABLE_BASE (TERAKAN_RESOURCE_RANGE_PUSH_CONSTANTS + 1)
+#define TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_NON_PIXEL                                         \
+   (TERAKAN_RESOURCE_HW_COUNT_VERTEX - TERAKAN_RESOURCE_RANGE_MUTABLE_BASE)
+#define TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL                                             \
+   (TERAKAN_RESOURCE_RANGE_RAT_IMMEDIATE_BASE - TERAKAN_RESOURCE_RANGE_MUTABLE_BASE)
+static_assert(
+   TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL >=
+      TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_NON_PIXEL,
+   "The maximum number of mutable resource bindings per stage is expected to be bound by vertex "
+   "stages, which have fewer hardware resource bindings.");
+static_assert(
+   TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_NON_PIXEL >= 15 + 4 + 128 + 8,
+   "There should be enough non-pixel shader mutable resource bindings for the minimum Direct3D 11 "
+   "binding counts plus Vulkan storage buffers.");
+static_assert(
+   TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL >= 15 + 4 + 128 + 8 + 4,
+   "There should be enough pixel shader mutable resource bindings for the minimum Direct3D 11 "
+   "binding counts plus Vulkan storage buffers and input attachments.");
 
 /* Hardware CB_COLOR[0-11] registers.
  * Note that image views don't store color buffer or RAT descriptors directly, instead they contain

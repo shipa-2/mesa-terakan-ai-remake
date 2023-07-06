@@ -27,6 +27,7 @@
 
 #include "terakan_physical_device.h"
 #include "winsys/drm_radeon/terakan_winsys_drm_radeon.h"
+#include "terakan_descriptor.h"
 #include "terakan_entrypoints.h"
 #include "terakan_image.h"
 #include "terakan_instance.h"
@@ -291,19 +292,12 @@ terakan_GetPhysicalDeviceProperties(VkPhysicalDevice const physicalDevice,
    limits->maxBoundDescriptorSets = UINT32_MAX;
 
    limits->maxPerStageDescriptorSamplers = TERAKAN_LIMITS_HW_SAMPLER_COUNT;
-   limits->maxPerStageDescriptorUniformBuffers =
-      MIN2(instance->resource_base_sampled_images -
-              TERAKAN_LIMITS_VK_RESOURCE_UNIFORM_BUFFER_SAMPLED_IMAGE_INPUT_ATTACHMENT_BASE,
-           TERAKAN_LIMITS_VK_CONSTANT_BUFFER_UNIFORM_BUFFER_MAX_COUNT);
-   limits->maxPerStageDescriptorStorageBuffers = instance->storage_buffer_count;
-   limits->maxPerStageDescriptorSampledImages =
-      MIN2(instance->resource_base_input_attachments, TERAKAN_LIMITS_HW_RESOURCE_COUNT_VERTEX) -
-      instance->resource_base_sampled_images;
+   limits->maxPerStageDescriptorUniformBuffers = instance->max_per_stage_uniform_buffers;
+   limits->maxPerStageDescriptorStorageBuffers = instance->max_per_stage_storage_buffers;
+   limits->maxPerStageDescriptorSampledImages = instance->max_per_stage_sampled_images;
    limits->maxPerStageDescriptorStorageImages =
-      TERAKAN_LIMITS_HW_COLOR_RAT_COUNT - instance->storage_buffer_count;
-   limits->maxPerStageDescriptorInputAttachments =
-      TERAKAN_LIMITS_VK_RESOURCE_UNIFORM_BUFFER_SAMPLED_IMAGE_INPUT_ATTACHMENT_END -
-      instance->resource_base_input_attachments;
+      TERAKAN_LIMITS_HW_COLOR_RAT_COUNT - instance->max_per_stage_storage_buffers;
+   limits->maxPerStageDescriptorInputAttachments = instance->max_per_stage_input_attachments;
    limits->maxColorAttachments = TERAKAN_LIMITS_HW_COLOR_MRT_COUNT;
 
    limits->maxPerStageResources =
@@ -325,8 +319,8 @@ terakan_GetPhysicalDeviceProperties(VkPhysicalDevice const physicalDevice,
       limits->maxPerStageDescriptorStorageImages * shader_stage_count;
    limits->maxDescriptorSetInputAttachments = limits->maxPerStageDescriptorInputAttachments;
 
-   limits->maxVertexInputAttributes = TERAKAN_LIMITS_HW_RESOURCE_COUNT_FETCH;
-   limits->maxVertexInputBindings = TERAKAN_LIMITS_HW_RESOURCE_COUNT_FETCH;
+   limits->maxVertexInputAttributes = TERAKAN_RESOURCE_HW_COUNT_FETCH;
+   limits->maxVertexInputBindings = TERAKAN_RESOURCE_HW_COUNT_FETCH;
    limits->maxVertexInputAttributeOffset = UINT32_MAX;
    /* NON-CONFORMANT: R8xx has 11 bits for the stride in bytes, which can store values up to 2047.
     * Vulkan requires at least 2048. R9xx has 12 bits.

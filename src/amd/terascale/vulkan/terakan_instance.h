@@ -43,19 +43,13 @@ struct terakan_instance {
 
    uint64_t debug_flags;
 
-   /* Binding allocation. Has effect on compiled shaders. */
+   /* Binding allocation in the physical device limits. */
    /* From 4 to 8. The rest of RAT bindings will be used for storage images. */
-   uint32_t storage_buffer_count;
-   /* Preceded by uniform buffers, whose count must be at least 12 (preferably 15 for Direct3D 11),
-    * at most TERAKAN_LIMITS_VK_CONSTANT_BUFFER_UNIFORM_BUFFER_COUNT.
-    */
-   uint32_t resource_base_sampled_images;
-   /* There must be at least 4 input attachments.
-    * Preceded by sampled images. After allocating uniform buffer and input attachment resources,
-    * between them, there must be space for at least 16 (preferably at least 128 for Direct3D 11)
-    * sampled images below TERAKAN_LIMITS_HW_RESOURCE_COUNT_VERTEX.
-    */
-   uint32_t resource_base_input_attachments;
+   uint32_t max_per_stage_storage_buffers;
+   /* Uniform buffers, sampled images and input attachments are allocated from one range. */
+   uint32_t max_per_stage_uniform_buffers;
+   uint32_t max_per_stage_sampled_images;
+   uint32_t max_per_stage_input_attachments;
 };
 
 VK_DEFINE_HANDLE_CASTS(terakan_instance, vk.base, VkInstance, VK_OBJECT_TYPE_INSTANCE)
