@@ -24,6 +24,7 @@
 #include "terakan_command_buffer.h"
 #include "terakan_device.h"
 #include "terakan_entrypoints.h"
+#include "terakan_image.h"
 #include "terakan_limits.h"
 #include "terakan_physical_device.h"
 
@@ -618,8 +619,7 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
       /* R_028030_PA_SC_SCREEN_SCISSOR_TL */
       0,
       /* R_028034_PA_SC_SCREEN_SCISSOR_BR */
-      S_028034_BR_X(TERAKAN_LIMITS_HW_TEXTURE_WIDTH_HEIGHT) |
-         S_028034_BR_Y(TERAKAN_LIMITS_HW_TEXTURE_WIDTH_HEIGHT),
+      S_028034_BR_X(TERAKAN_IMAGE_MAX_WIDTH_HEIGHT) | S_028034_BR_Y(TERAKAN_IMAGE_MAX_WIDTH_HEIGHT),
 
       /* TODO(Triang3l): Move to hw_state_draw. */
       PKT3(PKT3_SET_CONTEXT_REG, 2, 0),
@@ -627,8 +627,7 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
       /* R_028204_PA_SC_WINDOW_SCISSOR_TL */
       0,
       /* R_028208_PA_SC_WINDOW_SCISSOR_BR */
-      S_028208_BR_X(TERAKAN_LIMITS_HW_TEXTURE_WIDTH_HEIGHT) |
-         S_028208_BR_Y(TERAKAN_LIMITS_HW_TEXTURE_WIDTH_HEIGHT),
+      S_028208_BR_X(TERAKAN_IMAGE_MAX_WIDTH_HEIGHT) | S_028208_BR_Y(TERAKAN_IMAGE_MAX_WIDTH_HEIGHT),
 
       /* TODO(Triang3l): Move to hw_state_draw. */
       PKT3(PKT3_SET_CONTEXT_REG, 1, 0),
@@ -654,8 +653,7 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
       /* R_028240_PA_SC_GENERIC_SCISSOR_TL */
       0,
       /* R_028244_PA_SC_GENERIC_SCISSOR_BR */
-      S_028244_BR_X(TERAKAN_LIMITS_HW_TEXTURE_WIDTH_HEIGHT) |
-         S_028244_BR_Y(TERAKAN_LIMITS_HW_TEXTURE_WIDTH_HEIGHT),
+      S_028244_BR_X(TERAKAN_IMAGE_MAX_WIDTH_HEIGHT) | S_028244_BR_Y(TERAKAN_IMAGE_MAX_WIDTH_HEIGHT),
 
       PKT3(PKT3_SET_CONTEXT_REG, 1, 0),
       TERAKAN_CONTEXT_REG_OFFSET(R_028820_PA_CL_NANINF_CNTL),

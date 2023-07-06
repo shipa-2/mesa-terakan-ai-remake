@@ -34,7 +34,7 @@
 
 #include "terakan_format.h"
 #include "terakan_entrypoints.h"
-#include "terakan_limits.h"
+#include "terakan_image.h"
 #include "terakan_physical_device.h"
 
 #include "util/bitscan.h"
@@ -935,31 +935,31 @@ terakan_GetPhysicalDeviceImageFormatProperties2(
 
    VkImageFormatProperties image_format_properties;
 
-   image_format_properties.maxExtent.width = TERAKAN_LIMITS_HW_TEXTURE_WIDTH_HEIGHT;
-   /* TODO(Triang3l): Allow 8192 (TERAKAN_LIMITS_HW_TEXTURE_DEPTH_SLICES_TEXTURE) depth and layers
-    * for non-framebuffer-attachments when copying into textures with many layers is implemented
+   image_format_properties.maxExtent.width = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT;
+   /* TODO(Triang3l): Allow 8192 (TERAKAN_IMAGE_MAX_DEPTH_SLICES_TEXTURE) depth and layers for
+    * non-framebuffer-attachments when copying into textures with many layers is implemented
     * correctly.
     */
    switch (pImageFormatInfo->type) {
    case VK_IMAGE_TYPE_1D:
       image_format_properties.maxExtent.height = 1;
       image_format_properties.maxExtent.depth = 1;
-      image_format_properties.maxArrayLayers = TERAKAN_LIMITS_HW_TEXTURE_DEPTH_SLICES_TARGET;
+      image_format_properties.maxArrayLayers = TERAKAN_IMAGE_MAX_DEPTH_SLICES_TARGET;
       break;
    case VK_IMAGE_TYPE_2D:
-      image_format_properties.maxExtent.height = TERAKAN_LIMITS_HW_TEXTURE_WIDTH_HEIGHT;
+      image_format_properties.maxExtent.height = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT;
       image_format_properties.maxExtent.depth = 1;
-      image_format_properties.maxArrayLayers = TERAKAN_LIMITS_HW_TEXTURE_DEPTH_SLICES_TARGET;
+      image_format_properties.maxArrayLayers = TERAKAN_IMAGE_MAX_DEPTH_SLICES_TARGET;
       break;
    case VK_IMAGE_TYPE_3D:
-      image_format_properties.maxExtent.height = TERAKAN_LIMITS_HW_TEXTURE_WIDTH_HEIGHT;
-      image_format_properties.maxExtent.depth = TERAKAN_LIMITS_HW_TEXTURE_DEPTH_SLICES_TARGET;
+      image_format_properties.maxExtent.height = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT;
+      image_format_properties.maxExtent.depth = TERAKAN_IMAGE_MAX_DEPTH_SLICES_TARGET;
       image_format_properties.maxArrayLayers = 1;
       break;
    default:
       return VK_ERROR_FORMAT_NOT_SUPPORTED;
    }
-   image_format_properties.maxMipLevels = TERAKAN_LIMITS_HW_TEXTURE_WIDTH_HEIGHT_LOG2 + 1;
+   image_format_properties.maxMipLevels = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_LOG2 + 1;
 
    image_format_properties.sampleCounts = VK_SAMPLE_COUNT_1_BIT;
    /* Multisampled images must be 2D-tiled.

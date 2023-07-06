@@ -39,6 +39,14 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#define TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_LOG2 14
+#define TERAKAN_IMAGE_MAX_WIDTH_HEIGHT      (1 << TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_LOG2)
+/* Texture fetching supports xx8192, but color and depth slices are up to 2047. */
+#define TERAKAN_IMAGE_MAX_DEPTH_SLICES_TEXTURE_LOG2 13
+#define TERAKAN_IMAGE_MAX_DEPTH_SLICES_TEXTURE      (1 << TERAKAN_IMAGE_MAX_DEPTH_SLICES_TEXTURE_LOG2)
+#define TERAKAN_IMAGE_MAX_DEPTH_SLICES_TARGET_LOG2  11
+#define TERAKAN_IMAGE_MAX_DEPTH_SLICES_TARGET       (1 << TERAKAN_IMAGE_MAX_DEPTH_SLICES_TARGET_LOG2)
+
 static inline uint32_t
 terakan_image_array_mode_ac_to_hw(enum radeon_surf_mode const mode)
 {
