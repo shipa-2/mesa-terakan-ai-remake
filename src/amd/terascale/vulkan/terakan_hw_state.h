@@ -30,6 +30,7 @@
 
 #include "util/bitset.h"
 
+#include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -62,11 +63,27 @@ enum terakan_hw_state_draw_index {
    TERAKAN_HW_STATE_DRAW_CB_COLOR_LAST =
       TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + TERAKAN_LIMITS_HW_COLOR_RAT_COUNT - 1,
 
+   /* State items starting from TERAKAN_HW_STATE_DRAW_SPECIAL_START have their modified flags set
+    * via some method different from terakan_hw_state_draw_written.
+    */
+   TERAKAN_HW_STATE_DRAW_SPECIAL_FIRST,
+
+   TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_VI = TERAKAN_HW_STATE_DRAW_SPECIAL_FIRST,
+   TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_VS,
+   TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_TCS,
+   TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_TES,
+   TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_GS,
+   TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_FS,
+
    TERAKAN_HW_STATE_DRAW_COUNT,
 };
 
 extern uint32_t const terakan_standard_sample_locs[5][16 / 4];
 extern uint32_t const terakan_standard_sample_max_dists[5];
+
+struct terakan_hw_state_draw_vertex_constant_bits {
+   BITSET_DECLARE(resources, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
+};
 
 /* State applied before performing application's or internal draws, and reapplied when switching to
  * a new indirect buffer in the Vulkan command buffer.
@@ -121,9 +138,91 @@ struct terakan_hw_state_draw {
    /* The values are undefined if the respective cb_color_bo is NULL. */
    struct terakan_color_descriptor cb_color[TERAKAN_LIMITS_HW_COLOR_RAT_COUNT];
    struct terakan_color_meta_descriptor cb_color_meta[TERAKAN_LIMITS_HW_COLOR_MRT_COUNT];
-};
 
-struct terakan_gfx_command_writer;
+   /* Sequencer constants.
+    * Don't access externally directly, use the respective setters.
+    */
+
+   /* Constants demand of the shaders used in the next state emission. */
+   struct {
+      /* Whether each shader stage is used in the pipeline, and thus constants are needed for it.
+       * These are independent from the actual bits of the needed constants for these stages, based
+       * on how shaders are chained.
+       * For simplicity (and to avoid checking these while setting every single constant, which can
+       * be done many times before the first draw that happens afterwards with the respective
+       * state_modified bits set), the respective emit calls may be done regardless of whether these
+       * are true.
+       */
+      bool tcs_tes;
+      bool gs_after_vs;
+      bool gs_after_tes;
+
+      struct {
+         BITSET_DECLARE(vi, TERAKAN_RESOURCE_HW_COUNT_FETCH);
+         BITSET_DECLARE(vs, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
+         BITSET_DECLARE(tcs, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
+         BITSET_DECLARE(tes, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
+         BITSET_DECLARE(gs, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
+         BITSET_DECLARE(fs, TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE);
+      } resources;
+   } sq_constants_needed;
+
+   /* If the modified bit for the constant index is set, the new constant is considered to be
+    * completely new, and must be emitted for the specific stage next time it's needed.
+    * Otherwise, the constant may already be set to the needed value in the hardware, or it might
+    * have been set to it previously, but now has been evicted in the VSES constant by the other
+    * Vulkan VS or TES stage.
+    */
+   struct {
+      struct {
+         BITSET_DECLARE(vi, TERAKAN_RESOURCE_HW_COUNT_FETCH);
+         BITSET_DECLARE(vs_in_vses, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
+         BITSET_DECLARE(vs_in_ls, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
+         BITSET_DECLARE(tcs, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
+         BITSET_DECLARE(tes_in_vses, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
+         BITSET_DECLARE(gs, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
+         BITSET_DECLARE(fs, TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE);
+      } resources;
+   } sq_constants_modified;
+
+   /* Whether the constant emitted into VSES for VS or TES might have potentially been overwritten
+    * in the hardware by an emission for the other Vulkan stage, and thus when the constant is
+    * needed for that other stage later, it may need to be re-emitted.
+    * If the modified bit for the VS in VSES constant is true, the "VS constant overwritten by TES"
+    * bit for it should be considered out of date and thus ignored, same for the "TES constant
+    * overwritten by VS" bit if the corresponding TES constant was modified.
+    */
+   struct terakan_hw_state_draw_vertex_constant_bits sq_constants_for_vs_overwritten_in_vses_by_tes;
+   struct terakan_hw_state_draw_vertex_constant_bits sq_constants_for_tes_overwritten_in_vses_by_vs;
+
+   /* The BOs and descriptors are undefined if the sq_resources_not_null bit for the resource index
+    * is not set.
+    */
+   struct {
+      BITSET_DECLARE(vi, TERAKAN_RESOURCE_HW_COUNT_FETCH);
+      BITSET_DECLARE(vs, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
+      BITSET_DECLARE(tcs, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
+      BITSET_DECLARE(tes, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
+      BITSET_DECLARE(gs, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
+      BITSET_DECLARE(fs, TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE);
+   } sq_resources_not_null;
+   struct {
+      struct terakan_winsys_bo const * vi[TERAKAN_RESOURCE_HW_COUNT_FETCH];
+      struct terakan_winsys_bo const * vs[TERAKAN_RESOURCE_HW_COUNT_VERTEX];
+      struct terakan_winsys_bo const * tcs[TERAKAN_RESOURCE_HW_COUNT_VERTEX];
+      struct terakan_winsys_bo const * tes[TERAKAN_RESOURCE_HW_COUNT_VERTEX];
+      struct terakan_winsys_bo const * gs[TERAKAN_RESOURCE_HW_COUNT_VERTEX];
+      struct terakan_winsys_bo const * fs[TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE];
+   } sq_resource_bos;
+   struct {
+      uint32_t vi[TERAKAN_RESOURCE_HW_COUNT_FETCH][8];
+      uint32_t vs[TERAKAN_RESOURCE_HW_COUNT_VERTEX][8];
+      uint32_t tcs[TERAKAN_RESOURCE_HW_COUNT_VERTEX][8];
+      uint32_t tes[TERAKAN_RESOURCE_HW_COUNT_VERTEX][8];
+      uint32_t gs[TERAKAN_RESOURCE_HW_COUNT_VERTEX][8];
+      uint32_t fs[TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE][8];
+   } sq_resource_descriptors;
+};
 
 /* Pass the result of the external comparison to reduce the amount of state setting packets if the
  * state was not modified if needed (especially recommended when using static state in pipeline
@@ -137,6 +236,7 @@ static inline void
 terakan_hw_state_draw_written(struct terakan_hw_state_draw * const state,
                               enum terakan_hw_state_draw_index const state_index, bool modified)
 {
+   assert(state_index < TERAKAN_HW_STATE_DRAW_SPECIAL_FIRST);
    if (!BITSET_TEST(state->state_ever_written, state_index)) {
       BITSET_SET(state->state_ever_written, state_index);
       modified = true;
@@ -145,6 +245,54 @@ terakan_hw_state_draw_written(struct terakan_hw_state_draw * const state,
       BITSET_SET(state->state_modified, state_index);
    }
 }
+
+void terakan_hw_state_draw_all_sq_resources_cleared(struct terakan_hw_state_draw * state);
+
+void terakan_hw_state_draw_set_sq_resource_vi(struct terakan_hw_state_draw * state, uint32_t index,
+                                              struct terakan_winsys_bo const * bo,
+                                              uint32_t const descriptor[8]);
+void terakan_hw_state_draw_set_sq_resource_vs(struct terakan_hw_state_draw * state, uint32_t index,
+                                              struct terakan_winsys_bo const * bo,
+                                              uint32_t const descriptor[8]);
+void terakan_hw_state_draw_set_sq_resource_tcs(struct terakan_hw_state_draw * state, uint32_t index,
+                                               struct terakan_winsys_bo const * bo,
+                                               uint32_t const descriptor[8]);
+void terakan_hw_state_draw_set_sq_resource_tes(struct terakan_hw_state_draw * state, uint32_t index,
+                                               struct terakan_winsys_bo const * bo,
+                                               uint32_t const descriptor[8]);
+void terakan_hw_state_draw_set_sq_resource_gs(struct terakan_hw_state_draw * state, uint32_t index,
+                                              struct terakan_winsys_bo const * bo,
+                                              uint32_t const descriptor[8]);
+void terakan_hw_state_draw_set_sq_resource_fs(struct terakan_hw_state_draw * state, uint32_t index,
+                                              struct terakan_winsys_bo const * bo,
+                                              uint32_t const descriptor[8]);
+
+static inline bool
+terakan_hw_state_draw_sq_constants_needed_by_gs(struct terakan_hw_state_draw const * const state)
+{
+   return state->sq_constants_needed.tcs_tes ? state->sq_constants_needed.gs_after_tes
+                                             : state->sq_constants_needed.gs_after_vs;
+}
+
+/* resources_opt is optional, passing NULL disables all constants for this stage (for instance, if
+ * no shader is bound to the stage).
+ */
+void terakan_hw_state_draw_set_sq_constants_needed_by_vi(struct terakan_hw_state_draw * state,
+                                                         BITSET_WORD const * resources_opt);
+void terakan_hw_state_draw_set_sq_constants_needed_by_vs(struct terakan_hw_state_draw * state,
+                                                         BITSET_WORD const * resources_opt,
+                                                         VkShaderStageFlags next_stage);
+void terakan_hw_state_draw_set_sq_constants_needed_by_tcs(struct terakan_hw_state_draw * state,
+                                                          BITSET_WORD const * resources_opt);
+void terakan_hw_state_draw_set_sq_constants_needed_by_tes(struct terakan_hw_state_draw * state,
+                                                          BITSET_WORD const * resources_opt,
+                                                          bool next_stage_is_gs);
+void terakan_hw_state_draw_set_sq_constants_needed_by_gs(struct terakan_hw_state_draw * state,
+                                                         BITSET_WORD const * resources_opt);
+void terakan_hw_state_draw_set_sq_constants_needed_by_fs(struct terakan_hw_state_draw * state,
+                                                         BITSET_WORD const * resources_opt);
+
+struct terakan_gfx_command_writer;
 
 void terakan_hw_state_draw_emit_modified(struct terakan_gfx_command_writer * command_writer);
 

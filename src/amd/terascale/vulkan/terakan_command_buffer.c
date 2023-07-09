@@ -439,7 +439,7 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
    uint32_t * packet;
 
    /* Disable register shadowing before setting any registers. */
-   packet = terakan_gfx_command_writer_emit(command_writer, 3, 0, 0);
+   packet = terakan_gfx_command_writer_emit(command_writer, 3, 0, 0, false);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -454,7 +454,7 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
    if (gpu_info->gfx_level <= EVERGREEN) {
       /* Workaround for hardware issues with dynamic GPRs - must set all limits to 240 (in units of
        * 8 registers) instead of 0. */
-      packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, 0, 0);
+      packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, 0, 0, false);
       if (unlikely(packet == NULL)) {
          return;
       }
@@ -732,7 +732,8 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
       S_028808_MODE(V_028808_CB_NORMAL) | S_028808_ROP3(0xCC),
    };
 
-   packet = terakan_gfx_command_writer_emit(command_writer, ARRAY_SIZE(draw_context_regs), 0, 0);
+   packet =
+      terakan_gfx_command_writer_emit(command_writer, ARRAY_SIZE(draw_context_regs), 0, 0, false);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -740,7 +741,7 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
 
    if (gpu_info->gfx_level >= CAYMAN) {
       /* TODO(Triang3l): Move to hw_state_draw. */
-      packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, 0, 0);
+      packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, 0, 0, false);
       if (unlikely(packet == NULL)) {
          return;
       }
@@ -748,7 +749,7 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
       *packet++ = TERAKAN_CONTEXT_REG_OFFSET(CM_R_028AA8_IA_MULTI_VGT_PARAM);
       *packet++ = S_028AA8_PRIMGROUP_SIZE(128 - 1);
 
-      packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, 0, 0);
+      packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, 0, 0, false);
       if (unlikely(packet == NULL)) {
          return;
       }
@@ -757,7 +758,7 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
       *packet++ = 0;
 
       /* TODO(Triang3l): Move to hw_state_draw. */
-      packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, 0, 0);
+      packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, 0, 0, false);
       if (unlikely(packet == NULL)) {
          return;
       }
@@ -767,7 +768,7 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
                   S_028804_STATIC_ANCHOR_ASSOCIATIONS(1);
    }
 
-   packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, 0, 0);
+   packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, 0, 0, false);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -790,7 +791,7 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
                    S_008C00_GS_PRIO(2) | S_008C00_VS_PRIO(1) | S_008C00_PS_PRIO(0) |
                    S_008C00_CS_PRIO(0);
    }
-   packet = terakan_gfx_command_writer_emit(command_writer, 2 + 2 + 2 + 2, 0, 0);
+   packet = terakan_gfx_command_writer_emit(command_writer, 2 + 2 + 2 + 2, 0, 0, false);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -817,7 +818,7 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
    /* TODO(Triang3l): Dynamic GPR usage on R8xx - see evergreen_emit_config_state, and also disable
     * them for tessellation, see evergreen_adjust_gprs. Keep them always enabled for R9xx though.
     */
-   packet = terakan_gfx_command_writer_emit(command_writer, 2 + 2 + 1, 0, 0);
+   packet = terakan_gfx_command_writer_emit(command_writer, 2 + 2 + 1, 0, 0, false);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -853,7 +854,7 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
       S_008A14_CLIP_VTX_REORDER_ENA(1) | S_008A14_NUM_CLIP_SEQ(3),
    };
 
-   packet = terakan_gfx_command_writer_emit(command_writer, ARRAY_SIZE(config_regs), 0, 0);
+   packet = terakan_gfx_command_writer_emit(command_writer, ARRAY_SIZE(config_regs), 0, 0, false);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -880,8 +881,8 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
          (R_008C28_SQ_STACK_RESOURCE_MGMT_3 - R_008C18_SQ_THREAD_RESOURCE_MGMT_1) /
             sizeof(uint32_t) +
          1;
-      packet = terakan_gfx_command_writer_emit(command_writer,
-                                               2 + sq_thread_stack_register_count + 2 + 1, 0, 0);
+      packet = terakan_gfx_command_writer_emit(
+         command_writer, 2 + sq_thread_stack_register_count + 2 + 1, 0, 0, false);
       if (unlikely(packet == NULL)) {
          return;
       }
@@ -913,7 +914,7 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
 
 static bool
 terakan_gfx_command_writer_new_indirect_buffer(
-   struct terakan_gfx_command_writer * const command_writer)
+   struct terakan_gfx_command_writer * const command_writer, bool * const all_state_emitted_out)
 {
    terakan_gfx_command_writer_end_indirect_buffer(command_writer);
 
@@ -930,7 +931,18 @@ terakan_gfx_command_writer_new_indirect_buffer(
 
    terakan_gfx_command_writer_emit_preamble(command_writer);
 
-   if (command_writer->indirect_buffer_ever_begun) {
+   /* Clear all resources in the hardware. */
+   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, 0, 0, false);
+   if (unlikely(packet == NULL)) {
+      return false;
+   }
+   *packet++ = PKT3(PKT3_SET_CTL_CONST, 1, 0);
+   *packet++ = TERAKAN_CTL_CONST_OFFSET(R_03CFF4_SQ_VTX_START_INST_LOC);
+   *packet++ = UINT32_MAX;
+   terakan_hw_state_draw_all_sq_resources_cleared(&command_writer->hw_state_draw);
+
+   bool const emit_all_state = command_writer->indirect_buffer_ever_begun;
+   if (emit_all_state) {
       /* Re-emit the state from the previous indirect buffer. */
       terakan_hw_state_draw_emit_all(command_writer);
    }
@@ -938,13 +950,20 @@ terakan_gfx_command_writer_new_indirect_buffer(
 
    command_writer->is_beginning_indirect_buffer = false;
 
-   return !vk_command_buffer_has_error(&command_writer->base.command_buffer->vk);
+   if (vk_command_buffer_has_error(&command_writer->base.command_buffer->vk)) {
+      return false;
+   }
+
+   *all_state_emitted_out = emit_all_state;
+
+   return true;
 }
 
 uint32_t *
 terakan_gfx_command_writer_emit(struct terakan_gfx_command_writer * const command_writer,
                                 uint32_t const packet_dwords, uint32_t const bo_count,
-                                uint32_t const relocation_packet_dwords)
+                                uint32_t const relocation_packet_dwords,
+                                bool abort_if_all_state_emitted)
 {
    if (unlikely(vk_command_buffer_has_error(&command_writer->base.command_buffer->vk))) {
       return NULL;
@@ -969,7 +988,11 @@ terakan_gfx_command_writer_emit(struct terakan_gfx_command_writer * const comman
                                      VK_ERROR_OUT_OF_HOST_MEMORY);
          return NULL;
       }
-      if (!terakan_gfx_command_writer_new_indirect_buffer(command_writer)) {
+      bool all_state_emitted;
+      if (!terakan_gfx_command_writer_new_indirect_buffer(command_writer, &all_state_emitted)) {
+         return NULL;
+      }
+      if (abort_if_all_state_emitted && all_state_emitted) {
          return NULL;
       }
    }

@@ -87,6 +87,9 @@ static_assert(
    "There should be enough pixel shader mutable resource bindings for the minimum Direct3D 11 "
    "binding counts plus Vulkan storage buffers and input attachments.");
 
+/* SQ_VTX_CONSTANT doesn't have words 5 and 6, so using word 5 for the BO priority. */
+#define TERAKAN_RESOURCE_BUFFER_PRIORITY_WORD 5
+
 /* Hardware CB_COLOR[0-11] registers.
  * Note that image views don't store color buffer or RAT descriptors directly, instead they contain
  * data for both, but color buffers and RATs each have fields they don't use, or require specific
@@ -139,7 +142,9 @@ struct terakan_color_meta_descriptor {
 struct terakan_mutable_descriptor {
    struct terakan_winsys_bo const * bo;
 
-   /* Hardware SQ_VTX_CONSTANT / SQ_TEX_RESOURCE. */
+   /* Hardware SQ_VTX_CONSTANT with BO priority in word TERAKAN_RESOURCE_BUFFER_PRIORITY_WORD,
+    * or hardware SQ_TEX_RESOURCE.
+    */
    uint32_t resource[8];
 
    struct terakan_color_descriptor color;

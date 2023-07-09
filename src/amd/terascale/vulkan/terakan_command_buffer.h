@@ -206,7 +206,8 @@ struct terakan_gfx_command_writer {
  */
 uint32_t * terakan_gfx_command_writer_emit(struct terakan_gfx_command_writer * command_writer,
                                            uint32_t packet_dwords, uint32_t bo_count,
-                                           uint32_t relocation_packet_dwords);
+                                           uint32_t relocation_packet_dwords,
+                                           bool abort_if_all_state_emitted);
 
 struct terakan_command_pool {
    struct vk_command_pool vk;
