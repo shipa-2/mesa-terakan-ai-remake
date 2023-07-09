@@ -1442,6 +1442,8 @@
 #define   S_03000C_DST_SEL_W(x)                        (((unsigned)(x) & 0x7) << 12)
 #define   G_03000C_DST_SEL_W(x)                        (((x) >> 12) & 0x7)
 
+#define R_03FF04_SQ_TEX_RESOURCE_CLEAR               0x03FF04
+
 #define R_00A400_TD_PS_SAMPLER0_BORDER_INDEX         0x00A400
 #define R_00A404_TD_PS_SAMPLER0_BORDER_RED           0x00A404
 #define R_00A408_TD_PS_SAMPLER0_BORDER_GREEN         0x00A408
