@@ -28,27 +28,10 @@
 
 #include <assert.h>
 
-/* HW values are hardware limits, VK values are allocation for use by Vulkan applications. */
-
 #define TERAKAN_LIMITS_HW_VIEWPORTS 16
 
 #define TERAKAN_LIMITS_HW_COLOR_MRT_COUNT 8
 #define TERAKAN_LIMITS_HW_COLOR_RAT_COUNT 12
-
-#define TERAKAN_LIMITS_HW_CONSTANT_BUFFER_CACHE_LINE_BYTES_LOG2 8
-#define TERAKAN_LIMITS_HW_CONSTANT_BUFFER_CACHE_LINE_BYTES                                         \
-   (1 << TERAKAN_LIMITS_HW_CONSTANT_BUFFER_CACHE_LINE_BYTES_LOG2)
-#define TERAKAN_LIMITS_HW_CONSTANT_BUFFER_CACHE_LINE_COUNT_LOG2 8
-#define TERAKAN_LIMITS_HW_CONSTANT_BUFFER_CACHE_LINE_COUNT                                         \
-   (1 << TERAKAN_LIMITS_HW_CONSTANT_BUFFER_CACHE_LINE_COUNT_LOG2)
-#define TERAKAN_LIMITS_HW_CONSTANT_BUFFER_SIZE_BYTES_LOG2                                          \
-   (TERAKAN_LIMITS_HW_CONSTANT_BUFFER_CACHE_LINE_BYTES_LOG2 +                                      \
-    TERAKAN_LIMITS_HW_CONSTANT_BUFFER_CACHE_LINE_COUNT_LOG2)
-#define TERAKAN_LIMITS_HW_CONSTANT_BUFFER_SIZE_BYTES                                               \
-   (1 << TERAKAN_LIMITS_HW_CONSTANT_BUFFER_SIZE_BYTES_LOG2)
-#define TERAKAN_LIMITS_HW_CONSTANT_BUFFER_COUNT 16
-
-#define TERAKAN_LIMITS_HW_SAMPLER_COUNT 18
 
 #define TERAKAN_LIMITS_HW_PARAMETER_CACHE_VECTOR_COUNT 32
 
@@ -59,31 +42,5 @@
 
 #define TERAKAN_LIMITS_HW_COMPUTE_GROUP_SIZE           1024
 #define TERAKAN_LIMITS_HW_COMPUTE_GROUPS_PER_DIMENSION UINT16_MAX
-
-/* The goal behind binding allocation on Vulkan is to provide enough bindings for Direct3D 11.0 to
- * be possible to implement on top of Terakan.
- */
-
-/* Storage buffers/images are allocated top-down: for instance, the first storage binding in the
- * pipeline layout goes to RAT `HW_COLOR_RAT_COUNT - 1`, the second to RAT
- * `HW_COLOR_RAT_COUNT - 2`, and so on. This makes RAT indices depend only on the pipeline
- * layout and not on the render pass.
- */
-
-/* Push constants and frequently-updated internal constants. */
-#define TERAKAN_LIMITS_VK_CONSTANT_BUFFER_HIGH_FREQUENCY                                           \
-   (TERAKAN_LIMITS_HW_CONSTANT_BUFFER_COUNT - 1)
-/* Uniform buffers. */
-/* Starting at 0 for shader disassembly readability. */
-#define TERAKAN_LIMITS_VK_CONSTANT_BUFFER_UNIFORM_BUFFER_BASE 0
-#define TERAKAN_LIMITS_VK_CONSTANT_BUFFER_UNIFORM_BUFFER_MAX_COUNT                                 \
-   (TERAKAN_LIMITS_VK_CONSTANT_BUFFER_HIGH_FREQUENCY -                                             \
-    TERAKAN_LIMITS_VK_CONSTANT_BUFFER_UNIFORM_BUFFER_BASE)
-static_assert(
-   TERAKAN_LIMITS_VK_CONSTANT_BUFFER_UNIFORM_BUFFER_MAX_COUNT >= 12,
-   "There must be enough constant buffer bindings for the minimum Vulkan uniform buffer count.");
-static_assert(
-   TERAKAN_LIMITS_VK_CONSTANT_BUFFER_UNIFORM_BUFFER_MAX_COUNT >= 15,
-   "There should be enough constant buffer bindings for the Direct3D 11 constant buffer count.");
 
 #endif /* TERAKAN_LIMITS_H */

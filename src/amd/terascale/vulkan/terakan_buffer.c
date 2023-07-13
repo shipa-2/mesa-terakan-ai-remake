@@ -22,10 +22,10 @@
  */
 
 #include "terakan_buffer.h"
+#include "terakan_descriptor.h"
 #include "terakan_device.h"
 #include "terakan_device_memory.h"
 #include "terakan_entrypoints.h"
-#include "terakan_limits.h"
 #include "terakan_physical_device.h"
 
 #include "util/macros.h"
@@ -46,7 +46,7 @@ terakan_GetDeviceBufferMemoryRequirements(VkDevice const deviceHandle,
    VkBufferUsageFlags const usage = pInfo->pCreateInfo->usage;
    /* From the largest to the smallest alignment. */
    if (usage & VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT) {
-      alignment = TERAKAN_LIMITS_HW_CONSTANT_BUFFER_CACHE_LINE_BYTES;
+      alignment = TERAKAN_CONSTANT_CACHE_LINE_BYTES;
    } else if (usage &
               (VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT)) {
       /* Largest random access target element (R32G32B32A32) alignment, including for image to

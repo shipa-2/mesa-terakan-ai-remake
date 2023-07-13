@@ -272,14 +272,13 @@ terakan_GetPhysicalDeviceProperties(VkPhysicalDevice const physicalDevice,
     */
    limits->maxTexelBufferElements = (uint32_t)1 << (32 - 4);
 
-   limits->maxUniformBufferRange = TERAKAN_LIMITS_HW_CONSTANT_BUFFER_SIZE_BYTES;
+   limits->maxUniformBufferRange = TERAKAN_CONSTANT_CACHE_MAX_BUFFER_SIZE_BYTES;
 
    /* Storage buffers are bound as R32 vertex fetch constants or random access targets. */
    limits->maxStorageBufferRange = UINT32_MAX & ~(uint32_t)(sizeof(uint32_t) - 1);
 
-   /* Number of compute workgroups in YZW of the last vector. */
-   limits->maxPushConstantsSize =
-      TERAKAN_LIMITS_HW_CONSTANT_BUFFER_SIZE_BYTES - 3 * sizeof(uint32_t);
+   /* TODO(Triang3l): Exclude internal constants like the draw ID, sample locations. */
+   limits->maxPushConstantsSize = TERAKAN_CONSTANT_CACHE_MAX_BUFFER_SIZE_BYTES;
 
    limits->maxMemoryAllocationCount = UINT32_MAX;
 
@@ -291,7 +290,7 @@ terakan_GetPhysicalDeviceProperties(VkPhysicalDevice const physicalDevice,
     */
    limits->maxBoundDescriptorSets = UINT32_MAX;
 
-   limits->maxPerStageDescriptorSamplers = TERAKAN_LIMITS_HW_SAMPLER_COUNT;
+   limits->maxPerStageDescriptorSamplers = TERAKAN_SAMPLERS_PER_STAGE;
    limits->maxPerStageDescriptorUniformBuffers = instance->max_per_stage_uniform_buffers;
    limits->maxPerStageDescriptorStorageBuffers = instance->max_per_stage_storage_buffers;
    limits->maxPerStageDescriptorSampledImages = instance->max_per_stage_sampled_images;
@@ -390,7 +389,7 @@ terakan_GetPhysicalDeviceProperties(VkPhysicalDevice const physicalDevice,
     */
    limits->minTexelBufferOffsetAlignment = sizeof(uint32_t) * 4;
 
-   limits->minUniformBufferOffsetAlignment = TERAKAN_LIMITS_HW_CONSTANT_BUFFER_CACHE_LINE_BYTES;
+   limits->minUniformBufferOffsetAlignment = TERAKAN_CONSTANT_CACHE_LINE_BYTES;
 
    limits->minStorageBufferOffsetAlignment = sizeof(uint32_t);
 

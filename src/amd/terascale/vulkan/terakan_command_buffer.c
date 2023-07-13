@@ -22,6 +22,7 @@
  */
 
 #include "terakan_command_buffer.h"
+#include "terakan_descriptor.h"
 #include "terakan_device.h"
 #include "terakan_entrypoints.h"
 #include "terakan_image.h"
@@ -138,11 +139,10 @@ terakan_command_buffer_allocate_push_constants(struct terakan_command_buffer * c
                                                struct terakan_winsys_bo const ** const bo_out,
                                                VkDeviceSize * const offset_bytes_out)
 {
-   assert(size_bytes <= TERAKAN_LIMITS_HW_CONSTANT_BUFFER_SIZE_BYTES);
+   assert(size_bytes <= TERAKAN_CONSTANT_CACHE_MAX_BUFFER_SIZE_BYTES);
 
    uint32_t const size_cache_lines =
-      (size_bytes + (TERAKAN_LIMITS_HW_CONSTANT_BUFFER_CACHE_LINE_BYTES - 1)) /
-      TERAKAN_LIMITS_HW_CONSTANT_BUFFER_CACHE_LINE_BYTES;
+      (size_bytes + (TERAKAN_CONSTANT_CACHE_LINE_BYTES - 1)) / TERAKAN_CONSTANT_CACHE_LINE_BYTES;
 
    /* One constant buffer of the maximum possible size.
     * Because allocation is linear, there may be a lot of fragmentation if requested push constant
@@ -152,7 +152,7 @@ terakan_command_buffer_allocate_push_constants(struct terakan_command_buffer * c
     * larger BOs.
     * Fragmentation can also be filled with 1-cache-line push constants.
     */
-   uint32_t const buffer_size_cache_lines = TERAKAN_LIMITS_HW_CONSTANT_BUFFER_CACHE_LINE_COUNT;
+   uint32_t const buffer_size_cache_lines = TERAKAN_CONSTANT_CACHE_MAX_LINES_IN_BUFFER;
 
    if (!list_is_empty(&command_buffer->push_constant_buffers_with_free_space) &&
        list_first_entry(&command_buffer->push_constant_buffers_with_free_space,
@@ -170,7 +170,7 @@ terakan_command_buffer_allocate_push_constants(struct terakan_command_buffer * c
                                struct terakan_push_constant_buffer, link);
       uint32_t const existing_buffer_offset_bytes =
          (buffer_size_cache_lines - existing_buffer->cache_lines_free) *
-         TERAKAN_LIMITS_HW_CONSTANT_BUFFER_CACHE_LINE_BYTES;
+         TERAKAN_CONSTANT_CACHE_LINE_BYTES;
 
       existing_buffer->cache_lines_free -= size_cache_lines;
       if (existing_buffer->cache_lines_free == 0) {
@@ -204,8 +204,8 @@ terakan_command_buffer_allocate_push_constants(struct terakan_command_buffer * c
             ->winsys;
 
       new_buffer->bo = winsys->bo_fn->allocate_device_memory(
-         winsys, TERAKAN_LIMITS_HW_CONSTANT_BUFFER_CACHE_LINE_BYTES * buffer_size_cache_lines,
-         TERAKAN_LIMITS_HW_CONSTANT_BUFFER_CACHE_LINE_BYTES,
+         winsys, TERAKAN_CONSTANT_CACHE_LINE_BYTES * buffer_size_cache_lines,
+         TERAKAN_CONSTANT_CACHE_LINE_BYTES,
          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
             VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
       if (new_buffer->bo == NULL) {
@@ -939,7 +939,9 @@ terakan_gfx_command_writer_new_indirect_buffer(
    *packet++ = PKT3(PKT3_SET_CTL_CONST, 1, 0);
    *packet++ = TERAKAN_CTL_CONST_OFFSET(R_03CFF4_SQ_VTX_START_INST_LOC);
    *packet++ = UINT32_MAX;
-   terakan_hw_state_draw_all_sq_resources_cleared(&command_writer->hw_state_draw);
+
+   terakan_hw_state_draw_indirect_buffer_begun_and_sq_resources_cleared(
+      &command_writer->hw_state_draw);
 
    bool const emit_all_state = command_writer->indirect_buffer_ever_begun;
    if (emit_all_state) {

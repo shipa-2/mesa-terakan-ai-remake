@@ -34,6 +34,13 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+struct terakan_hw_state_sq_constant_cache_buffer {
+   /* BO and base are undefined if the size is 0. */
+   struct terakan_winsys_bo const * bo;
+   uint32_t base_cache_lines;
+   uint32_t size_cache_lines;
+};
+
 enum terakan_hw_state_draw_index {
    /* Generally ordered roughly by the location of the hardware unit in the pipeline, and within
     * each unit, by the register addresses.
@@ -68,7 +75,13 @@ enum terakan_hw_state_draw_index {
     */
    TERAKAN_HW_STATE_DRAW_SPECIAL_FIRST,
 
-   TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_VI = TERAKAN_HW_STATE_DRAW_SPECIAL_FIRST,
+   TERAKAN_HW_STATE_DRAW_SQ_CONSTANT_CACHE_VS = TERAKAN_HW_STATE_DRAW_SPECIAL_FIRST,
+   TERAKAN_HW_STATE_DRAW_SQ_CONSTANT_CACHE_TCS,
+   TERAKAN_HW_STATE_DRAW_SQ_CONSTANT_CACHE_TES,
+   TERAKAN_HW_STATE_DRAW_SQ_CONSTANT_CACHE_GS,
+   TERAKAN_HW_STATE_DRAW_SQ_CONSTANT_CACHE_FS,
+
+   TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_VI,
    TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_VS,
    TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_TCS,
    TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_TES,
@@ -81,7 +94,30 @@ enum terakan_hw_state_draw_index {
 extern uint32_t const terakan_standard_sample_locs[5][16 / 4];
 extern uint32_t const terakan_standard_sample_max_dists[5];
 
+enum terakan_hw_state_draw_sq_constants_needed_stage {
+   TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_VS,
+   TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_TCS,
+   TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_TES,
+   TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_GS,
+   TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_FS,
+
+   TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_COUNT,
+};
+
+enum terakan_hw_state_draw_sq_constants_modified_stage {
+   TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_VS_IN_VSES,
+   TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_VS_IN_LS,
+   TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_TCS,
+   TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_TES_IN_VSES,
+   TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_GS,
+   TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_FS,
+
+   TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_COUNT,
+};
+
 struct terakan_hw_state_draw_vertex_constant_bits {
+   uint16_t constant_cache;
+
    BITSET_DECLARE(resources, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
 };
 
@@ -157,6 +193,8 @@ struct terakan_hw_state_draw {
       bool gs_after_vs;
       bool gs_after_tes;
 
+      uint16_t constant_cache[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_COUNT];
+
       struct {
          BITSET_DECLARE(vi, TERAKAN_RESOURCE_HW_COUNT_FETCH);
          BITSET_DECLARE(vs, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
@@ -174,6 +212,8 @@ struct terakan_hw_state_draw {
     * Vulkan VS or TES stage.
     */
    struct {
+      uint16_t constant_cache[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_COUNT];
+
       struct {
          BITSET_DECLARE(vi, TERAKAN_RESOURCE_HW_COUNT_FETCH);
          BITSET_DECLARE(vs_in_vses, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
@@ -194,6 +234,10 @@ struct terakan_hw_state_draw {
     */
    struct terakan_hw_state_draw_vertex_constant_bits sq_constants_for_vs_overwritten_in_vses_by_tes;
    struct terakan_hw_state_draw_vertex_constant_bits sq_constants_for_tes_overwritten_in_vses_by_vs;
+
+   struct terakan_hw_state_sq_constant_cache_buffer
+      sq_constant_cache_buffers[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_COUNT]
+                               [TERAKAN_CONSTANT_CACHE_BUFFERS_PER_STAGE];
 
    /* The BOs and descriptors are undefined if the sq_resources_not_null bit for the resource index
     * is not set.
@@ -246,7 +290,31 @@ terakan_hw_state_draw_written(struct terakan_hw_state_draw * const state,
    }
 }
 
-void terakan_hw_state_draw_all_sq_resources_cleared(struct terakan_hw_state_draw * state);
+void terakan_hw_state_draw_set_sq_constant_cache_vs(struct terakan_hw_state_draw * state,
+                                                    uint32_t buffer_index,
+                                                    uint32_t size_cache_lines,
+                                                    struct terakan_winsys_bo const * bo,
+                                                    uint32_t base_cache_lines);
+void terakan_hw_state_draw_set_sq_constant_cache_tcs(struct terakan_hw_state_draw * state,
+                                                     uint32_t buffer_index,
+                                                     uint32_t size_cache_lines,
+                                                     struct terakan_winsys_bo const * bo,
+                                                     uint32_t base_cache_lines);
+void terakan_hw_state_draw_set_sq_constant_cache_tes(struct terakan_hw_state_draw * state,
+                                                     uint32_t buffer_index,
+                                                     uint32_t size_cache_lines,
+                                                     struct terakan_winsys_bo const * bo,
+                                                     uint32_t base_cache_lines);
+void terakan_hw_state_draw_set_sq_constant_cache_gs(struct terakan_hw_state_draw * state,
+                                                    uint32_t buffer_index,
+                                                    uint32_t size_cache_lines,
+                                                    struct terakan_winsys_bo const * bo,
+                                                    uint32_t base_cache_lines);
+void terakan_hw_state_draw_set_sq_constant_cache_fs(struct terakan_hw_state_draw * state,
+                                                    uint32_t buffer_index,
+                                                    uint32_t size_cache_lines,
+                                                    struct terakan_winsys_bo const * bo,
+                                                    uint32_t base_cache_lines);
 
 void terakan_hw_state_draw_set_sq_resource_vi(struct terakan_hw_state_draw * state, uint32_t index,
                                               struct terakan_winsys_bo const * bo,
@@ -280,17 +348,25 @@ terakan_hw_state_draw_sq_constants_needed_by_gs(struct terakan_hw_state_draw con
 void terakan_hw_state_draw_set_sq_constants_needed_by_vi(struct terakan_hw_state_draw * state,
                                                          BITSET_WORD const * resources_opt);
 void terakan_hw_state_draw_set_sq_constants_needed_by_vs(struct terakan_hw_state_draw * state,
+                                                         uint16_t constant_cache,
                                                          BITSET_WORD const * resources_opt,
                                                          VkShaderStageFlags next_stage);
 void terakan_hw_state_draw_set_sq_constants_needed_by_tcs(struct terakan_hw_state_draw * state,
+                                                          uint16_t constant_cache,
                                                           BITSET_WORD const * resources_opt);
 void terakan_hw_state_draw_set_sq_constants_needed_by_tes(struct terakan_hw_state_draw * state,
+                                                          uint16_t constant_cache,
                                                           BITSET_WORD const * resources_opt,
                                                           bool next_stage_is_gs);
 void terakan_hw_state_draw_set_sq_constants_needed_by_gs(struct terakan_hw_state_draw * state,
+                                                         uint16_t constant_cache,
                                                          BITSET_WORD const * resources_opt);
 void terakan_hw_state_draw_set_sq_constants_needed_by_fs(struct terakan_hw_state_draw * state,
+                                                         uint16_t constant_cache,
                                                          BITSET_WORD const * resources_opt);
+
+void terakan_hw_state_draw_indirect_buffer_begun_and_sq_resources_cleared(
+   struct terakan_hw_state_draw * state);
 
 struct terakan_gfx_command_writer;
 

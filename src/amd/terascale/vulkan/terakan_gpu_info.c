@@ -25,7 +25,7 @@
  */
 
 #include "terakan_gpu_info.h"
-#include "terakan_limits.h"
+#include "terakan_descriptor.h"
 
 #include "util/u_math.h"
 
@@ -133,6 +133,5 @@ terakan_gpu_info_init_complete(struct terakan_gpu_info * const info)
    VkDeviceSize const max_image_alignment =
       (VkDeviceSize)1 << (MIN2(info->tile_row_bytes_log2, 3 + 3 + 3 + 4) + info->tile_banks_log2 +
                           info->tile_pipes_log2);
-   info->buffer_image_bo_alignment =
-      MAX2(TERAKAN_LIMITS_HW_CONSTANT_BUFFER_CACHE_LINE_BYTES, max_image_alignment);
+   info->buffer_image_bo_alignment = MAX2(TERAKAN_CONSTANT_CACHE_LINE_BYTES, max_image_alignment);
 }
