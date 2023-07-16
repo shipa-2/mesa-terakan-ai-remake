@@ -46,8 +46,8 @@ terakan_CmdBeginRendering(VkCommandBuffer const commandBuffer,
       struct terakan_image_view const * const color_view = terakan_image_view_from_handle(
          pRenderingInfo->pColorAttachments[color_attachment_index].imageView);
       if (color_view != NULL) {
-         state_draw->cb_color_bo[color_attachment_index] = color_view->descriptor.bo;
-         memcpy(&state_draw->cb_color[color_attachment_index], &color_view->descriptor.color,
+         state_draw->cb_color_bo[color_attachment_index] = color_view->bo;
+         memcpy(&state_draw->cb_color[color_attachment_index], &color_view->color,
                 sizeof(struct terakan_color_descriptor));
          terakan_color_descriptor_image_view_to_color_attachment(
             &state_draw->cb_color[color_attachment_index]);

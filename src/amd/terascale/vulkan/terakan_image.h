@@ -122,8 +122,11 @@ bool terakan_image_create_color_descriptor(
 struct terakan_image_view {
    struct vk_image_view vk;
 
-   struct terakan_mutable_descriptor descriptor;
+   struct terakan_winsys_bo const * bo;
 
+   uint32_t resource[8];
+
+   struct terakan_color_descriptor color;
    struct terakan_color_meta_descriptor color_meta;
 };
 

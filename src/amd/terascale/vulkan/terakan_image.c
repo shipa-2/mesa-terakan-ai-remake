@@ -638,17 +638,19 @@ terakan_CreateImageView(VkDevice const deviceHandle,
 
    vk_image_view_init(&device->vk, &image_view->vk, false, pCreateInfo);
 
-   memset(&image_view->descriptor, 0, sizeof(image_view->descriptor));
-   memset(&image_view->color_meta, 0, sizeof(image_view->color_meta));
-
    struct terakan_image const * const image = terakan_image_from_handle(pCreateInfo->image);
 
-   image_view->descriptor.bo = image->bo;
+   image_view->bo = image->bo;
 
-   terakan_image_create_resource_descriptor(pCreateInfo, image_view->descriptor.resource);
+   if (!terakan_image_create_resource_descriptor(pCreateInfo, image_view->resource)) {
+      memset(image_view->resource, 0, sizeof(image_view->resource));
+   }
 
-   terakan_image_create_color_descriptor(pCreateInfo, &image_view->descriptor.color,
-                                         &image_view->color_meta);
+   if (!terakan_image_create_color_descriptor(pCreateInfo, &image_view->color,
+                                              &image_view->color_meta)) {
+      memset(&image_view->color, 0, sizeof(image_view->color));
+      memset(&image_view->color_meta, 0, sizeof(image_view->color_meta));
+   }
 
    /* TODO(Triang3l): Other descriptor types. */
 

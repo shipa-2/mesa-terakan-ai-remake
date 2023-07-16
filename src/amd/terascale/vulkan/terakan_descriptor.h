@@ -158,15 +158,4 @@ struct terakan_color_meta_descriptor {
    uint32_t fmask_slice;
 };
 
-struct terakan_mutable_descriptor {
-   struct terakan_winsys_bo const * bo;
-
-   /* Hardware SQ_VTX_CONSTANT with BO priority in word TERAKAN_RESOURCE_BUFFER_PRIORITY_WORD,
-    * or hardware SQ_TEX_RESOURCE.
-    */
-   uint32_t resource[8];
-
-   struct terakan_color_descriptor color;
-};
-
 #endif /* TERAKAN_DESCRIPTOR_H */
