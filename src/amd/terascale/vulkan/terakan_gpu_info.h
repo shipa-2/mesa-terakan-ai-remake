@@ -60,6 +60,7 @@ struct terakan_gpu_info {
    uint64_t vram_size;
    uint64_t vram_visible; /* Included in vram_size. */
 
+   VkDeviceSize bo_size_granularity;
    VkDeviceSize max_bo_size;
    size_t min_memory_map_alignment;
 

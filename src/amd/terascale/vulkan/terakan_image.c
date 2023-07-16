@@ -41,6 +41,7 @@
 #include "vk_alloc.h"
 #include "vk_format.h"
 #include "vk_log.h"
+#include "vk_util.h"
 
 #include <assert.h>
 #include <stdbool.h>
@@ -110,6 +111,24 @@ terakan_GetDeviceImageMemoryRequirements(VkDevice const deviceHandle,
 
    pMemoryRequirements->memoryRequirements.memoryTypeBits =
       ((uint32_t)1 << physical_device->memory_properties.memoryTypeCount) - 1;
+
+   vk_foreach_struct (ext, pMemoryRequirements->pNext) {
+      switch (ext->sType) {
+      case VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS: {
+         VkMemoryDedicatedRequirements * const dedicated_requirements =
+            (VkMemoryDedicatedRequirements *)ext;
+         VkExternalMemoryImageCreateInfo const * const external_memory_info =
+            vk_find_struct_const(pInfo, EXTERNAL_MEMORY_IMAGE_CREATE_INFO);
+         dedicated_requirements->requiresDedicatedAllocation =
+            external_memory_info != NULL && external_memory_info->handleTypes != 0;
+         dedicated_requirements->prefersDedicatedAllocation =
+            dedicated_requirements->requiresDedicatedAllocation;
+      } break;
+
+      default:
+         break;
+      }
+   }
 }
 
 /* Skipping the translation into the surface structure if it has already been done. */
@@ -128,6 +147,21 @@ terakan_GetImageMemoryRequirements2(VkDevice const deviceHandle,
       container_of(device->vk.physical, struct terakan_physical_device const, vk);
    pMemoryRequirements->memoryRequirements.memoryTypeBits =
       ((uint32_t)1 << physical_device->memory_properties.memoryTypeCount) - 1;
+
+   vk_foreach_struct (ext, pMemoryRequirements->pNext) {
+      switch (ext->sType) {
+      case VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS: {
+         VkMemoryDedicatedRequirements * const dedicated_requirements =
+            (VkMemoryDedicatedRequirements *)ext;
+         dedicated_requirements->requiresDedicatedAllocation = image->vk.external_handle_types != 0;
+         dedicated_requirements->prefersDedicatedAllocation =
+            dedicated_requirements->requiresDedicatedAllocation;
+      } break;
+
+      default:
+         break;
+      }
+   }
 }
 
 VKAPI_ATTR void VKAPI_CALL

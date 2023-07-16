@@ -168,6 +168,7 @@ terakan_winsys_drm_radeon_create(int const fd)
       winsys->base.gpu_info.vram_size = gem_info.vram_size;
       winsys->base.gpu_info.vram_visible = gem_info.vram_visible;
    }
+   winsys->base.gpu_info.bo_size_granularity = (VkDeviceSize)page_size;
    /* The command buffer parser in the Radeon kernel driver stores 32-bit offsets to bindings within
     * buffer objects, and for the indirect arguments base (SET_BASE packet), it doesn't apply the
     * offset during relocation, so DRAW_INDIRECT and DRAW_INDEX_INDIRECT need a 32-bit BO-relative

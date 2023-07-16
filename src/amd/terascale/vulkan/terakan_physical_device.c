@@ -77,6 +77,7 @@ terakan_physical_device_get_supported_extensions(
    extensions_out->EXT_extended_dynamic_state3 = true;
    extensions_out->EXT_provoking_vertex = true;
    extensions_out->KHR_bind_memory2 = true;
+   extensions_out->KHR_dedicated_allocation = true;
    extensions_out->KHR_dynamic_rendering = true;
    extensions_out->KHR_format_feature_flags2 = true;
    extensions_out->KHR_map_memory2 = true;

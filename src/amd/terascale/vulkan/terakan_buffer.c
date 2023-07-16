@@ -32,6 +32,7 @@
 #include "util/macros.h"
 #include "vk_alloc.h"
 #include "vk_log.h"
+#include "vk_util.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -64,6 +65,20 @@ terakan_GetDeviceBufferMemoryRequirements(VkDevice const deviceHandle,
       container_of(device->vk.physical, struct terakan_physical_device const, vk);
    pMemoryRequirements->memoryRequirements.memoryTypeBits =
       ((uint32_t)1 << physical_device->memory_properties.memoryTypeCount) - 1;
+
+   vk_foreach_struct (ext, pMemoryRequirements->pNext) {
+      switch (ext->sType) {
+      case VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS: {
+         VkMemoryDedicatedRequirements * const dedicated_requirements =
+            (VkMemoryDedicatedRequirements *)ext;
+         dedicated_requirements->requiresDedicatedAllocation = VK_FALSE;
+         dedicated_requirements->prefersDedicatedAllocation = VK_FALSE;
+      } break;
+
+      default:
+         break;
+      }
+   }
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
