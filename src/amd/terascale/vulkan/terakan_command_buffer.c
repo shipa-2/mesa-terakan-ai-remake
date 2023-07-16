@@ -191,8 +191,9 @@ terakan_command_buffer_allocate_push_constants(struct terakan_command_buffer * c
                                     struct terakan_push_constant_buffer, link);
       list_del(&new_buffer->link);
    } else {
-      new_buffer = vk_alloc(&command_pool->vk.alloc, sizeof(*new_buffer), alignof(*new_buffer),
-                            VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+      new_buffer =
+         vk_alloc(&command_pool->vk.alloc, sizeof(struct terakan_push_constant_buffer),
+                  alignof(struct terakan_push_constant_buffer), VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
       if (new_buffer == NULL) {
          vk_command_buffer_set_error(&command_buffer->vk, VK_ERROR_OUT_OF_HOST_MEMORY);
          return NULL;
@@ -251,8 +252,10 @@ terakan_command_buffer_new_indirect_buffer(struct terakan_command_buffer * const
                           struct terakan_command_buffer_submission_indirect_buffer, free_link);
       list_del(&indirect_buffer->free_link);
    } else {
-      indirect_buffer = vk_alloc(&command_pool->vk.alloc, sizeof(*indirect_buffer),
-                                 alignof(*indirect_buffer), VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+      indirect_buffer = vk_alloc(&command_pool->vk.alloc,
+                                 sizeof(struct terakan_command_buffer_submission_indirect_buffer),
+                                 alignof(struct terakan_command_buffer_submission_indirect_buffer),
+                                 VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
       if (indirect_buffer == NULL) {
          vk_command_buffer_set_error(&command_buffer->vk, VK_ERROR_OUT_OF_HOST_MEMORY);
          return NULL;
@@ -366,8 +369,8 @@ terakan_command_buffer_create(struct vk_command_pool * const command_pool,
    VkResult result;
 
    struct terakan_command_buffer * command_buffer =
-      vk_alloc(&command_pool->alloc, sizeof(*command_buffer), alignof(*command_buffer),
-               VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+      vk_alloc(&command_pool->alloc, sizeof(struct terakan_command_buffer),
+               alignof(struct terakan_command_buffer), VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
    if (command_buffer == NULL) {
       return vk_error(command_pool->base.device, VK_ERROR_OUT_OF_HOST_MEMORY);
    }
@@ -1049,8 +1052,8 @@ terakan_BeginCommandBuffer(VkCommandBuffer const commandBuffer,
       list_del(&command_buffer->command_writer.gfx->base.free_link);
    } else {
       command_buffer->command_writer.gfx =
-         vk_alloc(&command_pool->vk.alloc, sizeof(*command_buffer->command_writer.gfx),
-                  alignof(*command_buffer->command_writer.gfx), VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+         vk_alloc(&command_pool->vk.alloc, sizeof(struct terakan_gfx_command_writer),
+                  alignof(struct terakan_gfx_command_writer), VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
       if (command_buffer->command_writer.gfx == NULL) {
          return vk_command_buffer_set_error(&command_buffer->vk, VK_ERROR_OUT_OF_HOST_MEMORY);
       }
@@ -1149,8 +1152,8 @@ terakan_CreateCommandPool(VkDevice const deviceHandle,
    struct terakan_device * const device = terakan_device_from_handle(deviceHandle);
 
    struct terakan_command_pool * const command_pool =
-      vk_alloc2(&device->vk.alloc, pAllocator, sizeof(*command_pool), alignof(*command_pool),
-                VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+      vk_alloc2(&device->vk.alloc, pAllocator, sizeof(struct terakan_command_pool),
+                alignof(struct terakan_command_pool), VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
    if (command_pool == NULL) {
       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
    }

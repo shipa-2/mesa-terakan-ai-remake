@@ -576,8 +576,8 @@ terakan_CreateImage(VkDevice const deviceHandle, VkImageCreateInfo const * const
    struct terakan_device * const device = terakan_device_from_handle(deviceHandle);
 
    struct terakan_image * const image =
-      vk_alloc2(&device->vk.alloc, pAllocator, sizeof(*image), alignof(*image),
-                VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+      vk_alloc2(&device->vk.alloc, pAllocator, sizeof(struct terakan_image),
+                alignof(struct terakan_image), VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
    if (image == NULL) {
       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
    }
@@ -630,8 +630,8 @@ terakan_CreateImageView(VkDevice const deviceHandle,
    struct terakan_device * const device = terakan_device_from_handle(deviceHandle);
 
    struct terakan_image_view * const image_view =
-      vk_alloc2(&device->vk.alloc, pAllocator, sizeof(*image_view), alignof(*image_view),
-                VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+      vk_alloc2(&device->vk.alloc, pAllocator, sizeof(struct terakan_image_view),
+                alignof(struct terakan_image_view), VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
    if (image_view == NULL) {
       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
    }

@@ -644,8 +644,8 @@ terakan_physical_device_try_create_for_drm(struct vk_instance * const instance_b
    }
 
    struct terakan_physical_device * const device =
-      vk_alloc2(&instance->vk.alloc, NULL, sizeof(*device), alignof(*device),
-                VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE);
+      vk_alloc2(&instance->vk.alloc, NULL, sizeof(struct terakan_physical_device),
+                alignof(struct terakan_physical_device), VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE);
    if (device == NULL) {
       result = vk_error(instance, VK_ERROR_OUT_OF_HOST_MEMORY);
       goto fail_fd;

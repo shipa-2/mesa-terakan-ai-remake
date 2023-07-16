@@ -234,9 +234,9 @@ terakan_queue_submit(struct vk_queue * const queue_base, struct vk_queue_submit 
          mtx_unlock(&device->completion_mutex);
       } else {
          mtx_unlock(&device->completion_mutex);
-         completion_signal =
-            vk_alloc(&device->vk.alloc, sizeof(*completion_signal), alignof(*completion_signal),
-                     VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
+         completion_signal = vk_alloc(
+            &device->vk.alloc, sizeof(struct terakan_queue_completion_signal),
+            alignof(struct terakan_queue_completion_signal), VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
          if (completion_signal == NULL) {
             /* Lose the device as the submission has been done partially already, don't leave it in
              * an indeterminate state.
@@ -271,9 +271,9 @@ terakan_queue_submit(struct vk_queue * const queue_base, struct vk_queue_submit 
       mtx_unlock(&device->completion_mutex);
    } else {
       mtx_unlock(&device->completion_mutex);
-      completion_submission =
-         vk_alloc(&device->vk.alloc, sizeof(*completion_submission),
-                  alignof(*completion_submission), VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
+      completion_submission = vk_alloc(
+         &device->vk.alloc, sizeof(struct terakan_queue_completion_submission),
+         alignof(struct terakan_queue_completion_submission), VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
       if (completion_submission == NULL) {
          /* Lose the device as the submission has been done partially already, don't leave it in an
           * indeterminate state.
@@ -437,8 +437,9 @@ terakan_queue_create(struct terakan_device * const device,
 {
    VkResult result;
 
-   struct terakan_queue * const queue = vk_alloc(&device->vk.alloc, sizeof(*queue), alignof(*queue),
-                                                 VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
+   struct terakan_queue * const queue =
+      vk_alloc(&device->vk.alloc, sizeof(struct terakan_queue), alignof(struct terakan_queue),
+               VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
    if (queue == NULL) {
       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
    }

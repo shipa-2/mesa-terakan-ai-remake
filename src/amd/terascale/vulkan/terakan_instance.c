@@ -122,8 +122,9 @@ terakan_CreateInstance(VkInstanceCreateInfo const * const pCreateInfo,
       pAllocator = vk_default_allocator();
    }
 
-   struct terakan_instance * const instance = vk_alloc(
-      pAllocator, sizeof(*instance), alignof(*instance), VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE);
+   struct terakan_instance * const instance =
+      vk_alloc(pAllocator, sizeof(struct terakan_instance), alignof(struct terakan_instance),
+               VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE);
    if (instance == NULL) {
       return vk_error(NULL, VK_ERROR_OUT_OF_HOST_MEMORY);
    }

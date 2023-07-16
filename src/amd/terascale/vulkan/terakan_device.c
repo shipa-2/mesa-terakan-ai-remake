@@ -82,8 +82,8 @@ terakan_CreateDevice(VkPhysicalDevice const physicalDevice,
       terakan_physical_device_from_handle(physicalDevice);
 
    struct terakan_device * const device =
-      vk_alloc2(&physical_device->vk.instance->alloc, pAllocator, sizeof(*device), alignof(*device),
-                VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
+      vk_alloc2(&physical_device->vk.instance->alloc, pAllocator, sizeof(struct terakan_device),
+                alignof(struct terakan_device), VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
    if (device == NULL) {
       return vk_error(physical_device->vk.instance, VK_ERROR_OUT_OF_HOST_MEMORY);
    }

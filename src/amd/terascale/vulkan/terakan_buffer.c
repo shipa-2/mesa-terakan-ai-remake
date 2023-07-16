@@ -103,8 +103,8 @@ terakan_CreateBuffer(VkDevice const deviceHandle, VkBufferCreateInfo const * con
    struct terakan_device * const device = terakan_device_from_handle(deviceHandle);
 
    struct terakan_buffer * const buffer =
-      vk_alloc2(&device->vk.alloc, pAllocator, sizeof(*buffer), alignof(*buffer),
-                VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+      vk_alloc2(&device->vk.alloc, pAllocator, sizeof(struct terakan_buffer),
+                alignof(struct terakan_buffer), VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
    if (buffer == NULL) {
       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
    }
