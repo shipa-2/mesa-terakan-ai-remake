@@ -22,6 +22,7 @@
  */
 
 #include "terakan_state_rasterization.h"
+
 #include "terakan_command_buffer.h"
 #include "terakan_entrypoints.h"
 #include "terakan_state.h"

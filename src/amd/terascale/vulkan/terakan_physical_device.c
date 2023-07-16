@@ -26,6 +26,7 @@
  */
 
 #include "terakan_physical_device.h"
+
 #include "winsys/drm_radeon/terakan_winsys_drm_radeon.h"
 #include "terakan_descriptor.h"
 #include "terakan_entrypoints.h"

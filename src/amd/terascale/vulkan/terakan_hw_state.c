@@ -22,6 +22,7 @@
  */
 
 #include "terakan_hw_state.h"
+
 #include "terakan_command_buffer.h"
 #include "terakan_physical_device.h"
 

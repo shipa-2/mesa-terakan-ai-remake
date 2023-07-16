@@ -33,6 +33,7 @@
  */
 
 #include "terakan_format.h"
+
 #include "terakan_entrypoints.h"
 #include "terakan_image.h"
 #include "terakan_physical_device.h"

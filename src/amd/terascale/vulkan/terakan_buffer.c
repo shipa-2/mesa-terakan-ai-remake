@@ -22,6 +22,7 @@
  */
 
 #include "terakan_buffer.h"
+
 #include "terakan_descriptor.h"
 #include "terakan_device.h"
 #include "terakan_device_memory.h"

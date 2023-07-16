@@ -25,6 +25,7 @@
  */
 
 #include "terakan_image.h"
+
 #include "winsys/terakan_winsys.h"
 #include "terakan_device.h"
 #include "terakan_device_memory.h"

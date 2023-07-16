@@ -22,6 +22,7 @@
  */
 
 #include "terakan_device_memory.h"
+
 #include "winsys/terakan_winsys.h"
 #include "terakan_device.h"
 #include "terakan_entrypoints.h"

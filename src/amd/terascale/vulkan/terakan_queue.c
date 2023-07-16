@@ -22,6 +22,7 @@
  */
 
 #include "terakan_queue.h"
+
 #include "winsys/terakan_winsys.h"
 #include "terakan_command_buffer.h"
 #include "terakan_device.h"

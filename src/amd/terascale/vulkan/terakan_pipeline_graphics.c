@@ -22,6 +22,7 @@
  */
 
 #include "terakan_pipeline_graphics.h"
+
 #include "terakan_command_buffer.h"
 #include "terakan_state.h"
 #include "terakan_state_input_assembly.h"

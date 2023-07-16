@@ -25,6 +25,7 @@
  */
 
 #include "terakan_gpu_info.h"
+
 #include "terakan_descriptor.h"
 
 #include "util/u_math.h"

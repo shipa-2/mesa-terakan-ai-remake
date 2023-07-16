@@ -22,6 +22,7 @@
  */
 
 #include "terakan_sync_completion.h"
+
 #include "terakan_device.h"
 
 #include "util/macros.h"

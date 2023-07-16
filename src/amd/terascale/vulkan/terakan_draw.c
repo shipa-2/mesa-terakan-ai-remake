@@ -22,6 +22,7 @@
  */
 
 #include "terakan_draw.h"
+
 #include "terakan_buffer.h"
 #include "terakan_command_buffer.h"
 #include "terakan_entrypoints.h"

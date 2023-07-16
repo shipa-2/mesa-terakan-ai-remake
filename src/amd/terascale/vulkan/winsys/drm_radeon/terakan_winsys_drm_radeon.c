@@ -27,6 +27,7 @@
  */
 
 #include "terakan_winsys_drm_radeon.h"
+
 #include "terakan_sync_completion.h"
 
 #include "util/macros.h"
