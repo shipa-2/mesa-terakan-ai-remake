@@ -168,8 +168,11 @@ terakan_CreateInstance(VkInstanceCreateInfo const * const pCreateInfo,
 
    /* Direct3D 11 limit. */
    instance->max_per_stage_uniform_buffers = 15;
-   /* Vulkan minimum. */
-   instance->max_per_stage_input_attachments = 4;
+   /* 4 is the Vulkan minimum, but use all space not usable by vertex stages. */
+   instance->max_per_stage_input_attachments =
+      MAX2(TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL -
+              TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_NON_PIXEL,
+           4);
    instance->max_per_stage_sampled_images =
       MIN2(TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_NON_PIXEL - TERAKAN_LIMITS_HW_COLOR_RAT_COUNT -
               instance->max_per_stage_uniform_buffers,

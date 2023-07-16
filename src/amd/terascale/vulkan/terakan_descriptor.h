@@ -67,6 +67,12 @@
 #define TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS 0
 /* Dynamically indexable internal and application's push constants. */
 #define TERAKAN_RESOURCE_RANGE_PUSH_CONSTANTS (TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS + 1)
+/* VS: Base vertex and instance.
+ * GS and VS/TES ALT_CONST: Ring buffer.
+ * CS: Number of workgroups.
+ * Not needed in FS, so can be used for an additional input attachment.
+ */
+#define TERAKAN_RESOURCE_RANGE_NON_PIXEL_STAGE_SPECIFIC (TERAKAN_RESOURCE_HW_COUNT_VERTEX - 1)
 /* The 16 resources that fragment and compute shaders provide beyond the 160 available in vertex
  * stages can be fully allocated for resources needed only in those stages: 4 input attachments (the
  * minimum required by Vulkan) and 12 RAT IMMED buffers.
@@ -83,7 +89,7 @@
  */
 #define TERAKAN_RESOURCE_RANGE_MUTABLE_BASE (TERAKAN_RESOURCE_RANGE_PUSH_CONSTANTS + 1)
 #define TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_NON_PIXEL                                         \
-   (TERAKAN_RESOURCE_HW_COUNT_VERTEX - TERAKAN_RESOURCE_RANGE_MUTABLE_BASE)
+   (TERAKAN_RESOURCE_RANGE_NON_PIXEL_STAGE_SPECIFIC - TERAKAN_RESOURCE_RANGE_MUTABLE_BASE)
 #define TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL                                             \
    (TERAKAN_RESOURCE_RANGE_RAT_IMMEDIATE_BASE - TERAKAN_RESOURCE_RANGE_MUTABLE_BASE)
 static_assert(
