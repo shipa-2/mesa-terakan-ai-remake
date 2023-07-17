@@ -73,12 +73,6 @@ terakan_image_tile_split_bytes_to_hw(uint32_t const tile_split)
 
 uint32_t terakan_image_get_optimal_tiling_array_mode(VkImageCreateInfo const * image_create_info);
 
-static inline bool
-terakan_image_ac_surface_has_separate_stencil_layout(VkFormat const format)
-{
-   return vk_format_has_stencil(format) && vk_format_has_depth(format);
-}
-
 struct terakan_image {
    struct vk_image vk;
 
@@ -92,9 +86,7 @@ struct terakan_image {
     * 1 and 1_REVERSED are completely unsupported (as of May 2023, Vulkan doesn't have any 1-bit
     * formats).
     *
-    * For combined depth and stencil formats, the stencil layout information is valid.
-    * For stencil-only, the main aspect info stores the stencil info, and the separate stencil
-    * layout contains zeros.
+    * The stencil fields are valid only if has_stencil is true.
     *
     * u.legacy.num_banks may be zero - use terakan_gpu_info::tile_banks_log2 instead.
     */

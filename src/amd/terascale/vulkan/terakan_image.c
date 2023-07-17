@@ -172,8 +172,7 @@ terakan_GetImageSubresourceLayout(VkDevice const device, VkImage const imageHand
    struct terakan_image const * const image = terakan_image_from_handle(imageHandle);
 
    bool const is_stencil_layout =
-      pSubresource->aspectMask == VK_IMAGE_ASPECT_STENCIL_BIT &&
-      terakan_image_ac_surface_has_separate_stencil_layout(image->vk.format);
+      pSubresource->aspectMask == VK_IMAGE_ASPECT_STENCIL_BIT && image->surface.has_stencil;
    struct legacy_surf_level const * const level =
       is_stencil_layout ? &image->surface.u.legacy.zs.stencil_level[pSubresource->mipLevel]
                         : &image->surface.u.legacy.level[pSubresource->mipLevel];
@@ -316,8 +315,7 @@ terakan_image_create_resource_descriptor(VkImageViewCreateInfo const * const ima
       signs = terakan_format_texture_get_word4_signs(image_view_create_info->format);
    }
 
-   bool const is_stencil_layout =
-      is_stencil_aspect && terakan_image_ac_surface_has_separate_stencil_layout(image->vk.format);
+   bool const is_stencil_layout = is_stencil_aspect && image->surface.has_stencil;
    struct legacy_surf_level const * const level =
       is_stencil_layout
          ? &image->surface.u.legacy.zs
@@ -397,8 +395,9 @@ terakan_image_create_resource_descriptor(VkImageViewCreateInfo const * const ima
              : image_view_create_info->subresourceRange.baseArrayLayer + layer_count) -
          1);
 
-   descriptor_out[6] =
-      S_030018_TILE_SPLIT(terakan_image_tile_split_bytes_to_hw(image->surface.u.legacy.tile_split));
+   descriptor_out[6] = S_030018_TILE_SPLIT(terakan_image_tile_split_bytes_to_hw(
+      is_stencil_layout ? image->surface.u.legacy.stencil_tile_split
+                        : image->surface.u.legacy.tile_split));
 
    descriptor_out[7] =
       S_03001C_DATA_FORMAT(data_format) |
@@ -477,8 +476,7 @@ terakan_image_create_color_descriptor(
    struct terakan_image const * const image =
       terakan_image_from_handle(image_view_create_info->image);
 
-   bool const is_stencil_layout =
-      is_stencil_aspect && terakan_image_ac_surface_has_separate_stencil_layout(image->vk.format);
+   bool const is_stencil_layout = is_stencil_aspect && image->surface.has_stencil;
    struct legacy_surf_level const * const level =
       is_stencil_layout
          ? &image->surface.u.legacy.zs
@@ -539,8 +537,9 @@ terakan_image_create_color_descriptor(
    descriptor_out->attrib =
       S_028C74_NON_DISP_TILING_ORDER(terakan_image_uses_cb_non_display_tiling(
          gpu_info->gfx_level, image->vk.format, level->mode <= RADEON_SURF_MODE_LINEAR_ALIGNED)) |
-      S_028C74_TILE_SPLIT(
-         terakan_image_tile_split_bytes_to_hw(image->surface.u.legacy.tile_split)) |
+      S_028C74_TILE_SPLIT(terakan_image_tile_split_bytes_to_hw(
+         is_stencil_layout ? image->surface.u.legacy.stencil_tile_split
+                           : image->surface.u.legacy.tile_split)) |
       S_028C74_NUM_BANKS(gpu_info->tile_banks_log2 - 1) |
       S_028C74_BANK_WIDTH(util_logbase2(image->surface.u.legacy.bankw)) |
       S_028C74_BANK_HEIGHT(util_logbase2(image->surface.u.legacy.bankh)) |

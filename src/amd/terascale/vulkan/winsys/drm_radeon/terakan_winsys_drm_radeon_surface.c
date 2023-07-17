@@ -73,7 +73,22 @@ terakan_winsys_drm_radeon_surface_drm_to_ac(struct radeon_surface const * const 
    surface_out->u.legacy.bankw = drm_surface->bankw;
    surface_out->u.legacy.bankh = drm_surface->bankh;
    surface_out->u.legacy.mtilea = drm_surface->mtilea;
-   surface_out->u.legacy.tile_split = drm_surface->tile_split;
+   /* Tile split is only applicable to 2D tiling and is consistently computed by libdrm_radeon only
+    * for it, in particular, as of July 2023, for non-2D tiling, libdrm_radeon sets tile_split to
+    * 1024, but doesn't write stencil_tile_split.
+    */
+   if (RADEON_SURF_GET(drm_surface->flags, MODE) == RADEON_SURF_MODE_2D) {
+      assert(drm_surface->tile_split >= ((uint32_t)1 << 6) &&
+             drm_surface->tile_split <= ((uint32_t)1 << 12));
+      assert(!(drm_surface->flags & RADEON_SURF_SBUFFER) ||
+             (drm_surface->stencil_tile_split >= ((uint32_t)1 << 6) &&
+              drm_surface->stencil_tile_split <= ((uint32_t)1 << 12)));
+      surface_out->u.legacy.tile_split = drm_surface->tile_split;
+      surface_out->u.legacy.stencil_tile_split = drm_surface->stencil_tile_split;
+   } else {
+      surface_out->u.legacy.tile_split = (uint32_t)1 << 10;
+      surface_out->u.legacy.stencil_tile_split = (uint32_t)1 << 10;
+   }
 
    for (uint32_t level = 0; level <= drm_surface->last_level; ++level) {
       terakan_winsys_drm_radeon_surface_level_drm_to_ac(&drm_surface->level[level],
@@ -84,13 +99,22 @@ terakan_winsys_drm_radeon_surface_drm_to_ac(struct radeon_surface const * const 
    if (drm_surface->flags & RADEON_SURF_SBUFFER) {
       surface_out->has_stencil = 1;
 
-      surface_out->u.legacy.stencil_tile_split = drm_surface->stencil_tile_split;
-
-      for (uint32_t level = 0; level <= drm_surface->last_level; ++level) {
-         terakan_winsys_drm_radeon_surface_level_drm_to_ac(
-            &drm_surface->stencil_level[level], &surface_out->u.legacy.zs.stencil_level[level]);
-         surface_out->u.legacy.zs.stencil_tiling_index[level] =
-            drm_surface->stencil_tiling_index[level];
+      /* libdrm_radeon as of July 2023 properly configures the stencil fields only if the surface
+       * contains both depth and stencil.
+       */
+      if (drm_surface->flags & RADEON_SURF_ZBUFFER) {
+         for (uint32_t level = 0; level <= drm_surface->last_level; ++level) {
+            terakan_winsys_drm_radeon_surface_level_drm_to_ac(
+               &drm_surface->stencil_level[level], &surface_out->u.legacy.zs.stencil_level[level]);
+            surface_out->u.legacy.zs.stencil_tiling_index[level] =
+               drm_surface->stencil_tiling_index[level];
+         }
+      } else {
+         /* The only aspect is stencil. */
+         memcpy(surface_out->u.legacy.zs.stencil_level, surface_out->u.legacy.level,
+                sizeof(surface_out->u.legacy.level[0]) * (drm_surface->last_level + 1));
+         memcpy(surface_out->u.legacy.zs.stencil_tiling_index, surface_out->u.legacy.tiling_index,
+                sizeof(surface_out->u.legacy.tiling_index[0]) * (drm_surface->last_level + 1));
       }
    }
 }
