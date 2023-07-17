@@ -26,11 +26,15 @@
 #include "winsys/terakan_winsys.h"
 #include "terakan_device.h"
 #include "terakan_entrypoints.h"
+#include "terakan_image.h"
 #include "terakan_physical_device.h"
 
 #include "util/macros.h"
 #include "vk_alloc.h"
 #include "vk_log.h"
+#include "vk_util.h"
+
+#include <stddef.h>
 
 VKAPI_ATTR VkResult VKAPI_CALL
 terakan_FlushMappedMemoryRanges(VkDevice const device, uint32_t const memoryRangeCount,
@@ -98,6 +102,8 @@ terakan_AllocateMemory(VkDevice const deviceHandle,
                        VkMemoryAllocateInfo const * const pAllocateInfo,
                        VkAllocationCallbacks const * pAllocator, VkDeviceMemory * const pMemory)
 {
+   VkResult result;
+
    struct terakan_device * const device = terakan_device_from_handle(deviceHandle);
 
    struct terakan_device_memory * const device_memory = vk_object_alloc(
@@ -114,11 +120,29 @@ terakan_AllocateMemory(VkDevice const deviceHandle,
       physical_device->winsys->gpu_info.buffer_image_bo_alignment,
       physical_device->memory_properties.memoryTypes[pAllocateInfo->memoryTypeIndex].propertyFlags);
    if (device_memory->bo == NULL) {
-      vk_object_free(&device->vk, pAllocator, device_memory);
-      return vk_error(device, VK_ERROR_OUT_OF_DEVICE_MEMORY);
+      result = vk_error(device, VK_ERROR_OUT_OF_DEVICE_MEMORY);
+      goto fail_device_memory;
+   }
+
+   VkMemoryDedicatedAllocateInfo const * const dedicated_info =
+      vk_find_struct_const(pAllocateInfo, MEMORY_DEDICATED_ALLOCATE_INFO);
+   if (dedicated_info != NULL) {
+      struct terakan_image const * const dedicated_image =
+         terakan_image_from_handle(dedicated_info->image);
+      if (dedicated_image != NULL && !physical_device->winsys->bo_fn->set_tiling_for_surface(
+                                        device_memory->bo, &dedicated_image->surface)) {
+         result = vk_error(device, VK_ERROR_UNKNOWN);
+         goto fail_bo;
+      }
    }
 
    *pMemory = terakan_device_memory_to_handle(device_memory);
 
    return VK_SUCCESS;
+
+fail_bo:
+   terakan_winsys_bo_free(device_memory->bo);
+fail_device_memory:
+   vk_object_free(&device->vk, pAllocator, device_memory);
+   return result;
 }

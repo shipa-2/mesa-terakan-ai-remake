@@ -89,6 +89,10 @@ struct terakan_winsys_fn {
 };
 
 struct terakan_winsys_bo_fn {
+   /* Returns whether setting was successful. */
+   bool (*set_tiling_for_surface)(struct terakan_winsys_bo * bo,
+                                  struct radeon_surf const * surface);
+
    void * (*map_impl)(struct terakan_winsys_bo * bo);
    void (*unmap_impl)(struct terakan_winsys_bo * bo);
 

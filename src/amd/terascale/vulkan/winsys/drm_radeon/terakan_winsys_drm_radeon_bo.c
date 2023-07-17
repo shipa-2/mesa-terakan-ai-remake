@@ -26,6 +26,7 @@
  * IN THE SOFTWARE.
  */
 
+#include "terakan_image.h"
 #include "terakan_winsys_drm_radeon.h"
 
 #include "util/macros.h"
@@ -41,6 +42,35 @@
 #include <stdio.h>
 #include <xf86drm.h>
 #include <radeon_drm.h>
+
+static bool
+terakan_winsys_drm_radeon_bo_set_tiling_for_surface(struct terakan_winsys_bo * const bo_base,
+                                                    struct radeon_surf const * const surface)
+{
+   struct terakan_winsys_drm_radeon_bo const * const bo =
+      container_of(bo_base, struct terakan_winsys_drm_radeon_bo, base);
+   struct terakan_winsys_drm_radeon const * const winsys =
+      container_of(bo->base.winsys, struct terakan_winsys_drm_radeon const, base);
+
+   struct drm_radeon_gem_set_tiling set_tiling_arguments = {
+      .handle = bo->handle,
+      .tiling_flags =
+         (surface->u.legacy.level[0].mode >= RADEON_SURF_MODE_2D ? RADEON_TILING_MACRO : 0) |
+         (surface->u.legacy.level[0].mode >= RADEON_SURF_MODE_1D ? RADEON_TILING_MICRO : 0) |
+         (__u32)surface->u.legacy.bankw << RADEON_TILING_EG_BANKW_SHIFT |
+         (__u32)surface->u.legacy.bankh << RADEON_TILING_EG_BANKH_SHIFT |
+         (__u32)surface->u.legacy.mtilea << RADEON_TILING_EG_MACRO_TILE_ASPECT_SHIFT |
+         terakan_image_tile_split_bytes_to_hw(surface->u.legacy.tile_split)
+            << RADEON_TILING_EG_TILE_SPLIT_SHIFT |
+         (surface->has_stencil
+             ? terakan_image_tile_split_bytes_to_hw(surface->u.legacy.stencil_tile_split)
+                  << RADEON_TILING_EG_STENCIL_TILE_SPLIT_SHIFT
+             : 0),
+      .pitch = surface->bpe * (__u32)surface->u.legacy.level[0].nblk_x,
+   };
+   return drmCommandWriteRead(winsys->fd, DRM_RADEON_GEM_SET_TILING, &set_tiling_arguments,
+                              sizeof(set_tiling_arguments)) == 0;
+}
 
 static void *
 terakan_winsys_drm_radeon_bo_map_impl(struct terakan_winsys_bo * const bo_base)
@@ -194,6 +224,7 @@ terakan_winsys_drm_radeon_bo_allocate_device_memory(struct terakan_winsys * cons
 }
 
 struct terakan_winsys_bo_fn const terakan_winsys_drm_radeon_bo_fn = {
+   .set_tiling_for_surface = terakan_winsys_drm_radeon_bo_set_tiling_for_surface,
    .map_impl = terakan_winsys_drm_radeon_bo_map_impl,
    .unmap_impl = terakan_winsys_drm_radeon_bo_unmap_impl,
    .wait_idle = terakan_winsys_drm_radeon_bo_wait_idle,
