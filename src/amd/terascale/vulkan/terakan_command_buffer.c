@@ -209,7 +209,8 @@ terakan_command_buffer_allocate_push_constants(struct terakan_command_buffer * c
          winsys, TERAKAN_CONSTANT_CACHE_LINE_BYTES * buffer_size_cache_lines,
          TERAKAN_CONSTANT_CACHE_LINE_BYTES,
          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+         0);
       if (new_buffer->bo == NULL) {
          vk_command_buffer_set_error(&command_buffer->vk, VK_ERROR_OUT_OF_DEVICE_MEMORY);
          vk_free(&command_pool->vk.alloc, new_buffer);

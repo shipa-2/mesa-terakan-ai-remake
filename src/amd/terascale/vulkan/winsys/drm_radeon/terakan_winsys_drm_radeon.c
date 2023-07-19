@@ -76,6 +76,9 @@ terakan_winsys_drm_radeon_destroy(struct terakan_winsys * const winsys_base)
    struct terakan_winsys_drm_radeon * const winsys =
       container_of(winsys_base, struct terakan_winsys_drm_radeon, base);
 
+   _mesa_hash_table_destroy(winsys->shared_bo_reference_counts, NULL);
+   mtx_destroy(&winsys->shared_bo_mutex);
+
    radeon_surface_manager_free(winsys->surface_manager);
 
    FREE(winsys);
@@ -198,6 +201,20 @@ terakan_winsys_drm_radeon_create(int const fd)
       goto fail_alloc;
    }
 
+   /* Initialize buffer object sharing. */
+   if (mtx_init(&winsys->shared_bo_mutex, mtx_plain) != thrd_success) {
+      fputs(
+         "terakan/drm_radeon: Failed to initialize the shared buffer reference counting mutex.\n",
+         stderr);
+      goto fail_surface_manager;
+   }
+   winsys->shared_bo_reference_counts = _mesa_pointer_hash_table_create(NULL);
+   if (winsys->shared_bo_reference_counts == NULL) {
+      fputs("terakan/drm_radeon: Failed to create the shared buffer reference count table.\n",
+            stderr);
+      goto fail_shared_bo_mutex;
+   }
+
    /* Initialize synchronization. */
    size_t sync_type_count = 0;
    assert(sync_type_count < ARRAY_SIZE(winsys->sync_types));
@@ -210,6 +227,10 @@ terakan_winsys_drm_radeon_create(int const fd)
 
    return &winsys->base;
 
+fail_shared_bo_mutex:
+   mtx_destroy(&winsys->shared_bo_mutex);
+fail_surface_manager:
+   radeon_surface_manager_free(winsys->surface_manager);
 fail_alloc:
    FREE(winsys);
    return NULL;

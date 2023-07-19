@@ -122,7 +122,8 @@ terakan_CreateDevice(VkPhysicalDevice const physicalDevice,
    device->meta_shaders_bo = physical_device->winsys->bo_fn->allocate_device_memory(
       physical_device->winsys, meta_shaders_bo_size, TERAKAN_SHADER_PROGRAM_ALIGNMENT,
       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+      0);
    if (device->meta_shaders_bo == NULL) {
       result = vk_errorf(physical_device->vk.instance, VK_ERROR_OUT_OF_DEVICE_MEMORY,
                          "Failed to allocate memory for internal shaders");

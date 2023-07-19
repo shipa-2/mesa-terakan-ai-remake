@@ -31,6 +31,8 @@
 
 #include "../terakan_winsys.h"
 
+#include "c11/threads.h"
+#include "util/hash_table.h"
 #include "vk_sync.h"
 #include "vk_sync_binary.h"
 
@@ -47,6 +49,8 @@ struct terakan_winsys_drm_radeon_bo {
    __u32 domains;
 
    __u32 handle;
+
+   bool handle_shareable;
 };
 
 extern struct terakan_winsys_surface_fn const terakan_winsys_drm_radeon_surface_fn;
@@ -62,6 +66,15 @@ struct terakan_winsys_drm_radeon {
    int fd;
 
    struct radeon_surface_manager * surface_manager;
+
+   /* Implementing reference counting for shared BO handles, since drmPrimeFDToHandle returns the
+    * same handle when importing the same BO multiple times even with different file descriptors,
+    * and GEM has no implicit reference counting for BO handles.
+    * Reference count updates must be done atomically with drmPrimeFDToHandle and
+    * DRM_IOCTL_GEM_CLOSE using the mutex.
+    */
+   mtx_t shared_bo_mutex;
+   struct hash_table * shared_bo_reference_counts;
 
    struct vk_sync_binary_type sync_type_binary;
    struct vk_sync_type const * sync_types[3];

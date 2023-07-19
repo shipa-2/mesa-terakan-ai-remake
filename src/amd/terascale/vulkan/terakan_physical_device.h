@@ -52,6 +52,8 @@ struct terakan_physical_device {
    dev_t drm_render_devid;
 #endif
 
+   uint8_t device_uuid[VK_UUID_SIZE];
+
    VkPhysicalDeviceMemoryProperties memory_properties;
 
    struct wsi_device wsi_device;

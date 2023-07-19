@@ -44,9 +44,10 @@ static struct debug_control const terakan_debug_options[] = {{"startup", TERAKAN
                                                              {NULL, 0}};
 
 static struct vk_instance_extension_table const terakan_instance_extensions_supported = {
-   .KHR_get_physical_device_properties2 = true,
    .EXT_debug_report = true,
    .EXT_debug_utils = true,
+   .KHR_external_memory_capabilities = true,
+   .KHR_get_physical_device_properties2 = true,
 
 #if defined(TERAKAN_USE_WSI_PLATFORM)
    .KHR_surface = true,

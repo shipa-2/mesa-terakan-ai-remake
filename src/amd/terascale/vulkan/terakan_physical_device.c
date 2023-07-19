@@ -38,6 +38,7 @@
 #include "util/macros.h"
 #include "util/u_math.h"
 #include "vk_alloc.h"
+#include "vk_device.h"
 #include "vk_extensions.h"
 #include "vk_log.h"
 #include "vk_util.h"
@@ -79,13 +80,16 @@ terakan_physical_device_get_supported_extensions(
    extensions_out->KHR_bind_memory2 = true;
    extensions_out->KHR_dedicated_allocation = true;
    extensions_out->KHR_dynamic_rendering = true;
+   extensions_out->KHR_external_memory = true;
    extensions_out->KHR_format_feature_flags2 = true;
    extensions_out->KHR_map_memory2 = true;
    extensions_out->KHR_timeline_semaphore = true;
 
 #if !defined(_WIN32)
+   extensions_out->EXT_external_memory_dma_buf = true;
    extensions_out->EXT_pci_bus_info = true;
    extensions_out->EXT_physical_device_drm = true;
+   extensions_out->KHR_external_memory_fd = true;
 #endif
 
 #ifdef TERAKAN_USE_WSI_PLATFORM
@@ -453,6 +457,43 @@ terakan_GetPhysicalDeviceProperties(VkPhysicalDevice const physicalDevice,
    limits->nonCoherentAtomSize = 1;
 }
 
+static void
+terakan_physical_device_get_properties_1_1(struct terakan_physical_device const * const device,
+                                           uint32_t const max_per_set_descriptors,
+                                           VkPhysicalDeviceVulkan11Properties * const properties)
+{
+   assert(properties->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES);
+
+   memcpy(properties->deviceUUID, device->device_uuid, sizeof(properties->deviceUUID));
+
+   char const driver_uuid[] = "AMD-MESA-DRV";
+   static_assert(sizeof(driver_uuid) <= sizeof(properties->driverUUID),
+                 "Driver UUID must fit into the Vulkan UUID field.");
+   memcpy(properties->driverUUID, driver_uuid, sizeof(driver_uuid));
+   memset(properties->driverUUID + sizeof(driver_uuid), 0,
+          sizeof(properties->driverUUID) - sizeof(driver_uuid));
+
+   memset(properties->deviceLUID, 0, sizeof(properties->deviceLUID));
+   properties->deviceNodeMask = 0;
+   properties->deviceLUIDValid = VK_FALSE;
+
+   properties->subgroupSize = 64;
+   properties->subgroupSupportedStages = 0;
+   properties->subgroupSupportedOperations = 0;
+   properties->subgroupQuadOperationsInAllStages = VK_FALSE;
+
+   properties->pointClippingBehavior = VK_POINT_CLIPPING_BEHAVIOR_ALL_CLIP_PLANES;
+
+   properties->maxMultiviewViewCount = 1;
+   properties->maxMultiviewInstanceIndex = UINT32_MAX;
+
+   properties->protectedNoFault = VK_FALSE;
+
+   properties->maxPerSetDescriptors = max_per_set_descriptors;
+
+   properties->maxMemoryAllocationSize = device->winsys->gpu_info.max_bo_size;
+}
+
 VKAPI_ATTR void VKAPI_CALL
 terakan_GetPhysicalDeviceProperties2(VkPhysicalDevice const physicalDevice,
                                      VkPhysicalDeviceProperties2 * const pProperties)
@@ -462,8 +503,18 @@ terakan_GetPhysicalDeviceProperties2(VkPhysicalDevice const physicalDevice,
 
    terakan_GetPhysicalDeviceProperties(physicalDevice, &pProperties->properties);
 
+   VkPhysicalDeviceVulkan11Properties core_1_1;
+   core_1_1.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES;
+   core_1_1.pNext = NULL;
+   terakan_physical_device_get_properties_1_1(
+      device, pProperties->properties.limits.maxBoundDescriptorSets, &core_1_1);
+
    vk_foreach_struct(ext, pProperties->pNext)
    {
+      if (vk_get_physical_device_core_1_1_property_ext(ext, &core_1_1)) {
+         continue;
+      }
+
       switch (ext->sType) {
       case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_PROPERTIES_EXT: {
          VkPhysicalDeviceExtendedDynamicState3PropertiesEXT * const properties =
@@ -510,6 +561,7 @@ terakan_GetPhysicalDeviceProperties2(VkPhysicalDevice const physicalDevice,
          properties->transformFeedbackPreservesTriangleFanProvokingVertex = VK_TRUE;
       } break;
 
+      /* TODO(Triang3l): Move to VkPhysicalDeviceVulkan12Properties. */
       case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_PROPERTIES: {
          VkPhysicalDeviceTimelineSemaphoreProperties * const properties =
             (VkPhysicalDeviceTimelineSemaphoreProperties *)ext;
@@ -704,6 +756,19 @@ terakan_physical_device_try_create_for_drm(struct vk_instance * const instance_b
    }
 
    device->vk.supported_sync_types = device->winsys->fn->get_sync_types(device->winsys);
+
+   /* Same as ac_compute_device_uuid as of July 2023. */
+   uint32_t const device_uuid_u32[] = {
+      device->drm_bus_info.domain,
+      device->drm_bus_info.bus,
+      device->drm_bus_info.dev,
+      device->drm_bus_info.func,
+   };
+   static_assert(sizeof(device_uuid_u32) <= sizeof(device->device_uuid),
+                 "Computed device UUID must fit into the Vulkan UUID field.");
+   memcpy(device->device_uuid, device_uuid_u32, sizeof(device_uuid_u32));
+   memset(device->device_uuid + sizeof(device_uuid_u32), 0,
+          sizeof(device->device_uuid) - sizeof(device_uuid_u32));
 
    terakan_physical_device_init_memory_properties(device);
 

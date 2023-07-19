@@ -114,9 +114,18 @@ struct terakan_winsys_bo_fn {
     * memory. Falling back to trying HOST_VISIBLE alone if a HOST_VISIBLE | DEVICE_LOCAL allocation
     * attempt fails is also not necessary.
     */
-   struct terakan_winsys_bo * (*allocate_device_memory)(struct terakan_winsys * winsys,
-                                                        VkDeviceSize size, VkDeviceSize alignment,
-                                                        VkMemoryPropertyFlags flags);
+   struct terakan_winsys_bo * (*allocate_device_memory)(
+      struct terakan_winsys * winsys, VkDeviceSize size, VkDeviceSize alignment,
+      VkMemoryPropertyFlags flags, VkExternalMemoryHandleTypeFlags export_handle_types);
+
+#if !defined(_WIN32)
+   int (*export_fd)(struct terakan_winsys_bo * bo, bool writable);
+   /* Returns whether the query was successful. */
+   bool (*get_fd_vram_preference)(struct terakan_winsys * winsys, int fd,
+                                  bool * vram_preferred_out);
+   struct terakan_winsys_bo * (*import_fd)(struct terakan_winsys * winsys, int fd,
+                                           VkDeviceSize size, bool prefer_vram);
+#endif
 };
 
 struct terakan_winsys_cs_fn {

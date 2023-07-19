@@ -290,7 +290,7 @@ terakan_queue_submit(struct vk_queue * const queue_base, struct vk_queue_submit 
       }
       completion_submission->bo = winsys->bo_fn->allocate_device_memory(
          winsys, sizeof(uint64_t), sizeof(uint64_t),
-         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 0);
       if (completion_submission->bo == NULL) {
          vk_device_set_lost(&device->vk,
                             "Failed to create the submission completion fence buffer object");

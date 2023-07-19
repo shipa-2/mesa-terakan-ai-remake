@@ -38,6 +38,40 @@
 #include <stdint.h>
 
 VKAPI_ATTR void VKAPI_CALL
+terakan_GetPhysicalDeviceExternalBufferProperties(
+   VkPhysicalDevice const physicalDevice,
+   VkPhysicalDeviceExternalBufferInfo const * const pExternalBufferInfo,
+   VkExternalBufferProperties * const pExternalBufferProperties)
+{
+   switch (pExternalBufferInfo->handleType) {
+#if !defined(_WIN32)
+   case VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT:
+   case VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT:
+      pExternalBufferProperties->externalMemoryProperties.externalMemoryFeatures =
+         VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT | VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT;
+      pExternalBufferProperties->externalMemoryProperties.exportFromImportedHandleTypes =
+         VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT |
+         VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
+      pExternalBufferProperties->externalMemoryProperties.compatibleHandleTypes =
+         VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT |
+         VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
+      break;
+#endif
+
+   default:
+      pExternalBufferProperties->externalMemoryProperties.externalMemoryFeatures = 0;
+      pExternalBufferProperties->externalMemoryProperties.exportFromImportedHandleTypes = 0;
+      /* From the VkExternalMemoryProperties specification:
+       *
+       *    compatibleHandleTypes must include at least handleType.
+       */
+      pExternalBufferProperties->externalMemoryProperties.compatibleHandleTypes =
+         pExternalBufferInfo->handleType;
+      break;
+   }
+}
+
+VKAPI_ATTR void VKAPI_CALL
 terakan_GetDeviceBufferMemoryRequirements(VkDevice const deviceHandle,
                                           VkDeviceBufferMemoryRequirements const * const pInfo,
                                           VkMemoryRequirements2 * const pMemoryRequirements)

@@ -35,6 +35,7 @@
 
 #include <assert.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <inttypes.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -135,30 +136,85 @@ terakan_winsys_drm_radeon_bo_wait_idle(struct terakan_winsys_bo * const bo_base)
                           sizeof(gem_wait_idle_arguments)) == 0;
 }
 
+static int
+terakan_winsys_drm_radeon_bo_export_fd(struct terakan_winsys_bo * const bo_base,
+                                       bool const writable)
+{
+   struct terakan_winsys_drm_radeon_bo * const bo =
+      container_of(bo_base, struct terakan_winsys_drm_radeon_bo, base);
+
+   if (!bo->handle_shareable) {
+      return -1;
+   }
+
+   struct terakan_winsys_drm_radeon const * const winsys =
+      container_of(bo->base.winsys, struct terakan_winsys_drm_radeon const, base);
+
+   int fd;
+   if (drmPrimeHandleToFD(winsys->fd, bo->handle, DRM_CLOEXEC | (writable ? DRM_RDWR : 0), &fd) !=
+       0) {
+      return -1;
+   }
+   return fd;
+}
+
 static void
 terakan_winsys_drm_radeon_bo_free_impl(struct terakan_winsys_bo * const bo_base)
 {
    struct terakan_winsys_drm_radeon_bo * const bo =
       container_of(bo_base, struct terakan_winsys_drm_radeon_bo, base);
-   struct terakan_winsys_drm_radeon const * const winsys =
-      container_of(bo->base.winsys, struct terakan_winsys_drm_radeon const, base);
+   struct terakan_winsys_drm_radeon * const winsys =
+      container_of(bo->base.winsys, struct terakan_winsys_drm_radeon, base);
 
-   struct drm_gem_close gem_close_arguments = {
-      .handle = bo->handle,
-   };
-   drmIoctl(winsys->fd, DRM_IOCTL_GEM_CLOSE, &gem_close_arguments);
+   bool close_bo;
+   if (bo->handle_shareable) {
+      /* Close the handle atomically with reference count management to make sure the handle isn't
+       * closed while another thread is importing the same GEM BO or destroying another winsys BO
+       * for this GEM BO.
+       */
+      mtx_lock(&winsys->shared_bo_mutex);
+      struct hash_entry * const reference_count_entry =
+         _mesa_hash_table_search(winsys->shared_bo_reference_counts, (void *)(uintptr_t)bo->handle);
+      assert(reference_count_entry != NULL && "All shareable BOs must be reference-counted");
+      uintptr_t const old_reference_count = (uintptr_t)reference_count_entry->data;
+      assert(old_reference_count > 0);
+      if (old_reference_count > 1) {
+         reference_count_entry->data = (void *)(old_reference_count - 1);
+         close_bo = false;
+      } else {
+         _mesa_hash_table_remove(winsys->shared_bo_reference_counts, reference_count_entry);
+         close_bo = true;
+      }
+   } else {
+      close_bo = true;
+   }
+
+   if (close_bo) {
+      struct drm_gem_close gem_close_arguments = {.handle = bo->handle};
+      drmIoctl(winsys->fd, DRM_IOCTL_GEM_CLOSE, &gem_close_arguments);
+   }
+
+   if (bo->handle_shareable) {
+      mtx_unlock(&winsys->shared_bo_mutex);
+   }
 
    FREE(bo);
 }
 
 static struct terakan_winsys_bo *
-terakan_winsys_drm_radeon_bo_allocate_device_memory(struct terakan_winsys * const winsys_base,
-                                                    VkDeviceSize const size,
-                                                    VkDeviceSize const alignment,
-                                                    VkMemoryPropertyFlags const flags)
+terakan_winsys_drm_radeon_bo_allocate_device_memory(
+   struct terakan_winsys * const winsys_base, VkDeviceSize const size, VkDeviceSize const alignment,
+   VkMemoryPropertyFlags const flags, VkExternalMemoryHandleTypeFlags const export_handle_types)
 {
    struct terakan_winsys_drm_radeon * const winsys =
       container_of(winsys_base, struct terakan_winsys_drm_radeon, base);
+
+   struct terakan_winsys_drm_radeon_bo * const bo = MALLOC_STRUCT(terakan_winsys_drm_radeon_bo);
+   if (bo == NULL) {
+      fputs("terakan/drm_radeon: Failed to allocate memory for the winsys buffer structure.\n",
+            stderr);
+      return NULL;
+   }
 
    struct drm_radeon_gem_create gem_create_arguments = {};
 
@@ -198,17 +254,7 @@ terakan_winsys_drm_radeon_bo_allocate_device_memory(struct terakan_winsys * cons
       fprintf(stderr, "terakan/drm_radeon:    Domains: 0x%" PRIX32 "\n", (uint32_t)initial_domains);
       fprintf(stderr, "terakan/drm_radeon:    Flags: 0x%" PRIX32 "\n",
               (uint32_t)gem_create_arguments.flags);
-      return NULL;
-   }
-
-   struct terakan_winsys_drm_radeon_bo * const bo = MALLOC_STRUCT(terakan_winsys_drm_radeon_bo);
-   if (bo == NULL) {
-      fputs("terakan/drm_radeon: Failed to allocate memory for the winsys buffer structure.\n",
-            stderr);
-      struct drm_gem_close gem_close_arguments = {
-         .handle = gem_create_arguments.handle,
-      };
-      drmIoctl(winsys->fd, DRM_IOCTL_GEM_CLOSE, &gem_close_arguments);
+      FREE(bo);
       return NULL;
    }
 
@@ -220,6 +266,144 @@ terakan_winsys_drm_radeon_bo_allocate_device_memory(struct terakan_winsys * cons
 
    bo->handle = gem_create_arguments.handle;
 
+   if (export_handle_types & (VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT |
+                              VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT)) {
+      bo->handle_shareable = true;
+
+      mtx_lock(&winsys->shared_bo_mutex);
+      bool const shared_handle_reference_count_inserted =
+         _mesa_hash_table_insert(winsys->shared_bo_reference_counts,
+                                 (void *)(uintptr_t)gem_create_arguments.handle, (void *)1) != NULL;
+      mtx_unlock(&winsys->shared_bo_mutex);
+      if (!shared_handle_reference_count_inserted) {
+         fputs("terakan/drm_radeon: Failed to insert the buffer reference count into the table.\n",
+               stderr);
+         struct drm_gem_close gem_close_arguments = {.handle = gem_create_arguments.handle};
+         drmIoctl(winsys->fd, DRM_IOCTL_GEM_CLOSE, &gem_close_arguments);
+         FREE(bo);
+         return NULL;
+      }
+   } else {
+      bo->handle_shareable = false;
+   }
+
+   return &bo->base;
+}
+
+static bool
+terakan_winsys_drm_radeon_bo_get_fd_vram_preference(struct terakan_winsys * const winsys_base,
+                                                    int const fd, bool * const vram_preferred_out)
+{
+   struct terakan_winsys_drm_radeon * const winsys =
+      container_of(winsys_base, struct terakan_winsys_drm_radeon, base);
+
+   /* Get the handle atomically with reference count management to make sure the handle isn't closed
+    * by another thread while it's being imported.
+    */
+   mtx_lock(&winsys->shared_bo_mutex);
+
+   __u32 handle;
+   if (drmPrimeFDToHandle(winsys->fd, fd, &handle) != 0) {
+      return false;
+   }
+
+   struct drm_radeon_gem_op gem_op_arguments = {
+      .handle = handle,
+      .op = RADEON_GEM_OP_GET_INITIAL_DOMAIN,
+   };
+   int const gem_op_result = drmCommandWriteRead(winsys->fd, DRM_RADEON_GEM_OP, &gem_op_arguments,
+                                                 sizeof(gem_op_arguments));
+
+   /* Close the handle if there are no winsys BOs backed by the same GEM BO. */
+   struct hash_entry * const reference_count_entry =
+      _mesa_hash_table_search(winsys->shared_bo_reference_counts, (void *)(uintptr_t)handle);
+   assert(reference_count_entry == NULL || (uintptr_t)reference_count_entry->data > 0);
+   if (reference_count_entry == NULL) {
+      struct drm_gem_close gem_close_arguments = {.handle = handle};
+      drmIoctl(winsys->fd, DRM_IOCTL_GEM_CLOSE, &gem_close_arguments);
+   }
+
+   mtx_unlock(&winsys->shared_bo_mutex);
+
+   if (gem_op_result != 0) {
+      return false;
+   }
+
+   *vram_preferred_out = (gem_op_arguments.value & RADEON_GEM_DOMAIN_VRAM) != 0;
+
+   return true;
+}
+
+static struct terakan_winsys_bo *
+terakan_winsys_drm_radeon_bo_import_fd(struct terakan_winsys * const winsys_base, int const fd,
+                                       VkDeviceSize const size, bool const prefer_vram)
+{
+   struct terakan_winsys_drm_radeon * const winsys =
+      container_of(winsys_base, struct terakan_winsys_drm_radeon, base);
+
+   struct terakan_winsys_drm_radeon_bo * const bo = MALLOC_STRUCT(terakan_winsys_drm_radeon_bo);
+   if (bo == NULL) {
+      fputs("terakan/drm_radeon: Failed to allocate memory for the winsys buffer structure.\n",
+            stderr);
+      return NULL;
+   }
+
+   /* Get the handle atomically with reference count management to make sure the handle isn't closed
+    * by another thread while it's being imported.
+    */
+   mtx_lock(&winsys->shared_bo_mutex);
+
+   __u32 handle;
+   int const prime_fd_to_handle_result = drmPrimeFDToHandle(winsys->fd, fd, &handle);
+   if (prime_fd_to_handle_result != 0) {
+      mtx_unlock(&winsys->shared_bo_mutex);
+      fprintf(
+         stderr,
+         "terakan/drm_radeon: Failed to import a file descriptor as a buffer, error number %d:\n",
+         prime_fd_to_handle_result);
+      fprintf(stderr, "terakan/drm_radeon:    Size: %" PRIu64 " bytes\n", size);
+      fprintf(stderr, "terakan/drm_radeon:    Preferred domain: %s\n",
+              prefer_vram ? "VRAM" : "GTT");
+      FREE(bo);
+      return false;
+   }
+
+   uint32_t reference_count_hash = _mesa_hash_pointer((void *)(uintptr_t)handle);
+   struct hash_entry * const existing_reference_count_entry = _mesa_hash_table_search_pre_hashed(
+      winsys->shared_bo_reference_counts, reference_count_hash, (void *)(uintptr_t)handle);
+   if (existing_reference_count_entry != NULL) {
+      assert((uintptr_t)existing_reference_count_entry->data > 0);
+      existing_reference_count_entry->data =
+         (void *)((uintptr_t)existing_reference_count_entry->data + 1);
+   } else {
+      if (_mesa_hash_table_insert_pre_hashed(winsys->shared_bo_reference_counts,
+                                             reference_count_hash, (void *)(uintptr_t)handle,
+                                             (void *)1) == NULL) {
+         fputs("terakan/drm_radeon: Failed to insert the buffer reference count into the table.\n",
+               stderr);
+         /* Close the BO inside the critical section so it's not closed while other threads may be
+          * trying to import the BO with the same handle.
+          */
+         struct drm_gem_close gem_close_arguments = {.handle = handle};
+         drmIoctl(winsys->fd, DRM_IOCTL_GEM_CLOSE, &gem_close_arguments);
+         mtx_unlock(&winsys->shared_bo_mutex);
+         FREE(bo);
+         return false;
+      }
+   }
+
+   mtx_unlock(&winsys->shared_bo_mutex);
+
+   terakan_winsys_bo_base_init(&bo->base, &winsys->base);
+
+   bo->size = size;
+
+   bo->domains = prefer_vram ? RADEON_GEM_DOMAIN_VRAM : RADEON_GEM_DOMAIN_GTT;
+
+   bo->handle = handle;
+
+   bo->handle_shareable = true;
+
    return &bo->base;
 }
 
@@ -230,4 +414,7 @@ struct terakan_winsys_bo_fn const terakan_winsys_drm_radeon_bo_fn = {
    .wait_idle = terakan_winsys_drm_radeon_bo_wait_idle,
    .free_impl = terakan_winsys_drm_radeon_bo_free_impl,
    .allocate_device_memory = terakan_winsys_drm_radeon_bo_allocate_device_memory,
+   .export_fd = terakan_winsys_drm_radeon_bo_export_fd,
+   .get_fd_vram_preference = terakan_winsys_drm_radeon_bo_get_fd_vram_preference,
+   .import_fd = terakan_winsys_drm_radeon_bo_import_fd,
 };

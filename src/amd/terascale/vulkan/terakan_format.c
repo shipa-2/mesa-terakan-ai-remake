@@ -910,6 +910,15 @@ terakan_GetPhysicalDeviceImageFormatProperties2(
    VkPhysicalDeviceImageFormatInfo2 const * const pImageFormatInfo,
    VkImageFormatProperties2 * const pImageFormatProperties)
 {
+   /* From the VkImageFormatProperties2 specification:
+    *
+    *    Filling imageFormatProperties with zero for unsupported formats is an exception to the
+    *    usual rule that output structures have undefined contents on error. This exception was
+    *    unintentional, but is preserved for backwards compatibility. This exception only applies to
+    *    imageFormatProperties, not sType, pNext, or any structures chained from pNext.
+    */
+   pImageFormatProperties->imageFormatProperties = (VkImageFormatProperties){};
+
    VkFormatProperties3 format_properties_3;
    format_properties_3.sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_3;
    format_properties_3.pNext = NULL;
@@ -981,7 +990,53 @@ terakan_GetPhysicalDeviceImageFormatProperties2(
 
    image_format_properties.maxResourceSize = device->winsys->gpu_info.max_bo_size;
 
+   VkExternalMemoryProperties external_properties = {};
+   VkPhysicalDeviceExternalImageFormatInfo const * const external_info =
+      vk_find_struct_const(pImageFormatInfo, PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO);
+   if (external_info != NULL && external_info->handleType) {
+      switch (external_info->handleType) {
+#if !defined(_WIN32)
+      case VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT:
+      case VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT:
+         external_properties.externalMemoryFeatures =
+            VK_EXTERNAL_MEMORY_FEATURE_DEDICATED_ONLY_BIT |
+            VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT | VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT;
+         external_properties.exportFromImportedHandleTypes =
+            VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT |
+            VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
+         external_properties.compatibleHandleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT |
+                                                     VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
+         break;
+#endif
+
+      default:
+         return VK_ERROR_FORMAT_NOT_SUPPORTED;
+      }
+   }
+
+   /* The format is supported, fill the output structures. */
+
    pImageFormatProperties->imageFormatProperties = image_format_properties;
+
+   vk_foreach_struct (ext, pImageFormatProperties->pNext) {
+      switch (ext->sType) {
+      case VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES: {
+         /* From the VkPhysicalDeviceExternalImageFormatInfo specification:
+          *
+          *    If handleType is 0, vkGetPhysicalDeviceImageFormatProperties2 will behave as if
+          *    VkPhysicalDeviceExternalImageFormatInfo was not present, and
+          *    VkExternalImageFormatProperties will be ignored.
+          */
+         if (external_info != NULL && external_info->handleType) {
+            ((VkExternalImageFormatProperties *)ext)->externalMemoryProperties =
+               external_properties;
+         }
+      } break;
+
+      default:
+         break;
+      }
+   }
 
    return VK_SUCCESS;
 }
