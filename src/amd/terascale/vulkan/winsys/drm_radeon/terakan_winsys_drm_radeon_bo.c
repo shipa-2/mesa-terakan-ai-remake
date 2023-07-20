@@ -206,7 +206,7 @@ terakan_winsys_drm_radeon_bo_allocate_device_memory(struct terakan_winsys * cons
       fputs("terakan/drm_radeon: Failed to allocate memory for the winsys buffer structure.\n",
             stderr);
       struct drm_gem_close gem_close_arguments = {
-         .handle = bo->handle,
+         .handle = gem_create_arguments.handle,
       };
       drmIoctl(winsys->fd, DRM_IOCTL_GEM_CLOSE, &gem_close_arguments);
       return NULL;
