@@ -26,11 +26,13 @@
 #include "terakan_device.h"
 
 #include "util/macros.h"
+#include "util/os_time.h"
 #include "util/timespec.h"
 #include "util/u_atomic.h"
 
 #include <assert.h>
 #include <stdbool.h>
+#include <time.h>
 
 static VkResult
 terakan_sync_completion_move(UNUSED struct vk_device * const device,
@@ -111,9 +113,6 @@ terakan_sync_completion_wait_many(struct vk_device * const device_base, uint32_t
 
    struct terakan_device * const device = container_of(device_base, struct terakan_device, vk);
 
-   struct timespec abs_timeout_timespec;
-   timespec_from_nsec(&abs_timeout_timespec, abs_timeout_ns);
-
    mtx_lock(&device->completion_mutex);
    while (true) {
       if (device->completion_lost) {
@@ -146,10 +145,38 @@ terakan_sync_completion_wait_many(struct vk_device * const device_base, uint32_t
       if (abs_timeout_ns == OS_TIMEOUT_INFINITE) {
          condition_wait_result = cnd_wait(&device->completion_condition, &device->completion_mutex);
       } else {
-         condition_wait_result = cnd_timedwait(&device->completion_condition,
-                                               &device->completion_mutex, &abs_timeout_timespec);
-         if (condition_wait_result == thrd_timedout) {
+         /* cnd_timedwait uses CLOCK_REALTIME, while abs_timeout_ns is provided for CLOCK_MONOTONIC.
+          * Convert from one to the other.
+          */
+         uint64_t const now_ns = os_time_get_nano();
+         if (now_ns > abs_timeout_ns) {
             break;
+         }
+         uint64_t const rel_timeout_ns = abs_timeout_ns - now_ns;
+         struct timespec now_ts;
+         if (timespec_get(&now_ts, TIME_UTC) == 0) {
+            vk_device_set_lost(
+               &device->vk,
+               "Failed to get the current time to await the submission condition variable");
+            device->completion_lost = true;
+            mtx_unlock(&device->completion_mutex);
+            cnd_broadcast(&device->completion_condition);
+            return VK_ERROR_DEVICE_LOST;
+         }
+         struct timespec abs_timeout_ts;
+         if (timespec_add_nsec(&abs_timeout_ts, &now_ts, rel_timeout_ns)) {
+            /* Overflowed, treat a very long wait as infinite. */
+            condition_wait_result =
+               cnd_wait(&device->completion_condition, &device->completion_mutex);
+         } else {
+            condition_wait_result = cnd_timedwait(&device->completion_condition,
+                                                  &device->completion_mutex, &abs_timeout_ts);
+            if (condition_wait_result == thrd_timedout) {
+               /* Might have been woken up spuriously by the system time being changed forward.
+                * Go to the next iteration, which will check the monotonic clock.
+                */
+               continue;
+            }
          }
       }
       if (condition_wait_result != thrd_success) {
