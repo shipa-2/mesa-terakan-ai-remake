@@ -33,6 +33,24 @@
 #include <stdbool.h>
 
 static VkResult
+terakan_sync_completion_move(UNUSED struct vk_device * const device,
+                             struct vk_sync * const dst_base, struct vk_sync * const src_base)
+{
+   struct terakan_sync_completion * const dst =
+      container_of(dst_base, struct terakan_sync_completion, vk);
+   struct terakan_sync_completion * const src =
+      container_of(src_base, struct terakan_sync_completion, vk);
+
+   dst->pending_value = src->pending_value;
+   dst->current_value = src->current_value;
+
+   src->pending_value = 0;
+   src->current_value = 0;
+
+   return VK_SUCCESS;
+}
+
+static VkResult
 terakan_sync_completion_signal(struct vk_device * const device_base,
                                struct vk_sync * const sync_base, uint64_t const value)
 {
@@ -170,6 +188,7 @@ struct vk_sync_type const terakan_sync_completion_type = {
                VK_SYNC_FEATURE_CPU_SIGNAL | VK_SYNC_FEATURE_WAIT_ANY | VK_SYNC_FEATURE_WAIT_PENDING,
    .init = terakan_sync_completion_init,
    .finish = terakan_sync_completion_finish,
+   .move = terakan_sync_completion_move,
    .signal = terakan_sync_completion_signal,
    .get_value = terakan_sync_completion_get_value,
    .wait_many = terakan_sync_completion_wait_many,
