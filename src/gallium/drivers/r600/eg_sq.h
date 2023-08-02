@@ -608,6 +608,10 @@
 #define V_SQ_REL_ABSOLUTE 0
 #define V_SQ_REL_RELATIVE 1
 
+#define SQ_VTX_FETCH_VERTEX_DATA 0
+#define SQ_VTX_FETCH_INSTANCE_DATA 1
+#define SQ_VTX_FETCH_NO_INDEX_OFFSET 2
+
 /* CAYMAN has special encoding for MOVA_INT destination */
 #define CM_V_SQ_MOVA_DST_AR_X 0
 #define CM_V_SQ_MOVA_DST_CF_PC 1
