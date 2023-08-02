@@ -24,10 +24,15 @@
 #ifndef TERAKAN_META_H
 #define TERAKAN_META_H
 
+#include "terakan_command_buffer.h"
+#include "terakan_descriptor.h"
 #include "terakan_shader.h"
 
 #include "gallium/drivers/r600/evergreend.h"
+#include "util/bitset.h"
+#include "vk_format.h"
 
+#include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -44,15 +49,75 @@ struct terakan_meta_shader_description {
 struct terakan_meta_shader {
    struct terakan_meta_shader_description r8xx;
    struct terakan_meta_shader_description r9xx;
+
+   uint16_t constant_cache_needed;
+   BITSET_DECLARE(resources_needed, TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE);
 };
 
 enum terakan_meta_shader_index {
-   /* Vertex index unpacked as X16Y16 into the position. */
+   /* Vertex index unpacked as X16Y16 into the position, instance ID into the array layer.
+    * Exports the instance ID as an integer in all components of the first parameter.
+    */
    TERAKAN_META_SHADER_POSITION_FROM_INDEX_VS,
+
+   TERAKAN_META_SHADER_COPY_BUFFER_TO_IMAGE_PS,
 
    TERAKAN_META_SHADER_COUNT,
 };
 
+extern struct terakan_meta_shader const terakan_meta_position_from_index_vs;
+extern struct terakan_meta_shader const terakan_meta_copy_buffer_to_image_ps;
+
 extern struct terakan_meta_shader const * const terakan_meta_shaders[TERAKAN_META_SHADER_COUNT];
+
+void terakan_meta_modify_state_draw_dword(struct terakan_gfx_command_writer * command_writer,
+                                          enum terakan_state_draw_index invalidate_state_index,
+                                          enum terakan_hw_state_draw_index hw_state_index,
+                                          uint32_t * hw_state_item, uint32_t value);
+
+void terakan_meta_set_vs(struct terakan_gfx_command_writer * command_writer,
+                         enum terakan_meta_shader_index shader_index);
+void terakan_meta_set_ps(struct terakan_gfx_command_writer * command_writer,
+                         enum terakan_meta_shader_index shader_index);
+
+void terakan_meta_begin_2d(struct terakan_gfx_command_writer * command_writer);
+
+void terakan_meta_begin_rectangles(struct terakan_gfx_command_writer * command_writer);
+
+void terakan_meta_begin_index_immediate_32(struct terakan_gfx_command_writer * command_writer);
+
+void terakan_meta_emit_rectangle_3_vertices_draw(struct terakan_gfx_command_writer * command_writer,
+                                                 VkRect2D const * rectangle,
+                                                 uint32_t instance_count);
+
+static inline void
+terakan_meta_begin_2d_immediate_rectangles(struct terakan_gfx_command_writer * const command_writer)
+{
+   terakan_meta_begin_2d(command_writer);
+   terakan_meta_begin_rectangles(command_writer);
+   terakan_meta_begin_index_immediate_32(command_writer);
+}
+
+static inline VkFormat
+terakan_meta_transfer_image_block_format(unsigned const bpe)
+{
+   switch (bpe) {
+   /* 16bpc color export. */
+   case 1:
+      return VK_FORMAT_R8_UNORM;
+   case 2:
+      return VK_FORMAT_R8G8_UNORM;
+   case 4:
+      return VK_FORMAT_R8G8B8A8_UNORM;
+   /* 32bpc color export. */
+   case 8:
+      return VK_FORMAT_R32G32_UINT;
+   case 16:
+      return VK_FORMAT_R32G32B32A32_UINT;
+   default:
+      assert(!"Non-power-of-two-byte image formats must use special logic for transfer operations");
+      return VK_FORMAT_UNDEFINED;
+   }
+}
 
 #endif /* TERAKAN_META_H */

@@ -27,6 +27,7 @@
 #include "winsys/terakan_winsys.h"
 #include "terakan_descriptor.h"
 #include "terakan_limits.h"
+#include "terakan_shader.h"
 
 #include "util/bitset.h"
 
@@ -54,11 +55,16 @@ enum terakan_hw_state_draw_index {
 
    TERAKAN_HW_STATE_DRAW_VGT_INDEX_OFFSET,
 
+   TERAKAN_HW_STATE_DRAW_SQ_PGM_VS,
+   TERAKAN_HW_STATE_DRAW_SQ_PGM_PS,
+
    TERAKAN_HW_STATE_DRAW_SQ_VTX_START_INST_LOC,
 
    TERAKAN_HW_STATE_DRAW_PA_CL_CLIP_CNTL,
 
    TERAKAN_HW_STATE_DRAW_PA_SU_SC_MODE_CNTL,
+
+   TERAKAN_HW_STATE_DRAW_PA_CL_VTE_CNTL,
 
    TERAKAN_HW_STATE_DRAW_PA_SC_AA_SAMPLES,
 
@@ -149,6 +155,12 @@ struct terakan_hw_state_draw {
    /* TERAKAN_HW_STATE_DRAW_VGT_INDEX_OFFSET */
    uint32_t vgt_index_offset;
 
+   /* TERAKAN_HW_STATE_DRAW_SQ_PGM_VS */
+   struct terakan_shader_static const * sq_pgm_vs;
+
+   /* TERAKAN_HW_STATE_DRAW_SQ_PGM_PS */
+   struct terakan_shader_static const * sq_pgm_ps;
+
    /* TERAKAN_HW_STATE_DRAW_SQ_VTX_START_INST_LOC */
    uint32_t sq_vtx_start_inst_loc;
 
@@ -157,6 +169,9 @@ struct terakan_hw_state_draw {
 
    /* TERAKAN_HW_STATE_DRAW_PA_SU_SC_MODE_CNTL */
    uint32_t pa_su_sc_mode_cntl;
+
+   /* TERAKAN_HW_STATE_DRAW_PA_CL_VTE_CNTL */
+   uint32_t pa_cl_vte_cntl;
 
    /* TERAKAN_HW_STATE_DRAW_PA_SC_AA_SAMPLES */
    struct {

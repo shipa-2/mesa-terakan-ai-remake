@@ -38,6 +38,8 @@ terakan_entrypoints = custom_target(
 libterakan_files = files(
   'meta/terakan_meta.c',
   'meta/terakan_meta.h',
+  'meta/terakan_meta_2d.c',
+  'meta/terakan_meta_copy_buffer_to_image.c',
   'terakan_buffer.c',
   'terakan_buffer.h',
   'terakan_command_buffer.c',

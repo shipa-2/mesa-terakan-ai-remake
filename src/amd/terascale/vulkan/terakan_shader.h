@@ -34,16 +34,18 @@
 /* Fields that don't depend on any other state. */
 struct terakan_shader_static {
    struct terakan_winsys_bo const * program_bo;
-   uint32_t program_base;
+   uint32_t program_start;
 
    uint32_t sq_pgm_resources[2];
 
    union {
       struct {
          uint32_t spi_vs_out_config;
+         uint32_t pa_cl_vs_out_cntl;
       } vs;
 
       struct {
+         uint32_t sq_pgm_exports_ps;
          uint32_t spi_ps_in_control[2];
          uint32_t spi_input_z;
          uint32_t spi_baryc_cntl;

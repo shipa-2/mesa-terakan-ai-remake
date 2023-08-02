@@ -124,6 +124,8 @@ terakan_winsys_drm_radeon_surface_translate_image_create_info(
    struct terakan_winsys const * const winsys_base,
    VkImageCreateInfo const * const image_create_info, struct radeon_surf * const surface_out)
 {
+   bool const has_depth = vk_format_has_depth(image_create_info->format);
+
    struct radeon_surface drm_surface = {
       .npix_x = image_create_info->extent.width,
       .npix_y = image_create_info->extent.height,
@@ -133,36 +135,28 @@ terakan_winsys_drm_radeon_surface_translate_image_create_info(
       .blk_d = 1,
       .array_size = image_create_info->arrayLayers,
       .last_level = image_create_info->mipLevels - 1,
+      /* BPE is for the depth only (stencil is always 8-bit). */
+      .bpe = vk_format_get_blocksize(has_depth ? vk_format_depth_only(image_create_info->format)
+                                               : image_create_info->format),
       .nsamples = (uint32_t)image_create_info->samples,
    };
 
-   bool const has_depth = vk_format_has_depth(image_create_info->format);
-   bool const has_stencil = vk_format_has_stencil(image_create_info->format);
    /* RADEON_SURF_ZBUFFER or RADEON_SURF_SBUFFER forces the surface to be tiled. However, that's not
     * necessary if the image isn't going be used as a depth / stencil attachment, can still request
     * a linear 8/16/32bpp surface in this case. But both flags must be provided so the stencil
     * layout is computed for combined depth and stencil images - not allowing them to be linear at
     * all.
     */
-   bool const add_depth_stencil_flags =
-      (has_depth && has_stencil) ||
-      (image_create_info->usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
-   assert(!(add_depth_stencil_flags && image_create_info->tiling != VK_IMAGE_TILING_OPTIMAL));
-   if (vk_format_has_depth(image_create_info->format)) {
-      /* BPE is for the depth only (stencil is always 8-bit). */
-      struct util_format_description const * const format_description =
-         vk_format_description(image_create_info->format);
-      /* swizzle[0] is the depth channel. */
-      drm_surface.bpe =
-         format_description->channel[format_description->swizzle[0]].size > 16 ? 4 : 2;
-      if (add_depth_stencil_flags) {
+   bool const has_stencil = vk_format_has_stencil(image_create_info->format);
+   if ((has_depth && has_stencil) ||
+       (image_create_info->usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)) {
+      assert(image_create_info->tiling == VK_IMAGE_TILING_OPTIMAL);
+      if (has_depth) {
          drm_surface.flags |= RADEON_SURF_ZBUFFER;
       }
-   } else {
-      drm_surface.bpe = vk_format_get_blocksize(image_create_info->format);
-   }
-   if (add_depth_stencil_flags && has_stencil) {
-      drm_surface.flags |= RADEON_SURF_SBUFFER | RADEON_SURF_HAS_SBUFFER_MIPTREE;
+      if (has_stencil) {
+         drm_surface.flags |= RADEON_SURF_SBUFFER | RADEON_SURF_HAS_SBUFFER_MIPTREE;
+      }
    }
 
    switch (image_create_info->imageType) {

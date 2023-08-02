@@ -135,6 +135,99 @@ terakan_hw_state_draw_emit_vgt_index_offset(
 }
 
 static void
+terakan_hw_state_draw_emit_sq_pgm_vs(struct terakan_gfx_command_writer * const command_writer,
+                                     UNUSED enum terakan_hw_state_draw_index const state_index)
+{
+   uint32_t const packet_dwords =
+      2 + ((R_028864_SQ_PGM_RESOURCES_2_VS - R_02885C_SQ_PGM_START_VS) / sizeof(uint32_t) + 1) +
+      /* R_0286C4_SPI_VS_OUT_CONFIG */
+      2 + 1 +
+      /* R_02881C_PA_CL_VS_OUT_CNTL */
+      2 + 1;
+
+   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, packet_dwords, 1, 2, true);
+   if (unlikely(packet == NULL)) {
+      return;
+   }
+
+   struct terakan_shader_static const * const shader = command_writer->hw_state_draw.sq_pgm_vs;
+
+   *packet++ =
+      PKT3(PKT3_SET_CONTEXT_REG,
+           (R_028864_SQ_PGM_RESOURCES_2_VS - R_02885C_SQ_PGM_START_VS) / sizeof(uint32_t) + 1, 0);
+   *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_02885C_SQ_PGM_START_VS);
+   *packet++ = shader->program_start;
+   /* TODO(Triang3l): USE_LS_CONSTS. */
+   *packet++ = shader->sq_pgm_resources[0];
+   *packet++ = shader->sq_pgm_resources[1];
+   *packet++ = PKT3(PKT3_NOP, 0, 0);
+   *packet++ = terakan_bo_reference_writer_add_reference(
+      &command_writer->base.bo_reference_writer, shader->program_bo, true, false,
+      TERAKAN_WINSYS_CS_BO_PRIORITY_SHADER_BINARY);
+
+   *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
+   *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_0286C4_SPI_VS_OUT_CONFIG);
+   *packet++ = shader->stage.vs.spi_vs_out_config;
+
+   *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
+   *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_02881C_PA_CL_VS_OUT_CNTL);
+   *packet++ = shader->stage.vs.pa_cl_vs_out_cntl;
+}
+
+static void
+terakan_hw_state_draw_emit_sq_pgm_ps(struct terakan_gfx_command_writer * const command_writer,
+                                     UNUSED enum terakan_hw_state_draw_index const state_index)
+{
+   uint32_t const packet_dwords =
+      2 + ((R_02884C_SQ_PGM_EXPORTS_PS - R_028840_SQ_PGM_START_PS) / sizeof(uint32_t) + 1) +
+      /* R_0286CC_SPI_PS_IN_CONTROL_0, R_0286D0_SPI_PS_IN_CONTROL_1 */
+      2 + 2 +
+      /* R_0286D8_SPI_INPUT_Z */
+      2 + 1 +
+      /* R_0286E0_SPI_BARYC_CNTL */
+      2 + 1 +
+      /* R_02823C_CB_SHADER_MASK */
+      2 + 1;
+
+   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, packet_dwords, 1, 2, true);
+   if (unlikely(packet == NULL)) {
+      return;
+   }
+
+   struct terakan_shader_static const * const shader = command_writer->hw_state_draw.sq_pgm_ps;
+
+   *packet++ =
+      PKT3(PKT3_SET_CONTEXT_REG,
+           (R_02884C_SQ_PGM_EXPORTS_PS - R_028840_SQ_PGM_START_PS) / sizeof(uint32_t) + 1, 0);
+   *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028840_SQ_PGM_START_PS);
+   *packet++ = shader->program_start;
+   *packet++ = shader->sq_pgm_resources[0];
+   *packet++ = shader->sq_pgm_resources[1];
+   *packet++ = shader->stage.ps.sq_pgm_exports_ps;
+   *packet++ = PKT3(PKT3_NOP, 0, 0);
+   *packet++ = terakan_bo_reference_writer_add_reference(
+      &command_writer->base.bo_reference_writer, shader->program_bo, true, false,
+      TERAKAN_WINSYS_CS_BO_PRIORITY_SHADER_BINARY);
+
+   *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 2, 0);
+   *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_0286CC_SPI_PS_IN_CONTROL_0);
+   *packet++ = shader->stage.ps.spi_ps_in_control[0];
+   *packet++ = shader->stage.ps.spi_ps_in_control[1];
+
+   *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
+   *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_0286D8_SPI_INPUT_Z);
+   *packet++ = shader->stage.ps.spi_input_z;
+
+   *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
+   *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_0286E0_SPI_BARYC_CNTL);
+   *packet++ = shader->stage.ps.spi_baryc_cntl;
+
+   *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
+   *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_02823C_CB_SHADER_MASK);
+   *packet++ = shader->stage.ps.cb_shader_mask;
+}
+
+static void
 terakan_hw_state_draw_emit_sq_vtx_start_inst_loc(
    struct terakan_gfx_command_writer * const command_writer,
    UNUSED enum terakan_hw_state_draw_index const state_index)
@@ -173,6 +266,19 @@ terakan_hw_state_draw_emit_pa_su_sc_mode_cntl(
    *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
    *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028814_PA_SU_SC_MODE_CNTL);
    *packet++ = command_writer->hw_state_draw.pa_su_sc_mode_cntl;
+}
+
+static void
+terakan_hw_state_draw_emit_pa_cl_vte_cntl(struct terakan_gfx_command_writer * const command_writer,
+                                          UNUSED enum terakan_hw_state_draw_index const state_index)
+{
+   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, 0, 0, true);
+   if (unlikely(packet == NULL)) {
+      return;
+   }
+   *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
+   *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028818_PA_CL_VTE_CNTL);
+   *packet++ = command_writer->hw_state_draw.pa_cl_vte_cntl;
 }
 
 static void
@@ -993,10 +1099,13 @@ static terakan_hw_state_draw_emit_function const
       [TERAKAN_HW_STATE_DRAW_VGT_INDEX_BUFFER] = terakan_hw_state_draw_emit_vgt_index_buffer,
       [TERAKAN_HW_STATE_DRAW_VGT_PRIMITIVE_TYPE] = terakan_hw_state_draw_emit_vgt_primitive_type,
       [TERAKAN_HW_STATE_DRAW_VGT_INDEX_OFFSET] = terakan_hw_state_draw_emit_vgt_index_offset,
+      [TERAKAN_HW_STATE_DRAW_SQ_PGM_VS] = terakan_hw_state_draw_emit_sq_pgm_vs,
+      [TERAKAN_HW_STATE_DRAW_SQ_PGM_PS] = terakan_hw_state_draw_emit_sq_pgm_ps,
       [TERAKAN_HW_STATE_DRAW_SQ_VTX_START_INST_LOC] =
          terakan_hw_state_draw_emit_sq_vtx_start_inst_loc,
       [TERAKAN_HW_STATE_DRAW_PA_CL_CLIP_CNTL] = terakan_hw_state_draw_emit_pa_cl_clip_cntl,
       [TERAKAN_HW_STATE_DRAW_PA_SU_SC_MODE_CNTL] = terakan_hw_state_draw_emit_pa_su_sc_mode_cntl,
+      [TERAKAN_HW_STATE_DRAW_PA_CL_VTE_CNTL] = terakan_hw_state_draw_emit_pa_cl_vte_cntl,
       [TERAKAN_HW_STATE_DRAW_PA_SC_AA_SAMPLES] = terakan_hw_state_draw_emit_pa_sc_aa_samples,
       [TERAKAN_HW_STATE_DRAW_PA_SC_AA_MASK] = terakan_hw_state_draw_emit_pa_sc_aa_mask,
       [TERAKAN_HW_STATE_DRAW_CB_BLEND_RGBA] = terakan_hw_state_draw_emit_cb_blend_rgba,

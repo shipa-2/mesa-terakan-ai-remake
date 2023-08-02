@@ -63,10 +63,14 @@
 
 #define TERAKAN_SAMPLERS_PER_STAGE 18
 
-/* Dynamically indexable immediate constant arrays in shader code. */
-#define TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS 0
+/* Dynamically indexable immediate constant arrays in application shader code.
+ * Also used for a single resource binding for meta draws or dispatches as it can be quickly
+ * invalidated alongside the shader itself.
+ */
+#define TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META 0
 /* Dynamically indexable internal and application's push constants. */
-#define TERAKAN_RESOURCE_RANGE_PUSH_CONSTANTS (TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS + 1)
+#define TERAKAN_RESOURCE_RANGE_PUSH_CONSTANTS                                                      \
+   (TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META + 1)
 /* VS: Base vertex and instance.
  * GS and VS/TES ALT_CONST: Ring buffer.
  * CS: Number of workgroups.

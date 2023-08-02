@@ -39,13 +39,13 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_LOG2 14
-#define TERAKAN_IMAGE_MAX_WIDTH_HEIGHT      (1 << TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_LOG2)
-/* Texture fetching supports xx8192, but color and depth slices are up to 2047. */
-#define TERAKAN_IMAGE_MAX_DEPTH_SLICES_TEXTURE_LOG2 13
-#define TERAKAN_IMAGE_MAX_DEPTH_SLICES_TEXTURE      (1 << TERAKAN_IMAGE_MAX_DEPTH_SLICES_TEXTURE_LOG2)
-#define TERAKAN_IMAGE_MAX_DEPTH_SLICES_TARGET_LOG2  11
-#define TERAKAN_IMAGE_MAX_DEPTH_SLICES_TARGET       (1 << TERAKAN_IMAGE_MAX_DEPTH_SLICES_TARGET_LOG2)
+#define TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES_LOG2 14
+#define TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES                                                   \
+   (1 << TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES_LOG2)
+#define TERAKAN_IMAGE_MAX_DEPTH_2D_SLICES_LOG2 13
+#define TERAKAN_IMAGE_MAX_DEPTH_2D_SLICES      (1 << TERAKAN_IMAGE_MAX_DEPTH_2D_SLICES_LOG2)
+#define TERAKAN_IMAGE_MAX_TARGET_SLICES_LOG2   11
+#define TERAKAN_IMAGE_MAX_TARGET_SLICES        (1 << TERAKAN_IMAGE_MAX_TARGET_SLICES_LOG2)
 
 static inline uint32_t
 terakan_image_array_mode_ac_to_hw(enum radeon_surf_mode const mode)
@@ -106,7 +106,14 @@ bool terakan_image_uses_cb_non_display_tiling(enum amd_gfx_level gfx_level, VkFo
 bool terakan_image_create_resource_descriptor(VkImageViewCreateInfo const * image_view_create_info,
                                               uint32_t descriptor_out[8]);
 
-bool terakan_image_create_color_descriptor(
+/* Returns the number of array layers accessible through the descriptor as color descriptors support
+ * fewer layers than texture resource descriptors.
+ * Meta draws like copying can access all layers of the image by adding the result of this function
+ * to baseArrayLayer, creating a new color descriptor, and performing the draw again for the next
+ * subset of layers.
+ * On failure, returns 0.
+ */
+uint32_t terakan_image_create_color_descriptor(
    VkImageViewCreateInfo const * image_view_create_info,
    struct terakan_color_descriptor * descriptor_out,
    struct terakan_color_meta_descriptor * meta_descriptor_out_opt);

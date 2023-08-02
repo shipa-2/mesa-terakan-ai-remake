@@ -165,7 +165,7 @@ VK_DEFINE_HANDLE_CASTS(terakan_command_buffer, vk.base, VkCommandBuffer,
 /* Returns the mapping, or NULL if failed. */
 void * terakan_command_buffer_allocate_push_constants(
    struct terakan_command_buffer * command_buffer, uint32_t size_bytes,
-   struct terakan_winsys_bo const ** bo_out, VkDeviceSize * offset_bytes_out);
+   struct terakan_winsys_bo const ** bo_out, uint32_t * base_cache_lines_out);
 
 extern struct vk_command_buffer_ops const terakan_command_buffer_ops;
 

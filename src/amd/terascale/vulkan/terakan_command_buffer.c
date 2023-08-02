@@ -138,7 +138,7 @@ void *
 terakan_command_buffer_allocate_push_constants(struct terakan_command_buffer * const command_buffer,
                                                uint32_t const size_bytes,
                                                struct terakan_winsys_bo const ** const bo_out,
-                                               VkDeviceSize * const offset_bytes_out)
+                                               uint32_t * base_cache_lines_out)
 {
    assert(size_bytes <= TERAKAN_CONSTANT_CACHE_MAX_BUFFER_SIZE_BYTES);
 
@@ -169,9 +169,8 @@ terakan_command_buffer_allocate_push_constants(struct terakan_command_buffer * c
                               struct terakan_push_constant_buffer, link)
             : list_first_entry(&command_buffer->push_constant_buffers_with_free_space,
                                struct terakan_push_constant_buffer, link);
-      uint32_t const existing_buffer_offset_bytes =
-         (buffer_size_cache_lines - existing_buffer->cache_lines_free) *
-         TERAKAN_CONSTANT_CACHE_LINE_BYTES;
+      uint32_t const existing_buffer_offset_cache_lines =
+         buffer_size_cache_lines - existing_buffer->cache_lines_free;
 
       existing_buffer->cache_lines_free -= size_cache_lines;
       if (existing_buffer->cache_lines_free == 0) {
@@ -179,8 +178,9 @@ terakan_command_buffer_allocate_push_constants(struct terakan_command_buffer * c
       }
 
       *bo_out = existing_buffer->bo;
-      *offset_bytes_out = existing_buffer_offset_bytes;
-      return (char *)existing_buffer->bo->mapping + existing_buffer_offset_bytes;
+      *base_cache_lines_out = existing_buffer_offset_cache_lines;
+      return (char *)existing_buffer->bo->mapping +
+             TERAKAN_CONSTANT_CACHE_LINE_BYTES * existing_buffer_offset_cache_lines;
    }
 
    struct terakan_push_constant_buffer * new_buffer;
@@ -233,7 +233,7 @@ terakan_command_buffer_allocate_push_constants(struct terakan_command_buffer * c
    }
 
    *bo_out = new_buffer->bo;
-   *offset_bytes_out = 0;
+   *base_cache_lines_out = 0;
    return new_buffer->bo->mapping;
 }
 
@@ -624,7 +624,8 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
       /* R_028030_PA_SC_SCREEN_SCISSOR_TL */
       0,
       /* R_028034_PA_SC_SCREEN_SCISSOR_BR */
-      S_028034_BR_X(TERAKAN_IMAGE_MAX_WIDTH_HEIGHT) | S_028034_BR_Y(TERAKAN_IMAGE_MAX_WIDTH_HEIGHT),
+      S_028034_BR_X(TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES) |
+         S_028034_BR_Y(TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES),
 
       /* TODO(Triang3l): Move to hw_state_draw. */
       PKT3(PKT3_SET_CONTEXT_REG, 2, 0),
@@ -632,7 +633,8 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
       /* R_028204_PA_SC_WINDOW_SCISSOR_TL */
       0,
       /* R_028208_PA_SC_WINDOW_SCISSOR_BR */
-      S_028208_BR_X(TERAKAN_IMAGE_MAX_WIDTH_HEIGHT) | S_028208_BR_Y(TERAKAN_IMAGE_MAX_WIDTH_HEIGHT),
+      S_028208_BR_X(TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES) |
+         S_028208_BR_Y(TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES),
 
       /* TODO(Triang3l): Move to hw_state_draw. */
       PKT3(PKT3_SET_CONTEXT_REG, 1, 0),
@@ -658,7 +660,8 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
       /* R_028240_PA_SC_GENERIC_SCISSOR_TL */
       0,
       /* R_028244_PA_SC_GENERIC_SCISSOR_BR */
-      S_028244_BR_X(TERAKAN_IMAGE_MAX_WIDTH_HEIGHT) | S_028244_BR_Y(TERAKAN_IMAGE_MAX_WIDTH_HEIGHT),
+      S_028244_BR_X(TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES) |
+         S_028244_BR_Y(TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES),
 
       PKT3(PKT3_SET_CONTEXT_REG, 1, 0),
       TERAKAN_CONTEXT_REG_OFFSET(R_028820_PA_CL_NANINF_CNTL),

@@ -443,7 +443,7 @@ terakan_image_create_resource_descriptor(VkImageViewCreateInfo const * const ima
    return true;
 }
 
-bool
+uint32_t
 terakan_image_create_color_descriptor(
    VkImageViewCreateInfo const * const image_view_create_info,
    struct terakan_color_descriptor * const descriptor_out,
@@ -461,15 +461,15 @@ terakan_image_create_color_descriptor(
    } else {
       color_format = terakan_format_color_get_format(image_view_create_info->format);
       if (color_format == V_028C70_COLOR_INVALID) {
-         return false;
+         return 0;
       }
       number_type = terakan_format_color_get_number_type(image_view_create_info->format);
       if (number_type == UINT32_MAX) {
-         return false;
+         return 0;
       }
       swap = terakan_format_color_get_swap(image_view_create_info->format);
       if (swap == UINT32_MAX) {
-         return false;
+         return 0;
       }
    }
 
@@ -485,7 +485,19 @@ terakan_image_create_color_descriptor(
    /* Only LINEAR_ALIGNED is currently supported for linear, not LINEAR_GENERAL. */
    assert(level->mode != (enum radeon_surf_mode)0);
 
-   descriptor_out->base = image->bo_offset / 256 + level->offset_256B;
+   /* Color descriptors support fewer slices than texture resource descriptors, but meta draws may
+    * still need to access all the slices. Between the slices, there's bank rotation in the tiling,
+    * so it's not possible to just adjust the base pointer directly to baseArrayLayer all the time,
+    * only by numbers of slices aligned to the rotation granularity on the chip revision.
+    * Restrict the descriptor to the range of TERAKAN_IMAGE_MAX_TARGET_SLICES slices that includes
+    * baseArrayLayer.
+    */
+   uint32_t const create_info_slice_start = image_view_create_info->subresourceRange.baseArrayLayer;
+   uint32_t const base_slice_start =
+      create_info_slice_start & ~(uint32_t)(TERAKAN_IMAGE_MAX_TARGET_SLICES - 1);
+   descriptor_out->base =
+      (uint32_t)(image->bo_offset / 256 + level->offset_256B +
+                 (VkDeviceSize)level->slice_size_dw * base_slice_start / (256 / sizeof(uint32_t)));
 
    /* nblk is expected to have already been aligned appropriately in the surface computation. */
    descriptor_out->pitch = S_028C64_PITCH_TILE_MAX(level->nblk_x / 8 - 1);
@@ -493,14 +505,16 @@ terakan_image_create_color_descriptor(
    /* Linear pitch is always at least 64 elements, micro-tiles are 8x8. */
    descriptor_out->slice = S_028C68_SLICE_TILE_MAX(level->nblk_x * level->nblk_y / 64 - 1);
 
+   uint32_t const view_slice_start = create_info_slice_start - base_slice_start;
+   uint32_t const create_info_slice_max =
+      (image_view_create_info->subresourceRange.layerCount == VK_REMAINING_ARRAY_LAYERS
+          ? image->vk.array_layers
+          : create_info_slice_start + image_view_create_info->subresourceRange.layerCount) -
+      1;
+   uint32_t const view_slice_max =
+      MIN2(create_info_slice_max - base_slice_start, TERAKAN_IMAGE_MAX_TARGET_SLICES - 1);
    descriptor_out->view =
-      S_028C6C_SLICE_START(image_view_create_info->subresourceRange.baseArrayLayer) |
-      S_028C6C_SLICE_MAX(
-         (image_view_create_info->subresourceRange.layerCount == VK_REMAINING_ARRAY_LAYERS
-             ? image->vk.array_layers
-             : image_view_create_info->subresourceRange.baseArrayLayer +
-                  image_view_create_info->subresourceRange.layerCount) -
-         1);
+      S_028C6C_SLICE_START(view_slice_start) | S_028C6C_SLICE_MAX(view_slice_max);
 
    bool blend_clamp = false;
    uint32_t source_format = V_028C70_EXPORT_4C_32BPC;
@@ -581,7 +595,7 @@ terakan_image_create_color_descriptor(
 
    /* TODO(Triang3l): CMask, FMask. */
 
-   return true;
+   return view_slice_max - view_slice_start + 1;
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -680,8 +694,8 @@ terakan_CreateImageView(VkDevice const deviceHandle,
       memset(image_view->resource, 0, sizeof(image_view->resource));
    }
 
-   if (!terakan_image_create_color_descriptor(pCreateInfo, &image_view->color,
-                                              &image_view->color_meta)) {
+   if (terakan_image_create_color_descriptor(pCreateInfo, &image_view->color,
+                                             &image_view->color_meta) == 0) {
       memset(&image_view->color, 0, sizeof(image_view->color));
       memset(&image_view->color_meta, 0, sizeof(image_view->color_meta));
    }

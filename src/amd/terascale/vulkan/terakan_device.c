@@ -115,7 +115,7 @@ terakan_CreateDevice(VkPhysicalDevice const physicalDevice,
       *device_meta_shader = meta_shader_description->static_registers;
       VkDeviceSize const meta_shader_offset =
          ALIGN_POT(meta_shaders_bo_size, (VkDeviceSize)TERAKAN_SHADER_PROGRAM_ALIGNMENT);
-      device_meta_shader->program_base =
+      device_meta_shader->program_start =
          meta_shader_offset >> TERAKAN_SHADER_PROGRAM_ALIGNMENT_LOG2;
       meta_shaders_bo_size = meta_shader_offset + meta_shader_description->program_size_bytes;
    }
@@ -145,7 +145,7 @@ terakan_CreateDevice(VkPhysicalDevice const physicalDevice,
             terakan_meta_shaders[meta_shader_index];
          struct terakan_meta_shader_description const * const meta_shader_description =
             is_r9xx ? &meta_shader->r9xx : &meta_shader->r8xx;
-         memcpy(meta_shaders_bo_mapping + ((VkDeviceSize)device_meta_shader->program_base
+         memcpy(meta_shaders_bo_mapping + ((VkDeviceSize)device_meta_shader->program_start
                                            << TERAKAN_SHADER_PROGRAM_ALIGNMENT_LOG2),
                 meta_shader_description->program, meta_shader_description->program_size_bytes);
       }

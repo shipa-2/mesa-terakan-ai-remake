@@ -266,11 +266,11 @@ terakan_GetPhysicalDeviceProperties(VkPhysicalDevice const physicalDevice,
    VkPhysicalDeviceLimits * const limits = &pProperties->limits;
    memset(limits, 0, sizeof(*limits));
 
-   limits->maxImageDimension1D = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT;
-   limits->maxImageDimension2D = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT;
-   limits->maxImageDimension3D = TERAKAN_IMAGE_MAX_DEPTH_SLICES_TARGET;
-   limits->maxImageDimensionCube = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT;
-   limits->maxImageArrayLayers = TERAKAN_IMAGE_MAX_DEPTH_SLICES_TARGET;
+   limits->maxImageDimension1D = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES;
+   limits->maxImageDimension2D = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES;
+   limits->maxImageDimension3D = TERAKAN_IMAGE_MAX_TARGET_SLICES;
+   limits->maxImageDimensionCube = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES;
+   limits->maxImageArrayLayers = TERAKAN_IMAGE_MAX_TARGET_SLICES;
 
    /* Vertex fetch constants have 32-bit size minus one in bytes.
     * Random access targets have 32-bit size minus one in elements.
@@ -371,8 +371,8 @@ terakan_GetPhysicalDeviceProperties(VkPhysicalDevice const physicalDevice,
    /* TODO(Triang3l): maxSamplerAnisotropy when anisotropic filtering is enabled. */
 
    limits->maxViewports = TERAKAN_LIMITS_HW_VIEWPORTS;
-   limits->maxViewportDimensions[0] = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT;
-   limits->maxViewportDimensions[1] = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT;
+   limits->maxViewportDimensions[0] = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES;
+   limits->maxViewportDimensions[1] = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES;
    limits->viewportBoundsRange[0] = (float)INT16_MIN;
    limits->viewportBoundsRange[1] = (float)INT16_MAX;
    limits->viewportSubPixelBits = 8;
@@ -408,9 +408,9 @@ terakan_GetPhysicalDeviceProperties(VkPhysicalDevice const physicalDevice,
 
    /* TODO(Triang3l): Interpolation offset properties when sample-rate shading is enabled. */
 
-   limits->maxFramebufferWidth = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT;
-   limits->maxFramebufferHeight = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT;
-   limits->maxFramebufferLayers = TERAKAN_IMAGE_MAX_DEPTH_SLICES_TARGET;
+   limits->maxFramebufferWidth = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES;
+   limits->maxFramebufferHeight = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES;
+   limits->maxFramebufferLayers = TERAKAN_IMAGE_MAX_TARGET_SLICES;
 
    VkSampleCountFlags const sample_counts =
       VK_SAMPLE_COUNT_1_BIT | VK_SAMPLE_COUNT_2_BIT | VK_SAMPLE_COUNT_4_BIT | VK_SAMPLE_COUNT_8_BIT;
