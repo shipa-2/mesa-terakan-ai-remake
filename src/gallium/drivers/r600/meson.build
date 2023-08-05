@@ -17,7 +17,6 @@ files_r600 = files(
   'r600_atomics.h',
   'r600_dump.c',
   'r600_dump.h',
-  'r600_formats.h',
   'r600_hw_context.c',
   'r600_isa.c',
   'r600_isa.h',
@@ -155,7 +154,7 @@ libr600 = static_library(
     inc_src, inc_mapi, inc_mesa, inc_include, inc_gallium, inc_gallium_aux, inc_amd_common,
     inc_gallium_drivers,
   ],
-  dependencies: [dep_llvm, idep_amd_terascale_registers, idep_nir, idep_nir_headers, idep_mesautil],
+  dependencies: [dep_llvm, idep_amd_terascale_common, idep_nir, idep_nir_headers, idep_mesautil],
 )
 
 driver_r600 = declare_dependency(
