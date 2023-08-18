@@ -1498,6 +1498,8 @@
 #define   C_03C000_XY_MAG_FILTER                       0xFFFFF9FF
 #define     V_03C000_SQ_TEX_XY_FILTER_POINT            0x00000000
 #define     V_03C000_SQ_TEX_XY_FILTER_BILINEAR         0x00000001
+#define     V_03C000_SQ_TEX_XY_FILTER_ANISO_POINT      0x00000002
+#define     V_03C000_SQ_TEX_XY_FILTER_ANISO_BILINEAR   0x00000003
 #define   S_03C000_XY_MIN_FILTER(x)                    (((unsigned)(x) & 0x3) << 11)
 #define   G_03C000_XY_MIN_FILTER(x)                    (((x) >> 11) & 0x3)
 #define   C_03C000_XY_MIN_FILTER                       0xFFFFE7FF
