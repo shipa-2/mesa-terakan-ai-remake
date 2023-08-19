@@ -69,6 +69,8 @@ libterakan_files = files(
   'terakan_render_pass.c',
   'terakan_queue.c',
   'terakan_queue.h',
+  'terakan_sampler.c',
+  'terakan_sampler.h',
   'terakan_shader.h',
   'terakan_state.c',
   'terakan_state.h',

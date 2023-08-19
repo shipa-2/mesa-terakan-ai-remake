@@ -71,11 +71,15 @@ terakan_physical_device_get_supported_extensions(
    memset(extensions_out, 0, sizeof(*extensions_out));
 
    extensions_out->EXT_4444_formats = true;
+   /* TODO(Triang3l): Enable VK_EXT_border_color_swizzle and VK_EXT_custom_border_color when formats
+    * are properly researched.
+    */
    extensions_out->EXT_depth_clip_control = true;
    extensions_out->EXT_depth_clip_enable = true;
    extensions_out->EXT_extended_dynamic_state = true;
    extensions_out->EXT_extended_dynamic_state2 = true;
    extensions_out->EXT_extended_dynamic_state3 = true;
+   extensions_out->EXT_non_seamless_cube_map = true;
    extensions_out->EXT_provoking_vertex = true;
    extensions_out->KHR_bind_memory2 = true;
    extensions_out->KHR_dedicated_allocation = true;
@@ -108,6 +112,7 @@ terakan_physical_device_get_supported_features(struct vk_features * const featur
    features_out->fullDrawIndexUint32 = true;
    features_out->depthClamp = true;
    features_out->fillModeNonSolid = true;
+   features_out->samplerAnisotropy = true;
    features_out->textureCompressionBC = true;
 
    /* VK_EXT_4444_formats */
@@ -127,6 +132,9 @@ terakan_physical_device_get_supported_features(struct vk_features * const featur
    features_out->extendedDynamicState3ProvokingVertexMode = true;
    features_out->extendedDynamicState3DepthClipEnable = true;
    features_out->extendedDynamicState3DepthClipNegativeOneToOne = true;
+
+   /* VK_EXT_non_seamless_cube_map */
+   features_out->nonSeamlessCubeMap = true;
 
    /* VK_EXT_provoking_vertex */
    features_out->provokingVertexLast = true;
@@ -367,8 +375,8 @@ terakan_GetPhysicalDeviceProperties(VkPhysicalDevice const physicalDevice,
 
    /* TODO(Triang3l): maxDrawIndirectCount when indirect drawing is enabled. */
 
-   limits->maxSamplerLodBias = 32.0f - 1.0f / 256.0f;
-   /* TODO(Triang3l): maxSamplerAnisotropy when anisotropic filtering is enabled. */
+   limits->maxSamplerLodBias = 0x1.0p5f - 0x1.0p-8f;
+   limits->maxSamplerAnisotropy = 0x1.0p4f;
 
    limits->maxViewports = TERAKAN_LIMITS_HW_VIEWPORTS;
    limits->maxViewportDimensions[0] = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES;
@@ -509,8 +517,7 @@ terakan_GetPhysicalDeviceProperties2(VkPhysicalDevice const physicalDevice,
    terakan_physical_device_get_properties_1_1(
       device, pProperties->properties.limits.maxBoundDescriptorSets, &core_1_1);
 
-   vk_foreach_struct(ext, pProperties->pNext)
-   {
+   vk_foreach_struct (ext, pProperties->pNext) {
       if (vk_get_physical_device_core_1_1_property_ext(ext, &core_1_1)) {
          continue;
       }
