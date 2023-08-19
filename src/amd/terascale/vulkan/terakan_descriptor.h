@@ -29,7 +29,9 @@
 
 #include "gallium/drivers/r600/evergreend.h"
 
+#include <stdbool.h>
 #include <stdint.h>
+#include <vulkan/vulkan_core.h>
 
 #define TERAKAN_CONSTANT_CACHE_LINE_BYTES_LOG2          8
 #define TERAKAN_CONSTANT_CACHE_LINE_BYTES               (1 << TERAKAN_CONSTANT_CACHE_LINE_BYTES_LOG2)
@@ -161,5 +163,27 @@ struct terakan_color_meta_descriptor {
    uint32_t fmask;
    uint32_t fmask_slice;
 };
+
+static inline bool
+terakan_descriptor_type_has_resource(VkDescriptorType const descriptor_type)
+{
+   return descriptor_type != VK_DESCRIPTOR_TYPE_SAMPLER;
+}
+
+static inline bool
+terakan_descriptor_type_has_sampler(VkDescriptorType const descriptor_type)
+{
+   return descriptor_type == VK_DESCRIPTOR_TYPE_SAMPLER ||
+          descriptor_type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+}
+
+static inline bool
+terakan_descriptor_type_has_rat(VkDescriptorType const descriptor_type)
+{
+   return descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE ||
+          descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER ||
+          descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER ||
+          descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
+}
 
 #endif /* TERAKAN_DESCRIPTOR_H */
