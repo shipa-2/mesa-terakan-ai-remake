@@ -40,13 +40,19 @@ struct terakan_descriptor_set_layout_binding {
 
    uint32_t immutable_samplers_unnormalized_coordinates;
 
-   /* Primarily for writing. */
+   /* Primarily for writing.
+    * Descriptors of each type for consecutive bindings are laid out in descriptor memory
+    * sequentially so descriptor counts in writes can span both array elements and consecutive
+    * bindings.
+    * RATs are allocated regardless of the stage flags for the simplicity of writing and copying.
+    */
    uint16_t first_set_rat;
    uint16_t first_set_resource;
    uint8_t first_set_sampler;
 
-   /* Primarily for pushing. */
    uint8_t stage_flags;
+
+   /* Primarily for pushing. */
    uint8_t first_shader_resources[MESA_SHADER_STAGES];
    uint8_t first_shader_samplers[MESA_SHADER_STAGES];
 };
@@ -77,10 +83,11 @@ struct terakan_descriptor_set_layout_shader {
 struct terakan_descriptor_set_layout {
    struct vk_descriptor_set_layout vk;
 
-   uint16_t set_rat_count;
-   uint16_t set_resource_count;
-   /* Immutable samplers are not included. */
-   uint16_t set_sampler_count;
+   /* Resources are the in the beginning of the set's descriptor memory. */
+   uint32_t pool_first_sampler_offset_bytes;
+   /* Immutable samplers are not included in the sampler allocation. */
+   uint32_t pool_first_rat_offset_bytes;
+   uint32_t pool_size_bytes;
 
    struct terakan_sampler const ** immutable_samplers;
 

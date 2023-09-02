@@ -71,6 +71,7 @@ struct terakan_gpu_info {
 
    /* The following are set up by terakan_gpu_info_init_complete. */
 
+   VkDeviceSize buffer_image_bo_size_granularity;
    VkDeviceSize buffer_image_bo_alignment;
 };
 

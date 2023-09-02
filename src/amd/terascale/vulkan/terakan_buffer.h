@@ -25,8 +25,14 @@
 #define TERAKAN_BUFFER_H
 
 #include "winsys/terakan_winsys.h"
+#include "terakan_descriptor.h"
 
 #include "vk_buffer.h"
+#include "vk_buffer_view.h"
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
 
 struct terakan_buffer {
    struct vk_buffer vk;
@@ -36,5 +42,27 @@ struct terakan_buffer {
 };
 
 VK_DEFINE_HANDLE_CASTS(terakan_buffer, vk.base, VkBuffer, VK_OBJECT_TYPE_BUFFER)
+
+struct terakan_winsys_bo const *
+terakan_buffer_create_uniform_buffer_descriptor(VkDescriptorBufferInfo const * buffer_info,
+                                                uint32_t resource_out[8]);
+
+struct terakan_winsys_bo const *
+terakan_buffer_create_storage_buffer_descriptor(VkDescriptorBufferInfo const * buffer_info,
+                                                uint32_t resource_out[8],
+                                                struct terakan_color_descriptor * color_out);
+
+struct terakan_buffer_view {
+   struct vk_buffer_view vk;
+
+   struct terakan_winsys_bo const * bo;
+
+   uint32_t resource[8];
+
+   struct terakan_color_descriptor color;
+};
+
+VK_DEFINE_NONDISP_HANDLE_CASTS(terakan_buffer_view, vk.base, VkBufferView,
+                               VK_OBJECT_TYPE_BUFFER_VIEW)
 
 #endif /* TERAKAN_BUFFER_H */

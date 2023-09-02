@@ -30,6 +30,7 @@
 #include "terakan_physical_device.h"
 
 #include "util/macros.h"
+#include "util/u_math.h"
 #include "vk_alloc.h"
 #include "vk_log.h"
 #include "vk_util.h"
@@ -178,6 +179,9 @@ terakan_AllocateMemory(VkDevice const deviceHandle,
    struct terakan_physical_device const * const physical_device =
       container_of(device->vk.physical, struct terakan_physical_device const, vk);
 
+   VkDeviceSize const bo_size =
+      ALIGN_POT(pAllocateInfo->allocationSize,
+                physical_device->winsys->gpu_info.buffer_image_bo_size_granularity);
    VkMemoryPropertyFlags const memory_property_flags =
       physical_device->memory_properties.memoryTypes[pAllocateInfo->memoryTypeIndex].propertyFlags;
 
@@ -190,7 +194,7 @@ terakan_AllocateMemory(VkDevice const deviceHandle,
       assert(import_fd_info->handleType == VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT ||
              import_fd_info->handleType == VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT);
       device_memory->bo = physical_device->winsys->bo_fn->import_fd(
-         physical_device->winsys, import_fd_info->fd, pAllocateInfo->allocationSize,
+         physical_device->winsys, import_fd_info->fd, bo_size,
          (memory_property_flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) != 0);
    }
 #endif
@@ -198,7 +202,7 @@ terakan_AllocateMemory(VkDevice const deviceHandle,
       VkExportMemoryAllocateInfo const * const export_info =
          vk_find_struct_const(pAllocateInfo, EXPORT_MEMORY_ALLOCATE_INFO);
       device_memory->bo = physical_device->winsys->bo_fn->allocate_device_memory(
-         physical_device->winsys, pAllocateInfo->allocationSize,
+         physical_device->winsys, bo_size,
          physical_device->winsys->gpu_info.buffer_image_bo_alignment, memory_property_flags,
          export_info != NULL ? export_info->handleTypes : 0);
    }

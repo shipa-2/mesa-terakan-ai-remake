@@ -24,6 +24,7 @@
 #include "terakan_descriptor_set_layout.h"
 
 #include "terakan_descriptor.h"
+#include "terakan_descriptor_set.h"
 #include "terakan_device.h"
 #include "terakan_entrypoints.h"
 #include "terakan_sampler.h"
@@ -57,6 +58,10 @@ terakan_CreateDescriptorSetLayout(VkDevice const deviceHandle,
    for (uint32_t binding_index = 0; binding_index < pCreateInfo->bindingCount; ++binding_index) {
       VkDescriptorSetLayoutBinding const * const binding = &pCreateInfo->pBindings[binding_index];
       if (binding->descriptorCount == 0) {
+         /* Stage flags should be ignored, they may be invalid in this case according to
+          * VUID-VkDescriptorSetLayoutBinding-descriptorCount-00283, and this binding doesn't occupy
+          * any space in shader registers.
+          */
          continue;
       }
       uint8_t binding_shader_range_count = 0;
@@ -105,6 +110,9 @@ terakan_CreateDescriptorSetLayout(VkDevice const deviceHandle,
     */
    uint8_t next_immutable_sampler_index = 0;
    uint16_t dynamic_offset_count = 0;
+   uint16_t set_rat_count = 0;
+   uint16_t set_resource_count = 0;
+   uint8_t set_sampler_count = 0;
    for (uint32_t binding_index = 0; binding_index < pCreateInfo->bindingCount; ++binding_index) {
       struct terakan_descriptor_set_layout_binding * const layout_binding =
          &layout->bindings[binding_index];
@@ -114,14 +122,13 @@ terakan_CreateDescriptorSetLayout(VkDevice const deviceHandle,
       VkDescriptorType const binding_type = create_info_binding->descriptorType;
       layout_binding->descriptor_type = binding_type;
 
-      layout_binding->first_immutable_sampler_or_dynamic_offset = UINT16_MAX;
-
       uint32_t const binding_descriptor_count = create_info_binding->descriptorCount;
-      if (binding_descriptor_count == 0) {
-         continue;
-      }
-
+      /* Fields related to set memory or writing must be set even if binding_descriptor_count is 0
+       * for descriptor writes to work across bindings if they start in an empty binding.
+       */
       layout_binding->descriptor_count = binding_descriptor_count;
+
+      layout_binding->first_immutable_sampler_or_dynamic_offset = UINT16_MAX;
 
       bool const binding_has_samplers = terakan_descriptor_type_has_sampler(binding_type);
       if (binding_has_samplers) {
@@ -145,23 +152,40 @@ terakan_CreateDescriptorSetLayout(VkDevice const deviceHandle,
          dynamic_offset_count += binding_descriptor_count;
       }
 
-      layout_binding->first_set_rat = layout->set_rat_count;
-      layout_binding->first_set_resource = layout->set_resource_count;
-      layout_binding->first_set_sampler = layout->set_sampler_count;
+      layout_binding->first_set_rat = set_rat_count;
+      layout_binding->first_set_resource = set_resource_count;
+      layout_binding->first_set_sampler = set_sampler_count;
+
+      if (binding_descriptor_count == 0) {
+         /* Stage flags should be ignored, they may be invalid in this case according to
+          * VUID-VkDescriptorSetLayoutBinding-descriptorCount-00283, and this binding doesn't occupy
+          * any space in shader registers.
+          */
+         continue;
+      }
+
       if (terakan_descriptor_type_has_rat(binding_type)) {
-         layout->set_rat_count += binding_descriptor_count;
+         set_rat_count += binding_descriptor_count;
       }
       if (terakan_descriptor_type_has_resource(binding_type)) {
-         layout->set_resource_count += binding_descriptor_count;
+         set_resource_count += binding_descriptor_count;
       }
       if (binding_has_samplers &&
           layout_binding->first_immutable_sampler_or_dynamic_offset == UINT16_MAX) {
-         layout->set_sampler_count += binding_descriptor_count;
+         set_sampler_count += binding_descriptor_count;
       }
 
       layout_binding->stage_flags = (uint8_t)(create_info_binding->stageFlags & stage_mask);
    }
    assert(next_immutable_sampler_index == immutable_sampler_count);
+
+   layout->pool_first_sampler_offset_bytes =
+      sizeof(struct terakan_descriptor_set_resource) * set_resource_count;
+   layout->pool_first_rat_offset_bytes =
+      layout->pool_first_sampler_offset_bytes +
+      sizeof(struct terakan_descriptor_set_sampler) * set_sampler_count;
+   layout->pool_size_bytes = layout->pool_first_rat_offset_bytes +
+                             sizeof(struct terakan_descriptor_set_rat) * set_rat_count;
 
    /* Set up the layout for each shader stage. */
 
@@ -222,6 +246,7 @@ terakan_CreateDescriptorSetLayout(VkDevice const deviceHandle,
       for (uint32_t binding_index = 0; binding_index < pCreateInfo->bindingCount; ++binding_index) {
          struct terakan_descriptor_set_layout_binding * const binding =
             &layout->bindings[binding_index];
+
          if (!(binding->stage_flags & stage_flag) ||
              !terakan_descriptor_type_has_sampler(binding->descriptor_type)) {
             continue;

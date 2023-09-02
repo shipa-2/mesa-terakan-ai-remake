@@ -605,30 +605,6 @@ terakan_format_data_get_swizzle(VkFormat const format)
 }
 
 uint32_t
-terakan_format_data_component_swizzle_to_dst_sel(VkComponentSwizzle component_swizzle,
-                                                 VkComponentSwizzle const identity_swizzle,
-                                                 unsigned char const format_swizzle[4])
-{
-   if (component_swizzle == VK_COMPONENT_SWIZZLE_IDENTITY) {
-      component_swizzle = identity_swizzle;
-   }
-   if (component_swizzle >= VK_COMPONENT_SWIZZLE_R && component_swizzle <= VK_COMPONENT_SWIZZLE_A) {
-      enum pipe_swizzle const format_component_swizzle =
-         format_swizzle[(unsigned)component_swizzle - (unsigned)VK_COMPONENT_SWIZZLE_R];
-      if (format_component_swizzle >= PIPE_SWIZZLE_X &&
-          format_component_swizzle <= PIPE_SWIZZLE_W) {
-         return V_03000C_SQ_SEL_X + ((unsigned)format_component_swizzle - (unsigned)PIPE_SWIZZLE_X);
-      }
-      return format_component_swizzle == PIPE_SWIZZLE_1 ||
-                   (format_component_swizzle == PIPE_SWIZZLE_NONE &&
-                    identity_swizzle == VK_COMPONENT_SWIZZLE_A)
-                ? V_03000C_SQ_SEL_1
-                : V_03000C_SQ_SEL_0;
-   }
-   return component_swizzle == VK_COMPONENT_SWIZZLE_ONE ? V_03000C_SQ_SEL_1 : V_03000C_SQ_SEL_0;
-}
-
-uint32_t
 terakan_format_texture_get_format(VkFormat const format)
 {
    uint32_t const common_format = terakan_format_data_get_common_format(format);

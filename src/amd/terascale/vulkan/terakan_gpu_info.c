@@ -30,6 +30,7 @@
 
 #include "util/u_math.h"
 
+#include <assert.h>
 #include <stddef.h>
 
 bool
@@ -127,12 +128,28 @@ terakan_gpu_info_init_chip_family(struct terakan_gpu_info * const info, uint32_t
 void
 terakan_gpu_info_init_complete(struct terakan_gpu_info * const info)
 {
+   /* Storage and uniform buffers in Vulkan require only the offset to be aligned, not the range,
+    * but the entire range must be visible to the shader anyway. For the purpose of bounds checking,
+    * the ranges are rounded up to their respective access size alignments in
+    * VkPhysicalDeviceRobustness2PropertiesEXT, so make sure the BO is never smaller than the size
+    * rounded up, and the validation in the kernel driver doesn't consider the binding out of
+    * bounds.
+    * Linux Radeon 2.50.0 also validates the size of buffer RATs as LINEAR_ALIGNED image size, but
+    * with the smallest SLICE_TILE_MAX it considers them zero-size, so the RAT pitch alignment is
+    * not important here.
+    */
+   info->buffer_image_bo_size_granularity = TERAKAN_CONSTANT_CACHE_LINE_BYTES;
+
    /* HwlComputeMaxBaseAlignments from the R800 AddrLib for images.
     * Maximum 8x8 micro-tile size is 8-sample and 16 byte-per-pixel.
     * With the largest tile size, the bank width and height can be treated as 1.
+    *
+    * For buffers, the same alignment is needed as for images with the LINEAR_ALIGNED array mode
+    * because it's required for RATs (equal to the pipe interleave in tiling), so it's included in
+    * the image alignment. It's normally 256 bytes, but potentially can be 512 bytes, depending on
+    * device. It's also not smaller than the constant cache buffer alignment (256 bytes).
     */
-   VkDeviceSize const max_image_alignment =
+   info->buffer_image_bo_alignment =
       (VkDeviceSize)1 << (MIN2(info->tile_row_bytes_log2, 3 + 3 + 3 + 4) + info->tile_banks_log2 +
                           info->tile_pipes_log2);
-   info->buffer_image_bo_alignment = MAX2(TERAKAN_CONSTANT_CACHE_LINE_BYTES, max_image_alignment);
 }

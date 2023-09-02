@@ -501,7 +501,7 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
          buffer_resource[0] = (uint32_t)buffer_offset;
          buffer_resource[1] = (uint32_t)(bpe * buffer_size_elements - 1);
          buffer_resource[2] =
-            S_030008_BASE_ADDRESS_HI((buffer_offset >> 32) & UINT8_MAX) | S_030008_STRIDE(bpe) |
+            S_030008_BASE_ADDRESS_HI(buffer_offset >> 32) | S_030008_STRIDE(bpe) |
             S_030008_DATA_FORMAT(terakan_format_vertex_get_format(region_transfer_format)) |
             S_030008_NUM_FORMAT_ALL(terakan_format_data_get_number_format(region_transfer_format));
          buffer_resource[4] = (uint32_t)buffer_size_elements;

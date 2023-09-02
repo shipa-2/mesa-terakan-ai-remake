@@ -139,8 +139,14 @@ terakan_GetImageMemoryRequirements2(VkDevice const deviceHandle,
 {
    struct terakan_image const * const image = terakan_image_from_handle(pInfo->image);
    pMemoryRequirements->memoryRequirements.size = image->surface.total_size;
-   pMemoryRequirements->memoryRequirements.alignment = (VkDeviceSize)1
-                                                       << image->surface.alignment_log2;
+   /* sizeof(uint32_t) alignment is additionally required so writes to the end of storage buffers
+    * with an unaligned size can't affect the image placed next to them because VK_EXT_robustness2
+    * defines rounding up of the size for them, though all aligned array modes naturally require a
+    * much larger alignment anyway, but making this explicit in case LINEAR_GENERAL images ever
+    * become supported for any reason.
+    */
+   pMemoryRequirements->memoryRequirements.alignment =
+      MAX2((VkDeviceSize)1 << image->surface.alignment_log2, sizeof(uint32_t));
 
    struct terakan_device const * const device = terakan_device_from_handle(deviceHandle);
    struct terakan_physical_device const * const physical_device =
@@ -265,9 +271,8 @@ terakan_image_create_resource_descriptor(VkImageViewCreateInfo const * const ima
       layer_count = image_view_create_info->subresourceRange.layerCount;
       break;
    case VK_IMAGE_VIEW_TYPE_2D_ARRAY:
-      dimension = image->vk.samples > VK_SAMPLE_COUNT_1_BIT
-                     ? V_030000_SQ_TEX_DIM_2D_ARRAY_MSAA
-                     : V_030000_SQ_TEX_DIM_2D_ARRAY;
+      dimension = image->vk.samples > VK_SAMPLE_COUNT_1_BIT ? V_030000_SQ_TEX_DIM_2D_ARRAY_MSAA
+                                                            : V_030000_SQ_TEX_DIM_2D_ARRAY;
       layer_count = image_view_create_info->subresourceRange.layerCount;
       break;
    case VK_IMAGE_VIEW_TYPE_CUBE_ARRAY:
@@ -354,8 +359,8 @@ terakan_image_create_resource_descriptor(VkImageViewCreateInfo const * const ima
          descriptor_out[1] |= S_030004_TEX_HEIGHT(height - 1);
          if (image->vk.image_type == VK_IMAGE_TYPE_3D) {
             assert(image_view_create_info->viewType == VK_IMAGE_VIEW_TYPE_2D ||
-                  image_view_create_info->viewType == VK_IMAGE_VIEW_TYPE_2D_ARRAY ||
-                  image_view_create_info->viewType == VK_IMAGE_VIEW_TYPE_3D);
+                   image_view_create_info->viewType == VK_IMAGE_VIEW_TYPE_2D_ARRAY ||
+                   image_view_create_info->viewType == VK_IMAGE_VIEW_TYPE_3D);
             descriptor_out[1] |= S_030004_TEX_DEPTH(image->vk.extent.depth - 1);
          } else {
             descriptor_out[1] |= S_030004_TEX_DEPTH(image->vk.array_layers - 1);
@@ -535,10 +540,23 @@ terakan_image_create_color_descriptor(
    default:
       break;
    }
+   uint32_t resource_type;
+   switch (image_view_create_info->viewType) {
+   case VK_IMAGE_VIEW_TYPE_1D:
+   case VK_IMAGE_VIEW_TYPE_1D_ARRAY:
+      resource_type = image->vk.array_layers > 1 ? V_028C70_TEXTURE1DARRAY : V_028C70_TEXTURE1D;
+      break;
+   case VK_IMAGE_VIEW_TYPE_3D:
+      resource_type = V_028C70_TEXTURE3D;
+      break;
+   default:
+      resource_type = image->vk.array_layers > 1 ? V_028C70_TEXTURE2DARRAY : V_028C70_TEXTURE2D;
+   }
    descriptor_out->info = S_028C70_FORMAT(color_format) |
                           S_028C70_ARRAY_MODE(terakan_image_array_mode_ac_to_hw(level->mode)) |
                           S_028C70_NUMBER_TYPE(number_type) | S_028C70_COMP_SWAP(swap) |
-                          S_028C70_SIMPLE_FLOAT(1) | S_028C70_SOURCE_FORMAT(source_format);
+                          S_028C70_SIMPLE_FLOAT(1) | S_028C70_SOURCE_FORMAT(source_format) |
+                          S_028C70_RESOURCE_TYPE(resource_type);
    if (terakan_format_color_is_blendable(color_format, number_type)) {
       descriptor_out->info |= S_028C70_BLEND_CLAMP(blend_clamp);
    } else {

@@ -288,10 +288,20 @@ terakan_GetPhysicalDeviceProperties(VkPhysicalDevice const physicalDevice,
 
    limits->maxUniformBufferRange = TERAKAN_CONSTANT_CACHE_MAX_BUFFER_SIZE_BYTES;
 
-   /* Storage buffers are bound as R32 vertex fetch constants or random access targets. */
-   limits->maxStorageBufferRange = UINT32_MAX & ~(uint32_t)(sizeof(uint32_t) - 1);
+   /* Storage buffers are bound as R32 vertex fetch constants or random access targets.
+    * However, buffer RATs have LINEAR_ALIGNED array more, and thus alignment equal to the tile
+    * interleave, with the offset (in element units) applied in shaders. Adding the offset may
+    * result in out-of-bounds index values near UINT32_MAX wrapping and becoming valid indices
+    * near 0. Instead of comparing the index to the buffer size in shaders to implement robustness
+    * with the offset, the index value can be clamped to this maximum range as unsigned so that
+    * adding any alignment offset after the clamping won't cause wraparound.
+    */
+   limits->maxStorageBufferRange =
+      ~(((uint32_t)1 << gpu_info->tile_pipe_interleave_bytes_log2) - 1);
 
-   /* TODO(Triang3l): Exclude internal constants like the draw ID, sample locations. */
+   /* TODO(Triang3l): Exclude internal constants like the draw ID, ring layout, sample locations,
+    * RAT alignment offsets.
+    */
    limits->maxPushConstantsSize = TERAKAN_CONSTANT_CACHE_MAX_BUFFER_SIZE_BYTES;
 
    limits->maxMemoryAllocationCount = UINT32_MAX;
@@ -387,14 +397,7 @@ terakan_GetPhysicalDeviceProperties(VkPhysicalDevice const physicalDevice,
 
    limits->minMemoryMapAlignment = gpu_info->min_memory_map_alignment;
 
-   /* The largest is for R32G32B32A32 random access targets, which must have element-aligned base
-    * addresses.
-    */
-   /* TODO(Triang3l): Research what "element-aligned" means in CB_COLOR[0-11]_VIEW.SLICE_START
-    * documentation, is it "buffer element" (thus texel-aligned), or "structure element" (thus
-    * 4-aligned at most, like for vertex elements) as specified in "4.4.6 Element Alignment" of the
-    * Direct3D 11.3 Functional Specification.
-    */
+   /* The largest is for R32G32B32A32 random access targets. */
    /* TODO(Triang3l): VK_EXT_texel_buffer_alignment properties:
     * storageTexelBufferOffsetAlignmentBytes = 16 (RAT element).
     * storageTexelBufferOffsetSingleTexelAlignment = VK_TRUE.
