@@ -524,6 +524,5 @@ terakan_CreateDescriptorPool(VkDevice const deviceHandle,
    pool->freed_sets_head = UINT32_MAX;
 
    *pDescriptorPool = terakan_descriptor_pool_to_handle(pool);
-
    return VK_SUCCESS;
 }

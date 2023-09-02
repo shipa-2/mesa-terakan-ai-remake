@@ -473,7 +473,6 @@ terakan_queue_create(struct terakan_device * const device,
    queue->vk.driver_submit = terakan_queue_submit;
 
    *queue_out = queue;
-
    return VK_SUCCESS;
 
 fail_queue:

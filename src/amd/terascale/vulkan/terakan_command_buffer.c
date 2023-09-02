@@ -391,7 +391,6 @@ terakan_command_buffer_create(struct vk_command_pool * const command_pool,
    command_buffer->command_writer.gfx = NULL;
 
    *command_buffer_out = &command_buffer->vk;
-
    return VK_SUCCESS;
 }
 
@@ -1174,6 +1173,5 @@ terakan_CreateCommandPool(VkDevice const deviceHandle,
    }
 
    *pCommandPool = terakan_command_pool_to_handle(command_pool);
-
    return VK_SUCCESS;
 }

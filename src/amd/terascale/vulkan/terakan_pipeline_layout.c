@@ -111,6 +111,5 @@ terakan_CreatePipelineLayout(VkDevice const deviceHandle,
    }
 
    *pPipelineLayout = terakan_pipeline_layout_to_handle(layout);
-
    return VK_SUCCESS;
 }

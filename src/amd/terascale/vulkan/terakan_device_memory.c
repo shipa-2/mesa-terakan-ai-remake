@@ -81,7 +81,6 @@ terakan_MapMemory2KHR(VkDevice const deviceHandle, VkMemoryMapInfoKHR const * co
    }
 
    *ppData = mapping;
-
    return VK_SUCCESS;
 }
 
@@ -99,7 +98,6 @@ terakan_GetMemoryFdKHR(VkDevice const device, VkMemoryGetFdInfoKHR const * const
    }
 
    *pFd = fd;
-
    return VK_SUCCESS;
 }
 
@@ -226,7 +224,6 @@ terakan_AllocateMemory(VkDevice const deviceHandle,
    }
 
    *pMemory = terakan_device_memory_to_handle(device_memory);
-
    return VK_SUCCESS;
 
 fail_bo:

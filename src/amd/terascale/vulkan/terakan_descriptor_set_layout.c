@@ -283,6 +283,5 @@ terakan_CreateDescriptorSetLayout(VkDevice const deviceHandle,
    assert(next_shader_range_index == shader_range_count);
 
    *pSetLayout = terakan_descriptor_set_layout_to_handle(layout);
-
    return VK_SUCCESS;
 }

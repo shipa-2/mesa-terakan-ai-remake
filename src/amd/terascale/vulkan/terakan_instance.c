@@ -193,7 +193,6 @@ terakan_CreateInstance(VkInstanceCreateInfo const * const pCreateInfo,
    }
 
    *pInstance = terakan_instance_to_handle(instance);
-
    return VK_SUCCESS;
 }
 

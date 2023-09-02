@@ -794,7 +794,6 @@ terakan_physical_device_try_create_for_drm(struct vk_instance * const instance_b
    }
 
    *device_out = &device->vk;
-
    return VK_SUCCESS;
 
 fail_winsys:

@@ -192,7 +192,6 @@ terakan_CreateDevice(VkPhysicalDevice const physicalDevice,
    }
 
    *pDevice = terakan_device_to_handle(device);
-
    return VK_SUCCESS;
 
 fail_completion_mutex:

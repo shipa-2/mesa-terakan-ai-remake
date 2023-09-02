@@ -662,7 +662,6 @@ terakan_CreateImage(VkDevice const deviceHandle, VkImageCreateInfo const * const
    image->bo_offset = 0;
 
    *pImage = terakan_image_to_handle(image);
-
    return VK_SUCCESS;
 
 fail_image:
@@ -721,6 +720,5 @@ terakan_CreateImageView(VkDevice const deviceHandle,
    /* TODO(Triang3l): Other descriptor types. */
 
    *pView = terakan_image_view_to_handle(image_view);
-
    return VK_SUCCESS;
 }

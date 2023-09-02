@@ -213,7 +213,6 @@ terakan_CreateBuffer(VkDevice const deviceHandle, VkBufferCreateInfo const * con
    buffer->bo_offset = 0;
 
    *pBuffer = terakan_buffer_to_handle(buffer);
-
    return VK_SUCCESS;
 }
 
@@ -317,6 +316,5 @@ terakan_CreateBufferView(VkDevice const deviceHandle,
    }
 
    *pView = terakan_buffer_view_to_handle(buffer_view);
-
    return VK_SUCCESS;
 }

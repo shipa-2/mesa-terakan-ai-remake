@@ -100,6 +100,5 @@ terakan_CreateSampler(VkDevice const deviceHandle, VkSamplerCreateInfo const * c
    sampler->unnormalized_coordinates = pCreateInfo->unnormalizedCoordinates;
 
    *pSampler = terakan_sampler_to_handle(sampler);
-
    return VK_SUCCESS;
 }
