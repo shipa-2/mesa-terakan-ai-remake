@@ -119,8 +119,8 @@ terakan_state_draw_apply_pa_sc_aa_mask(struct terakan_gfx_command_writer * const
 }
 
 static void
-terakan_state_draw_apply_color(struct terakan_gfx_command_writer * const command_writer,
-                               enum terakan_state_draw_index const state_index)
+terakan_state_draw_apply_cb_color(struct terakan_gfx_command_writer * const command_writer,
+                                  enum terakan_state_draw_index const state_index)
 {
    uint32_t const color_index = (uint32_t)state_index - (uint32_t)TERAKAN_STATE_DRAW_CB_COLOR_FIRST;
    struct terakan_winsys_bo const * const color_bo =
@@ -151,8 +151,8 @@ terakan_state_draw_apply_color(struct terakan_gfx_command_writer * const command
 }
 
 static void
-terakan_state_draw_apply_color_rat_only(struct terakan_gfx_command_writer * const command_writer,
-                                        enum terakan_state_draw_index const state_index)
+terakan_state_draw_apply_cb_color_rat_only(struct terakan_gfx_command_writer * const command_writer,
+                                           enum terakan_state_draw_index const state_index)
 {
    uint32_t const color_index = (uint32_t)state_index - (uint32_t)TERAKAN_STATE_DRAW_CB_COLOR_FIRST;
    struct terakan_winsys_bo const * const color_bo =
@@ -184,18 +184,18 @@ static terakan_state_draw_apply_function const
       [TERAKAN_STATE_DRAW_PA_SU_SC_MODE_CNTL] = terakan_state_draw_apply_pa_su_sc_mode_cntl,
       [TERAKAN_STATE_DRAW_PA_CL_VTE_CNTL] = terakan_state_draw_apply_pa_cl_vte_cntl,
       [TERAKAN_STATE_DRAW_PA_SC_AA_MASK] = terakan_state_draw_apply_pa_sc_aa_mask,
-      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST] = terakan_state_draw_apply_color,
-      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 1] = terakan_state_draw_apply_color,
-      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 2] = terakan_state_draw_apply_color,
-      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 3] = terakan_state_draw_apply_color,
-      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 4] = terakan_state_draw_apply_color,
-      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 5] = terakan_state_draw_apply_color,
-      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 6] = terakan_state_draw_apply_color,
-      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 7] = terakan_state_draw_apply_color,
-      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 8] = terakan_state_draw_apply_color_rat_only,
-      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 9] = terakan_state_draw_apply_color_rat_only,
-      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 10] = terakan_state_draw_apply_color_rat_only,
-      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 11] = terakan_state_draw_apply_color_rat_only,
+      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST] = terakan_state_draw_apply_cb_color,
+      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 1] = terakan_state_draw_apply_cb_color,
+      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 2] = terakan_state_draw_apply_cb_color,
+      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 3] = terakan_state_draw_apply_cb_color,
+      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 4] = terakan_state_draw_apply_cb_color,
+      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 5] = terakan_state_draw_apply_cb_color,
+      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 6] = terakan_state_draw_apply_cb_color,
+      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 7] = terakan_state_draw_apply_cb_color,
+      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 8] = terakan_state_draw_apply_cb_color_rat_only,
+      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 9] = terakan_state_draw_apply_cb_color_rat_only,
+      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 10] = terakan_state_draw_apply_cb_color_rat_only,
+      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 11] = terakan_state_draw_apply_cb_color_rat_only,
 };
 
 void

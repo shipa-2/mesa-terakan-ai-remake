@@ -399,8 +399,8 @@ terakan_hw_state_draw_emit_cb_blend_rgba(struct terakan_gfx_command_writer * con
 }
 
 static void
-terakan_hw_state_draw_emit_color(struct terakan_gfx_command_writer * const command_writer,
-                                 enum terakan_hw_state_draw_index const state_index)
+terakan_hw_state_draw_emit_cb_color(struct terakan_gfx_command_writer * const command_writer,
+                                    enum terakan_hw_state_draw_index const state_index)
 {
    uint32_t const color_index =
       (uint32_t)state_index - (uint32_t)TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST;
@@ -472,8 +472,9 @@ terakan_hw_state_draw_emit_color(struct terakan_gfx_command_writer * const comma
 }
 
 static void
-terakan_hw_state_draw_emit_color_rat_only(struct terakan_gfx_command_writer * const command_writer,
-                                          enum terakan_hw_state_draw_index const state_index)
+terakan_hw_state_draw_emit_cb_color_rat_only(
+   struct terakan_gfx_command_writer * const command_writer,
+   enum terakan_hw_state_draw_index const state_index)
 {
    uint32_t const color_rat_only_index =
       (uint32_t)state_index - ((uint32_t)TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 8);
@@ -1109,18 +1110,18 @@ static terakan_hw_state_draw_emit_function const
       [TERAKAN_HW_STATE_DRAW_PA_SC_AA_SAMPLES] = terakan_hw_state_draw_emit_pa_sc_aa_samples,
       [TERAKAN_HW_STATE_DRAW_PA_SC_AA_MASK] = terakan_hw_state_draw_emit_pa_sc_aa_mask,
       [TERAKAN_HW_STATE_DRAW_CB_BLEND_RGBA] = terakan_hw_state_draw_emit_cb_blend_rgba,
-      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST] = terakan_hw_state_draw_emit_color,
-      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 1] = terakan_hw_state_draw_emit_color,
-      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 2] = terakan_hw_state_draw_emit_color,
-      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 3] = terakan_hw_state_draw_emit_color,
-      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 4] = terakan_hw_state_draw_emit_color,
-      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 5] = terakan_hw_state_draw_emit_color,
-      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 6] = terakan_hw_state_draw_emit_color,
-      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 7] = terakan_hw_state_draw_emit_color,
-      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 8] = terakan_hw_state_draw_emit_color_rat_only,
-      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 9] = terakan_hw_state_draw_emit_color_rat_only,
-      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 10] = terakan_hw_state_draw_emit_color_rat_only,
-      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 11] = terakan_hw_state_draw_emit_color_rat_only,
+      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST] = terakan_hw_state_draw_emit_cb_color,
+      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 1] = terakan_hw_state_draw_emit_cb_color,
+      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 2] = terakan_hw_state_draw_emit_cb_color,
+      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 3] = terakan_hw_state_draw_emit_cb_color,
+      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 4] = terakan_hw_state_draw_emit_cb_color,
+      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 5] = terakan_hw_state_draw_emit_cb_color,
+      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 6] = terakan_hw_state_draw_emit_cb_color,
+      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 7] = terakan_hw_state_draw_emit_cb_color,
+      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 8] = terakan_hw_state_draw_emit_cb_color_rat_only,
+      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 9] = terakan_hw_state_draw_emit_cb_color_rat_only,
+      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 10] = terakan_hw_state_draw_emit_cb_color_rat_only,
+      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 11] = terakan_hw_state_draw_emit_cb_color_rat_only,
       [TERAKAN_HW_STATE_DRAW_SQ_CONSTANT_CACHE_VS] =
          terakan_hw_state_draw_emit_sq_constant_cache_vs,
       [TERAKAN_HW_STATE_DRAW_SQ_CONSTANT_CACHE_TCS] =
