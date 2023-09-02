@@ -314,9 +314,8 @@ terakan_command_buffer_release_resources(struct terakan_command_buffer * const c
       command_buffer->command_writer.gfx = NULL;
    }
 
-   list_for_each_entry_safe(struct terakan_command_buffer_submission, submission_base,
-                            &command_buffer->submissions, command_buffer_submission_link)
-   {
+   list_for_each_entry_safe (struct terakan_command_buffer_submission, submission_base,
+                             &command_buffer->submissions, command_buffer_submission_link) {
       list_del(&submission_base->command_buffer_submission_link);
       if (submission_base->is_secondary_execution) {
          struct terakan_command_buffer_submission_secondary_execution * const submission =
@@ -1081,23 +1080,20 @@ terakan_BeginCommandBuffer(VkCommandBuffer const commandBuffer,
 static void
 terakan_command_pool_trim_resources(struct terakan_command_pool * const command_pool)
 {
-   list_for_each_entry_safe(struct terakan_gfx_command_writer, command_writer,
-                            &command_pool->command_writers_free, base.free_link)
-   {
+   list_for_each_entry_safe (struct terakan_gfx_command_writer, command_writer,
+                             &command_pool->command_writers_free, base.free_link) {
       vk_free(&command_pool->vk.alloc, command_writer);
    }
    list_inithead(&command_pool->command_writers_free);
 
-   list_for_each_entry_safe(struct terakan_command_buffer_submission_secondary_execution,
-                            submission, &command_pool->secondary_executions_free, free_link)
-   {
+   list_for_each_entry_safe (struct terakan_command_buffer_submission_secondary_execution,
+                             submission, &command_pool->secondary_executions_free, free_link) {
       vk_free(&command_pool->vk.alloc, submission);
    }
    list_inithead(&command_pool->secondary_executions_free);
 
-   list_for_each_entry_safe(struct terakan_command_buffer_submission_indirect_buffer, submission,
-                            &command_pool->indirect_buffers_free, free_link)
-   {
+   list_for_each_entry_safe (struct terakan_command_buffer_submission_indirect_buffer, submission,
+                             &command_pool->indirect_buffers_free, free_link) {
       vk_free(&command_pool->vk.alloc, submission->indirect_buffer);
       vk_free(&command_pool->vk.alloc, submission->bo_references);
       vk_free(&command_pool->vk.alloc, submission);

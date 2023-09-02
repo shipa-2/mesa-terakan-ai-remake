@@ -1370,8 +1370,7 @@ terakan_hw_state_draw_emit_all(struct terakan_gfx_command_writer * const command
    struct terakan_hw_state_draw * const state = &command_writer->hw_state_draw;
    BITSET_ZERO(state->state_modified);
    unsigned state_index;
-   BITSET_FOREACH_SET(state_index, state->state_ever_written, TERAKAN_HW_STATE_DRAW_COUNT)
-   {
+   BITSET_FOREACH_SET (state_index, state->state_ever_written, TERAKAN_HW_STATE_DRAW_COUNT) {
       terakan_hw_state_draw_emit_functions[state_index](
          command_writer, (enum terakan_hw_state_draw_index)state_index);
    }
@@ -1566,8 +1565,7 @@ terakan_hw_state_draw_emit_modified(struct terakan_gfx_command_writer * const co
 {
    struct terakan_hw_state_draw * const state = &command_writer->hw_state_draw;
    unsigned state_index;
-   BITSET_FOREACH_SET(state_index, state->state_modified, TERAKAN_HW_STATE_DRAW_COUNT)
-   {
+   BITSET_FOREACH_SET (state_index, state->state_modified, TERAKAN_HW_STATE_DRAW_COUNT) {
       terakan_hw_state_draw_emit_functions[state_index](
          command_writer, (enum terakan_hw_state_draw_index)state_index);
       if (unlikely(!BITSET_TEST(state->state_modified, state_index))) {

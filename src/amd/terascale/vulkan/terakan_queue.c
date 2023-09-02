@@ -176,9 +176,8 @@ terakan_queue_submit(struct vk_queue * const queue_base, struct vk_queue_submit 
         ++command_buffer_index) {
       struct terakan_command_buffer const * const command_buffer = container_of(
          submit->command_buffers[command_buffer_index], struct terakan_command_buffer const, vk);
-      list_for_each_entry(struct terakan_command_buffer_submission, command_buffer_submission_base,
-                          &command_buffer->submissions, command_buffer_submission_link)
-      {
+      list_for_each_entry (struct terakan_command_buffer_submission, command_buffer_submission_base,
+                           &command_buffer->submissions, command_buffer_submission_link) {
          struct terakan_command_buffer_submission_indirect_buffer const *
             command_buffer_indirect_buffer;
          if (command_buffer_submission_base->is_secondary_execution) {
