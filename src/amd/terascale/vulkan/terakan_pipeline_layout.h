@@ -45,7 +45,7 @@ struct terakan_pipeline_layout {
    uint32_t shader_push_constant_extents_bytes[MESA_SHADER_STAGES];
 };
 
-VK_DEFINE_HANDLE_CASTS(terakan_pipeline_layout, vk.base, VkPipelineLayout,
-                       VK_OBJECT_TYPE_PIPELINE_LAYOUT);
+VK_DEFINE_NONDISP_HANDLE_CASTS(terakan_pipeline_layout, vk.base, VkPipelineLayout,
+                               VK_OBJECT_TYPE_PIPELINE_LAYOUT)
 
 #endif /* TERAKAN_PIPELINE_LAYOUT_H */

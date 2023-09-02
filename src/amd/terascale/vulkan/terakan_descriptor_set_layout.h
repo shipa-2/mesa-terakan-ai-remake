@@ -98,7 +98,7 @@ struct terakan_descriptor_set_layout {
    struct terakan_descriptor_set_layout_binding * bindings;
 };
 
-VK_DEFINE_HANDLE_CASTS(terakan_descriptor_set_layout, vk.base, VkDescriptorSetLayout,
-                       VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT);
+VK_DEFINE_NONDISP_HANDLE_CASTS(terakan_descriptor_set_layout, vk.base, VkDescriptorSetLayout,
+                               VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT)
 
 #endif /* TERAKAN_DESCRIPTOR_SET_LAYOUT_H */

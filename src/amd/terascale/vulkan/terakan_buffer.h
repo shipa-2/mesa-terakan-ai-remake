@@ -41,7 +41,7 @@ struct terakan_buffer {
    VkDeviceSize bo_offset;
 };
 
-VK_DEFINE_HANDLE_CASTS(terakan_buffer, vk.base, VkBuffer, VK_OBJECT_TYPE_BUFFER)
+VK_DEFINE_NONDISP_HANDLE_CASTS(terakan_buffer, vk.base, VkBuffer, VK_OBJECT_TYPE_BUFFER)
 
 struct terakan_winsys_bo const *
 terakan_buffer_create_uniform_buffer_descriptor(VkDescriptorBufferInfo const * buffer_info,

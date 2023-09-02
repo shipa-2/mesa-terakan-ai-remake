@@ -34,6 +34,7 @@ struct terakan_device_memory {
    struct terakan_winsys_bo * bo;
 };
 
-VK_DEFINE_HANDLE_CASTS(terakan_device_memory, vk.base, VkDeviceMemory, VK_OBJECT_TYPE_DEVICE_MEMORY)
+VK_DEFINE_NONDISP_HANDLE_CASTS(terakan_device_memory, vk.base, VkDeviceMemory,
+                               VK_OBJECT_TYPE_DEVICE_MEMORY)
 
 #endif /* TERAKAN_DEVICE_MEMORY_H */

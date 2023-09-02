@@ -96,7 +96,7 @@ struct terakan_image {
    VkDeviceSize bo_offset;
 };
 
-VK_DEFINE_HANDLE_CASTS(terakan_image, vk.base, VkImage, VK_OBJECT_TYPE_IMAGE)
+VK_DEFINE_NONDISP_HANDLE_CASTS(terakan_image, vk.base, VkImage, VK_OBJECT_TYPE_IMAGE)
 
 bool terakan_image_uses_tc_non_display_tiling(enum amd_gfx_level gfx_level, VkFormat image_format,
                                               bool level_is_linear);
@@ -129,6 +129,6 @@ struct terakan_image_view {
    struct terakan_color_meta_descriptor color_meta;
 };
 
-VK_DEFINE_HANDLE_CASTS(terakan_image_view, vk.base, VkImageView, VK_OBJECT_TYPE_IMAGE_VIEW);
+VK_DEFINE_NONDISP_HANDLE_CASTS(terakan_image_view, vk.base, VkImageView, VK_OBJECT_TYPE_IMAGE_VIEW)
 
 #endif

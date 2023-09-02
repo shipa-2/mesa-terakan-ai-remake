@@ -85,7 +85,7 @@ struct terakan_descriptor_set {
 };
 
 VK_DEFINE_NONDISP_HANDLE_CASTS(terakan_descriptor_set, base, VkDescriptorSet,
-                               VK_OBJECT_TYPE_DESCRIPTOR_SET);
+                               VK_OBJECT_TYPE_DESCRIPTOR_SET)
 
 struct terakan_descriptor_pool {
    struct vk_object_base base;
@@ -107,6 +107,6 @@ struct terakan_descriptor_pool {
 };
 
 VK_DEFINE_NONDISP_HANDLE_CASTS(terakan_descriptor_pool, base, VkDescriptorPool,
-                               VK_OBJECT_TYPE_DESCRIPTOR_POOL);
+                               VK_OBJECT_TYPE_DESCRIPTOR_POOL)
 
 #endif /* TERAKAN_DESCRIPTOR_SET_H */

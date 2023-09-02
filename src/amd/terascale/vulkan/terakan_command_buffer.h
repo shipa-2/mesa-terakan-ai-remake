@@ -221,6 +221,7 @@ struct terakan_command_pool {
    struct list_head command_writers_free;
 };
 
-VK_DEFINE_HANDLE_CASTS(terakan_command_pool, vk.base, VkCommandPool, VK_OBJECT_TYPE_COMMAND_POOL)
+VK_DEFINE_NONDISP_HANDLE_CASTS(terakan_command_pool, vk.base, VkCommandPool,
+                               VK_OBJECT_TYPE_COMMAND_POOL)
 
 #endif /* TERAKAN_COMMAND_BUFFER_H */
