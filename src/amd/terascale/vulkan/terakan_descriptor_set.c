@@ -427,7 +427,7 @@ terakan_AllocateDescriptorSets(VkDevice const deviceHandle,
 
 VKAPI_ATTR VkResult VKAPI_ATTR
 terakan_ResetDescriptorPool(UNUSED VkDevice const device, VkDescriptorPool const descriptorPool,
-                            VkDescriptorPoolResetFlags const flags)
+                            UNUSED VkDescriptorPoolResetFlags const flags)
 {
    struct terakan_descriptor_pool * const pool =
       terakan_descriptor_pool_from_handle(descriptorPool);

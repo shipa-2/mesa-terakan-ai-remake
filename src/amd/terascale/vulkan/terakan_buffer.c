@@ -79,7 +79,7 @@ terakan_buffer_create_storage_buffer_descriptor(VkDescriptorBufferInfo const * c
 
 VKAPI_ATTR void VKAPI_CALL
 terakan_GetPhysicalDeviceExternalBufferProperties(
-   VkPhysicalDevice const physicalDevice,
+   UNUSED VkPhysicalDevice const physicalDevice,
    VkPhysicalDeviceExternalBufferInfo const * const pExternalBufferInfo,
    VkExternalBufferProperties * const pExternalBufferProperties)
 {
@@ -164,7 +164,7 @@ terakan_GetDeviceBufferMemoryRequirements(VkDevice const deviceHandle,
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
-terakan_BindBufferMemory2(VkDevice const device, uint32_t const bindInfoCount,
+terakan_BindBufferMemory2(UNUSED VkDevice const device, uint32_t const bindInfoCount,
                           VkBindBufferMemoryInfo const * const pBindInfos)
 {
    for (uint32_t bind_info_index = 0; bind_info_index < bindInfoCount; ++bind_info_index) {
