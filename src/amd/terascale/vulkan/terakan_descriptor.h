@@ -111,6 +111,9 @@ static_assert(
    TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL >= 15 + 4 + 128 + 8 + 4,
    "There should be enough pixel shader mutable resource bindings for the minimum Direct3D 11 "
    "binding counts plus Vulkan storage buffers and input attachments.");
+#define TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_IN_PIPELINE                                       \
+   (TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_NON_PIXEL * 5 +                                       \
+    TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL)
 
 /* SQ_VTX_CONSTANT doesn't have words 5 and 6, so using word 5 for the BO priority. */
 #define TERAKAN_RESOURCE_BUFFER_PRIORITY_WORD 5

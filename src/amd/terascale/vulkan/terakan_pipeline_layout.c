@@ -57,11 +57,7 @@ terakan_CreatePipelineLayout(VkDevice const deviceHandle,
    }
    layout->sets = sets;
 
-   uint8_t next_first_shader_resources[MESA_SHADER_STAGES];
-   for (unsigned stage_index = 0; stage_index < ARRAY_SIZE(next_first_shader_resources);
-        ++stage_index) {
-      next_first_shader_resources[stage_index] = TERAKAN_RESOURCE_RANGE_MUTABLE_BASE;
-   }
+   uint8_t next_first_mutable_shader_resources[MESA_SHADER_STAGES] = {};
    uint8_t next_first_shader_samplers[MESA_SHADER_STAGES] = {};
 
    for (uint32_t set_index = 0; set_index < layout->vk.set_count; ++set_index) {
@@ -78,10 +74,23 @@ terakan_CreatePipelineLayout(VkDevice const deviceHandle,
          struct terakan_descriptor_set_layout_shader const * const set_layout_shader =
             &set_layout->shaders[stage_index];
 
-         set->first_shader_resources[stage_index] = next_first_shader_resources[stage_index];
-         next_first_shader_resources[stage_index] += set_layout_shader->resource_count;
+         uint8_t const first_mutable_shader_resource =
+            next_first_mutable_shader_resources[stage_index];
+         if (((VkShaderStageFlags)1 << stage_index == VK_SHADER_STAGE_FRAGMENT_BIT
+                 ? TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL
+                 : TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_NON_PIXEL) -
+                first_mutable_shader_resource <
+             set_layout_shader->resource_count) {
+            goto too_many_descriptors;
+         }
+         set->first_shader_resources[stage_index] =
+            TERAKAN_RESOURCE_RANGE_MUTABLE_BASE + first_mutable_shader_resource;
+         next_first_mutable_shader_resources[stage_index] += set_layout_shader->resource_count;
 
          uint8_t const first_shader_sampler = next_first_shader_samplers[stage_index];
+         if (TERAKAN_SAMPLERS_PER_STAGE - first_shader_sampler < set_layout_shader->sampler_count) {
+            goto too_many_descriptors;
+         }
          set->first_shader_samplers[stage_index] = first_shader_sampler;
          layout->shader_non_immutable_samplers[stage_index] |=
             set_layout_shader->non_immutable_samplers << first_shader_sampler;
@@ -112,4 +121,18 @@ terakan_CreatePipelineLayout(VkDevice const deviceHandle,
 
    *pPipelineLayout = terakan_pipeline_layout_to_handle(layout);
    return VK_SUCCESS;
+
+   /* While Vulkan implementations generally shouldn't perform validation, TeraScale has very low
+    * binding count limits, while modern games demand many more. If they're launched on Terakan,
+    * catch that early and report that instead of proceeding with invalid state. Doing the same for
+    * push constants isn't needed as Terakan provides a much larger amount than most other drivers
+    * (accurate validation of their limit also would be more complex due to cube array layer counts
+    * being passed alongside push constants).
+    */
+too_many_descriptors:
+   vk_pipeline_layout_unref(&device->vk, &layout->vk);
+   return vk_errorf(
+      device, VK_ERROR_VALIDATION_FAILED_EXT,
+      "The application creates a pipeline layout that is too large to fit into the hardware "
+      "binding register spaces");
 }

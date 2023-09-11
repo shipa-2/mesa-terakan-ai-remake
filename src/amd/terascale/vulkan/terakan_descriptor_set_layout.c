@@ -31,6 +31,7 @@
 
 #include "util/bitscan.h"
 #include "util/macros.h"
+#include "util/u_math.h"
 #include "vk_alloc.h"
 #include "vk_log.h"
 
@@ -64,6 +65,12 @@ terakan_CreateDescriptorSetLayout(VkDevice const deviceHandle,
           */
          continue;
       }
+      /* Coarsely validate the binding count against the numeric limit. */
+      if (binding->descriptorCount >= MAX3(TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_NON_PIXEL,
+                                           TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL,
+                                           TERAKAN_SAMPLERS_PER_STAGE)) {
+         goto too_many_descriptors;
+      }
       uint8_t binding_shader_range_count = 0;
       VkDescriptorType const binding_type = binding->descriptorType;
       VkShaderStageFlagBits const binding_stages = binding->stageFlags & stage_mask;
@@ -73,6 +80,10 @@ terakan_CreateDescriptorSetLayout(VkDevice const deviceHandle,
       }
       if (terakan_descriptor_type_has_sampler(binding_type)) {
          if (binding->pImmutableSamplers != NULL) {
+            if (TERAKAN_SAMPLERS_PER_STAGE * MESA_SHADER_STAGES - immutable_sampler_count <
+                binding->descriptorCount) {
+               goto too_many_descriptors;
+            }
             immutable_sampler_count += binding->descriptorCount;
          }
          ++binding_shader_range_count;
@@ -164,14 +175,27 @@ terakan_CreateDescriptorSetLayout(VkDevice const deviceHandle,
          continue;
       }
 
+      /* Add to the counts, validating against the numeric limits. */
       if (terakan_descriptor_type_has_rat(binding_type)) {
+         if (TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_IN_PIPELINE - set_rat_count <
+             binding_descriptor_count) {
+            goto too_many_descriptors_destroy;
+         }
          set_rat_count += binding_descriptor_count;
       }
       if (terakan_descriptor_type_has_resource(binding_type)) {
+         if (TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_IN_PIPELINE - set_resource_count <
+             binding_descriptor_count) {
+            goto too_many_descriptors_destroy;
+         }
          set_resource_count += binding_descriptor_count;
       }
       if (binding_has_samplers &&
           layout_binding->first_immutable_sampler_or_dynamic_offset == UINT16_MAX) {
+         if (TERAKAN_SAMPLERS_PER_STAGE * MESA_SHADER_STAGES - set_sampler_count <
+             binding_descriptor_count) {
+            goto too_many_descriptors_destroy;
+         }
          set_sampler_count += binding_descriptor_count;
       }
 
@@ -211,6 +235,14 @@ terakan_CreateDescriptorSetLayout(VkDevice const deviceHandle,
             continue;
          }
 
+         if ((stage_flag == VK_SHADER_STAGE_FRAGMENT_BIT
+                 ? TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL
+                 : TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_NON_PIXEL) -
+                stage_resource_count <
+             binding->descriptor_count) {
+            goto too_many_descriptors_destroy;
+         }
+
          binding->first_shader_resources[stage_index] = stage_resource_count;
 
          assert(next_shader_range_index < shader_range_count);
@@ -222,7 +254,7 @@ terakan_CreateDescriptorSetLayout(VkDevice const deviceHandle,
          shader_range->first_shader_descriptor = stage_resource_count;
          shader_range->descriptor_count = binding->descriptor_count;
 
-         stage_resource_count += shader_range->descriptor_count;
+         stage_resource_count += binding->descriptor_count;
       }
 
       layout_shader->resource_range_count =
@@ -252,6 +284,10 @@ terakan_CreateDescriptorSetLayout(VkDevice const deviceHandle,
             continue;
          }
 
+         if (TERAKAN_SAMPLERS_PER_STAGE - stage_sampler_count < binding->descriptor_count) {
+            goto too_many_descriptors_destroy;
+         }
+
          binding->first_shader_samplers[stage_index] = stage_sampler_count;
 
          assert(next_shader_range_index < shader_range_count);
@@ -271,7 +307,7 @@ terakan_CreateDescriptorSetLayout(VkDevice const deviceHandle,
                (((uint32_t)1 << binding->descriptor_count) - 1) << stage_sampler_count;
          }
 
-         stage_sampler_count += shader_range->descriptor_count;
+         stage_sampler_count += binding->descriptor_count;
       }
 
       layout_shader->sampler_range_count =
@@ -284,4 +320,16 @@ terakan_CreateDescriptorSetLayout(VkDevice const deviceHandle,
 
    *pSetLayout = terakan_descriptor_set_layout_to_handle(layout);
    return VK_SUCCESS;
+
+   /* While Vulkan implementations generally shouldn't perform validation, TeraScale has very low
+    * binding count limits, while modern games demand many more. If they're launched on Terakan,
+    * catch that early and report that instead of proceeding with invalid state.
+    */
+too_many_descriptors_destroy:
+   vk_descriptor_set_layout_unref(&device->vk, &layout->vk);
+too_many_descriptors:
+   return vk_errorf(
+      device, VK_ERROR_VALIDATION_FAILED_EXT,
+      "The application creates a descriptor set layout that is too large to fit into the hardware "
+      "binding register spaces");
 }
