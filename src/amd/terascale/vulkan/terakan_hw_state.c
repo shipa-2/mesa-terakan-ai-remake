@@ -100,7 +100,7 @@ terakan_hw_state_draw_emit_vgt_index_buffer(
    *packet++ = PKT3(PKT3_NOP, 0, 0);
    *packet++ = terakan_bo_reference_writer_add_reference(
       &command_writer->base.bo_reference_writer, command_writer->hw_state_draw.vgt_index_buffer.bo,
-      true, false, TERAKAN_WINSYS_CS_BO_PRIORITY_INDEX_BUFFER);
+      true, false, TERAKAN_BO_PRIORITY_INDEX_BUFFER);
 
    *packet++ = PKT3(EG_PKT3_INDEX_BUFFER_SIZE, 1 - 1, 0);
    *packet++ = command_writer->hw_state_draw.vgt_index_buffer.size;
@@ -161,9 +161,9 @@ terakan_hw_state_draw_emit_sq_pgm_vs(struct terakan_gfx_command_writer * const c
    *packet++ = shader->sq_pgm_resources[0];
    *packet++ = shader->sq_pgm_resources[1];
    *packet++ = PKT3(PKT3_NOP, 0, 0);
-   *packet++ = terakan_bo_reference_writer_add_reference(
-      &command_writer->base.bo_reference_writer, shader->program_bo, true, false,
-      TERAKAN_WINSYS_CS_BO_PRIORITY_SHADER_BINARY);
+   *packet++ = terakan_bo_reference_writer_add_reference(&command_writer->base.bo_reference_writer,
+                                                         shader->program_bo, true, false,
+                                                         TERAKAN_BO_PRIORITY_SHADER_BINARY);
 
    *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
    *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_0286C4_SPI_VS_OUT_CONFIG);
@@ -205,9 +205,9 @@ terakan_hw_state_draw_emit_sq_pgm_ps(struct terakan_gfx_command_writer * const c
    *packet++ = shader->sq_pgm_resources[1];
    *packet++ = shader->stage.ps.sq_pgm_exports_ps;
    *packet++ = PKT3(PKT3_NOP, 0, 0);
-   *packet++ = terakan_bo_reference_writer_add_reference(
-      &command_writer->base.bo_reference_writer, shader->program_bo, true, false,
-      TERAKAN_WINSYS_CS_BO_PRIORITY_SHADER_BINARY);
+   *packet++ = terakan_bo_reference_writer_add_reference(&command_writer->base.bo_reference_writer,
+                                                         shader->program_bo, true, false,
+                                                         TERAKAN_BO_PRIORITY_SHADER_BINARY);
 
    *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 2, 0);
    *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_0286CC_SPI_PS_IN_CONTROL_0);
@@ -288,7 +288,7 @@ terakan_hw_state_draw_emit_pa_sc_aa_samples(
 {
    bool const is_r9xx = container_of(command_writer->base.command_buffer->vk.base.device->physical,
                                      struct terakan_physical_device const, vk)
-                           ->winsys->gpu_info.gfx_level >= CAYMAN;
+                           ->chip_family_info.is_r9xx;
 
    uint32_t const num_samples_log2 =
       command_writer->hw_state_draw.pa_sc_aa_samples.num_samples_log2;
@@ -362,7 +362,7 @@ terakan_hw_state_draw_emit_pa_sc_aa_mask(struct terakan_gfx_command_writer * con
 
    if (container_of(command_writer->base.command_buffer->vk.base.device->physical,
                     struct terakan_physical_device const, vk)
-          ->winsys->gpu_info.gfx_level >= CAYMAN) {
+          ->chip_family_info.is_r9xx) {
       uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 2, 0, 0, true);
       if (unlikely(packet == NULL)) {
          return;
@@ -407,7 +407,7 @@ terakan_hw_state_draw_emit_cb_color(struct terakan_gfx_command_writer * const co
    uint32_t const color_register_offset =
       (R_028C9C_CB_COLOR1_BASE - R_028C60_CB_COLOR0_BASE) * color_index;
 
-   struct terakan_winsys_bo const * const color_bo =
+   struct terakan_bo const * const color_bo =
       command_writer->hw_state_draw.cb_color_bo[color_index];
    struct terakan_color_descriptor const * const color_descriptor =
       &command_writer->hw_state_draw.cb_color[color_index];
@@ -443,8 +443,8 @@ terakan_hw_state_draw_emit_cb_color(struct terakan_gfx_command_writer * const co
        */
       uint32_t const color_bo_reference = terakan_bo_reference_writer_add_reference(
          &command_writer->base.bo_reference_writer, color_bo, true, true,
-         G_028C70_RAT(color_descriptor->info) ? TERAKAN_WINSYS_CS_BO_PRIORITY_SHADER_RW_IMAGE
-                                              : TERAKAN_WINSYS_CS_BO_PRIORITY_COLOR_BUFFER);
+         G_028C70_RAT(color_descriptor->info) ? TERAKAN_BO_PRIORITY_SHADER_RW_IMAGE
+                                              : TERAKAN_BO_PRIORITY_COLOR_BUFFER);
 
       memcpy(packet, color_descriptor, sizeof(*color_descriptor));
       packet += sizeof(*color_descriptor) / sizeof(uint32_t);
@@ -481,7 +481,7 @@ terakan_hw_state_draw_emit_cb_color_rat_only(
    uint32_t const color_register_offset =
       (R_028E5C_CB_COLOR9_BASE - R_028E40_CB_COLOR8_BASE) * color_rat_only_index;
 
-   struct terakan_winsys_bo const * const color_bo =
+   struct terakan_bo const * const color_bo =
       command_writer->hw_state_draw.cb_color_bo[8 + color_rat_only_index];
    struct terakan_color_descriptor const * const color_descriptor =
       &command_writer->hw_state_draw.cb_color[8 + color_rat_only_index];
@@ -506,7 +506,7 @@ terakan_hw_state_draw_emit_cb_color_rat_only(
 
       uint32_t const color_bo_reference = terakan_bo_reference_writer_add_reference(
          &command_writer->base.bo_reference_writer, color_bo, true, true,
-         TERAKAN_WINSYS_CS_BO_PRIORITY_SHADER_RW_IMAGE);
+         TERAKAN_BO_PRIORITY_SHADER_RW_IMAGE);
 
       memcpy(packet, color_descriptor, sizeof(*color_descriptor));
       packet += sizeof(*color_descriptor) / sizeof(uint32_t);
@@ -563,7 +563,7 @@ terakan_hw_state_draw_emit_sq_constant_cache_buffer(
       *packet++ = PKT3(PKT3_NOP, 0, 0);
       *packet++ = terakan_bo_reference_writer_add_reference(
          &command_writer->base.bo_reference_writer, buffer->bo, true, false,
-         TERAKAN_WINSYS_CS_BO_PRIORITY_UNIFORM_BUFFER);
+         TERAKAN_BO_PRIORITY_UNIFORM_BUFFER);
    }
 
    return true;
@@ -803,7 +803,7 @@ terakan_hw_state_draw_emit_sq_constant_cache_fs(
 static bool
 terakan_hw_state_draw_emit_resource(struct terakan_gfx_command_writer * const command_writer,
                                     uint32_t const global_index, bool const not_null,
-                                    struct terakan_winsys_bo const * const bo,
+                                    struct terakan_bo const * const bo,
                                     uint32_t const descriptor[8])
 {
    uint32_t * packet;
@@ -844,8 +844,8 @@ terakan_hw_state_draw_emit_resource(struct terakan_gfx_command_writer * const co
 
    uint32_t const bo_reference = terakan_bo_reference_writer_add_reference(
       &command_writer->base.bo_reference_writer, bo, true, false,
-      is_texture ? (is_multisampled ? TERAKAN_WINSYS_CS_BO_PRIORITY_SHADER_READ_IMAGE_MS
-                                    : TERAKAN_WINSYS_CS_BO_PRIORITY_SHADER_READ_IMAGE)
+      is_texture ? (is_multisampled ? TERAKAN_BO_PRIORITY_SHADER_READ_IMAGE_MS
+                                    : TERAKAN_BO_PRIORITY_SHADER_READ_IMAGE)
                  : descriptor[TERAKAN_RESOURCE_BUFFER_PRIORITY_WORD]);
    *packet++ = PKT3(PKT3_NOP, 0, 0);
    *packet++ = bo_reference;
@@ -861,7 +861,7 @@ static void
 terakan_hw_state_draw_emit_sq_resources_for_stage(
    struct terakan_gfx_command_writer * const command_writer, uint32_t const global_offset,
    uint32_t const count, BITSET_WORD const * const not_null_bitset,
-   struct terakan_winsys_bo const * const * const bos, uint32_t const * const descriptors,
+   struct terakan_bo const * const * const bos, uint32_t const * const descriptors,
    BITSET_WORD const * const needed_bitset, BITSET_WORD * const modified_bitset)
 {
    unsigned const word_count = BITSET_WORDS(count);
@@ -1144,7 +1144,7 @@ static terakan_hw_state_draw_emit_function const
 static bool
 terakan_hw_state_draw_set_sq_constant_cache_buffer(
    struct terakan_hw_state_draw * const state, uint32_t const buffer_index,
-   uint32_t const size_cache_lines, struct terakan_winsys_bo const * const bo,
+   uint32_t const size_cache_lines, struct terakan_bo const * const bo,
    uint32_t const base_cache_lines,
    enum terakan_hw_state_draw_sq_constants_needed_stage const needed_stage,
    enum terakan_hw_state_draw_sq_constants_modified_stage const modified_stage,
@@ -1184,7 +1184,7 @@ void
 terakan_hw_state_draw_set_sq_constant_cache_vs(struct terakan_hw_state_draw * const state,
                                                uint32_t const buffer_index,
                                                uint32_t const size_cache_lines,
-                                               struct terakan_winsys_bo const * const bo,
+                                               struct terakan_bo const * const bo,
                                                uint32_t const base_cache_lines)
 {
    if (terakan_hw_state_draw_set_sq_constant_cache_buffer(
@@ -1202,7 +1202,7 @@ void
 terakan_hw_state_draw_set_sq_constant_cache_tcs(struct terakan_hw_state_draw * const state,
                                                 uint32_t const buffer_index,
                                                 uint32_t const size_cache_lines,
-                                                struct terakan_winsys_bo const * const bo,
+                                                struct terakan_bo const * const bo,
                                                 uint32_t const base_cache_lines)
 {
    terakan_hw_state_draw_set_sq_constant_cache_buffer(
@@ -1216,7 +1216,7 @@ void
 terakan_hw_state_draw_set_sq_constant_cache_tes(struct terakan_hw_state_draw * const state,
                                                 uint32_t const buffer_index,
                                                 uint32_t const size_cache_lines,
-                                                struct terakan_winsys_bo const * const bo,
+                                                struct terakan_bo const * const bo,
                                                 uint32_t const base_cache_lines)
 {
    terakan_hw_state_draw_set_sq_constant_cache_buffer(
@@ -1230,7 +1230,7 @@ void
 terakan_hw_state_draw_set_sq_constant_cache_gs(struct terakan_hw_state_draw * const state,
                                                uint32_t const buffer_index,
                                                uint32_t const size_cache_lines,
-                                               struct terakan_winsys_bo const * const bo,
+                                               struct terakan_bo const * const bo,
                                                uint32_t const base_cache_lines)
 {
    terakan_hw_state_draw_set_sq_constant_cache_buffer(
@@ -1244,7 +1244,7 @@ void
 terakan_hw_state_draw_set_sq_constant_cache_fs(struct terakan_hw_state_draw * const state,
                                                uint32_t const buffer_index,
                                                uint32_t const size_cache_lines,
-                                               struct terakan_winsys_bo const * const bo,
+                                               struct terakan_bo const * const bo,
                                                uint32_t const base_cache_lines)
 {
    terakan_hw_state_draw_set_sq_constant_cache_buffer(
@@ -1258,8 +1258,8 @@ terakan_hw_state_draw_set_sq_constant_cache_fs(struct terakan_hw_state_draw * co
 static bool
 terakan_hw_state_draw_set_sq_resource(
    struct terakan_hw_state_draw * const state, uint32_t const index,
-   struct terakan_winsys_bo const * const bo, uint32_t const descriptor[8],
-   BITSET_WORD * const not_null_bitset, struct terakan_winsys_bo const ** const bos,
+   struct terakan_bo const * const bo, uint32_t const descriptor[8],
+   BITSET_WORD * const not_null_bitset, struct terakan_bo const ** const bos,
    uint32_t * const descriptors, BITSET_WORD const * const needed_bitset,
    BITSET_WORD * const modified_bitset, enum terakan_hw_state_draw_index const state_index)
 {
@@ -1292,8 +1292,7 @@ terakan_hw_state_draw_set_sq_resource(
 
 void
 terakan_hw_state_draw_set_sq_resource_vi(struct terakan_hw_state_draw * const state,
-                                         uint32_t const index,
-                                         struct terakan_winsys_bo const * const bo,
+                                         uint32_t const index, struct terakan_bo const * const bo,
                                          uint32_t const descriptor[8])
 {
    terakan_hw_state_draw_set_sq_resource(
@@ -1304,8 +1303,7 @@ terakan_hw_state_draw_set_sq_resource_vi(struct terakan_hw_state_draw * const st
 
 void
 terakan_hw_state_draw_set_sq_resource_vs(struct terakan_hw_state_draw * const state,
-                                         uint32_t const index,
-                                         struct terakan_winsys_bo const * const bo,
+                                         uint32_t const index, struct terakan_bo const * const bo,
                                          uint32_t const descriptor[8])
 {
    if (terakan_hw_state_draw_set_sq_resource(
@@ -1319,8 +1317,7 @@ terakan_hw_state_draw_set_sq_resource_vs(struct terakan_hw_state_draw * const st
 
 void
 terakan_hw_state_draw_set_sq_resource_tcs(struct terakan_hw_state_draw * const state,
-                                          uint32_t const index,
-                                          struct terakan_winsys_bo const * const bo,
+                                          uint32_t const index, struct terakan_bo const * const bo,
                                           uint32_t const descriptor[8])
 {
    terakan_hw_state_draw_set_sq_resource(
@@ -1331,8 +1328,7 @@ terakan_hw_state_draw_set_sq_resource_tcs(struct terakan_hw_state_draw * const s
 
 void
 terakan_hw_state_draw_set_sq_resource_tes(struct terakan_hw_state_draw * const state,
-                                          uint32_t const index,
-                                          struct terakan_winsys_bo const * const bo,
+                                          uint32_t const index, struct terakan_bo const * const bo,
                                           uint32_t const descriptor[8])
 {
    terakan_hw_state_draw_set_sq_resource(
@@ -1343,8 +1339,7 @@ terakan_hw_state_draw_set_sq_resource_tes(struct terakan_hw_state_draw * const s
 
 void
 terakan_hw_state_draw_set_sq_resource_gs(struct terakan_hw_state_draw * const state,
-                                         uint32_t const index,
-                                         struct terakan_winsys_bo const * const bo,
+                                         uint32_t const index, struct terakan_bo const * const bo,
                                          uint32_t const descriptor[8])
 {
    terakan_hw_state_draw_set_sq_resource(
@@ -1355,8 +1350,7 @@ terakan_hw_state_draw_set_sq_resource_gs(struct terakan_hw_state_draw * const st
 
 void
 terakan_hw_state_draw_set_sq_resource_fs(struct terakan_hw_state_draw * const state,
-                                         uint32_t const index,
-                                         struct terakan_winsys_bo const * const bo,
+                                         uint32_t const index, struct terakan_bo const * const bo,
                                          uint32_t const descriptor[8])
 {
    terakan_hw_state_draw_set_sq_resource(

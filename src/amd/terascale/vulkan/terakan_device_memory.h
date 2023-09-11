@@ -24,14 +24,14 @@
 #ifndef TERAKAN_DEVICE_MEMORY_H
 #define TERAKAN_DEVICE_MEMORY_H
 
-#include "winsys/terakan_winsys.h"
+#include "terakan_bo.h"
 
 #include "vk_device_memory.h"
 
 struct terakan_device_memory {
    struct vk_device_memory vk;
 
-   struct terakan_winsys_bo * bo;
+   struct terakan_bo * bo;
 };
 
 VK_DEFINE_NONDISP_HANDLE_CASTS(terakan_device_memory, vk.base, VkDeviceMemory,

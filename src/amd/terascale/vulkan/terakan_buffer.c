@@ -23,7 +23,6 @@
 
 #include "terakan_buffer.h"
 
-#include "winsys/terakan_winsys.h"
 #include "terakan_descriptor.h"
 #include "terakan_device.h"
 #include "terakan_device_memory.h"
@@ -41,7 +40,7 @@
 #include <stdint.h>
 #include <string.h>
 
-struct terakan_winsys_bo const *
+struct terakan_bo const *
 terakan_buffer_create_uniform_buffer_descriptor(VkDescriptorBufferInfo const * const buffer_info,
                                                 uint32_t resource_out[8])
 {
@@ -57,7 +56,7 @@ terakan_buffer_create_uniform_buffer_descriptor(VkDescriptorBufferInfo const * c
    return buffer->bo;
 }
 
-struct terakan_winsys_bo const *
+struct terakan_bo const *
 terakan_buffer_create_storage_buffer_descriptor(VkDescriptorBufferInfo const * const buffer_info,
                                                 uint32_t resource_out[8],
                                                 struct terakan_color_descriptor * const color_out)
@@ -70,7 +69,7 @@ terakan_buffer_create_storage_buffer_descriptor(VkDescriptorBufferInfo const * c
           buffer->bo, buffer->bo_offset + buffer_info->offset,
           vk_buffer_range(&buffer->vk, buffer_info->offset, buffer_info->range),
           container_of(buffer->vk.base.device->physical, struct terakan_physical_device const, vk)
-             ->winsys->gpu_info.tile_pipe_interleave_bytes_log2,
+             ->tiling_info.pipe_interleave_bytes_log2,
           resource_out, color_out)) {
       return NULL;
    }
@@ -83,32 +82,42 @@ terakan_GetPhysicalDeviceExternalBufferProperties(
    VkPhysicalDeviceExternalBufferInfo const * const pExternalBufferInfo,
    VkExternalBufferProperties * const pExternalBufferProperties)
 {
-   switch (pExternalBufferInfo->handleType) {
-#if !defined(_WIN32)
-   case VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT:
-   case VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT:
-      pExternalBufferProperties->externalMemoryProperties.externalMemoryFeatures =
-         VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT | VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT;
-      pExternalBufferProperties->externalMemoryProperties.exportFromImportedHandleTypes =
-         VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT |
-         VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
-      pExternalBufferProperties->externalMemoryProperties.compatibleHandleTypes =
-         VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT |
-         VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
-      break;
-#endif
+   pExternalBufferProperties->externalMemoryProperties.externalMemoryFeatures = 0;
+   pExternalBufferProperties->externalMemoryProperties.exportFromImportedHandleTypes = 0;
+   pExternalBufferProperties->externalMemoryProperties.compatibleHandleTypes = 0;
 
-   default:
-      pExternalBufferProperties->externalMemoryProperties.externalMemoryFeatures = 0;
-      pExternalBufferProperties->externalMemoryProperties.exportFromImportedHandleTypes = 0;
-      /* From the VkExternalMemoryProperties specification:
-       *
-       *    compatibleHandleTypes must include at least handleType.
-       */
-      pExternalBufferProperties->externalMemoryProperties.compatibleHandleTypes =
-         pExternalBufferInfo->handleType;
-      break;
+   struct terakan_physical_device const * const device =
+      terakan_physical_device_from_handle(physicalDevice);
+
+   VkExternalMemoryHandleTypeFlags const supported_handle_types =
+      terakan_physical_device_supported_external_memory_types(device);
+
+   if (supported_handle_types & pExternalBufferInfo->handleType) {
+      switch (pExternalBufferInfo->handleType) {
+      case VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT:
+      case VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT: {
+         pExternalBufferProperties->externalMemoryProperties.externalMemoryFeatures =
+            VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT | VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT;
+         VkExternalMemoryHandleTypeFlags const supported_fd_types =
+            supported_handle_types & (VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT |
+                                      VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT);
+         pExternalBufferProperties->externalMemoryProperties.exportFromImportedHandleTypes =
+            supported_fd_types;
+         pExternalBufferProperties->externalMemoryProperties.compatibleHandleTypes =
+            supported_fd_types;
+      } break;
+
+      default:
+         break;
+      }
    }
+
+   /* From the VkExternalMemoryProperties specification:
+    *
+    *    compatibleHandleTypes must include at least handleType.
+    */
+   pExternalBufferProperties->externalMemoryProperties.compatibleHandleTypes |=
+      pExternalBufferInfo->handleType;
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -287,7 +296,7 @@ terakan_CreateBufferView(VkDevice const deviceHandle,
          buffer_view->resource[4] = (uint32_t)buffer_view->vk.elements;
          buffer_view->resource[7] = S_03001C_TYPE(V_03001C_SQ_TEX_VTX_VALID_BUFFER);
          buffer_view->resource[TERAKAN_RESOURCE_BUFFER_PRIORITY_WORD] =
-            TERAKAN_WINSYS_CS_BO_PRIORITY_SHADER_READ_BUFFER;
+            TERAKAN_BO_PRIORITY_SHADER_READ_BUFFER;
 
          /* The vertex buffer format is also used for the RAT IMMED buffer, so creating the RAT
           * inside the vertex format supported conditional too (though all RAT formats should have
@@ -303,7 +312,7 @@ terakan_CreateBufferView(VkDevice const deviceHandle,
                terakan_color_descriptor_calculate_buffer_base_pitch_view_dim(
                   &buffer_view->color, bo_offset, buffer_view->vk.elements, bpe,
                   container_of(device->vk.physical, struct terakan_physical_device const, vk)
-                     ->winsys->gpu_info.tile_pipe_interleave_bytes_log2);
+                     ->tiling_info.pipe_interleave_bytes_log2);
                buffer_view->color.info =
                   S_028C70_FORMAT(rat_format) | S_028C70_ARRAY_MODE(V_028C70_ARRAY_LINEAR_ALIGNED) |
                   S_028C70_NUMBER_TYPE(rat_number_type) | S_028C70_COMP_SWAP(rat_swap) |

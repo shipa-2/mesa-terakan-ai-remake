@@ -21,51 +21,46 @@
  * IN THE SOFTWARE.
  */
 
-#include "terakan_winsys.h"
+#include "terakan_bo.h"
+
+#include "terakan_device.h"
 
 #include "util/u_atomic.h"
 
 #include <stddef.h>
 
-void
-terakan_winsys_base_init(struct terakan_winsys * const winsys)
-{
-   winsys->last_bo_creation_number = 0;
-}
-
 void *
-terakan_winsys_bo_map(struct terakan_winsys_bo * const bo)
+terakan_bo_map(struct terakan_bo * const bo)
 {
    if (bo->mapping == NULL) {
-      bo->mapping = bo->winsys->bo_fn->map_impl(bo);
+      bo->mapping = bo->device->winsys_fn->bo->map_impl(bo);
    }
    return bo->mapping;
 }
 
 void
-terakan_winsys_bo_unmap(struct terakan_winsys_bo * const bo)
+terakan_bo_unmap(struct terakan_bo * const bo)
 {
    if (bo->mapping == NULL) {
       return;
    }
-   bo->winsys->bo_fn->unmap_impl(bo);
+   bo->device->winsys_fn->bo->unmap_impl(bo);
    bo->mapping = NULL;
 }
 
 void
-terakan_winsys_bo_free(struct terakan_winsys_bo * const bo)
+terakan_bo_free(struct terakan_bo * const bo, VkAllocationCallbacks const * const allocator)
 {
-   terakan_winsys_bo_unmap(bo);
-   bo->winsys->bo_fn->free_impl(bo);
+   terakan_bo_unmap(bo);
+   bo->device->winsys_fn->bo->free_impl(bo, allocator);
 }
 
 void
-terakan_winsys_bo_base_init(struct terakan_winsys_bo * const bo,
-                            struct terakan_winsys * const winsys)
+terakan_bo_init(struct terakan_bo * const bo, struct terakan_device * const device)
 {
-   bo->winsys = winsys;
+   bo->device = device;
 
-   bo->creation_number = p_atomic_inc_return(&winsys->last_bo_creation_number);
+   bo->creation_number = p_atomic_inc_return(&device->last_bo_creation_number);
 
    bo->mapping = NULL;
 }

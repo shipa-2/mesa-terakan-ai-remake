@@ -40,6 +40,8 @@ libterakan_files = files(
   'meta/terakan_meta.h',
   'meta/terakan_meta_2d.c',
   'meta/terakan_meta_copy_buffer_to_image.c',
+  'terakan_bo.c',
+  'terakan_bo.h',
   'terakan_buffer.c',
   'terakan_buffer.h',
   'terakan_command_buffer.c',
@@ -58,8 +60,6 @@ libterakan_files = files(
   'terakan_draw.h',
   'terakan_format.c',
   'terakan_format.h',
-  'terakan_gpu_info.c',
-  'terakan_gpu_info.h',
   'terakan_hw_state.c',
   'terakan_hw_state.h',
   'terakan_image.c',
@@ -91,17 +91,18 @@ libterakan_files = files(
   'terakan_sync_completion.h',
   'terakan_wsi.c',
   'terakan_wsi.h',
-  'winsys/terakan_winsys.c',
-  'winsys/terakan_winsys.h',
 )
 
 if not with_platform_windows
   libterakan_files += files(
-    'winsys/drm_radeon/terakan_winsys_drm_radeon.c',
-    'winsys/drm_radeon/terakan_winsys_drm_radeon.h',
-    'winsys/drm_radeon/terakan_winsys_drm_radeon_bo.c',
-    'winsys/drm_radeon/terakan_winsys_drm_radeon_cs.c',
-    'winsys/drm_radeon/terakan_winsys_drm_radeon_surface.c',
+    'winsys/drm_radeon/terakan_bo_drm_radeon.c',
+    'winsys/drm_radeon/terakan_bo_drm_radeon.h',
+    'winsys/drm_radeon/terakan_device_drm_radeon.c',
+    'winsys/drm_radeon/terakan_device_drm_radeon.h',
+    'winsys/drm_radeon/terakan_image_drm_radeon.c',
+    'winsys/drm_radeon/terakan_physical_device_drm_radeon.c',
+    'winsys/drm_radeon/terakan_physical_device_drm_radeon.h',
+    'winsys/drm_radeon/terakan_queue_drm_radeon.c',
   )
 endif
 

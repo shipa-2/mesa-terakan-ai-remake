@@ -63,7 +63,7 @@ terakan_CreateSampler(VkDevice const deviceHandle, VkSamplerCreateInfo const * c
 
    bool const is_r9xx =
       container_of(sampler->vk.base.device->physical, struct terakan_physical_device const, vk)
-         ->winsys->gpu_info.gfx_level >= CAYMAN;
+         ->chip_family_info.is_r9xx;
 
    sampler->sampler[0] =
       S_03C000_CLAMP_X(terakan_sampler_translate_address_mode(pCreateInfo->addressModeU)) |

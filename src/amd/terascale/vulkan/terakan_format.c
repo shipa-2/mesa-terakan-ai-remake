@@ -807,7 +807,7 @@ terakan_GetPhysicalDeviceFormatProperties2(VkPhysicalDevice const physicalDevice
          /* According to R800 AddrLib, "Tex2D UAV on cypress will fail/hang if tile mode is
           * linear".
           */
-         if (device->winsys->gpu_info.chip_family == CHIP_CYPRESS) {
+         if (device->chip_family_info.chip_family == CHIP_CYPRESS) {
             image_optimal_only_features |= storage_image_features;
          } else {
             image_features |= storage_image_features;
@@ -970,26 +970,29 @@ terakan_GetPhysicalDeviceImageFormatProperties2(
    struct terakan_physical_device const * const device =
       terakan_physical_device_from_handle(physicalDevice);
 
-   image_format_properties.maxResourceSize = device->winsys->gpu_info.max_bo_size;
+   image_format_properties.maxResourceSize = device->max_memory_allocation_size;
 
    VkExternalMemoryProperties external_properties = {};
    VkPhysicalDeviceExternalImageFormatInfo const * const external_info =
       vk_find_struct_const(pImageFormatInfo, PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO);
    if (external_info != NULL && external_info->handleType) {
+      VkExternalMemoryHandleTypeFlags const supported_handle_types =
+         terakan_physical_device_supported_external_memory_types(device);
+      if (!(supported_handle_types & external_info->handleType)) {
+         return VK_ERROR_FORMAT_NOT_SUPPORTED;
+      }
       switch (external_info->handleType) {
-#if !defined(_WIN32)
       case VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT:
-      case VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT:
+      case VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT: {
          external_properties.externalMemoryFeatures =
             VK_EXTERNAL_MEMORY_FEATURE_DEDICATED_ONLY_BIT |
             VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT | VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT;
-         external_properties.exportFromImportedHandleTypes =
-            VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT |
-            VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
-         external_properties.compatibleHandleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT |
-                                                     VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
-         break;
-#endif
+         VkExternalMemoryHandleTypeFlags const supported_fd_types =
+            supported_handle_types & (VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT |
+                                      VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT);
+         external_properties.exportFromImportedHandleTypes = supported_fd_types;
+         external_properties.compatibleHandleTypes = supported_fd_types;
+      } break;
 
       default:
          return VK_ERROR_FORMAT_NOT_SUPPORTED;

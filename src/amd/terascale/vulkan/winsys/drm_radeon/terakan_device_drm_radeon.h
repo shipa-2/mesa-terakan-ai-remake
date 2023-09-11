@@ -1,11 +1,6 @@
 /*
  * Copyright © 2023 Vitaliy Triang3l Kuzmin
  *
- * Based on Gallium Radeon DRM winsys which is:
- * Copyright © 2008 Jérôme Glisse
- * Copyright © 2009 Corbin Simpson <MostAwesomeDude@gmail.com>
- * Copyright © 2011 Marek Olšák <maraeo@gmail.com>
- *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
  * to deal in the Software without restriction, including without limitation
@@ -26,44 +21,26 @@
  * IN THE SOFTWARE.
  */
 
-#ifndef TERAKAN_WINSYS_DRM_RADEON_H
-#define TERAKAN_WINSYS_DRM_RADEON_H
+#ifndef TERAKAN_DEVICE_DRM_RADEON_H
+#define TERAKAN_DEVICE_DRM_RADEON_H
 
-#include "../terakan_winsys.h"
+#include "terakan_device.h"
+#include "terakan_physical_device_drm_radeon.h"
 
 #include "c11/threads.h"
 #include "util/hash_table.h"
-#include "vk_sync.h"
-#include "vk_sync_binary.h"
 
-#include <stddef.h>
 #include <xf86drm.h>
-#include <vulkan/vulkan_core.h>
 #include <radeon_surface.h>
 
-struct terakan_winsys_drm_radeon_bo {
-   struct terakan_winsys_bo base;
+extern struct terakan_image_winsys_fn const terakan_image_drm_radeon_fn;
 
-   VkDeviceSize size;
+extern struct terakan_queue_winsys_fn const terakan_queue_drm_radeon_fn;
 
-   __u32 domains;
+struct terakan_device_drm_radeon {
+   struct terakan_device base;
 
-   __u32 handle;
-
-   bool handle_shareable;
-};
-
-extern struct terakan_winsys_surface_fn const terakan_winsys_drm_radeon_surface_fn;
-
-extern struct terakan_winsys_bo_fn const terakan_winsys_drm_radeon_bo_fn;
-
-extern struct terakan_winsys_cs_fn const terakan_winsys_drm_radeon_cs_fn;
-
-struct terakan_winsys_drm_radeon {
-   struct terakan_winsys base;
-
-   /* Not owned by the winsys. */
-   int fd;
+   int render_node_fd;
 
    struct radeon_surface_manager * surface_manager;
 
@@ -75,11 +52,11 @@ struct terakan_winsys_drm_radeon {
     */
    mtx_t shared_bo_mutex;
    struct hash_table * shared_bo_reference_counts;
-
-   struct vk_sync_binary_type sync_type_binary;
-   struct vk_sync_type const * sync_types[3];
 };
 
-struct terakan_winsys * terakan_winsys_drm_radeon_create(int fd);
+VkResult terakan_device_drm_radeon_create(struct terakan_physical_device * physical_device,
+                                          VkDeviceCreateInfo const * create_info,
+                                          VkAllocationCallbacks const * allocator,
+                                          struct terakan_device ** device_out);
 
-#endif /* TERAKAN_WINSYS_DRM_RADEON_H */
+#endif /* TERAKAN_DEVICE_DRM_RADEON_H */

@@ -1,6 +1,11 @@
 /*
  * Copyright © 2023 Vitaliy Triang3l Kuzmin
  *
+ * Based on Gallium Radeon DRM winsys which is:
+ * Copyright © 2008 Jérôme Glisse
+ * Copyright © 2009 Corbin Simpson <MostAwesomeDude@gmail.com>
+ * Copyright © 2011 Marek Olšák <maraeo@gmail.com>
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
  * to deal in the Software without restriction, including without limitation
@@ -21,37 +26,27 @@
  * IN THE SOFTWARE.
  */
 
-#ifndef TERAKAN_SHADER_H
-#define TERAKAN_SHADER_H
+#ifndef TERAKAN_BO_DRM_RADEON_H
+#define TERAKAN_BO_DRM_RADEON_H
 
 #include "terakan_bo.h"
 
-#include <stdint.h>
+#include <stdbool.h>
+#include <xf86drm.h>
+#include <vulkan/vulkan_core.h>
 
-#define TERAKAN_SHADER_PROGRAM_ALIGNMENT_LOG2 8
-#define TERAKAN_SHADER_PROGRAM_ALIGNMENT      (1 << TERAKAN_SHADER_PROGRAM_ALIGNMENT_LOG2)
+struct terakan_bo_drm_radeon {
+   struct terakan_bo base;
 
-/* Fields that don't depend on any other state. */
-struct terakan_shader_static {
-   struct terakan_bo const * program_bo;
-   uint32_t program_start;
+   VkDeviceSize size;
 
-   uint32_t sq_pgm_resources[2];
+   __u32 domains;
 
-   union {
-      struct {
-         uint32_t spi_vs_out_config;
-         uint32_t pa_cl_vs_out_cntl;
-      } vs;
+   __u32 handle;
 
-      struct {
-         uint32_t sq_pgm_exports_ps;
-         uint32_t spi_ps_in_control[2];
-         uint32_t spi_input_z;
-         uint32_t spi_baryc_cntl;
-         uint32_t cb_shader_mask;
-      } ps;
-   } stage;
+   bool handle_shareable;
 };
 
-#endif /* TERAKAN_SHADER_H */
+extern struct terakan_bo_winsys_fn const terakan_bo_drm_radeon_fn;
+
+#endif /* TERAKAN_BO_DRM_RADEON_H */

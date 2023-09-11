@@ -24,7 +24,7 @@
 #ifndef TERAKAN_DESCRIPTOR_SET_H
 #define TERAKAN_DESCRIPTOR_SET_H
 
-#include "winsys/terakan_winsys.h"
+#include "terakan_bo.h"
 #include "terakan_descriptor.h"
 #include "terakan_descriptor_set_layout.h"
 #include "terakan_sampler.h"
@@ -37,7 +37,7 @@
 #include <stdint.h>
 
 struct terakan_descriptor_set_resource {
-   struct terakan_winsys_bo const * bo;
+   struct terakan_bo const * bo;
    uint32_t resource[8];
 };
 
@@ -46,7 +46,7 @@ struct terakan_descriptor_set_sampler {
 };
 
 struct terakan_descriptor_set_rat {
-   struct terakan_winsys_bo const * bo;
+   struct terakan_bo const * bo;
    struct terakan_color_descriptor color;
 };
 

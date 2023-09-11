@@ -123,8 +123,7 @@ terakan_state_draw_apply_cb_color(struct terakan_gfx_command_writer * const comm
                                   enum terakan_state_draw_index const state_index)
 {
    uint32_t const color_index = (uint32_t)state_index - (uint32_t)TERAKAN_STATE_DRAW_CB_COLOR_FIRST;
-   struct terakan_winsys_bo const * const color_bo =
-      command_writer->state_draw.cb_color_bo[color_index];
+   struct terakan_bo const * const color_bo = command_writer->state_draw.cb_color_bo[color_index];
    bool modified = command_writer->hw_state_draw.cb_color_bo[color_index] != color_bo;
    command_writer->hw_state_draw.cb_color_bo[color_index] = color_bo;
    if (color_bo != NULL) {
@@ -155,8 +154,7 @@ terakan_state_draw_apply_cb_color_rat_only(struct terakan_gfx_command_writer * c
                                            enum terakan_state_draw_index const state_index)
 {
    uint32_t const color_index = (uint32_t)state_index - (uint32_t)TERAKAN_STATE_DRAW_CB_COLOR_FIRST;
-   struct terakan_winsys_bo const * const color_bo =
-      command_writer->state_draw.cb_color_bo[color_index];
+   struct terakan_bo const * const color_bo = command_writer->state_draw.cb_color_bo[color_index];
    bool modified = command_writer->hw_state_draw.cb_color_bo[color_index] != color_bo;
    command_writer->hw_state_draw.cb_color_bo[color_index] = color_bo;
    if (color_bo != NULL) {

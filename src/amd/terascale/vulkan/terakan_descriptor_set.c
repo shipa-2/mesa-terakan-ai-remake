@@ -23,7 +23,6 @@
 
 #include "terakan_descriptor_set.h"
 
-#include "winsys/terakan_winsys.h"
 #include "terakan_buffer.h"
 #include "terakan_descriptor.h"
 #include "terakan_device.h"
@@ -172,10 +171,9 @@ terakan_UpdateDescriptorSets(UNUSED VkDevice const device, uint32_t const descri
             struct terakan_descriptor_set_resource * const dst_resource =
                &dst_resources[descriptor_index];
             struct terakan_descriptor_set_rat * const dst_rat = &dst_rats[descriptor_index];
-            struct terakan_winsys_bo const * const bo =
-               terakan_buffer_create_storage_buffer_descriptor(
-                  &descriptor_write->pBufferInfo[descriptor_index], dst_resource->resource,
-                  &dst_rat->color);
+            struct terakan_bo const * const bo = terakan_buffer_create_storage_buffer_descriptor(
+               &descriptor_write->pBufferInfo[descriptor_index], dst_resource->resource,
+               &dst_rat->color);
             dst_resource->bo = bo;
             dst_rat->bo = bo;
          }

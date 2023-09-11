@@ -24,7 +24,7 @@
 #ifndef TERAKAN_STATE_H
 #define TERAKAN_STATE_H
 
-#include "winsys/terakan_winsys.h"
+#include "terakan_bo.h"
 #include "terakan_descriptor.h"
 #include "terakan_limits.h"
 
@@ -97,7 +97,7 @@ struct terakan_state_draw {
    uint16_t pa_sc_aa_mask;
 
    /* TERAKAN_STATE_DRAW_CB_COLOR_FIRST...LAST */
-   struct terakan_winsys_bo const * cb_color_bo[TERAKAN_LIMITS_HW_COLOR_RAT_COUNT];
+   struct terakan_bo const * cb_color_bo[TERAKAN_LIMITS_HW_COLOR_RAT_COUNT];
    /* The values are undefined if the respective cb_color_bo is NULL. */
    struct terakan_color_descriptor cb_color[TERAKAN_LIMITS_HW_COLOR_RAT_COUNT];
    struct terakan_color_meta_descriptor cb_color_meta[TERAKAN_LIMITS_HW_COLOR_MRT_COUNT];

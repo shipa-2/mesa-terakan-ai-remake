@@ -23,6 +23,7 @@
 
 #include "terakan_meta.h"
 
+#include "terakan_bo.h"
 #include "terakan_buffer.h"
 #include "terakan_descriptor.h"
 #include "terakan_entrypoints.h"
@@ -382,7 +383,7 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
       [3] = S_03000C_DST_SEL_X(V_03000C_SQ_SEL_X) | S_03000C_DST_SEL_Y(V_03000C_SQ_SEL_Y) |
             S_03000C_DST_SEL_Z(V_03000C_SQ_SEL_Z) | S_03000C_DST_SEL_W(V_03000C_SQ_SEL_W),
       [7] = S_03001C_TYPE(V_03001C_SQ_TEX_VTX_VALID_BUFFER),
-      [TERAKAN_RESOURCE_BUFFER_PRIORITY_WORD] = TERAKAN_WINSYS_CS_BO_PRIORITY_SHADER_READ_BUFFER,
+      [TERAKAN_RESOURCE_BUFFER_PRIORITY_WORD] = TERAKAN_BO_PRIORITY_SHADER_READ_BUFFER,
    };
 
    struct terakan_gfx_command_writer * const command_writer =
@@ -396,7 +397,7 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
    terakan_state_draw_set_pending(&command_writer->state_draw, TERAKAN_STATE_DRAW_CB_COLOR_FIRST);
 
    struct terakan_meta_copy_buffer_to_image_push_constants push_constants = {};
-   struct terakan_winsys_bo const * push_constants_bo = NULL;
+   struct terakan_bo const * push_constants_bo = NULL;
    uint32_t push_constants_base;
 
    for (uint32_t region_index = 0; region_index < pCopyBufferToImageInfo->regionCount;

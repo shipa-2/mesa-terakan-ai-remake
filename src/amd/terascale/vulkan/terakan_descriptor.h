@@ -24,7 +24,7 @@
 #ifndef TERAKAN_DESCRIPTOR_H
 #define TERAKAN_DESCRIPTOR_H
 
-#include "winsys/terakan_winsys.h"
+#include "terakan_bo.h"
 #include "terakan_limits.h"
 
 #include "gallium/drivers/r600/evergreend.h"
@@ -199,11 +199,11 @@ terakan_descriptor_type_has_rat(VkDescriptorType const descriptor_type)
           descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
 }
 
-bool terakan_descriptor_create_for_uniform_buffer(struct terakan_winsys_bo const * bo,
+bool terakan_descriptor_create_for_uniform_buffer(struct terakan_bo const * bo,
                                                   VkDeviceSize bo_offset, VkDeviceSize range,
                                                   uint32_t resource_out[8]);
 
-bool terakan_descriptor_create_for_storage_buffer(struct terakan_winsys_bo const * bo,
+bool terakan_descriptor_create_for_storage_buffer(struct terakan_bo const * bo,
                                                   VkDeviceSize bo_offset, VkDeviceSize range,
                                                   unsigned tile_pipe_interleave_bytes_log2,
                                                   uint32_t resource_out[8],

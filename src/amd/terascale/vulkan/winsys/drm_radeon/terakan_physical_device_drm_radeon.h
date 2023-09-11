@@ -21,37 +21,38 @@
  * IN THE SOFTWARE.
  */
 
-#ifndef TERAKAN_SHADER_H
-#define TERAKAN_SHADER_H
+#ifndef TERAKAN_PHYSICAL_DEVICE_DRM_RADEON_H
+#define TERAKAN_PHYSICAL_DEVICE_DRM_RADEON_H
 
-#include "terakan_bo.h"
+#include "terakan_physical_device.h"
 
+#include "vk_sync.h"
+#include "vk_sync_binary.h"
+
+#include <stdbool.h>
 #include <stdint.h>
+#include <xf86drm.h>
 
-#define TERAKAN_SHADER_PROGRAM_ALIGNMENT_LOG2 8
-#define TERAKAN_SHADER_PROGRAM_ALIGNMENT      (1 << TERAKAN_SHADER_PROGRAM_ALIGNMENT_LOG2)
+struct terakan_physical_device_drm_radeon {
+   struct terakan_physical_device base;
 
-/* Fields that don't depend on any other state. */
-struct terakan_shader_static {
-   struct terakan_bo const * program_bo;
-   uint32_t program_start;
+   drmPciBusInfo pci_bus_info;
 
-   uint32_t sq_pgm_resources[2];
+   bool has_primary_node;
+   int64_t primary_node_device_id_major;
+   int64_t primary_node_device_id_minor;
 
-   union {
-      struct {
-         uint32_t spi_vs_out_config;
-         uint32_t pa_cl_vs_out_cntl;
-      } vs;
+   int64_t render_node_device_id_major;
+   int64_t render_node_device_id_minor;
+   char * render_node_path;
+   int render_node_validation_fd;
 
-      struct {
-         uint32_t sq_pgm_exports_ps;
-         uint32_t spi_ps_in_control[2];
-         uint32_t spi_input_z;
-         uint32_t spi_baryc_cntl;
-         uint32_t cb_shader_mask;
-      } ps;
-   } stage;
+   struct vk_sync_binary_type sync_type_binary;
+   struct vk_sync_type const * sync_types[3];
 };
 
-#endif /* TERAKAN_SHADER_H */
+VkResult terakan_physical_device_drm_radeon_try_create(struct vk_instance * instance,
+                                                       struct _drmDevice * drm_device,
+                                                       struct vk_physical_device ** device_out);
+
+#endif /* TERAKAN_PHYSICAL_DEVICE_DRM_RADEON_H */

@@ -62,7 +62,7 @@ terakan_color_descriptor_calculate_buffer_base_pitch_view_dim(
 }
 
 bool
-terakan_descriptor_create_for_uniform_buffer(struct terakan_winsys_bo const * const bo,
+terakan_descriptor_create_for_uniform_buffer(struct terakan_bo const * const bo,
                                              VkDeviceSize const bo_offset, VkDeviceSize const range,
                                              uint32_t resource_out[8])
 {
@@ -88,14 +88,13 @@ terakan_descriptor_create_for_uniform_buffer(struct terakan_winsys_bo const * co
                      S_03000C_DST_SEL_Z(V_03000C_SQ_SEL_Z) | S_03000C_DST_SEL_W(V_03000C_SQ_SEL_W);
    resource_out[4] = (uint32_t)(range_aligned / (sizeof(uint32_t) * 4));
    resource_out[7] = S_03001C_TYPE(V_03001C_SQ_TEX_VTX_VALID_BUFFER);
-   resource_out[TERAKAN_RESOURCE_BUFFER_PRIORITY_WORD] =
-      TERAKAN_WINSYS_CS_BO_PRIORITY_UNIFORM_BUFFER;
+   resource_out[TERAKAN_RESOURCE_BUFFER_PRIORITY_WORD] = TERAKAN_BO_PRIORITY_UNIFORM_BUFFER;
 
    return true;
 }
 
 bool
-terakan_descriptor_create_for_storage_buffer(struct terakan_winsys_bo const * const bo,
+terakan_descriptor_create_for_storage_buffer(struct terakan_bo const * const bo,
                                              VkDeviceSize const bo_offset, VkDeviceSize const range,
                                              unsigned const tile_pipe_interleave_bytes_log2,
                                              uint32_t resource_out[8],
@@ -123,8 +122,7 @@ terakan_descriptor_create_for_storage_buffer(struct terakan_winsys_bo const * co
                      S_03000C_DST_SEL_Z(V_03000C_SQ_SEL_Z) | S_03000C_DST_SEL_W(V_03000C_SQ_SEL_W);
    resource_out[4] = (uint32_t)(range_aligned / sizeof(uint32_t));
    resource_out[7] = S_03001C_TYPE(V_03001C_SQ_TEX_VTX_VALID_BUFFER);
-   resource_out[TERAKAN_RESOURCE_BUFFER_PRIORITY_WORD] =
-      TERAKAN_WINSYS_CS_BO_PRIORITY_SHADER_READ_BUFFER;
+   resource_out[TERAKAN_RESOURCE_BUFFER_PRIORITY_WORD] = TERAKAN_BO_PRIORITY_SHADER_READ_BUFFER;
 
    terakan_color_descriptor_calculate_buffer_base_pitch_view_dim(
       color_out, bo_offset, range_aligned / sizeof(uint32_t), sizeof(uint32_t),
