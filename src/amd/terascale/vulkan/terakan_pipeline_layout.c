@@ -34,25 +34,26 @@
 #include "vk_alloc.h"
 #include "vk_log.h"
 
+#include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
 
-VKAPI_ATTR VkResult VKAPI_CALL
-terakan_CreatePipelineLayout(VkDevice const deviceHandle,
-                             VkPipelineLayoutCreateInfo const * const pCreateInfo,
-                             UNUSED VkAllocationCallbacks const * const pAllocator,
-                             VkPipelineLayout * const pPipelineLayout)
+VkResult
+terakan_pipeline_layout_create(struct terakan_device * const device,
+                               VkPipelineLayoutCreateInfo const * const create_info,
+                               VkShaderStageFlags const stage_mask,
+                               struct terakan_pipeline_layout ** const pipeline_layout_out)
 {
-   struct terakan_device * const device = terakan_device_from_handle(deviceHandle);
+   assert(!(stage_mask & ~(VK_SHADER_STAGE_ALL_GRAPHICS | VK_SHADER_STAGE_COMPUTE_BIT)));
 
    VK_MULTIALLOC(multialloc);
    VK_MULTIALLOC_DECL(&multialloc, struct terakan_pipeline_layout, layout, 1);
    VK_MULTIALLOC_DECL(&multialloc, struct terakan_pipeline_layout_set, sets,
-                      pCreateInfo->setLayoutCount);
+                      create_info->setLayoutCount);
    /* Mesa pipeline layout has a different lifetime than the corresponding VkPipelineLayout since
     * other objects hold additional references to them, allocation must be done in the device scope.
     */
-   if (vk_pipeline_layout_multizalloc(&device->vk, &multialloc, pCreateInfo) == NULL) {
+   if (vk_pipeline_layout_multizalloc(&device->vk, &multialloc, create_info) == NULL) {
       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
    }
    layout->sets = sets;
@@ -70,7 +71,9 @@ terakan_CreatePipelineLayout(VkDevice const deviceHandle,
          container_of(set_layout_base, struct terakan_descriptor_set_layout const, vk);
       struct terakan_pipeline_layout_set * const set = &layout->sets[set_index];
 
-      for (unsigned stage_index = 0; stage_index < MESA_SHADER_STAGES; ++stage_index) {
+      unsigned remaining_stages = (unsigned)stage_mask;
+      while (remaining_stages) {
+         unsigned const stage_index = u_bit_scan(&remaining_stages);
          struct terakan_descriptor_set_layout_shader const * const set_layout_shader =
             &set_layout->shaders[stage_index];
 
@@ -100,14 +103,11 @@ terakan_CreatePipelineLayout(VkDevice const deviceHandle,
       }
    }
 
-   /* VK_SHADER_STAGE_ALL includes bits other than the actually supported stages. */
-   VkShaderStageFlags const stage_mask = VK_SHADER_STAGE_ALL_GRAPHICS | VK_SHADER_STAGE_COMPUTE_BIT;
-
    for (uint32_t push_constant_range_index = 0;
-        push_constant_range_index < pCreateInfo->pushConstantRangeCount;
+        push_constant_range_index < create_info->pushConstantRangeCount;
         ++push_constant_range_index) {
       VkPushConstantRange const * const push_constant_range =
-         &pCreateInfo->pPushConstantRanges[push_constant_range_index];
+         &create_info->pPushConstantRanges[push_constant_range_index];
       uint32_t const push_constant_range_extent =
          push_constant_range->offset + push_constant_range->size;
       unsigned remaining_stages = (unsigned)(push_constant_range->stageFlags & stage_mask);
@@ -119,7 +119,7 @@ terakan_CreatePipelineLayout(VkDevice const deviceHandle,
       }
    }
 
-   *pPipelineLayout = terakan_pipeline_layout_to_handle(layout);
+   *pipeline_layout_out = layout;
    return VK_SUCCESS;
 
    /* While Vulkan implementations generally shouldn't perform validation, TeraScale has very low
@@ -135,4 +135,21 @@ too_many_descriptors:
       device, VK_ERROR_VALIDATION_FAILED_EXT,
       "The application creates a pipeline layout that is too large to fit into the hardware "
       "binding register spaces");
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL
+terakan_CreatePipelineLayout(VkDevice const deviceHandle,
+                             VkPipelineLayoutCreateInfo const * const pCreateInfo,
+                             UNUSED VkAllocationCallbacks const * const pAllocator,
+                             VkPipelineLayout * const pPipelineLayout)
+{
+   struct terakan_pipeline_layout * layout;
+   VkResult const result = terakan_pipeline_layout_create(
+      terakan_device_from_handle(deviceHandle), pCreateInfo,
+      VK_SHADER_STAGE_ALL_GRAPHICS | VK_SHADER_STAGE_COMPUTE_BIT, &layout);
+   if (result != VK_SUCCESS) {
+      return result;
+   }
+   *pPipelineLayout = terakan_pipeline_layout_to_handle(layout);
+   return VK_SUCCESS;
 }
