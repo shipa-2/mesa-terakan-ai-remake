@@ -107,7 +107,7 @@ terakan_pipeline_graphics_bind(struct terakan_gfx_command_writer * const command
    unsigned state_index;
    BITSET_FOREACH_SET (state_index, pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_COUNT) {
       terakan_pipeline_graphics_apply_state_functions[state_index](
-         command_writer, pipeline, (enum terakan_state_draw_index)state_index);
+         command_writer, pipeline, (enum terakan_pipeline_graphics_state_index)state_index);
    }
 }
 
