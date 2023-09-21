@@ -33,6 +33,10 @@
 #include <assert.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* terakan_state is a layer on top of terakan_hw_state that specifically tracks the state desired by
  * the application. It's not reapplied when switching to a new indirect buffer - terakan_hw_state is
  * instead, for both application's work and internal draws / dispatches. Thus, no register writes
@@ -141,5 +145,9 @@ terakan_state_draw_replace_fields(struct terakan_state_draw * const state,
 void terakan_state_draw_apply_pending(struct terakan_gfx_command_writer * command_writer);
 
 void terakan_state_draw_reset(struct terakan_state_draw * state);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* TERAKAN_STATE_H */

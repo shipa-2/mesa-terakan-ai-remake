@@ -33,6 +33,10 @@
 #include <stdint.h>
 #include <vulkan/vulkan_core.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 bool terakan_format_is_linear_only(VkFormat format);
 bool terakan_format_is_tiled_only(VkFormat format);
 
@@ -147,5 +151,9 @@ terakan_format_pitch_alignment_linear_bytes(unsigned const bpe,
 {
    return MAX2((uint32_t)bpe << 6, (uint32_t)1 << tile_pipe_interleave_bytes_log2);
 }
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* TERAKAN_FORMAT_H */

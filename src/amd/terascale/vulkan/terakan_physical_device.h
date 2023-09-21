@@ -35,6 +35,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #if !defined(_WIN32)
 #define TERAKAN_PHYSICAL_DEVICE_HAS_WINSYS_DRM_RADEON
 #endif
@@ -150,5 +154,9 @@ VkResult terakan_physical_device_init(
    VkDeviceSize min_memory_map_alignment,
    struct terakan_physical_device_tiling_info const * tiling_info, uint32_t clock_crystal_frequency,
    struct vk_sync_type const * const * supported_sync_types_static);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* TERAKAN_PHYSICAL_DEVICE_H */

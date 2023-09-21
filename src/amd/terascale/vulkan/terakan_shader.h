@@ -28,6 +28,10 @@
 
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define TERAKAN_SHADER_PROGRAM_ALIGNMENT_LOG2 8
 #define TERAKAN_SHADER_PROGRAM_ALIGNMENT      (1 << TERAKAN_SHADER_PROGRAM_ALIGNMENT_LOG2)
 
@@ -53,5 +57,9 @@ struct terakan_shader_static {
       } ps;
    } stage;
 };
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* TERAKAN_SHADER_H */

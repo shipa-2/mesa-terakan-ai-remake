@@ -28,6 +28,10 @@
 
 #include "vk_device_memory.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct terakan_device_memory {
    struct vk_device_memory vk;
 
@@ -36,5 +40,9 @@ struct terakan_device_memory {
 
 VK_DEFINE_NONDISP_HANDLE_CASTS(terakan_device_memory, vk.base, VkDeviceMemory,
                                VK_OBJECT_TYPE_DEVICE_MEMORY)
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* TERAKAN_DEVICE_MEMORY_H */

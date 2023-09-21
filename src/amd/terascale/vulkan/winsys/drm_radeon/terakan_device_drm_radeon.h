@@ -33,6 +33,10 @@
 #include <xf86drm.h>
 #include <radeon_surface.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 extern struct terakan_image_winsys_fn const terakan_image_drm_radeon_fn;
 
 extern struct terakan_queue_winsys_fn const terakan_queue_drm_radeon_fn;
@@ -58,5 +62,9 @@ VkResult terakan_device_drm_radeon_create(struct terakan_physical_device * physi
                                           VkDeviceCreateInfo const * create_info,
                                           VkAllocationCallbacks const * allocator,
                                           struct terakan_device ** device_out);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* TERAKAN_DEVICE_DRM_RADEON_H */

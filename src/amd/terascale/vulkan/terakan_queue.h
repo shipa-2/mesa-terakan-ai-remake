@@ -36,6 +36,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct terakan_queue_completion_signal {
    struct list_head link;
 
@@ -118,5 +122,9 @@ struct terakan_queue_winsys_fn {
       struct terakan_queue * queue, uint64_t initial_payload,
       struct terakan_queue_completion_submission ** submission_out);
 };
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* TERAKAN_QUEUE_H */

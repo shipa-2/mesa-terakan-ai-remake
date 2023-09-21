@@ -33,6 +33,10 @@
 #include <stdint.h>
 #include <vulkan/vulkan_core.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define TERAKAN_CONSTANT_CACHE_LINE_BYTES_LOG2          8
 #define TERAKAN_CONSTANT_CACHE_LINE_BYTES               (1 << TERAKAN_CONSTANT_CACHE_LINE_BYTES_LOG2)
 #define TERAKAN_CONSTANT_CACHE_MAX_LINES_IN_BUFFER_LOG2 8
@@ -211,5 +215,9 @@ bool terakan_descriptor_create_for_storage_buffer(struct terakan_bo const * bo,
                                                   unsigned tile_pipe_interleave_bytes_log2,
                                                   uint32_t resource_out[8],
                                                   struct terakan_color_descriptor * color_out);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* TERAKAN_DESCRIPTOR_H */

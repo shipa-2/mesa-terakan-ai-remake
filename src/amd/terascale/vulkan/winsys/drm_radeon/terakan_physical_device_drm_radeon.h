@@ -33,6 +33,10 @@
 #include <stdint.h>
 #include <xf86drm.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct terakan_physical_device_drm_radeon {
    struct terakan_physical_device base;
 
@@ -54,5 +58,9 @@ struct terakan_physical_device_drm_radeon {
 VkResult terakan_physical_device_drm_radeon_try_create(struct vk_instance * instance,
                                                        struct _drmDevice * drm_device,
                                                        struct vk_physical_device ** device_out);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* TERAKAN_PHYSICAL_DEVICE_DRM_RADEON_H */

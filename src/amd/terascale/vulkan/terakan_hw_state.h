@@ -35,6 +35,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct terakan_hw_state_sq_constant_cache_buffer {
    /* BO and base are undefined if the size is 0. */
    struct terakan_bo const * bo;
@@ -390,5 +394,9 @@ void terakan_hw_state_draw_emit_modified(struct terakan_gfx_command_writer * com
 void terakan_hw_state_draw_emit_all(struct terakan_gfx_command_writer * command_writer);
 
 void terakan_hw_state_draw_reset(struct terakan_hw_state_draw * state);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* TERAKAN_HW_STATE_H */

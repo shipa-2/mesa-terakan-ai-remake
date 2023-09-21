@@ -30,6 +30,10 @@
 #include <stdint.h>
 #include <vulkan/vulkan_core.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* Each group of two has the same priority (the maximum priority is 0xF).
  * Similar to RADEON_PRIO in the Gallium Radeon winsys.
  */
@@ -139,5 +143,9 @@ struct terakan_bo_winsys_fn {
                          bool prefer_vram, VkAllocationCallbacks const * allocator,
                          VkSystemAllocationScope scope, struct terakan_bo ** bo_out);
 };
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* TERAKAN_BO_H */

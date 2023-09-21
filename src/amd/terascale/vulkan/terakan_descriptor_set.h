@@ -36,6 +36,10 @@
 #include <assert.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct terakan_descriptor_set_resource {
    struct terakan_bo const * bo;
    uint32_t resource[8];
@@ -108,5 +112,9 @@ struct terakan_descriptor_pool {
 
 VK_DEFINE_NONDISP_HANDLE_CASTS(terakan_descriptor_pool, base, VkDescriptorPool,
                                VK_OBJECT_TYPE_DESCRIPTOR_POOL)
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* TERAKAN_DESCRIPTOR_SET_H */

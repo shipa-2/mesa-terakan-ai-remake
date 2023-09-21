@@ -26,6 +26,14 @@
 
 #include "terakan_command_buffer.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 void terakan_before_hw_draw(struct terakan_gfx_command_writer * command_writer);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* TERAKAN_DRAW_H */

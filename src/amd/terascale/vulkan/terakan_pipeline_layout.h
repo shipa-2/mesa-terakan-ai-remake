@@ -29,6 +29,10 @@
 
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct terakan_pipeline_layout_set {
    uint8_t first_shader_resources[MESA_SHADER_STAGES];
    uint8_t first_shader_samplers[MESA_SHADER_STAGES];
@@ -55,5 +59,9 @@ terakan_pipeline_layout_create(struct terakan_device * device,
                                VkPipelineLayoutCreateInfo const * create_info,
                                VkShaderStageFlags stage_mask,
                                struct terakan_pipeline_layout ** pipeline_layout_out);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* TERAKAN_PIPELINE_LAYOUT_H */

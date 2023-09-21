@@ -30,6 +30,10 @@
 
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct terakan_descriptor_set_layout_binding {
    VkDescriptorType descriptor_type;
 
@@ -100,5 +104,9 @@ struct terakan_descriptor_set_layout {
 
 VK_DEFINE_NONDISP_HANDLE_CASTS(terakan_descriptor_set_layout, vk.base, VkDescriptorSetLayout,
                                VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT)
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* TERAKAN_DESCRIPTOR_SET_LAYOUT_H */

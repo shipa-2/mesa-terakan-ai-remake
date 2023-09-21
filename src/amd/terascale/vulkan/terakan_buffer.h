@@ -34,6 +34,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct terakan_buffer {
    struct vk_buffer vk;
 
@@ -64,5 +68,9 @@ struct terakan_buffer_view {
 
 VK_DEFINE_NONDISP_HANDLE_CASTS(terakan_buffer_view, vk.base, VkBufferView,
                                VK_OBJECT_TYPE_BUFFER_VIEW)
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* TERAKAN_BUFFER_H */

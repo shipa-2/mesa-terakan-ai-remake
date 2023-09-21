@@ -31,6 +31,10 @@
 #include <stdint.h>
 #include <vulkan/vulkan_core.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define TERAKAN_STATE_DRAW_DEPTH_CLIP_NEGATIVE_ONE_TO_ONE_PA_CL_CLIP_CNTL_CLEAR                    \
    ((uint32_t)C_028810_DX_CLIP_SPACE_DEF)
 
@@ -127,5 +131,9 @@ terakan_state_draw_depth_bias_enable_pa_su_sc_mode_cntl(bool const depth_bias_en
           S_028814_POLY_OFFSET_BACK_ENABLE(depth_bias_enable) |
           S_028814_POLY_OFFSET_PARA_ENABLE(depth_bias_enable);
 }
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* TERAKAN_STATE_RASTERIZATION_H */

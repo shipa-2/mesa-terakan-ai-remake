@@ -40,6 +40,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct terakan_device_winsys_fn {
    struct terakan_image_winsys_fn const * image;
 
@@ -90,5 +94,9 @@ VkResult terakan_device_init(struct terakan_device * device,
                              VkAllocationCallbacks const * allocator,
                              struct terakan_device_winsys_fn const * winsys_fn_static,
                              size_t bo_reference_size, size_t bo_reference_alignment);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* TERAKAN_DEVICE_H */

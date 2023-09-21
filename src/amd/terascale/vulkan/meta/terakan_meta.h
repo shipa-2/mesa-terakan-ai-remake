@@ -36,6 +36,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define TERAKAN_META_SQ_PGM_RESOURCES_COMMON S_028844_DX10_CLAMP(1)
 #define TERAKAN_META_SQ_PGM_RESOURCES_2_COMMON                                                     \
    (S_028848_SINGLE_ROUND(V_SQ_ROUND_NEAREST_EVEN) | S_028848_DOUBLE_ROUND(V_SQ_ROUND_NEAREST_EVEN))
@@ -119,5 +123,9 @@ terakan_meta_transfer_image_block_format(unsigned const bpe)
       return VK_FORMAT_UNDEFINED;
    }
 }
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* TERAKAN_META_H */

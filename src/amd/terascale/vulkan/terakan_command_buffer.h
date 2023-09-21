@@ -38,6 +38,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define TERAKAN_CONFIG_REG_OFFSET(address)  (((address)-EVERGREEN_CONFIG_REG_OFFSET) >> 2)
 #define TERAKAN_CONTEXT_REG_OFFSET(address) (((address)-EVERGREEN_CONTEXT_REG_OFFSET) >> 2)
 #define TERAKAN_CTL_CONST_OFFSET(address)   (((address)-EVERGREEN_CTL_CONST_OFFSET) >> 2)
@@ -223,5 +227,9 @@ struct terakan_command_pool {
 
 VK_DEFINE_NONDISP_HANDLE_CASTS(terakan_command_pool, vk.base, VkCommandPool,
                                VK_OBJECT_TYPE_COMMAND_POOL)
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* TERAKAN_COMMAND_BUFFER_H */

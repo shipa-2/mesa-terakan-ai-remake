@@ -29,6 +29,10 @@
 
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 enum terakan_pipeline_graphics_state_index {
    TERAKAN_PIPELINE_GRAPHICS_STATE_VGT_PRIMITIVE_TYPE,
 
@@ -79,5 +83,9 @@ struct terakan_pipeline_graphics {
     */
    struct terakan_pipeline_graphics_multisample multisample;
 };
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* TERAKAN_PIPELINE_GRAPHICS_H */

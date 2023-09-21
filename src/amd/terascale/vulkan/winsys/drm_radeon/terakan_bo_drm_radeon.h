@@ -35,6 +35,10 @@
 #include <xf86drm.h>
 #include <vulkan/vulkan_core.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct terakan_bo_drm_radeon {
    struct terakan_bo base;
 
@@ -48,5 +52,9 @@ struct terakan_bo_drm_radeon {
 };
 
 extern struct terakan_bo_winsys_fn const terakan_bo_drm_radeon_fn;
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* TERAKAN_BO_DRM_RADEON_H */

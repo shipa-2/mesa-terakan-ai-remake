@@ -38,6 +38,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES_LOG2 14
 #define TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES                                                   \
    (1 << TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES_LOG2)
@@ -137,5 +141,9 @@ struct terakan_image_view {
 };
 
 VK_DEFINE_NONDISP_HANDLE_CASTS(terakan_image_view, vk.base, VkImageView, VK_OBJECT_TYPE_IMAGE_VIEW)
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

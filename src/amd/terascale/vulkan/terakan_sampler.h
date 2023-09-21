@@ -32,6 +32,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 static inline uint32_t
 terakan_sampler_translate_filter(VkFilter const filter, bool const aniso)
 {
@@ -121,5 +125,9 @@ struct terakan_sampler {
 };
 
 VK_DEFINE_NONDISP_HANDLE_CASTS(terakan_sampler, vk.base, VkSampler, VK_OBJECT_TYPE_SAMPLER)
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* TERAKAN_SAMPLER_H */
