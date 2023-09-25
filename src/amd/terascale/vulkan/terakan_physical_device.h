@@ -125,8 +125,6 @@ struct terakan_physical_device {
    struct terakan_physical_device_tiling_info tiling_info;
    VkDeviceSize buffer_image_bo_alignment;
 
-   uint8_t device_uuid[VK_UUID_SIZE];
-
    VkPhysicalDeviceMemoryProperties memory_properties;
 
    struct wsi_device wsi_device;
