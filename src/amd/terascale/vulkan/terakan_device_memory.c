@@ -212,7 +212,7 @@ terakan_AllocateMemory(VkDevice const deviceHandle,
       case VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT:
       case VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT: {
          VkImportMemoryFdInfoKHR const * const import_fd_info =
-            vk_find_struct_const(pAllocateInfo, IMPORT_MEMORY_FD_INFO_KHR);
+            vk_find_struct_const(pAllocateInfo->pNext, IMPORT_MEMORY_FD_INFO_KHR);
          if (import_fd_info == NULL) {
             result = vk_error(device, VK_ERROR_INVALID_EXTERNAL_HANDLE);
             goto fail_device_memory;
@@ -244,7 +244,7 @@ terakan_AllocateMemory(VkDevice const deviceHandle,
       }
 
       VkMemoryDedicatedAllocateInfo const * const dedicated_info =
-         vk_find_struct_const(pAllocateInfo, MEMORY_DEDICATED_ALLOCATE_INFO);
+         vk_find_struct_const(pAllocateInfo->pNext, MEMORY_DEDICATED_ALLOCATE_INFO);
       if (dedicated_info != NULL) {
          struct terakan_image const * const dedicated_image =
             terakan_image_from_handle(dedicated_info->image);

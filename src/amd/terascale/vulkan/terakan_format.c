@@ -872,7 +872,7 @@ terakan_GetPhysicalDeviceFormatProperties2(VkPhysicalDevice const physicalDevice
    pFormatProperties->formatProperties.bufferFeatures = (VkFormatFeatureFlags)buffer_features;
 
    VkFormatProperties3 * const format_properties_3 =
-      vk_find_struct(pFormatProperties, FORMAT_PROPERTIES_3);
+      vk_find_struct(pFormatProperties->pNext, FORMAT_PROPERTIES_3);
    if (format_properties_3 != NULL) {
       format_properties_3->linearTilingFeatures = image_linear_features;
       format_properties_3->optimalTilingFeatures = image_optimal_features;
@@ -974,7 +974,7 @@ terakan_GetPhysicalDeviceImageFormatProperties2(
 
    VkExternalMemoryProperties external_properties = {};
    VkPhysicalDeviceExternalImageFormatInfo const * const external_info =
-      vk_find_struct_const(pImageFormatInfo, PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO);
+      vk_find_struct_const(pImageFormatInfo->pNext, PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO);
    if (external_info != NULL && external_info->handleType) {
       VkExternalMemoryHandleTypeFlags const supported_handle_types =
          terakan_physical_device_supported_external_memory_types(device);

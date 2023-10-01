@@ -115,7 +115,7 @@ terakan_GetDeviceImageMemoryRequirements(VkDevice const deviceHandle,
          VkMemoryDedicatedRequirements * const dedicated_requirements =
             (VkMemoryDedicatedRequirements *)ext;
          VkExternalMemoryImageCreateInfo const * const external_memory_info =
-            vk_find_struct_const(pInfo, EXTERNAL_MEMORY_IMAGE_CREATE_INFO);
+            vk_find_struct_const(pInfo->pNext, EXTERNAL_MEMORY_IMAGE_CREATE_INFO);
          dedicated_requirements->requiresDedicatedAllocation =
             external_memory_info != NULL && external_memory_info->handleTypes != 0;
          dedicated_requirements->prefersDedicatedAllocation =
