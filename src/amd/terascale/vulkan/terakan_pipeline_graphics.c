@@ -46,7 +46,8 @@ terakan_pipeline_graphics_apply_vgt_primitive_type(
    UNUSED enum terakan_pipeline_graphics_state_index const state_index)
 {
    command_writer->state_draw.vgt_primitive_type = pipeline->vertex_input.vgt_primitive_type;
-   terakan_state_draw_written(&command_writer->state_draw, TERAKAN_STATE_DRAW_VGT_PRIMITIVE_TYPE);
+   terakan_state_draw_set_pending(&command_writer->state_draw,
+                                  TERAKAN_STATE_DRAW_VGT_PRIMITIVE_TYPE);
 }
 
 static void
@@ -82,7 +83,7 @@ terakan_pipeline_graphics_apply_pa_sc_aa_mask(
    UNUSED enum terakan_pipeline_graphics_state_index const state_index)
 {
    command_writer->state_draw.pa_sc_aa_mask = pipeline->multisample.pa_sc_aa_mask;
-   terakan_state_draw_written(&command_writer->state_draw, TERAKAN_STATE_DRAW_PA_SC_AA_MASK);
+   terakan_state_draw_set_pending(&command_writer->state_draw, TERAKAN_STATE_DRAW_PA_SC_AA_MASK);
 }
 
 static terakan_pipeline_graphics_apply_state_function const

@@ -229,25 +229,44 @@ terakan_state_draw_apply_pending(struct terakan_gfx_command_writer * const comma
 void
 terakan_state_draw_reset(struct terakan_state_draw * const state)
 {
-   BITSET_ZERO(state->state_ever_written);
+   BITSET_ZERO(state->state_pending);
 
-   /* Initialize state setters themselves, and state that setters modify partially (such as via
-    * terakan_state_draw_replace_fields), as well as state that other state depends on, to values
-    * corresponding to their original Vulkan state values being zero (like zeroed via memset), or,
-    * for state items from extensions, to their values without the structure containing the field
-    * being in the pNext chain.
+   /* Initialize the state to the default values, corresponding to one of the following that's
+    * applicable:
+    * - For optional features, the feature is not enabled.
+    * - For state configured via a structure in a pNext chain, the structure is missing.
+    * - The field in the original structure is zero (like if it was zeroed via memset or {}).
+    *
+    * While Vulkan drivers are not required to do this because complete state for all enabled
+    * features must be configured before a draw (via a pipeline object or dynamic state), do this
+    * for simplicity:
+    * - Certain state items correspond to hardware registers containing multiple fields, and those
+    *   fields are configured individually separately by state setters. In this case the rest of the
+    *   fields (the ones not exposed to the application) in those registers must be set to their
+    *   default values.
+    * - Optional features not enabled on the device don't need to be handled explicitly, especially
+    *   when the application uses only dynamic state and never calls the setters for certain state
+    *   items.
+    * - There may be conditional logic based on the latest values of the state items in some
+    *   places, make sure it doesn't read uninitialized variables.
     */
 
    /* No VK_DYNAMIC_STATE_DEPTH_CLIP_ENABLE_EXT,
     * no VkPipelineRasterizationDepthClipStateCreateInfoEXT */
    state->cmd_set_depth_clamp_enable_sets_depth_clip_enable = true;
 
+   /* indexType = VK_INDEX_TYPE_UINT16 */
 #if UTIL_ARCH_BIG_ENDIAN
    state->vgt_index_type = VGT_INDEX_16 | VGT_DMA_SWAP_16_BIT;
 #else
    state->vgt_index_type = VGT_INDEX_16;
 #endif
-   BITSET_SET(state->state_ever_written, TERAKAN_STATE_DRAW_VGT_INDEX_TYPE);
+
+   /* topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST */
+   state->vgt_primitive_type = S_008958_PRIM_TYPE(V_008958_DI_PT_POINTLIST);
+
+   /* firstVertex or vertexOffset = 0 */
+   state->vgt_index_offset = 0;
 
    state->pa_cl_clip_cntl =
       /* negativeOneToOne = VK_FALSE */
@@ -258,7 +277,6 @@ terakan_state_draw_reset(struct terakan_state_draw * const state)
       S_028810_DX_LINEAR_ATTR_CLIP_ENA(1) |
       /* depthClampEnable = VK_FALSE, no VkPipelineRasterizationDepthClipStateCreateInfoEXT */
       S_028810_ZCLIP_NEAR_DISABLE(0) | S_028810_ZCLIP_FAR_DISABLE(0);
-   BITSET_SET(state->state_ever_written, TERAKAN_STATE_DRAW_PA_CL_CLIP_CNTL);
 
    state->pa_su_sc_mode_cntl =
       /* cullMode = VK_CULL_MODE_NONE */
@@ -274,8 +292,14 @@ terakan_state_draw_reset(struct terakan_state_draw * const state)
       S_028814_POLY_OFFSET_PARA_ENABLE(0) |
       /* provokingVertexMode = VK_PROVOKING_VERTEX_MODE_FIRST_VERTEX_EXT */
       S_028814_PROVOKING_VTX_LAST(0);
-   BITSET_SET(state->state_ever_written, TERAKAN_STATE_DRAW_PA_SU_SC_MODE_CNTL);
 
-   /* Clear modified bits, and make sure the defaults are applied before the first draw. */
-   BITSET_COPY(state->state_pending, state->state_ever_written);
+   /* pSampleMask = NULL */
+   state->pa_sc_aa_mask = UINT16_MAX;
+
+   memset(state->cb_color_bo, 0, sizeof(state->cb_color_bo));
+
+   /* Make all state items pending so the defaults are applied before the first draw, even for
+    * unsupported features.
+    */
+   BITSET_ONES(state->state_pending);
 }

@@ -69,13 +69,8 @@ enum terakan_state_draw_index {
  * draws.
  */
 struct terakan_state_draw {
-   /* Whether each state item has ever been written, and thus has a value that's not complete junk,
-    * and is potentially relevant to the current command buffer.
-    */
-   BITSET_DECLARE(state_ever_written, TERAKAN_STATE_DRAW_COUNT);
    /* Whether each state item has been modified, overridden by an internal draw, or had its
-    * dependencies changed, and needs to be applied before the next draw. Must not include bits not
-    * in state_ever_written.
+    * dependencies changed, and needs to be applied before the next draw.
     */
    BITSET_DECLARE(state_pending, TERAKAN_STATE_DRAW_COUNT);
 
@@ -109,23 +104,10 @@ struct terakan_state_draw {
 
 struct terakan_gfx_command_writer;
 
-/* May be called after internal draws or while updating dependencies even if the state item has
- * never been written yet.
- */
 static inline void
 terakan_state_draw_set_pending(struct terakan_state_draw * const state,
                                enum terakan_state_draw_index const state_index)
 {
-   if (BITSET_TEST(state->state_ever_written, state_index)) {
-      BITSET_SET(state->state_pending, state_index);
-   }
-}
-
-static inline void
-terakan_state_draw_written(struct terakan_state_draw * const state,
-                           enum terakan_state_draw_index const state_index)
-{
-   BITSET_SET(state->state_ever_written, state_index);
    BITSET_SET(state->state_pending, state_index);
 }
 
@@ -135,11 +117,9 @@ terakan_state_draw_replace_fields(struct terakan_state_draw * const state,
                                   uint32_t * const value, uint32_t const keep_fields,
                                   uint32_t const set_fields)
 {
-   /* The kept fields must have been initialized, otherwise they'd contain junk. */
-   assert(!keep_fields || BITSET_TEST(state->state_ever_written, state_index));
    assert(!(set_fields & keep_fields));
    *value = (*value & keep_fields) | set_fields;
-   terakan_state_draw_written(state, state_index);
+   terakan_state_draw_set_pending(state, state_index);
 }
 
 void terakan_state_draw_apply_pending(struct terakan_gfx_command_writer * command_writer);
