@@ -29,6 +29,7 @@
 
 #include "terakan_descriptor.h"
 #include "terakan_entrypoints.h"
+#include "terakan_hw_state.h"
 #include "terakan_image.h"
 #include "terakan_instance.h"
 #include "terakan_limits.h"
@@ -218,7 +219,7 @@ terakan_physical_device_get_capabilities(
    /* TODO(Triang3l): wideLines. */
    /* TODO(Triang3l): largePoints. */
    /* TODO(Triang3l): alphaToOne. */
-   /* TODO(Triang3l): multiViewport. */
+   features_out->multiViewport = true;
    features_out->samplerAnisotropy = true;
    features_out->textureCompressionBC = true;
    /* TODO(Triang3l): occlusionQueryPrecise. */
@@ -377,7 +378,7 @@ terakan_physical_device_get_capabilities(
    properties_out->maxSamplerLodBias = 0x1.0p5f - 0x1.0p-8f;
    properties_out->maxSamplerAnisotropy = 0x1.0p4f;
 
-   properties_out->maxViewports = TERAKAN_LIMITS_HW_VIEWPORTS;
+   properties_out->maxViewports = TERAKAN_HW_STATE_DRAW_MAX_VIEWPORTS;
    properties_out->maxViewportDimensions[0] = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES;
    properties_out->maxViewportDimensions[1] = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES;
    properties_out->viewportBoundsRange[0] = (float)INT16_MIN;

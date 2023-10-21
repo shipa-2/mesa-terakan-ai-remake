@@ -30,6 +30,7 @@
 #include "terakan_shader.h"
 
 #include "util/bitset.h"
+#include "vk_limits.h"
 
 #include <assert.h>
 #include <stdbool.h>
@@ -44,6 +45,30 @@ struct terakan_hw_state_sq_constant_cache_buffer {
    struct terakan_bo const * bo;
    uint32_t base_cache_lines;
    uint32_t size_cache_lines;
+};
+
+#define TERAKAN_HW_STATE_DRAW_MAX_VIEWPORTS 16
+
+enum terakan_hw_state_draw_viewport_state_index {
+   TERAKAN_HW_STATE_DRAW_VIEWPORT_PA_CL_VPORT_XY_SCALE_OFFSET,
+   TERAKAN_HW_STATE_DRAW_VIEWPORT_PA_CL_VPORT_Z_SCALE_OFFSET,
+   TERAKAN_HW_STATE_DRAW_VIEWPORT_PA_SC_VPORT_SCISSOR,
+   TERAKAN_HW_STATE_DRAW_VIEWPORT_PA_SC_VPORT_Z_MIN_MAX,
+
+   TERAKAN_HW_STATE_DRAW_VIEWPORT_STATE_COUNT,
+};
+
+struct terakan_hw_state_draw_viewport {
+   BITSET_DECLARE(state_modified, TERAKAN_HW_STATE_DRAW_VIEWPORT_STATE_COUNT);
+
+   /* TERAKAN_HW_STATE_DRAW_VIEWPORT_PA_CL_VPORT_XY_SCALE_OFFSET */
+   float pa_cl_vport_xy_scale_offset[2][2];
+   /* TERAKAN_HW_STATE_DRAW_VIEWPORT_PA_CL_VPORT_Z_SCALE_OFFSET */
+   float pa_cl_vport_z_scale_offset[2];
+   /* TERAKAN_HW_STATE_DRAW_VIEWPORT_PA_SC_VPORT_SCISSOR */
+   uint32_t pa_sc_vport_scissor[2];
+   /* TERAKAN_HW_STATE_DRAW_VIEWPORT_PA_SC_VPORT_Z_MIN_MAX */
+   float pa_sc_vport_z_min_max[2];
 };
 
 enum terakan_hw_state_draw_index {
@@ -70,9 +95,15 @@ enum terakan_hw_state_draw_index {
 
    TERAKAN_HW_STATE_DRAW_PA_CL_VTE_CNTL,
 
+   TERAKAN_HW_STATE_DRAW_PA_SC_MODE_CNTL_0,
+
+   TERAKAN_HW_STATE_DRAW_PA_CL_GB,
+
    TERAKAN_HW_STATE_DRAW_PA_SC_AA_SAMPLES,
 
    TERAKAN_HW_STATE_DRAW_PA_SC_AA_MASK,
+
+   TERAKAN_HW_STATE_DRAW_DB_RENDER_OVERRIDE,
 
    TERAKAN_HW_STATE_DRAW_CB_BLEND_RGBA,
 
@@ -85,7 +116,10 @@ enum terakan_hw_state_draw_index {
     */
    TERAKAN_HW_STATE_DRAW_SPECIAL_FIRST,
 
-   TERAKAN_HW_STATE_DRAW_SQ_CONSTANT_CACHE_VS = TERAKAN_HW_STATE_DRAW_SPECIAL_FIRST,
+   /* Set as modified if any state of any viewport is modified. */
+   TERAKAN_HW_STATE_DRAW_VIEWPORT = TERAKAN_HW_STATE_DRAW_SPECIAL_FIRST,
+
+   TERAKAN_HW_STATE_DRAW_SQ_CONSTANT_CACHE_VS,
    TERAKAN_HW_STATE_DRAW_SQ_CONSTANT_CACHE_TCS,
    TERAKAN_HW_STATE_DRAW_SQ_CONSTANT_CACHE_TES,
    TERAKAN_HW_STATE_DRAW_SQ_CONSTANT_CACHE_GS,
@@ -177,6 +211,12 @@ struct terakan_hw_state_draw {
    /* TERAKAN_HW_STATE_DRAW_PA_CL_VTE_CNTL */
    uint32_t pa_cl_vte_cntl;
 
+   /* TERAKAN_HW_STATE_DRAW_PA_SC_MODE_CNTL_0 */
+   uint32_t pa_sc_mode_cntl_0;
+
+   /* TERAKAN_HW_STATE_DRAW_PA_CL_GB */
+   float pa_cl_gb_vert_horz_clip_disc_adj[2][2];
+
    /* TERAKAN_HW_STATE_DRAW_PA_SC_AA_SAMPLES */
    struct {
       uint32_t num_samples_log2;
@@ -184,6 +224,9 @@ struct terakan_hw_state_draw {
 
    /* TERAKAN_HW_STATE_DRAW_PA_SC_AA_MASK */
    uint16_t pa_sc_aa_mask;
+
+   /* TERAKAN_HW_STATE_DRAW_DB_RENDER_OVERRIDE */
+   uint32_t db_render_override;
 
    /* TERAKAN_HW_STATE_DRAW_CB_BLEND_RGBA */
    float cb_blend_rgba[4];
@@ -193,6 +236,15 @@ struct terakan_hw_state_draw {
    /* The values are undefined if the respective cb_color_bo is NULL. */
    struct terakan_color_descriptor cb_color[TERAKAN_LIMITS_HW_COLOR_RAT_COUNT];
    struct terakan_color_meta_descriptor cb_color_meta[TERAKAN_LIMITS_HW_COLOR_MRT_COUNT];
+
+   /* TERAKAN_HW_STATE_DRAW_VIEWPORT
+    * Don't use terakan_hw_state_draw_written, instead call
+    * terakan_hw_state_draw_ensure_viewport_count before updating the state, and
+    * terakan_hw_state_draw_viewport_modified after writing a different value.
+    */
+   uint32_t viewport_count_ever_written;
+   uint16_t viewports_modified;
+   struct terakan_hw_state_draw_viewport viewports[TERAKAN_HW_STATE_DRAW_MAX_VIEWPORTS];
 
    /* Sequencer constants.
     * Don't access externally directly, use the respective setters.
@@ -307,6 +359,21 @@ terakan_hw_state_draw_written(struct terakan_hw_state_draw * const state,
    if (modified) {
       BITSET_SET(state->state_modified, state_index);
    }
+}
+
+void terakan_hw_state_draw_ensure_viewport_count(struct terakan_hw_state_draw * state,
+                                                 uint32_t viewport_count);
+
+static inline void
+terakan_hw_state_draw_viewport_modified(
+   struct terakan_hw_state_draw * const state, uint32_t const viewport_index,
+   enum terakan_hw_state_draw_viewport_state_index const state_index)
+{
+   /* Call terakan_hw_state_draw_ensure_viewport_count before updating the state of a viewport. */
+   assert(viewport_index < state->viewport_count_ever_written);
+   BITSET_SET(state->viewports[viewport_index].state_modified, state_index);
+   state->viewports_modified |= (uint16_t)1 << viewport_index;
+   BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_VIEWPORT);
 }
 
 void terakan_hw_state_draw_set_sq_constant_cache_vs(struct terakan_hw_state_draw * state,

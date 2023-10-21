@@ -670,11 +670,8 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
       S_028A08_WIDTH((uint32_t)1 << 3),
 
       /* TODO(Triang3l): Move to hw_state_draw. */
-      PKT3(PKT3_SET_CONTEXT_REG, 2, 0),
-      TERAKAN_CONTEXT_REG_OFFSET(R_028A48_PA_SC_MODE_CNTL_0),
-      /* R_028A48_PA_SC_MODE_CNTL_0 */
-      0,
-      /* R_028A4C_PA_SC_MODE_CNTL_1 */
+      PKT3(PKT3_SET_CONTEXT_REG, 1, 0),
+      TERAKAN_CONTEXT_REG_OFFSET(R_028A4C_PA_SC_MODE_CNTL_1),
       EG_S_028A4C_FORCE_EOV_CNTDWN_ENABLE(1) | EG_S_028A4C_FORCE_EOV_REZ_ENABLE(1),
 
       /*
@@ -689,11 +686,8 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
       /* TODO(Triang3l): Move to hw_state_draw.
        * DECOMPRESS_Z_ON_FLUSH on R9xx must be enabled for 4x+ AA.
        */
-      PKT3(PKT3_SET_CONTEXT_REG, 2, 0),
-      TERAKAN_CONTEXT_REG_OFFSET(R_02800C_DB_RENDER_OVERRIDE),
-      /* R_02800C_DB_RENDER_OVERRIDE */
-      0,
-      /* R_028010_DB_RENDER_OVERRIDE2 */
+      PKT3(PKT3_SET_CONTEXT_REG, 1, 0),
+      TERAKAN_CONTEXT_REG_OFFSET(R_028010_DB_RENDER_OVERRIDE2),
       0,
 
       /* TODO(Triang3l): Move to hw_state_draw. */
@@ -1070,7 +1064,9 @@ terakan_BeginCommandBuffer(VkCommandBuffer const commandBuffer,
 
    terakan_hw_state_draw_reset(&command_buffer->command_writer.gfx->hw_state_draw);
 
-   terakan_state_draw_reset(&command_buffer->command_writer.gfx->state_draw);
+   terakan_state_draw_reset(
+      &command_buffer->command_writer.gfx->state_draw,
+      command_buffer->vk.pool->base.device->enabled_extensions.EXT_depth_range_unrestricted);
 
    return vk_command_buffer_get_record_result(&command_buffer->vk);
 }

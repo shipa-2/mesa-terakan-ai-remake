@@ -389,7 +389,8 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
    struct terakan_gfx_command_writer * const command_writer =
       terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx;
 
-   terakan_meta_begin_2d_immediate_rectangles(command_writer);
+   terakan_meta_begin_2d_immediate_rectangles(command_writer,
+                                              TERAKAN_META_DB_RENDER_OVERRIDE_DEFAULT);
 
    terakan_meta_set_vs(command_writer, TERAKAN_META_SHADER_POSITION_FROM_INDEX_VS);
    terakan_meta_set_ps(command_writer, TERAKAN_META_SHADER_COPY_BUFFER_TO_IMAGE_PS);
