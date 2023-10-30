@@ -209,9 +209,9 @@ terakan_CmdSetDepthClipNegativeOneToOneEXT(VkCommandBuffer const commandBuffer,
    if (G_028810_DX_CLIP_SPACE_DEF(state_draw->pa_cl_clip_cntl) != dx_clip_space_def) {
       terakan_state_draw_set_pending(state_draw, TERAKAN_STATE_DRAW_PA_CL_VPORT_Z_SCALE_OFFSET);
    }
-   terakan_state_draw_replace_fields(
-      state_draw, TERAKAN_STATE_DRAW_PA_CL_CLIP_CNTL, &state_draw->pa_cl_clip_cntl,
-      C_028810_DX_CLIP_SPACE_DEF, S_028810_DX_CLIP_SPACE_DEF(dx_clip_space_def));
+   terakan_state_draw_replace_fields(state_draw, TERAKAN_STATE_DRAW_PA_CL_CLIP_CNTL,
+                                     &state_draw->pa_cl_clip_cntl, C_028810_DX_CLIP_SPACE_DEF,
+                                     S_028810_DX_CLIP_SPACE_DEF(dx_clip_space_def));
 }
 
 VKAPI_ATTR void VKAPI_CALL

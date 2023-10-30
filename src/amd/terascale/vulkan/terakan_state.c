@@ -103,15 +103,16 @@ terakan_state_draw_apply_pa_cl_vport_xy_scale_offset(
                                                command_writer->state_draw.viewport_count);
    for (uint32_t viewport_index = 0; viewport_index < command_writer->state_draw.viewport_count;
         ++viewport_index) {
-      if (memcmp(command_writer->hw_state_draw.viewports[viewport_index]
-                    .pa_cl_vport_xy_scale_offset,
-                 command_writer->state_draw.viewports[viewport_index].pa_cl_vport_xy_scale_offset,
-                 sizeof(command_writer->state_draw.viewports[viewport_index]
-                           .pa_cl_vport_xy_scale_offset)) != 0) {
-         memcpy(command_writer->hw_state_draw.viewports[viewport_index].pa_cl_vport_xy_scale_offset,
-                command_writer->state_draw.viewports[viewport_index].pa_cl_vport_xy_scale_offset,
-                sizeof(command_writer->state_draw.viewports[viewport_index]
-                          .pa_cl_vport_xy_scale_offset));
+      if (memcmp(
+             command_writer->hw_state_draw.viewports[viewport_index].pa_cl_vport_xy_scale_offset,
+             command_writer->state_draw.viewports[viewport_index].pa_cl_vport_xy_scale_offset,
+             sizeof(command_writer->state_draw.viewports[viewport_index]
+                       .pa_cl_vport_xy_scale_offset)) != 0) {
+         memcpy(
+            command_writer->hw_state_draw.viewports[viewport_index].pa_cl_vport_xy_scale_offset,
+            command_writer->state_draw.viewports[viewport_index].pa_cl_vport_xy_scale_offset,
+            sizeof(
+               command_writer->state_draw.viewports[viewport_index].pa_cl_vport_xy_scale_offset));
          terakan_hw_state_draw_viewport_modified(
             &command_writer->hw_state_draw, viewport_index,
             TERAKAN_HW_STATE_DRAW_VIEWPORT_PA_CL_VPORT_XY_SCALE_OFFSET);
@@ -159,9 +160,9 @@ terakan_state_draw_apply_pa_cl_gb(struct terakan_gfx_command_writer * const comm
       }
    }
    /* TODO(Triang3l): Discard rectangle ratio for points and lines. */
-   bool const modified = memcmp(
-      command_writer->hw_state_draw.pa_cl_gb_vert_horz_clip_disc_adj,
-      pa_cl_gb_vert_horz_clip_disc_adj, sizeof(pa_cl_gb_vert_horz_clip_disc_adj)) != 0;
+   bool const modified =
+      memcmp(command_writer->hw_state_draw.pa_cl_gb_vert_horz_clip_disc_adj,
+             pa_cl_gb_vert_horz_clip_disc_adj, sizeof(pa_cl_gb_vert_horz_clip_disc_adj)) != 0;
    memcpy(command_writer->hw_state_draw.pa_cl_gb_vert_horz_clip_disc_adj,
           pa_cl_gb_vert_horz_clip_disc_adj, sizeof(pa_cl_gb_vert_horz_clip_disc_adj));
    terakan_hw_state_draw_written(&command_writer->hw_state_draw, TERAKAN_HW_STATE_DRAW_PA_CL_GB,
@@ -300,9 +301,8 @@ terakan_state_draw_apply_pa_sc_aa_mask(struct terakan_gfx_command_writer * const
 }
 
 static void
-terakan_state_draw_apply_db_render_override(
-   struct terakan_gfx_command_writer * const command_writer,
-   UNUSED enum terakan_state_draw_index const state_index)
+terakan_state_draw_apply_db_render_override(struct terakan_gfx_command_writer * const command_writer,
+                                            UNUSED enum terakan_state_draw_index const state_index)
 {
    bool const modified = command_writer->hw_state_draw.db_render_override !=
                          command_writer->state_draw.db_render_override;

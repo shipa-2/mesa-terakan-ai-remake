@@ -54,11 +54,10 @@ VK_DEFINE_NONDISP_HANDLE_CASTS(terakan_pipeline_layout, vk.base, VkPipelineLayou
 
 struct terakan_device;
 
-VkResult
-terakan_pipeline_layout_create(struct terakan_device * device,
-                               VkPipelineLayoutCreateInfo const * create_info,
-                               VkShaderStageFlags stage_mask,
-                               struct terakan_pipeline_layout ** pipeline_layout_out);
+VkResult terakan_pipeline_layout_create(struct terakan_device * device,
+                                        VkPipelineLayoutCreateInfo const * create_info,
+                                        VkShaderStageFlags stage_mask,
+                                        struct terakan_pipeline_layout ** pipeline_layout_out);
 
 #ifdef __cplusplus
 }

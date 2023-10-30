@@ -310,7 +310,7 @@ terakan_hw_state_draw_emit_pa_cl_gb(struct terakan_gfx_command_writer * const co
    *packet++ = TERAKAN_CONTEXT_REG_OFFSET(
       container_of(command_writer->base.command_buffer->vk.base.device->physical,
                    struct terakan_physical_device const, vk)
-         ->chip_family_info.is_r9xx
+            ->chip_family_info.is_r9xx
          ? CM_R_028BE8_PA_CL_GB_VERT_CLIP_ADJ
          : R_028C0C_PA_CL_GB_VERT_CLIP_ADJ);
    memcpy(packet, command_writer->hw_state_draw.pa_cl_gb_vert_horz_clip_disc_adj,
@@ -604,9 +604,9 @@ terakan_hw_state_draw_emit_viewport(struct terakan_gfx_command_writer * const co
             return;
          }
          *packet++ = PKT3(PKT3_SET_CONTEXT_REG, scale_offset_emit_dwords, 0);
-         *packet++ = TERAKAN_CONTEXT_REG_OFFSET(
-            scale_offset_xy_modified ? R_02843C_PA_CL_VPORT_XSCALE_0
-                                     : R_02844C_PA_CL_VPORT_ZSCALE_0) +
+         *packet++ =
+            TERAKAN_CONTEXT_REG_OFFSET(scale_offset_xy_modified ? R_02843C_PA_CL_VPORT_XSCALE_0
+                                                                : R_02844C_PA_CL_VPORT_ZSCALE_0) +
             6 * viewport_index;
          if (scale_offset_xy_modified) {
             memcpy(packet, viewport->pa_cl_vport_xy_scale_offset, sizeof(float) * 4);
@@ -1295,8 +1295,8 @@ terakan_hw_state_draw_ensure_viewport_count(struct terakan_hw_state_draw * const
         ++viewport_index) {
       BITSET_ONES(state->viewports[viewport_index].state_modified);
    }
-   state->viewports_modified |=
-      (uint16_t)(((uint32_t)1 << viewports_added) - 1) << old_viewport_count;
+   state->viewports_modified |= (uint16_t)(((uint32_t)1 << viewports_added) - 1)
+                                << old_viewport_count;
 
    state->viewport_count_ever_written = viewport_count;
 

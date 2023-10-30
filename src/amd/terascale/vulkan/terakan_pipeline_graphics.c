@@ -130,8 +130,8 @@ terakan_pipeline_graphics_apply_pa_sc_vport_generic_scissor(
        memcmp(command_writer->state_draw.pa_sc_vport_generic_scissor_tl_br_xy,
               pipeline->pre_rasterization.pa_sc_vport_generic_scissor_tl_br_xy,
               sizeof(uint16_t) * 4 *
-              MIN2(command_writer->state_draw.viewport_count,
-                   pipeline->pre_rasterization.pa_sc_vport_generic_scissor_count)) != 0) {
+                 MIN2(command_writer->state_draw.viewport_count,
+                      pipeline->pre_rasterization.pa_sc_vport_generic_scissor_count)) != 0) {
       terakan_state_draw_set_pending(&command_writer->state_draw,
                                      TERAKAN_STATE_DRAW_PA_SC_VPORT_SCISSOR);
    }
@@ -248,8 +248,7 @@ terakan_pipeline_graphics_vertex_input_init(struct terakan_pipeline_graphics * c
 static VkResult
 terakan_pipeline_graphics_pre_rasterization_init(
    struct terakan_pipeline_graphics * const pipeline,
-   struct vk_graphics_pipeline_state const * const state,
-   bool const depth_range_unrestricted)
+   struct vk_graphics_pipeline_state const * const state, bool const depth_range_unrestricted)
 {
    /* TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SC_VPORT_Z_MIN_0_MAX_1,
     * TERAKAN_PIPELINE_GRAPHICS_STATE_DB_RENDER_OVERRIDE_PRE_RASTERIZATION
@@ -278,7 +277,7 @@ terakan_pipeline_graphics_pre_rasterization_init(
    if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_VP_VIEWPORT_COUNT)) {
       assert(state->vp->viewport_count <= ARRAY_SIZE(pipeline->pre_rasterization.viewports));
       pipeline->pre_rasterization.viewport_count = state->vp->viewport_count;
-         BITSET_SET(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_VIEWPORT_COUNT);
+      BITSET_SET(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_VIEWPORT_COUNT);
       /* TERAKAN_PIPELINE_GRAPHICS_STATE_VIEWPORT */
       if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_VP_VIEWPORTS)) {
          for (uint32_t viewport_index = 0; viewport_index < state->vp->viewport_count;
