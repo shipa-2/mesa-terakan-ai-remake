@@ -68,16 +68,9 @@ terakan_shader_impl_init_from_nir(terakan_shader_impl * const shader, terakan_de
    r600::init_pool();
 
    r600_finalize_nir_common(nir, gfx_level);
+   /* For r600_lower_and_optimize_nir, for fields like number bit sizes. */
+   nir_shader_gather_info(nir, nir_shader_get_entrypoint(nir));
    r600_lower_and_optimize_nir(nir, key, gfx_level, &so_info);
-
-   if (!nir->info.flrp_lowered) {
-      bool lower_flrp_progress = false;
-      NIR_PASS(lower_flrp_progress, nir, nir_lower_flrp, 32 | 64, false /* always_precise */);
-      if (lower_flrp_progress) {
-         NIR_PASS(_, nir, nir_opt_constant_folding);
-      }
-      nir->info.flrp_lowered = true;
-   }
 
    r600::Shader * const unscheduled_sfn_shader = r600::Shader::translate_from_nir(
       nir, &so_info, nullptr, *key, chip_family_info.is_r9xx ? ISA_CC_CAYMAN : ISA_CC_EVERGREEN,
