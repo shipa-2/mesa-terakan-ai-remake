@@ -138,8 +138,16 @@ static void
 terakan_hw_state_draw_emit_sq_pgm_vs(struct terakan_gfx_command_writer * const command_writer,
                                      UNUSED enum terakan_hw_state_draw_index const state_index)
 {
+   struct terakan_shader_static const * const shader = command_writer->hw_state_draw.sq_pgm_vs;
+
+   /* VS_EXPORT_COUNT is the highest parameter export index. */
+   uint32_t const spi_vs_out_id_count =
+      G_0286C4_VS_EXPORT_COUNT(shader->stage.vs.spi_vs_out_config) / 4 + 1;
+
    uint32_t const packet_dwords =
       2 + ((R_028864_SQ_PGM_RESOURCES_2_VS - R_02885C_SQ_PGM_START_VS) / sizeof(uint32_t) + 1) +
+      /* R_02861C_SPI_VS_OUT_ID_[0-9] */
+      2 + spi_vs_out_id_count +
       /* R_0286C4_SPI_VS_OUT_CONFIG */
       2 + 1 +
       /* R_02881C_PA_CL_VS_OUT_CNTL */
@@ -149,8 +157,6 @@ terakan_hw_state_draw_emit_sq_pgm_vs(struct terakan_gfx_command_writer * const c
    if (unlikely(packet == NULL)) {
       return;
    }
-
-   struct terakan_shader_static const * const shader = command_writer->hw_state_draw.sq_pgm_vs;
 
    *packet++ =
       PKT3(PKT3_SET_CONTEXT_REG,
@@ -165,6 +171,11 @@ terakan_hw_state_draw_emit_sq_pgm_vs(struct terakan_gfx_command_writer * const c
                                                          shader->program_bo, true, false,
                                                          TERAKAN_BO_PRIORITY_SHADER_BINARY);
 
+   *packet++ = PKT3(PKT3_SET_CONTEXT_REG, spi_vs_out_id_count, 0);
+   *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_02861C_SPI_VS_OUT_ID_0);
+   memcpy(packet, shader->stage.vs.spi_vs_out_id, sizeof(uint32_t) * spi_vs_out_id_count);
+   packet += spi_vs_out_id_count;
+
    *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
    *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_0286C4_SPI_VS_OUT_CONFIG);
    *packet++ = shader->stage.vs.spi_vs_out_config;
@@ -178,8 +189,14 @@ static void
 terakan_hw_state_draw_emit_sq_pgm_ps(struct terakan_gfx_command_writer * const command_writer,
                                      UNUSED enum terakan_hw_state_draw_index const state_index)
 {
+   struct terakan_shader_static const * const shader = command_writer->hw_state_draw.sq_pgm_ps;
+
+   uint32_t const interpolator_count = G_0286CC_NUM_INTERP(shader->stage.ps.spi_ps_in_control[0]);
+
    uint32_t const packet_dwords =
       2 + ((R_02884C_SQ_PGM_EXPORTS_PS - R_028840_SQ_PGM_START_PS) / sizeof(uint32_t) + 1) +
+      /* R_028644_SPI_PS_INPUT_CNTL_[0-31] */
+      (interpolator_count != 0 ? 2 + interpolator_count : 0) +
       /* R_0286CC_SPI_PS_IN_CONTROL_0, R_0286D0_SPI_PS_IN_CONTROL_1 */
       2 + 2 +
       /* R_0286D8_SPI_INPUT_Z */
@@ -194,8 +211,6 @@ terakan_hw_state_draw_emit_sq_pgm_ps(struct terakan_gfx_command_writer * const c
       return;
    }
 
-   struct terakan_shader_static const * const shader = command_writer->hw_state_draw.sq_pgm_ps;
-
    *packet++ =
       PKT3(PKT3_SET_CONTEXT_REG,
            (R_02884C_SQ_PGM_EXPORTS_PS - R_028840_SQ_PGM_START_PS) / sizeof(uint32_t) + 1, 0);
@@ -208,6 +223,13 @@ terakan_hw_state_draw_emit_sq_pgm_ps(struct terakan_gfx_command_writer * const c
    *packet++ = terakan_bo_reference_writer_add_reference(&command_writer->base.bo_reference_writer,
                                                          shader->program_bo, true, false,
                                                          TERAKAN_BO_PRIORITY_SHADER_BINARY);
+
+   if (interpolator_count != 0) {
+      *packet++ = PKT3(PKT3_SET_CONTEXT_REG, interpolator_count, 0);
+      *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028644_SPI_PS_INPUT_CNTL_0);
+      memcpy(packet, shader->stage.ps.spi_ps_input_cntl, sizeof(uint32_t) * interpolator_count);
+      packet += interpolator_count;
+   }
 
    *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 2, 0);
    *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_0286CC_SPI_PS_IN_CONTROL_0);

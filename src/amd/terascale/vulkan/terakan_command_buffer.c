@@ -711,6 +711,11 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
        */
 
       /* TODO(Triang3l): Move to hw_state_draw. */
+      PKT3(PKT3_SET_CONTEXT_REG, 1, 0),
+      TERAKAN_CONTEXT_REG_OFFSET(R_028238_CB_TARGET_MASK),
+      0b1111,
+
+      /* TODO(Triang3l): Move to hw_state_draw. */
       PKT3(PKT3_SET_CONTEXT_REG, 8, 0),
       TERAKAN_CONTEXT_REG_OFFSET(R_028780_CB_BLEND0_CONTROL),
       0,

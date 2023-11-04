@@ -36,6 +36,7 @@
 #include "terakan_wsi.h"
 
 #include "compiler/shader_enums.h"
+#include "gallium/drivers/r600/r600_isa.h"
 #include "util/macros.h"
 #include "util/u_math.h"
 #include "vk_alloc.h"
@@ -50,6 +51,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 enum radeon_family
@@ -739,6 +741,8 @@ terakan_physical_device_destroy(struct vk_physical_device * const device_base)
    struct terakan_physical_device * const device =
       container_of(device_base, struct terakan_physical_device, vk);
 
+   r600_isa_destroy(device->isa);
+
    device->winsys_fn->destroy(device);
 }
 
@@ -781,6 +785,18 @@ terakan_physical_device_init(
       (VkDeviceSize)1 << (MIN2(device->tiling_info.row_bytes_log2, 3 + 3 + 3 + 4) +
                           device->tiling_info.banks_log2 + device->tiling_info.pipes_log2);
 
+   /* Must be allocated using calloc because r600_isa_destroy frees it, and r600_isa_destroy also
+    * must be called even if r600_isa_init fails.
+    */
+   device->isa = calloc(1, sizeof(struct r600_isa));
+   if (device->isa == NULL) {
+      return vk_error(instance, VK_ERROR_OUT_OF_HOST_MEMORY);
+   }
+   if (r600_isa_init(device->chip_family_info.is_r9xx ? CAYMAN : EVERGREEN, device->isa) != 0) {
+      result = vk_error(instance, VK_ERROR_OUT_OF_HOST_MEMORY);
+      goto fail_isa;
+   }
+
    struct vk_device_extension_table extensions;
    struct vk_features features;
    struct vk_properties properties;
@@ -799,7 +815,7 @@ terakan_physical_device_init(
    result = vk_physical_device_init(&device->vk, &instance->vk, &extensions, &features, &properties,
                                     &dispatch_table);
    if (result != VK_SUCCESS) {
-      return result;
+      goto fail_isa;
    }
 
    device->vk.supported_sync_types = supported_sync_types_static;
@@ -811,9 +827,14 @@ terakan_physical_device_init(
    /* Initialize WSI after everything else as it's a layer on top of the Vulkan physical device. */
    result = terakan_wsi_init(device);
    if (result != VK_SUCCESS) {
-      vk_physical_device_finish(&device->vk);
-      return result;
+      goto fail_device;
    }
 
    return VK_SUCCESS;
+
+fail_device:
+   vk_physical_device_finish(&device->vk);
+fail_isa:
+   r600_isa_destroy(device->isa);
+   return result;
 }

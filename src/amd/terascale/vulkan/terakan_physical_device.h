@@ -27,6 +27,7 @@
 #include "terakan_instance.h"
 #include "wsi_common.h"
 
+#include "gallium/drivers/r600/r600_isa.h"
 #include "amd_family.h"
 #include "vk_physical_device.h"
 #include "vk_sync.h"
@@ -124,6 +125,8 @@ struct terakan_physical_device {
 
    struct terakan_physical_device_tiling_info tiling_info;
    VkDeviceSize buffer_image_bo_alignment;
+
+   struct r600_isa * isa;
 
    VkPhysicalDeviceMemoryProperties memory_properties;
 
