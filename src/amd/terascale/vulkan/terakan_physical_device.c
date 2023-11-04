@@ -37,6 +37,7 @@
 
 #include "compiler/shader_enums.h"
 #include "gallium/drivers/r600/r600_isa.h"
+#include "gallium/drivers/r600/sfn/sfn_nir.h"
 #include "util/macros.h"
 #include "util/u_math.h"
 #include "vk_alloc.h"
@@ -784,6 +785,127 @@ terakan_physical_device_init(
    device->buffer_image_bo_alignment =
       (VkDeviceSize)1 << (MIN2(device->tiling_info.row_bytes_log2, 3 + 3 + 3 + 4) +
                           device->tiling_info.banks_log2 + device->tiling_info.pipes_log2);
+
+   device->nir_options_non_fs = (nir_shader_compiler_options){
+      .lower_fdiv = true,
+
+      .fuse_ffma16 = true,
+      .fuse_ffma32 = true,
+      .fuse_ffma64 = true,
+
+      .lower_flrp16 = true,
+      .lower_flrp32 = true,
+      .lower_flrp64 = true,
+
+      .lower_fpow = true,
+
+      .lower_fmod = true,
+
+      .lower_bitfield_extract = true,
+      .lower_bitfield_extract16 = true,
+      .lower_bitfield_extract8 = true,
+      .lower_bitfield_insert = true,
+
+      .lower_ifind_msb = true,
+      .lower_ufind_msb = true,
+
+      .lower_uadd_carry = true,
+      .lower_usub_borrow = true,
+
+      .lower_fisnormal = true,
+
+      .lower_isign = true,
+      .lower_fsign = true,
+      .lower_iabs = true,
+
+      .lower_ldexp = true,
+
+      .lower_pack_unorm_2x16 = true,
+      .lower_pack_snorm_2x16 = true,
+      .lower_pack_unorm_4x8 = true,
+      .lower_pack_snorm_4x8 = true,
+      .lower_pack_64_4x16 = true,
+      .lower_pack_32_2x16 = true,
+      .lower_pack_32_2x16_split = true,
+      .lower_unpack_unorm_2x16 = true,
+      .lower_unpack_snorm_2x16 = true,
+      .lower_unpack_unorm_4x8 = true,
+      .lower_unpack_snorm_4x8 = true,
+      .lower_unpack_32_2x16_split = true,
+
+      .lower_pack_split = true,
+
+      .lower_extract_byte = true,
+      .lower_extract_word = true,
+      .lower_insert_byte = true,
+      .lower_insert_word = true,
+
+      .lower_cs_local_index_to_id = true,
+
+      .lower_device_index_to_zero = true,
+
+      .lower_hadd = true,
+
+      .lower_uadd_sat = true,
+      .lower_usub_sat = true,
+      .lower_iadd_sat = true,
+
+      .lower_mul_32x16 = true,
+
+      .vectorize_tess_levels = true,
+
+      .lower_to_scalar = true,
+      .lower_to_scalar_filter = r600_lower_to_scalar_instr_filter,
+
+      .lower_interpolate_at = true,
+
+      .lower_mul_2x32_64 = true,
+
+      .has_umul24 = true,
+      .has_umad24 = true,
+
+      .has_fused_comp_and_csel = true,
+
+      .has_fsub = true,
+      .has_isub = true,
+
+      .has_fmulz = true,
+
+      .has_find_msb_rev = true,
+
+      .has_bfe = true,
+      .has_bfm = true,
+      /* TODO(Triang3l): Implement bfi in SFN. */
+      .has_bitfield_select = true,
+
+      /* Arbitrary (from RADV - in RadeonSI both are 128), was 255 due to a bug with the old
+       * (pre-SFN) compiler from 2014:
+       * https://bugs.freedesktop.org/show_bug.cgi?id=86720
+       */
+      /* TODO(Triang3l): Revisit max_unroll_iterations. */
+      .max_unroll_iterations = 32,
+      .max_unroll_iterations_aggressive = 128,
+
+      .lower_int64_options = ~(nir_lower_int64_options)0,
+
+      .lower_doubles_options = device->chip_family_info.is_r9xx
+                                  ? nir_lower_ddiv | nir_lower_dfloor | nir_lower_dceil |
+                                       nir_lower_dmod | nir_lower_dsub | nir_lower_dtrunc
+                                  : nir_lower_fp64_full_software,
+
+      .lower_image_offset_to_range_base = true,
+
+      /* lower_atomic_offset_to_range_base (needed on R8xx) is not applicable to Vulkan. */
+
+      .lower_fquantize2f16 = true,
+
+      .has_ddx_intrinsics = true,
+
+      .io_options = nir_io_mediump_is_32bit,
+   };
+
+   device->nir_options_fs = device->nir_options_non_fs;
+   device->nir_options_fs.lower_all_io_to_temps = true;
 
    /* Must be allocated using calloc because r600_isa_destroy frees it, and r600_isa_destroy also
     * must be called even if r600_isa_init fails.
