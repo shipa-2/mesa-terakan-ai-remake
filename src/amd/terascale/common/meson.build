@@ -37,6 +37,8 @@ amd_terascale_common_files = files(
   '../../../gallium/drivers/r600/r600_asm.c',
   '../../../gallium/drivers/r600/r600_asm.h',
   '../../../gallium/drivers/r600/r600_formats.h',
+  '../../../gallium/drivers/r600/r600_isa.c',
+  '../../../gallium/drivers/r600/r600_isa.h',
   '../../../gallium/drivers/r600/r600_shader_common.h',
   '../../../gallium/drivers/r600/r700_asm.c',
 )
