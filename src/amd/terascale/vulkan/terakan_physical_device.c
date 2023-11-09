@@ -265,7 +265,7 @@ terakan_physical_device_get_capabilities(
     */
    properties_out->maxTexelBufferElements = (uint32_t)1 << (32 - 4);
 
-   properties_out->maxUniformBufferRange = TERAKAN_CONSTANT_CACHE_MAX_BUFFER_SIZE_BYTES;
+   properties_out->maxUniformBufferRange = TERAKAN_KCACHE_HW_MAX_BUFFER_SIZE_BYTES;
 
    /* Storage buffers are bound as R32 vertex fetch constants or random access targets.
     * However, buffer RATs have LINEAR_ALIGNED array more, and thus alignment equal to the tile
@@ -280,7 +280,7 @@ terakan_physical_device_get_capabilities(
    /* TODO(Triang3l): Exclude internal constants like the draw ID, ring layout, sample locations,
     * RAT alignment offsets.
     */
-   properties_out->maxPushConstantsSize = TERAKAN_CONSTANT_CACHE_MAX_BUFFER_SIZE_BYTES;
+   properties_out->maxPushConstantsSize = TERAKAN_KCACHE_HW_MAX_BUFFER_SIZE_BYTES;
 
    properties_out->maxMemoryAllocationCount = UINT32_MAX;
 
@@ -393,7 +393,7 @@ terakan_physical_device_get_capabilities(
    /* The largest is for R32G32B32A32 random access targets. */
    properties_out->minTexelBufferOffsetAlignment = sizeof(uint32_t) * 4;
 
-   properties_out->minUniformBufferOffsetAlignment = TERAKAN_CONSTANT_CACHE_LINE_BYTES;
+   properties_out->minUniformBufferOffsetAlignment = TERAKAN_KCACHE_HW_LINE_BYTES;
 
    properties_out->minStorageBufferOffsetAlignment = sizeof(uint32_t);
 
@@ -780,7 +780,7 @@ terakan_physical_device_init(
     * For buffers, the same alignment is needed as for images with the LINEAR_ALIGNED array mode
     * because it's required for RATs (equal to the pipe interleave in tiling), so it's included in
     * the image alignment. It's normally 256 bytes, but potentially can be 512 bytes, depending on
-    * device. It's also not smaller than the constant cache buffer alignment (256 bytes).
+    * device. It's also not smaller than the kcache buffer alignment (256 bytes).
     */
    device->buffer_image_bo_alignment =
       (VkDeviceSize)1 << (MIN2(device->tiling_info.row_bytes_log2, 3 + 3 + 3 + 4) +

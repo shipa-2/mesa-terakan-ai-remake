@@ -75,7 +75,7 @@ terakan_shader_spirv_to_nir(struct terakan_device * const device, size_t const s
       .push_const_addr_format = nir_address_format_32bit_offset,
       .shared_addr_format = nir_address_format_32bit_offset,
 
-      .min_ubo_alignment = TERAKAN_CONSTANT_CACHE_LINE_BYTES,
+      .min_ubo_alignment = TERAKAN_KCACHE_HW_LINE_BYTES,
       .min_ssbo_alignment = sizeof(uint32_t),
    };
 
