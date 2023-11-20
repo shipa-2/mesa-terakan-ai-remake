@@ -920,6 +920,8 @@ Shader::process_intrinsic(nir_intrinsic_instr *intr)
                                     offsetof(struct r600_lds_constant_buffer, draw_id));
    case nir_intrinsic_load_buffer_resource_r600:
       return emit_load_buffer_resource(intr);
+   case nir_intrinsic_load_kcache_r600:
+      return emit_load_kcache(intr);
    case nir_intrinsic_barrier:
       return emit_barrier(intr);
    case nir_intrinsic_shared_atomic:
@@ -1738,6 +1740,44 @@ Shader::emit_load_buffer_resource(nir_intrinsic_instr *instr)
    fetch->set_mfc((mega_fetch_count != 0 ? mega_fetch_count : 16) - 1);
 
    emit_instruction(fetch);
+
+   return true;
+}
+
+bool
+Shader::emit_load_kcache(nir_intrinsic_instr *instr)
+{
+   ValueFactory& vf = value_factory();
+
+   unsigned bank_base = nir_intrinsic_id_base(instr);
+   PVirtualValue bank_offset = nullptr;
+   const nir_const_value *bank_offset_const = nir_src_as_const_value(instr->src[0]);
+   if (bank_offset_const != nullptr) {
+      bank_base += bank_offset_const->u32;
+   } else {
+      bank_offset = vf.src(instr->src[0], 0);
+   }
+
+   unsigned element_index = static_cast<unsigned>(nir_intrinsic_base(instr));
+   assert(element_index < R600_MAX_CONST_BUFFER_SIZE / (sizeof(float) * 4));
+
+   unsigned first_component = nir_intrinsic_component(instr);
+   assert(first_component + instr->def.num_components <= 4);
+
+   AluInstr *alu = nullptr;
+   for (unsigned i = 0; i < instr->def.num_components; ++i) {
+      alu = new AluInstr(op1_mov,
+                         vf.dest(instr->def, i, pin_none),
+                         new UniformValue(512 + element_index,
+                                          first_component + i,
+                                          bank_offset,
+                                          bank_base),
+                         AluInstr::write);
+      emit_instruction(alu);
+   }
+   if (alu != nullptr) {
+      alu->set_alu_flag(alu_last_instr);
+   }
 
    return true;
 }
