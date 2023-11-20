@@ -187,6 +187,7 @@ terakan_pipeline_layout_create(struct terakan_device * const device,
    layout->sets = sets;
 
    uint8_t next_first_mutable_shader_resources[MESA_SHADER_STAGES] = {};
+   uint8_t next_first_shader_uniform_buffers[MESA_SHADER_STAGES] = {};
    uint8_t next_first_shader_samplers[MESA_SHADER_STAGES] = {};
 
    for (uint32_t set_index = 0; set_index < layout->vk.set_count; ++set_index) {
@@ -217,6 +218,10 @@ terakan_pipeline_layout_create(struct terakan_device * const device,
          set->first_shader_resources[stage_index] =
             TERAKAN_RESOURCE_RANGE_MUTABLE_BASE + first_mutable_shader_resource;
          next_first_mutable_shader_resources[stage_index] += set_layout_shader->resource_count;
+
+         set->first_shader_uniform_buffers[stage_index] =
+            next_first_shader_uniform_buffers[stage_index];
+         next_first_shader_uniform_buffers[stage_index] += set_layout_shader->uniform_buffer_count;
 
          uint8_t const first_shader_sampler = next_first_shader_samplers[stage_index];
          if (TERAKAN_SAMPLERS_PER_STAGE - first_shader_sampler < set_layout_shader->sampler_count) {

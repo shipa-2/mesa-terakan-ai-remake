@@ -35,6 +35,7 @@ extern "C" {
 
 struct terakan_pipeline_layout_set {
    uint8_t first_shader_resources[MESA_SHADER_STAGES];
+   uint8_t first_shader_uniform_buffers[MESA_SHADER_STAGES];
    uint8_t first_shader_samplers[MESA_SHADER_STAGES];
 };
 

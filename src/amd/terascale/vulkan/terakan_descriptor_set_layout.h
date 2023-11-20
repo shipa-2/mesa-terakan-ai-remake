@@ -63,6 +63,7 @@ struct terakan_descriptor_set_layout_binding {
 
    /* Primarily for shader compilation and pushing. */
    uint8_t first_shader_resources[MESA_SHADER_STAGES];
+   uint8_t first_shader_uniform_buffers[MESA_SHADER_STAGES];
    uint8_t first_shader_samplers[MESA_SHADER_STAGES];
 };
 
@@ -86,6 +87,7 @@ struct terakan_descriptor_set_layout_shader {
    uint8_t sampler_range_count;
 
    uint8_t resource_count;
+   uint8_t uniform_buffer_count;
    uint8_t sampler_count;
 };
 

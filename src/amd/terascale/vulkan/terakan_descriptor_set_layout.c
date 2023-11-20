@@ -311,6 +311,7 @@ terakan_CreateDescriptorSetLayout(VkDevice const deviceHandle,
       layout_shader->first_resource_range = next_shader_range_index;
 
       uint8_t stage_resource_count = 0;
+      uint8_t stage_uniform_buffer_count = 0;
 
       uint8_t const stage_flag = (uint8_t)1 << stage_index;
 
@@ -350,12 +351,19 @@ terakan_CreateDescriptorSetLayout(VkDevice const deviceHandle,
          }
 
          stage_resource_count += binding->descriptor_count;
+
+         if (binding->descriptor_type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER ||
+             binding->descriptor_type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC) {
+            binding->first_shader_uniform_buffers[stage_index] = stage_uniform_buffer_count;
+            stage_uniform_buffer_count += binding->descriptor_count;
+         }
       }
 
       layout_shader->resource_range_count =
          next_shader_range_index - layout_shader->first_resource_range;
 
       layout_shader->resource_count = stage_resource_count;
+      layout_shader->uniform_buffer_count = stage_uniform_buffer_count;
    }
 
    remaining_stages = (unsigned)stages_with_samplers;
