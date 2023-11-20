@@ -58,7 +58,7 @@ static uint32_t const terakan_meta_copy_buffer_to_image_ps_r8xx[] = {
 
    /* 0: Address calculation. */
 
-   S_SQ_CF_WORD0_ADDR(3) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(0) |
+   S_SQ_CF_WORD0_ADDR(3) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS) |
       S_SQ_CF_ALU_WORD0_KCACHE_MODE0(V_SQ_CF_KCACHE_LOCK_1),
    S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(0) | S_SQ_CF_ALU_WORD1_COUNT(8 - 3) |
       S_SQ_CF_ALU_WORD1_BARRIER(1) | EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
@@ -83,9 +83,9 @@ static uint32_t const terakan_meta_copy_buffer_to_image_ps_r8xx[] = {
 
    /* Convert from image XY to buffer XY, and apply the layer pitch to the layer index.
     *
-    * 3:     PV.X = SUB_INT R0.X, CB[0][0].X
-    * 4:     PV.Y = SUB_INT R0.Y, CB[0][0].Y
-    * 5: (T) PS (Z) = MULLO_UINT CB[0][0].W, R0.Z
+    * 3:     PV.X = SUB_INT R0.X, CB[push_constants][0].X
+    * 4:     PV.Y = SUB_INT R0.Y, CB[push_constants][0].Y
+    * 5: (T) PS (Z) = MULLO_UINT CB[push_constants][0].W, R0.Z
     * Cycle 0 (GPR only for XYZW): GPR.X = R0, GPR.Y = R0, 1 constant
     * Cycle 1: GPR.Z = R0, 2 constants
     */
@@ -108,7 +108,7 @@ static uint32_t const terakan_meta_copy_buffer_to_image_ps_r8xx[] = {
    /* Apply the layer offset to the address, and apply the row pitch to the row index.
     *
     * 6:     PV.X = ADD_INT PV.X, PS
-    * 7: (T) PS (Y) = MULLO_UINT CB[0][0].Z, PV.Y
+    * 7: (T) PS (Y) = MULLO_UINT CB[push_constants][0].Z, PV.Y
     * Cycle 0 (GPR only for XYZW): 1 constant
     */
 
@@ -153,7 +153,7 @@ static uint32_t const terakan_meta_copy_buffer_to_image_ps_r9xx[] = {
 
    /* 0: Address calculation. */
 
-   S_SQ_CF_WORD0_ADDR(4) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(0) |
+   S_SQ_CF_WORD0_ADDR(4) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS) |
       S_SQ_CF_ALU_WORD0_KCACHE_MODE0(V_SQ_CF_KCACHE_LOCK_1),
    S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(0) | S_SQ_CF_ALU_WORD1_COUNT(15 - 4) |
       S_SQ_CF_ALU_WORD1_BARRIER(1) | EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
@@ -182,8 +182,8 @@ static uint32_t const terakan_meta_copy_buffer_to_image_ps_r9xx[] = {
 
    /* Convert from image XY to buffer XY, and apply the layer pitch to the layer index.
     *
-    * 4: R0.X = SUB_INT R0.X, CB[0][0].X
-    * 5: PV.Y = SUB_INT R0.Y, CB[0][0].Y
+    * 4: R0.X = SUB_INT R0.X, CB[push_constants][0].X
+    * 5: PV.Y = SUB_INT R0.Y, CB[push_constants][0].Y
     * Cycle 0: GPR.X = R0, GPR.Y = R0
     * Cycle 1: 2 constants
     */
@@ -201,10 +201,10 @@ static uint32_t const terakan_meta_copy_buffer_to_image_ps_r9xx[] = {
    /* Apply the row pitch to the row index.
     *
     * MULLO_UINT uses 4 slots.
-    * 6: PV.X = MULLO_UINT CB[0][0].Z, PV.Y
-    * 7: R0.Y = MULLO_UINT CB[0][0].Z, PV.Y
-    * 8: PV.Z = MULLO_UINT CB[0][0].Z, PV.Y
-    * 9: PV.W = MULLO_UINT CB[0][0].Z, PV.Y
+    * 6: PV.X = MULLO_UINT CB[push_constants][0].Z, PV.Y
+    * 7: R0.Y = MULLO_UINT CB[push_constants][0].Z, PV.Y
+    * 8: PV.Z = MULLO_UINT CB[push_constants][0].Z, PV.Y
+    * 9: PV.W = MULLO_UINT CB[push_constants][0].Z, PV.Y
     */
 
    S_SQ_ALU_WORD0_SRC0_SEL(0x80) | S_SQ_ALU_WORD0_SRC0_CHAN(2) |
@@ -230,10 +230,10 @@ static uint32_t const terakan_meta_copy_buffer_to_image_ps_r9xx[] = {
    /* Apply the layer pitch to the layer index.
     *
     * MULLO_UINT uses 4 slots.
-    * 10: PV.X = MULLO_UINT CB[0][0].W, R0.Z
-    * 11: PV.Y = MULLO_UINT CB[0][0].W, R0.Z
-    * 12: PV.Z = MULLO_UINT CB[0][0].W, R0.Z
-    * 13: PV.W = MULLO_UINT CB[0][0].W, R0.Z
+    * 10: PV.X = MULLO_UINT CB[push_constants][0].W, R0.Z
+    * 11: PV.Y = MULLO_UINT CB[push_constants][0].W, R0.Z
+    * 12: PV.Z = MULLO_UINT CB[push_constants][0].W, R0.Z
+    * 13: PV.W = MULLO_UINT CB[push_constants][0].W, R0.Z
     */
 
    S_SQ_ALU_WORD0_SRC0_SEL(0x80) | S_SQ_ALU_WORD0_SRC0_CHAN(3) | S_SQ_ALU_WORD0_SRC1_SEL(0) |
@@ -346,7 +346,7 @@ struct terakan_meta_shader const terakan_meta_copy_buffer_to_image_ps =
                      },
                },
          },
-      .kcache_needed = 0b1,
+      .kcache_needed = (uint16_t)1 << TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS,
       .resources_needed =
          {
             [BITSET_BITWORD(TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META)] =
@@ -441,7 +441,7 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
          }
          memcpy(push_constants_mapping, &push_constants, sizeof(push_constants));
          terakan_hw_state_draw_set_sq_kcache_fs(
-            &command_writer->hw_state_draw, 0,
+            &command_writer->hw_state_draw, TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS,
             (sizeof(push_constants) + (TERAKAN_KCACHE_HW_LINE_BYTES - 1)) /
                TERAKAN_KCACHE_HW_LINE_BYTES,
             push_constants_bo, push_constants_base);
