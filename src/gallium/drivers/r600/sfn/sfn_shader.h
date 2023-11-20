@@ -212,7 +212,6 @@ public:
    size_t ninputs() const { return m_inputs.size(); }
 
    enum Flags {
-      sh_indirect_const_file,
       sh_needs_scratch_space,
       sh_needs_sbo_ret_address,
       sh_uses_atomics,
@@ -220,7 +219,6 @@ public:
       sh_uses_tex_buffer,
       sh_writes_memory,
       sh_txs_cube_array_comp,
-      sh_indirect_atomic,
       sh_mem_barrier,
       sh_legacy_math_rules,
       sh_disble_sb,
@@ -350,7 +348,6 @@ private:
 
    Instr *m_last_txd{nullptr};
 
-   uint32_t m_indirect_files{0};
    std::bitset<sh_flags_count> m_flags;
    uint32_t nhwatomic_ranges{0};
    std::vector<r600_shader_atomic, Allocator<r600_shader_atomic>> m_atomics;
