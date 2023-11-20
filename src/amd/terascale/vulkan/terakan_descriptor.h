@@ -46,6 +46,20 @@ extern "C" {
    (TERAKAN_KCACHE_HW_LINE_BYTES_LOG2 + TERAKAN_KCACHE_HW_MAX_LINES_IN_BUFFER_LOG2)
 #define TERAKAN_KCACHE_HW_MAX_BUFFER_SIZE_BYTES (1 << TERAKAN_KCACHE_HW_MAX_BUFFER_SIZE_BYTES_LOG2)
 #define TERAKAN_KCACHE_HW_BUFFERS_PER_STAGE     16
+/* "Indexed locks of banks 14 and 15 are ignored" according to the KCACHE_BANK_INDEX_MODE#
+ * documentation.
+ */
+#define TERAKAN_KCACHE_HW_RELATIVE_INDEXABLE_BUFFERS 14
+
+/* Kcache allocation. */
+/* The buffer with internal and push constants is never accessed with a relative index, place it
+ * near the end.
+ */
+#define TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS (TERAKAN_KCACHE_HW_BUFFERS_PER_STAGE - 1)
+/* Number of kcache buffers starting from 0 allocated for uniform buffers from application pipeline
+ * layouts.
+ */
+#define TERAKAN_KCACHE_MAX_UNIFORM_BUFFERS TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS
 
 #define TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE 176
 #define TERAKAN_RESOURCE_HW_COUNT_VERTEX        160
