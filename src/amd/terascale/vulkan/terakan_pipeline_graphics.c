@@ -27,6 +27,7 @@
 #include "terakan_command_buffer.h"
 #include "terakan_device.h"
 #include "terakan_entrypoints.h"
+#include "terakan_pipeline_layout.h"
 #include "terakan_shader.h"
 #include "terakan_state.h"
 #include "terakan_state_input_assembly.h"
@@ -242,19 +243,24 @@ terakan_pipeline_graphics_bind(struct terakan_gfx_command_writer * const command
 
    /* TODO(Triang3l): All vertex pipeline stages. */
 
-   bool const sq_pgm_vs_modified = command_writer->hw_state_draw.sq_pgm_vs !=
-                                   &pipeline->shaders[MESA_SHADER_VERTEX].static_state;
-   command_writer->hw_state_draw.sq_pgm_vs = &pipeline->shaders[MESA_SHADER_VERTEX].static_state;
+   struct terakan_shader_impl const * const vs = &pipeline->shaders[MESA_SHADER_VERTEX];
+   bool const sq_pgm_vs_modified = command_writer->hw_state_draw.sq_pgm_vs != &vs->static_state;
+   command_writer->hw_state_draw.sq_pgm_vs = &vs->static_state;
    terakan_hw_state_draw_written(&command_writer->hw_state_draw, TERAKAN_HW_STATE_DRAW_SQ_PGM_VS,
                                  sq_pgm_vs_modified);
+   terakan_hw_state_draw_set_sq_constants_needed_by_vs(
+      &command_writer->hw_state_draw, 0, vs->resources_needed, VK_SHADER_STAGE_FRAGMENT_BIT);
 
    if (pipeline->shader_stages & VK_SHADER_STAGE_FRAGMENT_BIT) {
-      bool const sq_pgm_ps_modified = command_writer->hw_state_draw.sq_pgm_ps !=
-                                      &pipeline->shaders[MESA_SHADER_FRAGMENT].static_state;
-      command_writer->hw_state_draw.sq_pgm_ps =
-         &pipeline->shaders[MESA_SHADER_FRAGMENT].static_state;
+      struct terakan_shader_impl const * const fs = &pipeline->shaders[MESA_SHADER_FRAGMENT];
+      bool const sq_pgm_ps_modified = command_writer->hw_state_draw.sq_pgm_ps != &fs->static_state;
+      command_writer->hw_state_draw.sq_pgm_ps = &fs->static_state;
       terakan_hw_state_draw_written(&command_writer->hw_state_draw, TERAKAN_HW_STATE_DRAW_SQ_PGM_PS,
                                     sq_pgm_ps_modified);
+      terakan_hw_state_draw_set_sq_constants_needed_by_fs(&command_writer->hw_state_draw, 0,
+                                                          fs->resources_needed);
+   } else {
+      terakan_hw_state_draw_set_sq_constants_needed_by_fs(&command_writer->hw_state_draw, 0, NULL);
    }
 }
 
@@ -497,8 +503,9 @@ terakan_pipeline_graphics_create(struct terakan_device * const device,
          shader_key.ps.nr_cbufs = 1;
       }
 
-      result = terakan_shader_impl_init_from_nir(&pipeline->shaders[stage_index], device,
-                                                 &shader_key, nir, allocator);
+      result = terakan_shader_impl_init_from_nir(
+         &pipeline->shaders[stage_index], device, &shader_key, nir,
+         terakan_pipeline_layout_from_handle(create_info->layout), allocator);
       ralloc_free(nir);
       if (result != VK_SUCCESS) {
          goto fail_shaders;

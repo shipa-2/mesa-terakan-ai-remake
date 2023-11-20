@@ -23,6 +23,7 @@
 
 #include "terakan_shader.h"
 
+#include "nir/terakan_nir.h"
 #include "terakan_bo.h"
 #include "terakan_device.h"
 #include "terakan_physical_device.h"
@@ -50,6 +51,7 @@
 VkResult
 terakan_shader_impl_init_from_nir(terakan_shader_impl * const shader, terakan_device * const device,
                                   r600_shader_key const * const key, nir_shader * const nir,
+                                  struct terakan_pipeline_layout const * const pipeline_layout,
                                   VkAllocationCallbacks const * const allocator)
 {
    VkResult result;
@@ -70,6 +72,7 @@ terakan_shader_impl_init_from_nir(terakan_shader_impl * const shader, terakan_de
    r600_finalize_nir_common(nir, gfx_level);
    /* For r600_lower_and_optimize_nir, for fields like number bit sizes. */
    nir_shader_gather_info(nir, nir_shader_get_entrypoint(nir));
+   terakan_nir_lower_bindings(nir, pipeline_layout, shader->resources_needed);
    r600_lower_and_optimize_nir(nir, key, gfx_level, &so_info);
 
    r600::Shader * const unscheduled_sfn_shader = r600::Shader::translate_from_nir(

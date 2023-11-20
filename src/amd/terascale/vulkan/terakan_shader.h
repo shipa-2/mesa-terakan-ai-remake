@@ -25,8 +25,11 @@
 #define TERAKAN_SHADER_H
 
 #include "terakan_bo.h"
+#include "terakan_descriptor.h"
+#include "terakan_pipeline_layout.h"
 
 #include "gallium/drivers/r600/r600_shader_common.h"
+#include "util/bitset.h"
 #include "nir.h"
 
 #include <stddef.h>
@@ -73,6 +76,8 @@ struct terakan_shader_impl {
    /* TODO(Triang3l): Shader suballocation. */
    struct terakan_shader_static static_state;
 
+   BITSET_DECLARE(resources_needed, TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE);
+
    struct r600_shader shader;
 };
 
@@ -90,6 +95,7 @@ void terakan_shader_impl_finish(struct terakan_shader_impl * shader,
 VkResult terakan_shader_impl_init_from_nir(struct terakan_shader_impl * shader,
                                            struct terakan_device * device,
                                            union r600_shader_key const * key, nir_shader * nir,
+                                           struct terakan_pipeline_layout const * pipeline_layout,
                                            VkAllocationCallbacks const * allocator);
 
 #ifdef __cplusplus

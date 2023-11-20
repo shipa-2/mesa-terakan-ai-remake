@@ -23,11 +23,16 @@
 
 #include "terakan_pipeline_layout.h"
 
+#include "terakan_command_buffer.h"
 #include "terakan_descriptor.h"
+#include "terakan_descriptor_set.h"
 #include "terakan_descriptor_set_layout.h"
 #include "terakan_device.h"
 #include "terakan_entrypoints.h"
+#include "terakan_hw_state.h"
 
+#include "compiler/shader_enums.h"
+#include "gallium/drivers/r600/evergreend.h"
 #include "util/bitscan.h"
 #include "util/macros.h"
 #include "util/u_math.h"
@@ -37,6 +42,129 @@
 #include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
+
+typedef void (*terakan_pipeline_layout_set_resource_function)(
+   struct terakan_gfx_command_writer * command_writer, uint8_t index,
+   struct terakan_descriptor_set_resource const * resource);
+
+#define TERAKAN_PIPELINE_LAYOUT_SET_RESOURCE_FOR_GRAPHICS(stage)                                   \
+   static void terakan_pipeline_layout_set_resource_to_##stage(                                    \
+      struct terakan_gfx_command_writer * const command_writer, uint8_t const index,               \
+      struct terakan_descriptor_set_resource const * const resource)                               \
+   {                                                                                               \
+      terakan_hw_state_draw_set_sq_resource_##stage(&command_writer->hw_state_draw, index,         \
+                                                    resource->bo, resource->resource);             \
+   }
+
+TERAKAN_PIPELINE_LAYOUT_SET_RESOURCE_FOR_GRAPHICS(vs)
+TERAKAN_PIPELINE_LAYOUT_SET_RESOURCE_FOR_GRAPHICS(tcs)
+TERAKAN_PIPELINE_LAYOUT_SET_RESOURCE_FOR_GRAPHICS(tes)
+TERAKAN_PIPELINE_LAYOUT_SET_RESOURCE_FOR_GRAPHICS(gs)
+TERAKAN_PIPELINE_LAYOUT_SET_RESOURCE_FOR_GRAPHICS(fs)
+
+static terakan_pipeline_layout_set_resource_function const
+   terakan_pipeline_layout_set_resource_to_stage[] = {
+      [MESA_SHADER_VERTEX] = terakan_pipeline_layout_set_resource_to_vs,
+      [MESA_SHADER_TESS_CTRL] = terakan_pipeline_layout_set_resource_to_tcs,
+      [MESA_SHADER_TESS_EVAL] = terakan_pipeline_layout_set_resource_to_tes,
+      [MESA_SHADER_GEOMETRY] = terakan_pipeline_layout_set_resource_to_gs,
+      [MESA_SHADER_FRAGMENT] = terakan_pipeline_layout_set_resource_to_fs,
+};
+
+VKAPI_ATTR void VKAPI_CALL
+terakan_CmdBindDescriptorSets(VkCommandBuffer const commandBuffer,
+                              VkPipelineBindPoint const pipelineBindPoint,
+                              VkPipelineLayout const layoutHandle, uint32_t const firstSet,
+                              uint32_t const descriptorSetCount,
+                              VkDescriptorSet const * const pDescriptorSets,
+                              UNUSED uint32_t const dynamicOffsetCount,
+                              uint32_t const * const pDynamicOffsets)
+{
+   struct terakan_gfx_command_writer * const command_writer =
+      terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx;
+
+   struct terakan_pipeline_layout const * const layout =
+      terakan_pipeline_layout_from_handle(layoutHandle);
+
+   gl_shader_stage const shader_stage_first = pipelineBindPoint == VK_PIPELINE_BIND_POINT_COMPUTE
+                                                 ? MESA_SHADER_COMPUTE
+                                                 : MESA_SHADER_VERTEX;
+   gl_shader_stage const shader_stage_last = pipelineBindPoint == VK_PIPELINE_BIND_POINT_COMPUTE
+                                                ? MESA_SHADER_COMPUTE
+                                                : MESA_SHADER_FRAGMENT;
+
+   uint32_t const * set_dynamic_offsets = pDynamicOffsets;
+
+   for (uint32_t set_relative_index = 0; set_relative_index < descriptorSetCount;
+        ++set_relative_index) {
+      struct terakan_pipeline_layout_set const * const layout_set =
+         &layout->sets[firstSet + set_relative_index];
+
+      struct terakan_descriptor_set const * const set =
+         terakan_descriptor_set_from_handle(pDescriptorSets[set_relative_index]);
+      if (set == NULL) {
+         continue;
+      }
+      struct terakan_descriptor_set_layout const * const set_layout = set->layout;
+
+      struct terakan_descriptor_set_resource const * const set_resources =
+         (struct terakan_descriptor_set_resource const *)set->descriptors;
+
+      for (gl_shader_stage shader_stage = shader_stage_first; shader_stage <= shader_stage_last;
+           ++shader_stage) {
+         struct terakan_descriptor_set_layout_shader const * const set_layout_shader =
+            &set_layout->shaders[shader_stage];
+
+         /* Resources. */
+
+         terakan_pipeline_layout_set_resource_function const resource_setter =
+            terakan_pipeline_layout_set_resource_to_stage[shader_stage];
+         uint8_t const shader_resource_set_base = layout_set->first_shader_resources[shader_stage];
+         struct terakan_descriptor_set_layout_shader_range const * const resource_ranges =
+            set_layout->shader_ranges + set_layout_shader->first_resource_range;
+         for (uint8_t range_index = 0; range_index < set_layout_shader->resource_range_count;
+              ++range_index) {
+            struct terakan_descriptor_set_layout_shader_range const * const range =
+               &resource_ranges[range_index];
+            struct terakan_descriptor_set_resource const * const range_set_resources =
+               set_resources + range->first_set_descriptor;
+            uint8_t const range_shader_base =
+               shader_resource_set_base + range->first_shader_descriptor;
+            uint16_t const range_first_dynamic_offset_in_set =
+               range->first_immutable_sampler_or_dynamic_offset;
+            if (range_first_dynamic_offset_in_set != UINT16_MAX) {
+               uint32_t const * const range_dynamic_offsets =
+                  set_dynamic_offsets + range_first_dynamic_offset_in_set;
+               for (uint8_t resource_index = 0; resource_index < range->descriptor_count;
+                    ++resource_index) {
+                  struct terakan_descriptor_set_resource resource =
+                     range_set_resources[resource_index];
+                  if (resource.bo != NULL) {
+                     assert(G_03001C_TYPE(resource.resource[7]) ==
+                            V_03001C_SQ_TEX_VTX_VALID_BUFFER);
+                     uint64_t const resource_address =
+                        (resource.resource[0] |
+                         ((uint64_t)G_030008_BASE_ADDRESS_HI(resource.resource[2]) << 32)) +
+                        range_dynamic_offsets[resource_index];
+                     resource.resource[0] = (uint32_t)resource_address;
+                     resource.resource[2] = (resource.resource[2] & C_030008_BASE_ADDRESS_HI) |
+                                            S_030008_BASE_ADDRESS_HI(resource_address >> 32);
+                  }
+                  resource_setter(command_writer, range_shader_base + resource_index, &resource);
+               }
+            } else {
+               for (uint8_t resource_index = 0; resource_index < range->descriptor_count;
+                    ++resource_index) {
+                  resource_setter(command_writer, range_shader_base + resource_index,
+                                  &range_set_resources[resource_index]);
+               }
+            }
+         }
+      }
+
+      set_dynamic_offsets += set_layout->dynamic_offset_count;
+   }
+}
 
 VkResult
 terakan_pipeline_layout_create(struct terakan_device * const device,

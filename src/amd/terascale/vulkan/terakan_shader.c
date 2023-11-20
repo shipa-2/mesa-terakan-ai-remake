@@ -193,6 +193,9 @@ terakan_shader_spirv_to_nir(struct terakan_device * const device, size_t const s
 
    /* st_link_glsl_to_nir. */
 
+   NIR_PASS_V(nir, nir_lower_explicit_io, nir_var_mem_ubo | nir_var_mem_ssbo,
+              nir_address_format_32bit_index_offset);
+
    NIR_PASS_V(nir, nir_lower_system_values);
    NIR_PASS_V(nir, nir_lower_compute_system_values, NULL);
 
