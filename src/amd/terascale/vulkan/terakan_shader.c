@@ -92,7 +92,8 @@ terakan_shader_spirv_to_nir(struct terakan_device * const device, size_t const s
 
    /* preprocess_shader. */
 
-   if (nir->options->lower_all_io_to_temps) {
+   if (nir->options->lower_all_io_to_temps || nir->info.stage == MESA_SHADER_VERTEX ||
+       nir->info.stage == MESA_SHADER_GEOMETRY) {
       NIR_PASS_V(nir, nir_lower_io_vars_to_temporaries, nir_shader_get_entrypoint(nir), true, true);
    }
 
@@ -198,6 +199,24 @@ terakan_shader_spirv_to_nir(struct terakan_device * const device, size_t const s
 
    NIR_PASS_V(nir, nir_lower_system_values);
    NIR_PASS_V(nir, nir_lower_compute_system_values, NULL);
+
+   /* st_glsl_to_nir_post_opts. */
+
+   /* TODO(Triang3l): Lower 64-bit operations. */
+
+   nir_remove_dead_variables(nir, nir_var_shader_in | nir_var_shader_out | nir_var_function_temp,
+                             NULL);
+
+   /* st_finalize_nir. */
+
+   /* st_nir_assign_varying_locations. */
+
+   if (nir->info.stage != MESA_SHADER_COMPUTE) {
+      if (nir->info.stage != MESA_SHADER_VERTEX) {
+         nir_assign_io_var_locations(nir, nir_var_shader_in, &nir->num_inputs, nir->info.stage);
+      }
+      nir_assign_io_var_locations(nir, nir_var_shader_out, &nir->num_outputs, nir->info.stage);
+   }
 
    return nir;
 }
