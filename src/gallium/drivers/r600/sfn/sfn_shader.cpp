@@ -439,7 +439,8 @@ Shader::translate_from_nir(nir_shader *nir,
                            struct r600_shader *gs_shader,
                            const r600_shader_key& key,
                            r600_chip_class chip_class,
-                           radeon_family family)
+                           radeon_family family,
+                           const ShaderBindingLayout& binding_layout)
 {
    Shader *shader = nullptr;
 
@@ -474,6 +475,8 @@ Shader::translate_from_nir(nir_shader *nir,
 
    shader->set_chip_class(chip_class);
    shader->set_chip_family(family);
+
+   shader->set_binding_layout(binding_layout);
 
    if (!shader->process(nir))
       return nullptr;

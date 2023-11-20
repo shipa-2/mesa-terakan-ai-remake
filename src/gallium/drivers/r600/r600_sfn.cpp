@@ -87,9 +87,12 @@ r600_shader_from_nir(struct r600_context *rctx,
       gs_shader = &rctx->gs_shader->current->shader;
    r600_screen *rscreen = rctx->screen;
 
+   r600::ShaderBindingLayout binding_layout;
+   binding_layout.texture_resource_offset = R600_MAX_CONST_BUFFERS;
+
    r600::Shader *shader =
       r600::Shader::translate_from_nir(sh, &sel->so, gs_shader, *key,
-                                       rctx->isa->hw_class, rscreen->b.family);
+                                       rctx->isa->hw_class, rscreen->b.family, binding_layout);
 
    if (!shader) {
       R600_ERR("translation from NIR failed !\n");

@@ -75,9 +75,12 @@ terakan_shader_impl_init_from_nir(terakan_shader_impl * const shader, terakan_de
    terakan_nir_lower_bindings(nir, pipeline_layout, shader->resources_needed);
    r600_lower_and_optimize_nir(nir, key, gfx_level, &so_info);
 
+   r600::ShaderBindingLayout binding_layout;
+   binding_layout.texture_resource_offset = 0;
+
    r600::Shader * const unscheduled_sfn_shader = r600::Shader::translate_from_nir(
       nir, &so_info, nullptr, *key, chip_family_info.is_r9xx ? ISA_CC_CAYMAN : ISA_CC_EVERGREEN,
-      chip_family_info.chip_family);
+      chip_family_info.chip_family, binding_layout);
    if (unscheduled_sfn_shader == nullptr) {
       r600::release_pool();
       return vk_errorf(device, VK_ERROR_UNKNOWN, "Failed to translate the shader from NIR");
