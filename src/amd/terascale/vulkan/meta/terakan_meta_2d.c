@@ -301,7 +301,7 @@ terakan_meta_begin_2d(struct terakan_gfx_command_writer * const command_writer)
 }
 
 void
-terakan_meta_begin_rectangles(struct terakan_gfx_command_writer * const command_writer)
+terakan_meta_begin_rects(struct terakan_gfx_command_writer * const command_writer)
 {
    terakan_meta_modify_state_draw_dword(command_writer, TERAKAN_STATE_DRAW_VGT_PRIMITIVE_TYPE,
                                         TERAKAN_HW_STATE_DRAW_VGT_PRIMITIVE_TYPE,
@@ -322,9 +322,8 @@ terakan_meta_begin_index_immediate_32(struct terakan_gfx_command_writer * const 
 }
 
 void
-terakan_meta_emit_rectangle_3_vertices_draw(struct terakan_gfx_command_writer * const command_writer,
-                                            VkRect2D const * const rectangle,
-                                            uint32_t const instance_count)
+terakan_meta_emit_rect_3_vertices_draw(struct terakan_gfx_command_writer * const command_writer,
+                                       VkRect2D const * const rect, uint32_t const instance_count)
 {
    terakan_before_hw_draw(command_writer);
 
@@ -340,9 +339,9 @@ terakan_meta_emit_rectangle_3_vertices_draw(struct terakan_gfx_command_writer * 
    *packet++ = PKT3(PKT3_DRAW_INDEX_IMMD, 1 + 3, 0);
    *packet++ = 3;
    *packet++ = S_0287F0_SOURCE_SELECT(V_0287F0_DI_SRC_SEL_IMMEDIATE);
-   *packet++ = (uint32_t)(uint16_t)rectangle->offset.x | ((uint32_t)rectangle->offset.y << 16);
-   *packet++ = (uint32_t)(uint16_t)rectangle->offset.x |
-               ((uint32_t)(rectangle->offset.y + rectangle->extent.height) << 16);
-   *packet++ = (uint32_t)(uint16_t)(rectangle->offset.x + rectangle->extent.width) |
-               ((uint32_t)rectangle->offset.y << 16);
+   *packet++ = (uint32_t)(uint16_t)rect->offset.x | ((uint32_t)rect->offset.y << 16);
+   *packet++ =
+      (uint32_t)(uint16_t)rect->offset.x | ((uint32_t)(rect->offset.y + rect->extent.height) << 16);
+   *packet++ =
+      (uint32_t)(uint16_t)(rect->offset.x + rect->extent.width) | ((uint32_t)rect->offset.y << 16);
 }

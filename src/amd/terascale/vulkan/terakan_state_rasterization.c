@@ -183,7 +183,7 @@ terakan_CmdSetScissor(VkCommandBuffer const commandBuffer, uint32_t const firstS
       uint16_t * const viewport_scissor =
          state_draw->pa_sc_vport_generic_scissor_tl_br_xy[viewport_index][0];
       uint16_t scissor[4];
-      terakan_state_translate_window_rectangle_unpacked(&pScissors[scissor_index], scissor);
+      terakan_state_translate_window_rect_unpacked(&pScissors[scissor_index], scissor);
       if (viewport_index < state_draw->viewport_count &&
           memcmp(viewport_scissor, scissor, sizeof(scissor)) != 0) {
          terakan_state_draw_set_pending(state_draw, TERAKAN_STATE_DRAW_PA_SC_VPORT_SCISSOR);

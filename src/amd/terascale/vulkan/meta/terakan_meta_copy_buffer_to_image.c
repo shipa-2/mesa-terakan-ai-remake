@@ -389,8 +389,7 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
    struct terakan_gfx_command_writer * const command_writer =
       terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx;
 
-   terakan_meta_begin_2d_immediate_rectangles(command_writer,
-                                              TERAKAN_META_DB_RENDER_OVERRIDE_DEFAULT);
+   terakan_meta_begin_2d_immediate_rects(command_writer, TERAKAN_META_DB_RENDER_OVERRIDE_DEFAULT);
 
    terakan_meta_set_vs(command_writer, TERAKAN_META_SHADER_POSITION_FROM_INDEX_VS);
    terakan_meta_set_ps(command_writer, TERAKAN_META_SHADER_COPY_BUFFER_TO_IMAGE_PS);
@@ -405,16 +404,15 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
         ++region_index) {
       VkBufferImageCopy2 const * const region = &pCopyBufferToImageInfo->pRegions[region_index];
 
-      VkRect2D rectangle;
+      VkRect2D rect;
       /* The offset must be block-aligned, but offset + extent is limited to the extent of the
        * subresource, which is not block-aligned.
        */
-      rectangle.offset.x = region->imageOffset.x / image->surface.blk_w;
-      rectangle.offset.y = region->imageOffset.y / image->surface.blk_h;
-      rectangle.extent.width =
-         region->imageExtent.width / image->surface.blk_w +
-         (uint32_t)((region->imageExtent.width & (image->surface.blk_w - 1)) != 0);
-      rectangle.extent.height =
+      rect.offset.x = region->imageOffset.x / image->surface.blk_w;
+      rect.offset.y = region->imageOffset.y / image->surface.blk_h;
+      rect.extent.width = region->imageExtent.width / image->surface.blk_w +
+                          (uint32_t)((region->imageExtent.width & (image->surface.blk_w - 1)) != 0);
+      rect.extent.height =
          region->imageExtent.height / image->surface.blk_h +
          (uint32_t)((region->imageExtent.height & (image->surface.blk_h - 1)) != 0);
 
@@ -422,12 +420,12 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
       uint32_t const buffer_y_pitch = region->bufferRowLength / image->surface.blk_w;
       uint32_t const buffer_z_pitch =
          buffer_y_pitch * (region->bufferImageHeight / image->surface.blk_h);
-      if (push_constants.image_offset_x != rectangle.offset.x ||
-          push_constants.image_offset_y != rectangle.offset.y ||
+      if (push_constants.image_offset_x != rect.offset.x ||
+          push_constants.image_offset_y != rect.offset.y ||
           push_constants.buffer_y_pitch != buffer_y_pitch ||
           push_constants.buffer_z_pitch != buffer_z_pitch) {
-         push_constants.image_offset_x = rectangle.offset.x;
-         push_constants.image_offset_y = rectangle.offset.y;
+         push_constants.image_offset_x = rect.offset.x;
+         push_constants.image_offset_y = rect.offset.y;
          push_constants.buffer_y_pitch = buffer_y_pitch;
          push_constants.buffer_z_pitch = buffer_z_pitch;
          push_constants_bo = NULL;
@@ -499,7 +497,7 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
 
          VkDeviceSize const buffer_size_elements =
             (image_view_create_info.subresourceRange.layerCount - 1) * buffer_z_pitch +
-            (rectangle.extent.height - 1) * buffer_y_pitch + rectangle.extent.width;
+            (rect.extent.height - 1) * buffer_y_pitch + rect.extent.width;
          buffer_resource[0] = (uint32_t)buffer_offset;
          buffer_resource[1] = (uint32_t)(bpe * buffer_size_elements - 1);
          buffer_resource[2] =
@@ -511,8 +509,8 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
             &command_writer->hw_state_draw, TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META,
             buffer->bo, buffer_resource);
 
-         terakan_meta_emit_rectangle_3_vertices_draw(
-            command_writer, &rectangle, image_view_create_info.subresourceRange.layerCount);
+         terakan_meta_emit_rect_3_vertices_draw(command_writer, &rect,
+                                                image_view_create_info.subresourceRange.layerCount);
 
          image_view_create_info.subresourceRange.baseArrayLayer += color_descriptor_layer_count;
          image_view_create_info.subresourceRange.layerCount -= color_descriptor_layer_count;

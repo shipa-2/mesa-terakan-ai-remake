@@ -46,8 +46,7 @@ extern "C" {
  * must be done directly from terakan_state application - it must first go to terakan_hw_state.
  */
 
-void terakan_state_translate_window_rectangle_unpacked(VkRect2D const * rectangle,
-                                                       uint16_t tl_br_xy_out[4]);
+void terakan_state_translate_window_rect_unpacked(VkRect2D const * rect, uint16_t tl_br_xy_out[4]);
 
 enum terakan_state_draw_index {
    TERAKAN_STATE_DRAW_VGT_INDEX_TYPE,

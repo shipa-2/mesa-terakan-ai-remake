@@ -40,22 +40,21 @@
 #include <string.h>
 
 void
-terakan_state_translate_window_rectangle_unpacked(VkRect2D const * const rectangle,
-                                                  uint16_t tl_br_xy_out[4])
+terakan_state_translate_window_rect_unpacked(VkRect2D const * const rect, uint16_t tl_br_xy_out[4])
 {
-   if (unlikely(rectangle->offset.x > TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES - 1 ||
-                rectangle->offset.y > TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES - 1)) {
+   if (unlikely(rect->offset.x > TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES - 1 ||
+                rect->offset.y > TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES - 1)) {
       /* For top-left, the maximum value in the register is 2^n-1, not 2^n. */
       memset(tl_br_xy_out, 0, sizeof(*tl_br_xy_out) * 4);
       return;
    }
 
-   tl_br_xy_out[0] = CLAMP(rectangle->offset.x, 0, TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES - 1);
-   tl_br_xy_out[1] = CLAMP(rectangle->offset.y, 0, TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES - 1);
-   tl_br_xy_out[2] = CLAMP(rectangle->offset.x + rectangle->extent.width, 0,
-                           TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES);
-   tl_br_xy_out[3] = CLAMP(rectangle->offset.y + rectangle->extent.height, 0,
-                           TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES);
+   tl_br_xy_out[0] = CLAMP(rect->offset.x, 0, TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES - 1);
+   tl_br_xy_out[1] = CLAMP(rect->offset.y, 0, TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES - 1);
+   tl_br_xy_out[2] =
+      CLAMP(rect->offset.x + rect->extent.width, 0, TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES);
+   tl_br_xy_out[3] =
+      CLAMP(rect->offset.y + rect->extent.height, 0, TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES);
 }
 
 typedef void (*terakan_state_draw_apply_function)(

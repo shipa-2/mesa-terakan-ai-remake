@@ -98,23 +98,22 @@ void terakan_meta_set_ps(struct terakan_gfx_command_writer * command_writer,
 
 void terakan_meta_begin_2d(struct terakan_gfx_command_writer * command_writer);
 
-void terakan_meta_begin_rectangles(struct terakan_gfx_command_writer * command_writer);
+void terakan_meta_begin_rects(struct terakan_gfx_command_writer * command_writer);
 
 void terakan_meta_begin_index_immediate_32(struct terakan_gfx_command_writer * command_writer);
 
 static inline void
-terakan_meta_begin_2d_immediate_rectangles(struct terakan_gfx_command_writer * const command_writer,
-                                           uint32_t const db_render_override)
+terakan_meta_begin_2d_immediate_rects(struct terakan_gfx_command_writer * const command_writer,
+                                      uint32_t const db_render_override)
 {
    terakan_meta_set_db_render_override(command_writer, db_render_override);
    terakan_meta_begin_2d(command_writer);
-   terakan_meta_begin_rectangles(command_writer);
+   terakan_meta_begin_rects(command_writer);
    terakan_meta_begin_index_immediate_32(command_writer);
 }
 
-void terakan_meta_emit_rectangle_3_vertices_draw(struct terakan_gfx_command_writer * command_writer,
-                                                 VkRect2D const * rectangle,
-                                                 uint32_t instance_count);
+void terakan_meta_emit_rect_3_vertices_draw(struct terakan_gfx_command_writer * command_writer,
+                                            VkRect2D const * rect, uint32_t instance_count);
 
 static inline VkFormat
 terakan_meta_transfer_image_block_format(unsigned const bpe)

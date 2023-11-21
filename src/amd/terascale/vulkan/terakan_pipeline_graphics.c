@@ -347,7 +347,7 @@ terakan_pipeline_graphics_pre_rasterization_init(
       assert(state->vp->scissor_count <=
              ARRAY_SIZE(pipeline->pre_rasterization.pa_sc_vport_generic_scissor_tl_br_xy));
       for (uint32_t scissor_index = 0; scissor_index < state->vp->scissor_count; ++scissor_index) {
-         terakan_state_translate_window_rectangle_unpacked(
+         terakan_state_translate_window_rect_unpacked(
             &state->vp->scissors[scissor_index],
             pipeline->pre_rasterization.pa_sc_vport_generic_scissor_tl_br_xy[scissor_index][0]);
       }
