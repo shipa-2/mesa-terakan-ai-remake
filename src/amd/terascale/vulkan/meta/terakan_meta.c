@@ -32,6 +32,7 @@
 
 struct terakan_meta_shader const * const terakan_meta_shaders[TERAKAN_META_SHADER_COUNT] = {
    [TERAKAN_META_SHADER_POSITION_FROM_INDEX_VS] = &terakan_meta_position_from_index_vs,
+   [TERAKAN_META_SHADER_CLEAR_COLOR_PS] = &terakan_meta_clear_color_ps,
    [TERAKAN_META_SHADER_COPY_BUFFER_TO_IMAGE_PS] = &terakan_meta_copy_buffer_to_image_ps,
 };
 
