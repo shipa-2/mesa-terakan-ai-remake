@@ -84,6 +84,7 @@ enum terakan_hw_state_draw_index {
 
    TERAKAN_HW_STATE_DRAW_VGT_INDEX_OFFSET,
 
+   TERAKAN_HW_STATE_DRAW_SQ_PGM_FS,
    TERAKAN_HW_STATE_DRAW_SQ_PGM_VS,
    TERAKAN_HW_STATE_DRAW_SQ_PGM_PS,
 
@@ -192,6 +193,12 @@ struct terakan_hw_state_draw {
 
    /* TERAKAN_HW_STATE_DRAW_VGT_INDEX_OFFSET */
    uint32_t vgt_index_offset;
+
+   /* TERAKAN_HW_STATE_DRAW_SQ_PGM_FS */
+   struct {
+      struct terakan_bo const * bo;
+      uint32_t start;
+   } sq_pgm_fs;
 
    /* TERAKAN_HW_STATE_DRAW_SQ_PGM_VS */
    struct terakan_shader_static const * sq_pgm_vs;

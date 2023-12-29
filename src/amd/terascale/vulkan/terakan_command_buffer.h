@@ -166,7 +166,9 @@ struct terakan_command_buffer {
 VK_DEFINE_HANDLE_CASTS(terakan_command_buffer, vk.base, VkCommandBuffer,
                        VK_OBJECT_TYPE_COMMAND_BUFFER)
 
-/* Returns the mapping, or NULL if failed. */
+/* Returns the mapping, or NULL if failed.
+ * Can be used not only for push constants, but also for dynamic fetch shaders.
+ */
 void * terakan_command_buffer_allocate_push_constants(
    struct terakan_command_buffer * command_buffer, uint32_t size_bytes,
    struct terakan_bo const ** bo_out, uint32_t * base_kcache_lines_out);

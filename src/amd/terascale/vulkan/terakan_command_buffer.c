@@ -29,6 +29,8 @@
 #include "terakan_image.h"
 #include "terakan_limits.h"
 #include "terakan_physical_device.h"
+#include "terakan_shader.h"
+#include "terakan_vertex_input.h"
 
 #include "gallium/drivers/r600/r600d_common.h"
 #include "util/macros.h"
@@ -152,8 +154,14 @@ terakan_command_buffer_allocate_push_constants(struct terakan_command_buffer * c
     * allocate too much memory for push constants in small command buffers instead of creating
     * larger BOs.
     * Fragmentation can also be filled with 1-cache-line push constants.
+    * Dynamic fetch shaders also use the push constant allocator due to matching alignment.
     */
-   uint32_t const buffer_size_kcache_lines = TERAKAN_KCACHE_HW_MAX_LINES_IN_BUFFER;
+   static_assert(
+      TERAKAN_SHADER_PROGRAM_ALIGNMENT_LOG2 <= TERAKAN_KCACHE_HW_LINE_BYTES_LOG2,
+      "The push constant allocator must also be usable for shaders (fetch shaders in particular).");
+   uint32_t const buffer_size_kcache_lines = DIV_ROUND_UP(
+      MAX2(TERAKAN_KCACHE_HW_MAX_BUFFER_SIZE_BYTES, 8 * TERAKAN_VERTEX_INPUT_FS_MAX_QWORDS),
+      TERAKAN_KCACHE_HW_LINE_BYTES);
 
    if (!list_is_empty(&command_buffer->push_constant_buffers_with_free_space) &&
        list_first_entry(&command_buffer->push_constant_buffers_with_free_space,
@@ -1072,7 +1080,7 @@ terakan_BeginCommandBuffer(VkCommandBuffer const commandBuffer,
 
    terakan_state_draw_reset(
       &command_buffer->command_writer.gfx->state_draw,
-      command_buffer->vk.pool->base.device->enabled_extensions.EXT_depth_range_unrestricted);
+      container_of(command_buffer->vk.pool->base.device, struct terakan_device const, vk));
 
    return vk_command_buffer_get_record_result(&command_buffer->vk);
 }

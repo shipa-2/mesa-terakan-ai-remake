@@ -207,6 +207,17 @@ terakan_shader_spirv_to_nir(struct terakan_device * const device, size_t const s
    nir_remove_dead_variables(nir, nir_var_shader_in | nir_var_shader_out | nir_var_function_temp,
                              NULL);
 
+   /* st_finalize_nir_before_variants. */
+
+   /* st_nir_assign_vs_in_locations. */
+
+   if (nir->info.stage == MESA_SHADER_VERTEX) {
+      nir_foreach_shader_in_variable (var, nir) {
+         assert(var->data.location >= VERT_ATTRIB_GENERIC0);
+         var->data.driver_location = var->data.location - VERT_ATTRIB_GENERIC0;
+      }
+   }
+
    /* st_finalize_nir. */
 
    /* st_nir_assign_varying_locations. */

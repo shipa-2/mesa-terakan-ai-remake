@@ -27,6 +27,7 @@
 #include "terakan_command_buffer.h"
 #include "terakan_device.h"
 #include "terakan_entrypoints.h"
+#include "terakan_physical_device.h"
 #include "terakan_pipeline_layout.h"
 #include "terakan_shader.h"
 #include "terakan_state.h"
@@ -39,11 +40,13 @@
 #include "util/ralloc.h"
 #include "util/u_math.h"
 #include "vk_alloc.h"
+#include "vk_enum_to_str.h"
 #include "vk_graphics_state.h"
 #include "vk_log.h"
 #include "vk_util.h"
 
 #include <assert.h>
+#include <inttypes.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -62,6 +65,70 @@ terakan_pipeline_graphics_apply_vgt_primitive_type(
    command_writer->state_draw.vgt_primitive_type = pipeline->vertex_input.vgt_primitive_type;
    terakan_state_draw_set_pending(&command_writer->state_draw,
                                   TERAKAN_STATE_DRAW_VGT_PRIMITIVE_TYPE);
+}
+
+static void
+terakan_pipeline_graphics_apply_sq_pgm_fs(
+   struct terakan_gfx_command_writer * const command_writer,
+   struct terakan_pipeline_graphics const * const pipeline,
+   UNUSED enum terakan_pipeline_graphics_state_index const state_index)
+{
+   struct terakan_vertex_input_static_state const * const sq_pgm_fs =
+      pipeline->vertex_input.sq_pgm_fs.program_bo != NULL
+         ? &pipeline->vertex_input.sq_pgm_fs
+         : &container_of(pipeline->base.base.device, struct terakan_device const, vk)
+               ->empty_vertex_input;
+   if (command_writer->state_draw.sq_pgm_fs.static_state != sq_pgm_fs) {
+      command_writer->state_draw.sq_pgm_fs.static_state = sq_pgm_fs;
+      terakan_state_draw_set_pending(&command_writer->state_draw, TERAKAN_STATE_DRAW_SQ_PGM_FS);
+   }
+}
+
+static void
+terakan_pipeline_graphics_apply_sq_resources_fs_stride(
+   struct terakan_gfx_command_writer * const command_writer,
+   struct terakan_pipeline_graphics const * const pipeline,
+   UNUSED enum terakan_pipeline_graphics_state_index const state_index)
+{
+   {
+      unsigned bindings_remaining =
+         pipeline->vertex_input.sq_resources_fs_stride.bindings_with_static_stride;
+      while (bindings_remaining) {
+         int const binding_index = u_bit_scan(&bindings_remaining);
+         command_writer->state_draw.sq_resources_fs[binding_index].stride =
+            pipeline->vertex_input.sq_resources_fs_stride.binding_strides[binding_index];
+      }
+   }
+   command_writer->state_draw.sq_resources_fs_pending |=
+      pipeline->vertex_input.sq_resources_fs_stride.bindings_with_static_stride;
+   terakan_state_draw_set_pending(&command_writer->state_draw, TERAKAN_STATE_DRAW_SQ_RESOURCES_FS);
+}
+
+static void
+terakan_pipeline_graphics_apply_sq_pgm_fs_2048_stride_workaround(
+   struct terakan_gfx_command_writer * const command_writer,
+   struct terakan_pipeline_graphics const * const pipeline,
+   UNUSED enum terakan_pipeline_graphics_state_index const state_index)
+{
+   assert(BITSET_TEST(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_SQ_PGM_FS));
+   assert(
+      BITSET_TEST(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_SQ_RESOURCES_FS_STRIDE));
+   assert(!(pipeline->vertex_input.sq_pgm_fs.bindings_with_2048_stride_workaround &
+            ~pipeline->vertex_input.sq_resources_fs_stride.bindings_with_static_stride));
+   uint32_t const new_bindings_with_2048_stride_workaround =
+      (command_writer->state_draw.sq_pgm_fs.bindings_with_2048_stride_workaround &
+       ~pipeline->vertex_input.sq_resources_fs_stride.bindings_with_static_stride) |
+      pipeline->vertex_input.sq_pgm_fs.bindings_with_2048_stride_workaround;
+   /* If whether the workaround needs to be applied to any currently needed bindings is changed,
+    * update the fetch shader.
+    */
+   if ((command_writer->state_draw.sq_pgm_fs.bindings_with_2048_stride_workaround ^
+        new_bindings_with_2048_stride_workaround) &
+       pipeline->vertex_input.sq_pgm_fs.bindings_needed_by_attributes_and_provided) {
+      terakan_state_draw_set_pending(&command_writer->state_draw, TERAKAN_STATE_DRAW_SQ_PGM_FS);
+   }
+   command_writer->state_draw.sq_pgm_fs.bindings_with_2048_stride_workaround =
+      new_bindings_with_2048_stride_workaround;
 }
 
 static void
@@ -218,6 +285,11 @@ static terakan_pipeline_graphics_apply_state_function const
          terakan_pipeline_graphics_apply_pa_sc_vport_generic_scissor,
       [TERAKAN_PIPELINE_GRAPHICS_STATE_VGT_PRIMITIVE_TYPE] =
          terakan_pipeline_graphics_apply_vgt_primitive_type,
+      [TERAKAN_PIPELINE_GRAPHICS_STATE_SQ_PGM_FS] = terakan_pipeline_graphics_apply_sq_pgm_fs,
+      [TERAKAN_PIPELINE_GRAPHICS_STATE_SQ_RESOURCES_FS_STRIDE] =
+         terakan_pipeline_graphics_apply_sq_resources_fs_stride,
+      [TERAKAN_PIPELINE_GRAPHICS_STATE_SQ_PGM_FS_2048_STRIDE_WORKAROUND] =
+         terakan_pipeline_graphics_apply_sq_pgm_fs_2048_stride_workaround,
       [TERAKAN_PIPELINE_GRAPHICS_STATE_PA_CL_CLIP_CNTL] =
          terakan_pipeline_graphics_apply_pa_cl_clip_cntl,
       [TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SU_SC_MODE_CNTL] =
@@ -243,13 +315,36 @@ terakan_pipeline_graphics_bind(struct terakan_gfx_command_writer * const command
 
    /* TODO(Triang3l): All vertex pipeline stages. */
 
+   /* Vertex shader. */
+
    struct terakan_shader_impl const * const vs = &pipeline->shaders[MESA_SHADER_VERTEX];
+
    bool const sq_pgm_vs_modified = command_writer->hw_state_draw.sq_pgm_vs != &vs->static_state;
    command_writer->hw_state_draw.sq_pgm_vs = &vs->static_state;
    terakan_hw_state_draw_written(&command_writer->hw_state_draw, TERAKAN_HW_STATE_DRAW_SQ_PGM_VS,
                                  sq_pgm_vs_modified);
    terakan_hw_state_draw_set_sq_constants_needed_by_vs(
       &command_writer->hw_state_draw, 0, vs->resources_needed, VK_SHADER_STAGE_FRAGMENT_BIT);
+
+   if (command_writer->state_draw.sq_pgm_fs.static_state == NULL) {
+      for (unsigned attribute_word_index = 0;
+           attribute_word_index < BITSET_WORDS(TERAKAN_VERTEX_INPUT_MAX_ATTRIBUTES);
+           ++attribute_word_index) {
+         if ((command_writer->state_draw.sq_pgm_fs.dynamic_state
+                 .attributes_needed_by_vs[attribute_word_index] ^
+              vs->vertex_attributes_needed[attribute_word_index]) &
+             command_writer->state_draw.sq_pgm_fs.dynamic_state
+                .attributes_provided[attribute_word_index]) {
+            terakan_state_draw_set_pending(&command_writer->state_draw,
+                                           TERAKAN_STATE_DRAW_SQ_PGM_FS);
+            break;
+         }
+      }
+   }
+   BITSET_COPY(command_writer->state_draw.sq_pgm_fs.dynamic_state.attributes_needed_by_vs,
+               vs->vertex_attributes_needed);
+
+   /* Fragment shader. */
 
    if (pipeline->shader_stages & VK_SHADER_STAGE_FRAGMENT_BIT) {
       struct terakan_shader_impl const * const fs = &pipeline->shaders[MESA_SHADER_FRAGMENT];
@@ -272,6 +367,11 @@ terakan_pipeline_graphics_destroy(struct terakan_pipeline_graphics * const pipel
       allocator = &pipeline->base.base.device->alloc;
    }
 
+   if (BITSET_TEST(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_SQ_PGM_FS) &&
+       pipeline->vertex_input.sq_pgm_fs.program_bo != NULL) {
+      terakan_bo_free(pipeline->vertex_input.sq_pgm_fs.program_bo, allocator);
+   }
+
    unsigned remaining_shader_stages = (unsigned)pipeline->shader_stages;
    while (remaining_shader_stages) {
       terakan_shader_impl_finish(
@@ -285,16 +385,162 @@ terakan_pipeline_graphics_destroy(struct terakan_pipeline_graphics * const pipel
    vk_free(allocator, pipeline);
 }
 
-static void
+/* If attributes_needed_by_vs is NULL (in case of a library with vertex input state, but no
+ * pre-rasterization state), all provided inputs are assumed to be needed, but the fetch shader
+ * isn't created.
+ */
+static VkResult
 terakan_pipeline_graphics_vertex_input_init(struct terakan_pipeline_graphics * const pipeline,
-                                            struct vk_graphics_pipeline_state const * const state)
+                                            struct vk_graphics_pipeline_state const * const state,
+                                            struct terakan_device * const device,
+                                            BITSET_WORD const * const attributes_needed_by_vs,
+                                            VkAllocationCallbacks const * const allocator)
 {
+   VkResult result;
+
    /* TERAKAN_PIPELINE_GRAPHICS_STATE_VGT_PRIMITIVE_TYPE */
    if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_IA_PRIMITIVE_TOPOLOGY)) {
       pipeline->vertex_input.vgt_primitive_type =
          terakan_state_draw_primitive_topology_vgt_primitive_type(state->ia->primitive_topology);
       BITSET_SET(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_VGT_PRIMITIVE_TYPE);
    }
+
+   /* TERAKAN_PIPELINE_GRAPHICS_STATE_SQ_PGM_FS,
+    * TERAKAN_PIPELINE_GRAPHICS_STATE_SQ_RESOURCES_FS_STRIDE,
+    * TERAKAN_PIPELINE_GRAPHICS_STATE_SQ_PGM_FS_2048_STRIDE_WORKAROUND
+    */
+   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_VI)) {
+      struct terakan_vertex_input_static_state * const fs_state = &pipeline->vertex_input.sq_pgm_fs;
+
+      bool const is_r9xx =
+         container_of(device->vk.physical, struct terakan_physical_device const, vk)
+            ->chip_family_info.is_r9xx;
+
+      uint32_t const bindings_provided = (uint32_t)state->vi->bindings_valid;
+
+      BITSET_ZERO(fs_state->attributes_needed_and_provided);
+      static_assert(
+         sizeof(BITSET_WORD) >= sizeof(uint32_t),
+         "Assuming that vk_vertex_input_state::attributes_valid can fit into one bitset word, as "
+         "the maximum attribute count inside Terakan is more flexible than in the Mesa Vulkan "
+         "runtime, with the possibility to expose more than 32 reserved for future.");
+      fs_state->attributes_needed_and_provided[0] = state->vi->attributes_valid;
+      if (attributes_needed_by_vs != NULL) {
+         fs_state->attributes_needed_and_provided[0] = attributes_needed_by_vs[0];
+      }
+      fs_state->bindings_needed_by_attributes_and_provided = 0b0;
+      unsigned attribute_index;
+      BITSET_FOREACH_SET (attribute_index, fs_state->attributes_needed_and_provided,
+                          TERAKAN_VERTEX_INPUT_MAX_ATTRIBUTES) {
+         struct vk_vertex_attribute_state const * const attribute =
+            &state->vi->attributes[attribute_index];
+         uint32_t const attribute_binding_bit = BITFIELD_BIT(attribute->binding);
+         if (unlikely(!terakan_vertex_input_attribute_translate(
+                attribute_index, attribute->binding, attribute->format, attribute->offset,
+                &fs_state->attributes[attribute_index]))) {
+            return vk_errorf(
+               device, VK_ERROR_VALIDATION_FAILED_EXT,
+               "Failed to translate vertex attribute %d: binding %" PRIu32 ", format %s "
+               "(%" PRIu32 "), offset %" PRIu32,
+               attribute_index, attribute->binding, vk_Format_to_str(attribute->format),
+               (uint32_t)attribute->format, attribute->offset);
+         }
+         assert(bindings_provided & attribute_binding_bit);
+         if (unlikely(!(bindings_provided & attribute_binding_bit))) {
+            return vk_errorf(device, VK_ERROR_VALIDATION_FAILED_EXT,
+                             "Vertex attribute %d uses binding %" PRIu32 ", which is not "
+                             "provided",
+                             attribute_index, attribute->binding);
+         }
+         fs_state->bindings_needed_by_attributes_and_provided |= attribute_binding_bit;
+      }
+
+      fs_state->instance_bindings = 0b0;
+      {
+         unsigned bindings_remaining = fs_state->bindings_needed_by_attributes_and_provided;
+         while (bindings_remaining) {
+            int const binding_index = u_bit_scan(&bindings_remaining);
+            struct vk_vertex_binding_state const * const binding =
+               &state->vi->bindings[binding_index];
+            if (binding->input_rate == VK_VERTEX_INPUT_RATE_INSTANCE) {
+               fs_state->instance_bindings |= BITFIELD_BIT(binding_index);
+               fs_state->instance_binding_divisors[binding_index] = binding->divisor;
+            }
+         }
+      }
+
+      fs_state->bindings_with_2048_stride_workaround = 0b0;
+      if (bindings_provided && !BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_VI_BINDING_STRIDES)) {
+         pipeline->vertex_input.sq_resources_fs_stride.bindings_with_static_stride =
+            bindings_provided;
+         {
+            unsigned bindings_remaining =
+               pipeline->vertex_input.sq_resources_fs_stride.bindings_with_static_stride;
+            while (bindings_remaining) {
+               int const binding_index = u_bit_scan(&bindings_remaining);
+               uint16_t const binding_stride = state->vi->bindings[binding_index].stride;
+               pipeline->vertex_input.sq_resources_fs_stride.binding_strides[binding_index] =
+                  binding_stride;
+               if (!is_r9xx && binding_stride >= 2048) {
+                  fs_state->bindings_with_2048_stride_workaround |= BITFIELD_BIT(binding_index);
+               }
+            }
+         }
+         BITSET_SET(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_SQ_RESOURCES_FS_STRIDE);
+         if (!is_r9xx) {
+            BITSET_SET(pipeline->static_state,
+                       TERAKAN_PIPELINE_GRAPHICS_STATE_SQ_PGM_FS_2048_STRIDE_WORKAROUND);
+         }
+      }
+
+      /* If attributes_needed_by_vs is NULL, this is a pipeline library with a vertex input state,
+       * but no pre-rasterization state (no vertex shader). The fetch shader will be created when
+       * they're linked for only the needed attributes.
+       * If there are no valid needed attributes (thus no used bindings either), don't create a
+       * fetch shader, instead use the empty one.
+       */
+      if (attributes_needed_by_vs == NULL ||
+          !fs_state->bindings_needed_by_attributes_and_provided) {
+         fs_state->program_bo = NULL;
+         fs_state->program_start = 0;
+      } else {
+         uint32_t fs_alu_qword_count, fs_alu_clause_count, fs_fetch_count;
+         uint32_t fs_alu[2 * TERAKAN_VERTEX_INPUT_FS_MAX_ALU_QWORDS];
+         uint8_t fs_alu_clause_qwords[TERAKAN_VERTEX_INPUT_FS_MAX_ALU_CLAUSES];
+         uint32_t fs_fetch[4 * TERAKAN_VERTEX_INPUT_MAX_ATTRIBUTES];
+         terakan_vertex_input_create_fs_alu_and_fetches(
+            is_r9xx, fs_state->attributes_needed_and_provided, fs_state->attributes,
+            fs_state->instance_bindings, fs_state->instance_binding_divisors,
+            fs_state->bindings_with_2048_stride_workaround, &fs_alu_qword_count, fs_alu,
+            &fs_alu_clause_count, fs_alu_clause_qwords, &fs_fetch_count, fs_fetch);
+         /* TODO(Triang3l): Suballocate the fetch shader as well as other shaders. */
+         result = device->winsys_fn->bo->allocate_device_memory(
+            device,
+            terakan_vertex_input_fs_byte_count(fs_alu_qword_count, fs_alu_clause_count,
+                                               fs_fetch_count),
+            TERAKAN_SHADER_PROGRAM_ALIGNMENT,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+               VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+            0, allocator, VK_SYSTEM_ALLOCATION_SCOPE_OBJECT, &fs_state->program_bo);
+         if (result != VK_SUCCESS) {
+            return vk_error(device, result);
+         }
+         fs_state->program_start = 0;
+         void * const fs_mapping = terakan_bo_map(fs_state->program_bo);
+         if (fs_mapping == NULL) {
+            terakan_bo_free(fs_state->program_bo, allocator);
+            return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
+         }
+         terakan_vertex_input_create_fs_program(is_r9xx, fs_alu_qword_count, fs_alu,
+                                                fs_alu_clause_count, fs_alu_clause_qwords,
+                                                fs_fetch_count, fs_fetch, fs_mapping);
+         terakan_bo_unmap(fs_state->program_bo);
+      }
+
+      BITSET_SET(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_SQ_PGM_FS);
+   }
+
+   return VK_SUCCESS;
 }
 
 static void
@@ -462,19 +708,6 @@ terakan_pipeline_graphics_create(struct terakan_device * const device,
 
    terakan_pipeline_init(&pipeline->base, device, false);
 
-   BITSET_ZERO(pipeline->static_state);
-   struct vk_graphics_pipeline_all_state all_state;
-   struct vk_graphics_pipeline_state state = {};
-   result = vk_graphics_pipeline_state_fill(&device->vk, &state, create_info, NULL, 0, &all_state,
-                                            NULL, VK_SYSTEM_ALLOCATION_SCOPE_OBJECT, NULL);
-   if (result != VK_SUCCESS) {
-      goto fail_pipeline;
-   }
-   terakan_pipeline_graphics_vertex_input_init(pipeline, &state);
-   terakan_pipeline_graphics_pre_rasterization_init(
-      pipeline, &state, device->vk.enabled_extensions.EXT_depth_range_unrestricted);
-   terakan_pipeline_graphics_multisample_init(pipeline, &state);
-
    pipeline->shader_stages = 0;
    for (uint32_t stage_info_index = 0; stage_info_index < create_info->stageCount;
         ++stage_info_index) {
@@ -515,6 +748,27 @@ terakan_pipeline_graphics_create(struct terakan_device * const device,
       pipeline->shader_stages |= stage_info->stage;
    }
 
+   BITSET_ZERO(pipeline->static_state);
+   struct vk_graphics_pipeline_all_state all_state;
+   struct vk_graphics_pipeline_state state = {};
+   result = vk_graphics_pipeline_state_fill(&device->vk, &state, create_info, NULL, 0, &all_state,
+                                            NULL, VK_SYSTEM_ALLOCATION_SCOPE_OBJECT, NULL);
+   if (result != VK_SUCCESS) {
+      goto fail_shaders;
+   }
+   result = terakan_pipeline_graphics_vertex_input_init(
+      pipeline, &state, device,
+      pipeline->shader_stages & VK_SHADER_STAGE_VERTEX_BIT
+         ? pipeline->shaders[MESA_SHADER_VERTEX].vertex_attributes_needed
+         : NULL,
+      allocator);
+   if (result != VK_SUCCESS) {
+      goto fail_shaders;
+   }
+   terakan_pipeline_graphics_pre_rasterization_init(
+      pipeline, &state, device->vk.enabled_extensions.EXT_depth_range_unrestricted);
+   terakan_pipeline_graphics_multisample_init(pipeline, &state);
+
    *pipeline_out = pipeline;
    return VK_SUCCESS;
 
@@ -527,7 +781,6 @@ fail_shaders : {
          allocator);
    }
 }
-fail_pipeline:
    terakan_pipeline_finish(&pipeline->base);
    vk_free2(&device->vk.alloc, allocator, pipeline);
    return result;

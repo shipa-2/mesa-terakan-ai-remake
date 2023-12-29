@@ -27,6 +27,7 @@
 #include "terakan_bo.h"
 #include "terakan_descriptor.h"
 #include "terakan_pipeline_layout.h"
+#include "terakan_vertex_input.h"
 
 #include "gallium/drivers/r600/r600_shader_common.h"
 #include "util/bitset.h"
@@ -75,6 +76,8 @@ struct terakan_shader_impl {
    /* This object owns the BO in `static_state`. */
    /* TODO(Triang3l): Shader suballocation. */
    struct terakan_shader_static static_state;
+
+   BITSET_DECLARE(vertex_attributes_needed, TERAKAN_VERTEX_INPUT_MAX_ATTRIBUTES);
 
    BITSET_DECLARE(resources_needed, TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE);
 

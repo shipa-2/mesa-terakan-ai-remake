@@ -27,6 +27,7 @@
 #include "terakan_bo.h"
 #include "terakan_device.h"
 #include "terakan_physical_device.h"
+#include "terakan_vertex_input.h"
 
 #include "compiler/shader_enums.h"
 #include "gallium/drivers/r600/evergreend.h"
@@ -137,7 +138,7 @@ terakan_shader_impl_init_from_nir(terakan_shader_impl * const shader, terakan_de
       return vk_errorf(device, VK_ERROR_UNKNOWN, "Failed to build the shader bytecode");
    }
 
-   /* Fill shader registers. */
+   /* Fill shader registers and other info. */
 
    shader->static_state.sq_pgm_resources[0] = S_028844_NUM_GPRS(shader->shader.bc.ngpr) |
                                               S_028844_STACK_SIZE(shader->shader.bc.nstack) |
@@ -292,6 +293,17 @@ terakan_shader_impl_init_from_nir(terakan_shader_impl * const shader, terakan_de
 
    default:
       break;
+   }
+
+   if (nir->info.stage == MESA_SHADER_VERTEX) {
+      for (unsigned input_index = 0; input_index < shader->shader.ninput; ++input_index) {
+         struct r600_shader_io const * const input = &shader->shader.input[input_index];
+         assert(input->gpr > 0);
+         assert(input->gpr - 1 < TERAKAN_VERTEX_INPUT_MAX_ATTRIBUTES);
+         if (input->gpr > 0 && input->gpr - 1 < TERAKAN_VERTEX_INPUT_MAX_ATTRIBUTES) {
+            BITSET_SET(shader->vertex_attributes_needed, input->gpr - 1);
+         }
+      }
    }
 
    /* Write the program to the BO. */

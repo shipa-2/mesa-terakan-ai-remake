@@ -94,6 +94,8 @@ bool terakan_format_has_stencil_8(VkFormat format);
 #define TERAKAN_FORMAT_DATA_TEXTURE_ONLY_FORMATS                                                   \
    (TERAKAN_FORMAT_DATA_SUBSAMPLED_FORMATS | TERAKAN_FORMAT_DATA_BLOCK_COMPRESSED_FORMATS)
 
+extern unsigned char const terakan_format_data_block_bytes[1 << 6];
+
 /* For images with both depth and stencil, these functions always return the values for the depth
  * aspect.
  * The stencil aspect is always 8 UINT with X001 destination component selection (Vulkan has both

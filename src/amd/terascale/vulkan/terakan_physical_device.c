@@ -33,6 +33,7 @@
 #include "terakan_image.h"
 #include "terakan_instance.h"
 #include "terakan_limits.h"
+#include "terakan_vertex_input.h"
 #include "terakan_wsi.h"
 
 #include "compiler/shader_enums.h"
@@ -334,14 +335,14 @@ terakan_physical_device_get_capabilities(
                                             properties_out->maxDescriptorSetInputAttachments;
    properties_out->maxBoundDescriptorSets = max_per_set_descriptors;
 
-   properties_out->maxVertexInputAttributes = TERAKAN_RESOURCE_HW_COUNT_FETCH;
+   properties_out->maxVertexInputAttributes = TERAKAN_VERTEX_INPUT_MAX_ATTRIBUTES;
    properties_out->maxVertexInputBindings = TERAKAN_RESOURCE_HW_COUNT_FETCH;
-   properties_out->maxVertexInputAttributeOffset = UINT32_MAX;
+   properties_out->maxVertexInputAttributeOffset = UINT16_MAX;
    /* NON-CONFORMANT: R8xx has 11 bits for the stride in bytes, which can store values up to 2047.
     * Vulkan requires at least 2048. R9xx has 12 bits.
     */
-   /* TODO(Triang3l): Research a workaround scaling the index (in a saturating way to maintain
-    * defined overflow behavior) in the fetch shader.
+   /* TODO(Triang3l): Expose 2048 on R8xx when the fetch shader workaround is fully implemented
+    * (when vertex shaders start loading the base instance to R0.Z when it's needed).
     */
    properties_out->maxVertexInputBindingStride =
       ((uint32_t)1 << (chip_family_info->is_r9xx ? 12 : 11)) - 1;
@@ -519,6 +520,10 @@ terakan_physical_device_get_capabilities(
    features_out->formatA4R4G4B4 = true;
    features_out->formatA4B4G4R4 = true;
 
+   /* VK_EXT_vertex_input_dynamic_state (#353). */
+   extensions_out->EXT_vertex_input_dynamic_state = true;
+   features_out->vertexInputDynamicState = true;
+
    /* VK_EXT_depth_clip_control (#356). */
    extensions_out->EXT_depth_clip_control = true;
    features_out->depthClipControl = true;
@@ -552,6 +557,14 @@ terakan_physical_device_get_capabilities(
    features_out->extendedDynamicState3DepthClipEnable = true;
    features_out->extendedDynamicState3DepthClipNegativeOneToOne = true;
    properties_out->dynamicPrimitiveTopologyUnrestricted = VK_TRUE;
+
+   /* VK_KHR_vertex_attribute_divisor (#526). */
+   extensions_out->EXT_vertex_attribute_divisor = true;
+   extensions_out->KHR_vertex_attribute_divisor = true;
+   features_out->vertexAttributeInstanceRateDivisor = true;
+   features_out->vertexAttributeInstanceRateZeroDivisor = true;
+   properties_out->maxVertexAttribDivisor = UINT32_MAX;
+   properties_out->supportsNonZeroFirstInstance = VK_TRUE;
 
    /* Mesa WSI. */
 #ifdef TERAKAN_USE_WSI_PLATFORM

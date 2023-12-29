@@ -28,6 +28,8 @@
 #include "terakan_physical_device.h"
 #include "terakan_queue.h"
 
+#include "gallium/drivers/r600/eg_sq.h"
+#include "gallium/drivers/r600/r600_opcodes.h"
 #include "util/macros.h"
 #include "util/u_math.h"
 #include "vk_alloc.h"
@@ -100,7 +102,9 @@ terakan_device_init(struct terakan_device * const device,
 
    bool const is_r9xx = physical_device->chip_family_info.is_r9xx;
 
-   VkDeviceSize meta_shaders_bo_size = 0;
+   /* The first shader is the empty fetch shader. */
+   VkDeviceSize meta_shaders_bo_size =
+      ALIGN_POT(sizeof(uint32_t) * 2, TERAKAN_SHADER_PROGRAM_ALIGNMENT_LOG2);
    for (size_t meta_shader_index = 0; meta_shader_index < TERAKAN_META_SHADER_COUNT;
         ++meta_shader_index) {
       struct terakan_shader_static * const device_meta_shader =
@@ -133,6 +137,16 @@ terakan_device_init(struct terakan_device * const device,
                             "Failed to map the internal shaders buffer object");
          goto fail_meta_shaders_bo;
       }
+      /* Empty fetch shader. */
+      {
+         uint32_t * empty_fetch_shader_mapping_next = (uint32_t *)meta_shaders_bo_mapping;
+         *(empty_fetch_shader_mapping_next++) = 0;
+         *(empty_fetch_shader_mapping_next++) =
+            util_cpu_to_le32(S_SQ_CF_WORD1_BARRIER(1) | EG_V_SQ_CF_WORD1_SQ_CF_INST_RETURN);
+         memset(&device->empty_vertex_input, 0, sizeof(device->empty_vertex_input));
+         device->empty_vertex_input.program_bo = device->meta_shaders_bo;
+      }
+      /* Meta shaders. */
       for (size_t meta_shader_index = 0; meta_shader_index < TERAKAN_META_SHADER_COUNT;
            ++meta_shader_index) {
          struct terakan_shader_static * const device_meta_shader =

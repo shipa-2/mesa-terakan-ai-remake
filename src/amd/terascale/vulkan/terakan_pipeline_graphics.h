@@ -25,6 +25,7 @@
 #define TERAKAN_PIPELINE_GRAPHICS_H
 
 #include "terakan_command_buffer.h"
+#include "terakan_descriptor.h"
 #include "terakan_hw_state.h"
 #include "terakan_pipeline.h"
 #include "terakan_shader.h"
@@ -33,6 +34,7 @@
 #include "compiler/shader_enums.h"
 #include "util/bitset.h"
 
+#include <stdbool.h>
 #include <stdint.h>
 #include <vulkan/vulkan_core.h>
 
@@ -47,6 +49,13 @@ enum terakan_pipeline_graphics_state_index {
 
    TERAKAN_PIPELINE_GRAPHICS_STATE_VGT_PRIMITIVE_TYPE =
       TERAKAN_PIPELINE_GRAPHICS_STATE_VERTEX_INPUT_START,
+
+   TERAKAN_PIPELINE_GRAPHICS_STATE_SQ_PGM_FS,
+   TERAKAN_PIPELINE_GRAPHICS_STATE_SQ_RESOURCES_FS_STRIDE,
+   /* SQ_PGM_FS_2048_STRIDE_WORKAROUND can be static only if SQ_PGM_FS and SQ_RESOURCES_FS_STRIDE
+    * are static.
+    */
+   TERAKAN_PIPELINE_GRAPHICS_STATE_SQ_PGM_FS_2048_STRIDE_WORKAROUND,
 
    TERAKAN_PIPELINE_GRAPHICS_STATE_VERTEX_INPUT_END,
 
@@ -84,6 +93,22 @@ enum terakan_pipeline_graphics_state_index {
 struct terakan_pipeline_graphics_vertex_input {
    /* TERAKAN_PIPELINE_GRAPHICS_STATE_VGT_PRIMITIVE_TYPE */
    uint32_t vgt_primitive_type;
+
+   /* TERAKAN_PIPELINE_GRAPHICS_STATE_SQ_PGM_FS
+    * If the pipeline library contains only static vertex input, but no vertex shader, there's no
+    * program BO in the vertex input state, and the static state contains info about all provided
+    * attributes regardless of whether they're needed by the vertex shader.
+    * In an executable pipeline, if program_bo is NULL, the empty (return-only) fetch shader must be
+    * used instead.
+    */
+   struct terakan_vertex_input_static_state sq_pgm_fs;
+
+   /* TERAKAN_PIPELINE_GRAPHICS_STATE_SQ_RESOURCES_FS_STRIDE */
+   struct {
+      uint32_t bindings_with_static_stride;
+      /* The values are undefined for bindings not in bindings_with_static_stride. */
+      uint16_t binding_strides[TERAKAN_RESOURCE_HW_COUNT_FETCH];
+   } sq_resources_fs_stride;
 };
 
 struct terakan_pipeline_graphics_pre_rasterization {
@@ -122,6 +147,9 @@ struct terakan_pipeline_graphics_multisample {
 struct terakan_pipeline_graphics {
    struct terakan_pipeline base;
 
+   VkShaderStageFlags shader_stages;
+   struct terakan_shader_impl shaders[MESA_SHADER_FRAGMENT + 1];
+
    BITSET_DECLARE(static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_COUNT);
 
    /* Precompiling the state into register values rather than simply layering pipeline binding over
@@ -138,9 +166,6 @@ struct terakan_pipeline_graphics {
     * and of the fragment output state.
     */
    struct terakan_pipeline_graphics_multisample multisample;
-
-   VkShaderStageFlags shader_stages;
-   struct terakan_shader_impl shaders[MESA_SHADER_FRAGMENT + 1];
 };
 
 void terakan_pipeline_graphics_bind(struct terakan_gfx_command_writer * command_writer,

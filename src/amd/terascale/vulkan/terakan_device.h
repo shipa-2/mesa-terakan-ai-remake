@@ -30,6 +30,7 @@
 #include "terakan_physical_device.h"
 #include "terakan_queue.h"
 #include "terakan_shader.h"
+#include "terakan_vertex_input.h"
 
 #include "c11/threads.h"
 #include "ac_surface.h"
@@ -67,6 +68,9 @@ struct terakan_device {
 
    struct terakan_bo * meta_shaders_bo;
    struct terakan_shader_static meta_shaders[TERAKAN_META_SHADER_COUNT];
+
+   /* Uses a program from meta_shaders_bo. */
+   struct terakan_vertex_input_static_state empty_vertex_input;
 
    /* Mutex and condition variable for terakan_sync_completion timeline semaphore value updates and
     * controlling submission completion waits.

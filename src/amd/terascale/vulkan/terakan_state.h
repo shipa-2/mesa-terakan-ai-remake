@@ -29,6 +29,7 @@
 #include "terakan_hw_state.h"
 #include "terakan_limits.h"
 #include "terakan_state_rasterization.h"
+#include "terakan_vertex_input.h"
 
 #include "util/bitset.h"
 
@@ -55,6 +56,10 @@ enum terakan_state_draw_index {
 
    TERAKAN_STATE_DRAW_VGT_INDEX_OFFSET,
 
+   TERAKAN_STATE_DRAW_SQ_PGM_FS,
+
+   TERAKAN_STATE_DRAW_SQ_RESOURCES_FS,
+
    TERAKAN_STATE_DRAW_PA_CL_VPORT_XY_SCALE_OFFSET,
    TERAKAN_STATE_DRAW_PA_CL_VPORT_Z_SCALE_OFFSET,
    TERAKAN_STATE_DRAW_PA_CL_GB,
@@ -80,6 +85,14 @@ enum terakan_state_draw_index {
    TERAKAN_STATE_DRAW_COUNT,
 };
 
+struct terakan_state_draw_sq_resource_fs {
+   VkDeviceSize bo_offset;
+   /* If `bo` is NULL, no buffer is bound. */
+   struct terakan_bo const * bo;
+   uint32_t size_bytes_minus_1;
+   uint16_t stride;
+};
+
 static_assert(MESA_VK_MAX_VIEWPORTS >= TERAKAN_HW_STATE_DRAW_MAX_VIEWPORTS,
               "Expecting that the Mesa Vulkan runtime can expose all hardware viewports.");
 
@@ -103,6 +116,54 @@ struct terakan_state_draw {
 
    /* TERAKAN_STATE_DRAW_VGT_INDEX_OFFSET */
    uint32_t vgt_index_offset;
+
+   /* TERAKAN_STATE_DRAW_SQ_PGM_FS */
+   struct {
+      /* Vertex input state can be either static (from a pipeline with non-dynamic vertex input
+       * state and a vertex shader) or dynamic (from vkCmdSetVertexInputEXT).
+       *
+       * For static vertex input state, normally the fetch shader program generated at pipeline
+       * creation time is used. However, some state can be overridden, in which case a transient
+       * fetch shader will be generated.
+       *
+       * For dynamic vertex input state, transient fetch shader programs are generated when the
+       * state is changed. They're allocated similarly to push constants.
+       */
+
+      /* If the static state pointer is NULL, dynamic state is used instead. */
+      struct terakan_vertex_input_static_state const * static_state;
+
+      struct {
+         /* Updated by vkCmdSetVertexInputEXT. */
+
+         BITSET_DECLARE(attributes_provided, TERAKAN_VERTEX_INPUT_MAX_ATTRIBUTES);
+         /* The values are undefined for attributes not in attributes_provided. */
+         struct terakan_vertex_input_attribute attributes[TERAKAN_VERTEX_INPUT_MAX_ATTRIBUTES];
+
+         uint32_t bindings_needed_by_attributes_and_provided;
+         /* For bindings not in bindings_needed_by_attributes_and_provided, the bits must be 0. */
+         uint32_t instance_bindings;
+         /* The values are undefined for bindings not in
+          * bindings_needed_by_attributes_and_provided.
+          */
+         uint32_t instance_binding_divisors[TERAKAN_RESOURCE_HW_COUNT_FETCH];
+
+         /* Updated by vertex shader binding. */
+
+         BITSET_DECLARE(attributes_needed_by_vs, TERAKAN_VERTEX_INPUT_MAX_ATTRIBUTES);
+      } dynamic_state;
+
+      /* When using static vertex input state, if this value doesn't match which bindings have the
+       * 2048 stride workaround in the static fetch shader (among the bindings actually used by it),
+       * a transient fetch shader program will be generated.
+       * This mask is also used for dynamic vertex input state.
+       */
+      uint32_t bindings_with_2048_stride_workaround;
+   } sq_pgm_fs;
+
+   /* TERAKAN_STATE_DRAW_SQ_RESOURCES_FS */
+   uint32_t sq_resources_fs_pending;
+   struct terakan_state_draw_sq_resource_fs sq_resources_fs[TERAKAN_RESOURCE_HW_COUNT_FETCH];
 
    /* Set via terakan_state_draw_set_viewport_count. */
    uint32_t viewport_count;
@@ -151,8 +212,6 @@ struct terakan_state_draw {
    struct terakan_color_meta_descriptor cb_color_meta[TERAKAN_LIMITS_HW_COLOR_MRT_COUNT];
 };
 
-struct terakan_gfx_command_writer;
-
 static inline void
 terakan_state_draw_set_pending(struct terakan_state_draw * const state,
                                enum terakan_state_draw_index const state_index)
@@ -185,9 +244,14 @@ terakan_state_draw_replace_fields(struct terakan_state_draw * const state,
 void terakan_state_draw_set_viewport_count(struct terakan_state_draw * state,
                                            uint32_t viewport_count);
 
+struct terakan_gfx_command_writer;
+
 void terakan_state_draw_apply_pending(struct terakan_gfx_command_writer * command_writer);
 
-void terakan_state_draw_reset(struct terakan_state_draw * state, bool depth_range_unrestricted);
+struct terakan_device;
+
+void terakan_state_draw_reset(struct terakan_state_draw * state,
+                              struct terakan_device const * device);
 
 #ifdef __cplusplus
 }
