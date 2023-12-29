@@ -1061,9 +1061,11 @@ terakan_BeginCommandBuffer(VkCommandBuffer const commandBuffer,
 
    command_buffer->command_writer.gfx->base.command_buffer = command_buffer;
 
+   /* The first emission will request the first indirect buffer. */
+   command_buffer->command_writer.gfx->indirect_buffer = NULL;
+
    command_buffer->command_writer.gfx->indirect_buffer_ever_begun = false;
 
-   /* The first emission will request the first indirect buffer. */
    command_buffer->command_writer.gfx->is_beginning_indirect_buffer = false;
 
    terakan_hw_state_draw_reset(&command_buffer->command_writer.gfx->hw_state_draw);
