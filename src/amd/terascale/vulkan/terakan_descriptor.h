@@ -25,7 +25,6 @@
 #define TERAKAN_DESCRIPTOR_H
 
 #include "terakan_bo.h"
-#include "terakan_limits.h"
 
 #include "gallium/drivers/r600/evergreend.h"
 
@@ -36,6 +35,9 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#define TERAKAN_COLOR_HW_MRT_COUNT         8
+#define TERAKAN_COLOR_HW_MRT_AND_RAT_COUNT 12
 
 /* Constant cache (kcache) hardware properties. */
 #define TERAKAN_KCACHE_HW_LINE_BYTES_LOG2          8
@@ -101,7 +103,7 @@ extern "C" {
  * minimum required by Vulkan) and 12 RAT IMMED buffers.
  */
 #define TERAKAN_RESOURCE_RANGE_RAT_IMMEDIATE_BASE                                                  \
-   (TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE - TERAKAN_LIMITS_HW_COLOR_RAT_COUNT)
+   (TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE - TERAKAN_COLOR_HW_MRT_AND_RAT_COUNT)
 /* Resources from the application's pipeline layout:
  * - Sampled images, uniform texel buffers.
  * - Storage images, storage texel buffers, storage buffers - read-only when coherence with writable

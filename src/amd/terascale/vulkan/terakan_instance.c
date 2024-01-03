@@ -25,7 +25,6 @@
 
 #include "terakan_descriptor.h"
 #include "terakan_entrypoints.h"
-#include "terakan_limits.h"
 #include "terakan_physical_device.h"
 
 #include "util/macros.h"
@@ -181,9 +180,9 @@ terakan_CreateInstance(VkInstanceCreateInfo const * const pCreateInfo,
               TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_NON_PIXEL,
            4);
    instance->max_per_stage_sampled_images =
-      MIN2(TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_NON_PIXEL - TERAKAN_LIMITS_HW_COLOR_RAT_COUNT -
+      MIN2(TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_NON_PIXEL - TERAKAN_COLOR_HW_MRT_AND_RAT_COUNT -
               instance->max_per_stage_uniform_buffers,
-           TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL - TERAKAN_LIMITS_HW_COLOR_RAT_COUNT -
+           TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL - TERAKAN_COLOR_HW_MRT_AND_RAT_COUNT -
               instance->max_per_stage_uniform_buffers - instance->max_per_stage_input_attachments);
 
    /* Initialize physical device management. */

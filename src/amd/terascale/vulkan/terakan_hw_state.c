@@ -24,7 +24,6 @@
 #include "terakan_hw_state.h"
 
 #include "terakan_command_buffer.h"
-#include "terakan_limits.h"
 #include "terakan_physical_device.h"
 
 #include "gallium/drivers/r600/evergreend.h"
@@ -549,13 +548,13 @@ terakan_hw_state_draw_emit_cb_color(struct terakan_gfx_command_writer * const co
    while (state->cb_color.modified) {
       uint32_t const color_index = (uint32_t)ffs((int)state->cb_color.modified) - 1;
 
-      bool const has_meta = color_index < TERAKAN_LIMITS_HW_COLOR_MRT_COUNT;
+      bool const has_meta = color_index < TERAKAN_COLOR_HW_MRT_COUNT;
 
       uint32_t const register_offset =
          has_meta ? (R_028C9C_CB_COLOR1_BASE - R_028C60_CB_COLOR0_BASE) * color_index
                   : (R_028E40_CB_COLOR8_BASE - R_028C60_CB_COLOR0_BASE) +
                        (R_028E5C_CB_COLOR9_BASE - R_028E40_CB_COLOR8_BASE) *
-                          (color_index - TERAKAN_LIMITS_HW_COLOR_MRT_COUNT);
+                          (color_index - TERAKAN_COLOR_HW_MRT_COUNT);
 
       struct terakan_bo const * const bo = command_writer->hw_state_draw.cb_color.bo[color_index];
       struct terakan_color_descriptor const * const descriptor =

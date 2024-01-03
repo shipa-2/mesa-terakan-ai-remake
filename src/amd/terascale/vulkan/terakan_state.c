@@ -29,7 +29,6 @@
 #include "terakan_device.h"
 #include "terakan_hw_state.h"
 #include "terakan_image.h"
-#include "terakan_limits.h"
 #include "terakan_shader.h"
 #include "terakan_state_rasterization.h"
 
@@ -435,7 +434,7 @@ terakan_state_draw_apply_cb_color(struct terakan_gfx_command_writer * const comm
          memcpy(&command_writer->hw_state_draw.cb_color.color[color_index],
                 &command_writer->state_draw.cb_color.color[color_index],
                 sizeof(struct terakan_color_descriptor));
-         if (color_index < TERAKAN_LIMITS_HW_COLOR_MRT_COUNT) {
+         if (color_index < TERAKAN_COLOR_HW_MRT_COUNT) {
             if (!modified && memcmp(&command_writer->hw_state_draw.cb_color.meta[color_index],
                                     &command_writer->state_draw.cb_color.meta[color_index],
                                     sizeof(struct terakan_color_meta_descriptor)) != 0) {

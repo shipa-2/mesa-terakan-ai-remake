@@ -294,10 +294,10 @@ terakan_physical_device_get_capabilities(
    properties_out->maxPerStageDescriptorStorageBuffers = instance->max_per_stage_storage_buffers;
    properties_out->maxPerStageDescriptorSampledImages = instance->max_per_stage_sampled_images;
    properties_out->maxPerStageDescriptorStorageImages =
-      TERAKAN_LIMITS_HW_COLOR_RAT_COUNT - instance->max_per_stage_storage_buffers;
+      TERAKAN_COLOR_HW_MRT_AND_RAT_COUNT - instance->max_per_stage_storage_buffers;
    properties_out->maxPerStageDescriptorInputAttachments =
       instance->max_per_stage_input_attachments;
-   properties_out->maxColorAttachments = TERAKAN_LIMITS_HW_COLOR_MRT_COUNT;
+   properties_out->maxColorAttachments = TERAKAN_COLOR_HW_MRT_COUNT;
 
    properties_out->maxPerStageResources = properties_out->maxPerStageDescriptorUniformBuffers +
                                           properties_out->maxPerStageDescriptorStorageBuffers +
@@ -355,10 +355,9 @@ terakan_physical_device_get_capabilities(
 
    properties_out->maxFragmentInputComponents = 4 * TERAKAN_LIMITS_HW_PARAMETER_CACHE_VECTOR_COUNT;
 
-   properties_out->maxFragmentOutputAttachments = TERAKAN_LIMITS_HW_COLOR_MRT_COUNT;
+   properties_out->maxFragmentOutputAttachments = TERAKAN_COLOR_HW_MRT_COUNT;
    /* TODO(Triang3l): maxFragmentDualSrcAttachments when dual-source blending is enabled. */
-   properties_out->maxFragmentCombinedOutputResources =
-      MAX2(TERAKAN_LIMITS_HW_COLOR_MRT_COUNT, TERAKAN_LIMITS_HW_COLOR_RAT_COUNT);
+   properties_out->maxFragmentCombinedOutputResources = TERAKAN_COLOR_HW_MRT_AND_RAT_COUNT;
 
    properties_out->maxComputeSharedMemorySize =
       sizeof(uint32_t) * TERAKAN_LIMITS_HW_LDS_SIMD_DWORD_COUNT;

@@ -26,7 +26,6 @@
 
 #include "terakan_bo.h"
 #include "terakan_descriptor.h"
-#include "terakan_limits.h"
 #include "terakan_shader.h"
 
 #include "util/bitset.h"
@@ -249,10 +248,10 @@ struct terakan_hw_state_draw {
    struct {
       uint16_t ever_written;
       uint16_t modified;
-      struct terakan_bo const * bo[TERAKAN_LIMITS_HW_COLOR_RAT_COUNT];
+      struct terakan_bo const * bo[TERAKAN_COLOR_HW_MRT_AND_RAT_COUNT];
       /* The values are undefined if the respective BO is NULL. */
-      struct terakan_color_descriptor color[TERAKAN_LIMITS_HW_COLOR_RAT_COUNT];
-      struct terakan_color_meta_descriptor meta[TERAKAN_LIMITS_HW_COLOR_MRT_COUNT];
+      struct terakan_color_descriptor color[TERAKAN_COLOR_HW_MRT_AND_RAT_COUNT];
+      struct terakan_color_meta_descriptor meta[TERAKAN_COLOR_HW_MRT_COUNT];
    } cb_color;
 
    /* Sequencer constants.
