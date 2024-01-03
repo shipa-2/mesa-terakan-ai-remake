@@ -29,6 +29,7 @@
 #include "terakan_device.h"
 #include "terakan_hw_state.h"
 #include "terakan_image.h"
+#include "terakan_limits.h"
 #include "terakan_shader.h"
 #include "terakan_state_rasterization.h"
 
@@ -434,57 +435,37 @@ terakan_state_draw_apply_db_render_override(struct terakan_gfx_command_writer * 
 
 static void
 terakan_state_draw_apply_cb_color(struct terakan_gfx_command_writer * const command_writer,
-                                  enum terakan_state_draw_index const state_index)
+                                  UNUSED enum terakan_state_draw_index const state_index)
 {
-   uint32_t const color_index = (uint32_t)state_index - (uint32_t)TERAKAN_STATE_DRAW_CB_COLOR_FIRST;
-   struct terakan_bo const * const color_bo = command_writer->state_draw.cb_color_bo[color_index];
-   bool modified = command_writer->hw_state_draw.cb_color_bo[color_index] != color_bo;
-   command_writer->hw_state_draw.cb_color_bo[color_index] = color_bo;
-   if (color_bo != NULL) {
-      if (modified ||
-          memcmp(&command_writer->hw_state_draw.cb_color[color_index],
-                 &command_writer->state_draw.cb_color[color_index],
-                 sizeof(struct terakan_color_descriptor)) != 0 ||
-          memcmp(&command_writer->hw_state_draw.cb_color_meta[color_index],
-                 &command_writer->state_draw.cb_color_meta[color_index],
-                 sizeof(struct terakan_color_meta_descriptor)) != 0) {
-         modified = true;
-         memcpy(&command_writer->hw_state_draw.cb_color[color_index],
-                &command_writer->state_draw.cb_color[color_index],
+   while (command_writer->state_draw.cb_color.pending) {
+      uint32_t const color_index =
+         (uint32_t)ffs((int)command_writer->state_draw.cb_color.pending) - 1;
+      struct terakan_bo const * const bo = command_writer->state_draw.cb_color.bo[color_index];
+      bool modified = command_writer->hw_state_draw.cb_color.bo[color_index] != bo;
+      command_writer->hw_state_draw.cb_color.bo[color_index] = bo;
+      if (bo != NULL) {
+         if (!modified && memcmp(&command_writer->hw_state_draw.cb_color.color[color_index],
+                                 &command_writer->state_draw.cb_color.color[color_index],
+                                 sizeof(struct terakan_color_descriptor)) != 0) {
+            modified = true;
+         }
+         memcpy(&command_writer->hw_state_draw.cb_color.color[color_index],
+                &command_writer->state_draw.cb_color.color[color_index],
                 sizeof(struct terakan_color_descriptor));
-         memcpy(&command_writer->hw_state_draw.cb_color_meta[color_index],
-                &command_writer->state_draw.cb_color_meta[color_index],
-                sizeof(struct terakan_color_meta_descriptor));
+         if (color_index < TERAKAN_LIMITS_HW_COLOR_MRT_COUNT) {
+            if (!modified && memcmp(&command_writer->hw_state_draw.cb_color.meta[color_index],
+                                    &command_writer->state_draw.cb_color.meta[color_index],
+                                    sizeof(struct terakan_color_meta_descriptor)) != 0) {
+               modified = true;
+            }
+            memcpy(&command_writer->hw_state_draw.cb_color.meta[color_index],
+                   &command_writer->state_draw.cb_color.meta[color_index],
+                   sizeof(struct terakan_color_meta_descriptor));
+         }
       }
+      terakan_hw_state_draw_cb_color_written(&command_writer->hw_state_draw, color_index, modified);
+      command_writer->state_draw.cb_color.pending &= ~((uint16_t)1 << color_index);
    }
-   terakan_hw_state_draw_written(&command_writer->hw_state_draw,
-                                 (enum terakan_hw_state_draw_index)(
-                                    (uint32_t)TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + color_index),
-                                 modified);
-}
-
-static void
-terakan_state_draw_apply_cb_color_rat_only(struct terakan_gfx_command_writer * const command_writer,
-                                           enum terakan_state_draw_index const state_index)
-{
-   uint32_t const color_index = (uint32_t)state_index - (uint32_t)TERAKAN_STATE_DRAW_CB_COLOR_FIRST;
-   struct terakan_bo const * const color_bo = command_writer->state_draw.cb_color_bo[color_index];
-   bool modified = command_writer->hw_state_draw.cb_color_bo[color_index] != color_bo;
-   command_writer->hw_state_draw.cb_color_bo[color_index] = color_bo;
-   if (color_bo != NULL) {
-      if (!modified && memcmp(&command_writer->hw_state_draw.cb_color[color_index],
-                              &command_writer->state_draw.cb_color[color_index],
-                              sizeof(struct terakan_color_descriptor)) != 0) {
-         modified = true;
-      }
-      memcpy(&command_writer->hw_state_draw.cb_color[color_index],
-             &command_writer->state_draw.cb_color[color_index],
-             sizeof(struct terakan_color_descriptor));
-   }
-   terakan_hw_state_draw_written(&command_writer->hw_state_draw,
-                                 (enum terakan_hw_state_draw_index)(
-                                    (uint32_t)TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + color_index),
-                                 modified);
 }
 
 static terakan_state_draw_apply_function const
@@ -507,18 +488,7 @@ static terakan_state_draw_apply_function const
       [TERAKAN_STATE_DRAW_PA_SC_MODE_CNTL_0] = terakan_state_draw_apply_pa_sc_mode_cntl_0,
       [TERAKAN_STATE_DRAW_PA_SC_AA_MASK] = terakan_state_draw_apply_pa_sc_aa_mask,
       [TERAKAN_STATE_DRAW_DB_RENDER_OVERRIDE] = terakan_state_draw_apply_db_render_override,
-      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST] = terakan_state_draw_apply_cb_color,
-      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 1] = terakan_state_draw_apply_cb_color,
-      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 2] = terakan_state_draw_apply_cb_color,
-      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 3] = terakan_state_draw_apply_cb_color,
-      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 4] = terakan_state_draw_apply_cb_color,
-      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 5] = terakan_state_draw_apply_cb_color,
-      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 6] = terakan_state_draw_apply_cb_color,
-      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 7] = terakan_state_draw_apply_cb_color,
-      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 8] = terakan_state_draw_apply_cb_color_rat_only,
-      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 9] = terakan_state_draw_apply_cb_color_rat_only,
-      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 10] = terakan_state_draw_apply_cb_color_rat_only,
-      [TERAKAN_STATE_DRAW_CB_COLOR_FIRST + 11] = terakan_state_draw_apply_cb_color_rat_only,
+      [TERAKAN_STATE_DRAW_CB_COLOR] = terakan_state_draw_apply_cb_color,
 };
 
 void
@@ -644,7 +614,10 @@ terakan_state_draw_reset(struct terakan_state_draw * const state,
    /* pSampleMask = NULL */
    state->pa_sc_aa_mask = UINT16_MAX;
 
-   memset(state->cb_color_bo, 0, sizeof(state->cb_color_bo));
+   /* No need to make color targets pending until they're enabled in CB_TARGET_MASK. */
+   /* TODO(Triang3l): Handle CB_TARGET_MASK properly, for now it's forced to only MRT 0 enabled. */
+   state->cb_color.pending = 0b1;
+   memset(state->cb_color.bo, 0, sizeof(state->cb_color.bo));
 
    /* Make all state items pending so the defaults are applied before the first draw, even for
     * unsupported features.

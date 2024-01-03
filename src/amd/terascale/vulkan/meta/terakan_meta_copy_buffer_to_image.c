@@ -394,7 +394,7 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
    terakan_meta_set_vs(command_writer, TERAKAN_META_SHADER_POSITION_FROM_INDEX_VS);
    terakan_meta_set_ps(command_writer, TERAKAN_META_SHADER_COPY_BUFFER_TO_IMAGE_PS);
 
-   terakan_state_draw_set_pending(&command_writer->state_draw, TERAKAN_STATE_DRAW_CB_COLOR_FIRST);
+   terakan_state_draw_set_cb_color_pending(&command_writer->state_draw, 0b1);
 
    struct terakan_meta_copy_buffer_to_image_push_constants push_constants = {};
    struct terakan_bo const * push_constants_bo = NULL;
@@ -480,20 +480,20 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
          terakan_color_descriptor_image_view_to_color_attachment(&color_descriptor);
 
          bool const cb_color_modified =
-            command_writer->hw_state_draw.cb_color_bo[0] != image->bo ||
-            memcmp(&command_writer->hw_state_draw.cb_color[0], &color_descriptor,
+            command_writer->hw_state_draw.cb_color.bo[0] != image->bo ||
+            memcmp(&command_writer->hw_state_draw.cb_color.color[0], &color_descriptor,
                    sizeof(color_descriptor)) != 0 ||
-            memcmp(&command_writer->hw_state_draw.cb_color_meta[0], &color_meta_descriptor,
+            memcmp(&command_writer->hw_state_draw.cb_color.meta[0], &color_meta_descriptor,
                    sizeof(color_meta_descriptor)) != 0;
          if (cb_color_modified) {
-            command_writer->hw_state_draw.cb_color_bo[0] = image->bo;
-            memcpy(&command_writer->hw_state_draw.cb_color[0], &color_descriptor,
+            command_writer->hw_state_draw.cb_color.bo[0] = image->bo;
+            memcpy(&command_writer->hw_state_draw.cb_color.color[0], &color_descriptor,
                    sizeof(color_descriptor));
-            memcpy(&command_writer->hw_state_draw.cb_color_meta[0], &color_meta_descriptor,
+            memcpy(&command_writer->hw_state_draw.cb_color.meta[0], &color_meta_descriptor,
                    sizeof(color_meta_descriptor));
          }
-         terakan_hw_state_draw_written(&command_writer->hw_state_draw,
-                                       TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST, cb_color_modified);
+         terakan_hw_state_draw_cb_color_written(&command_writer->hw_state_draw, 0,
+                                                cb_color_modified);
 
          VkDeviceSize const buffer_size_elements =
             (image_view_create_info.subresourceRange.layerCount - 1) * buffer_z_pitch +

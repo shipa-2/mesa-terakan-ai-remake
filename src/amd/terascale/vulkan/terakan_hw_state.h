@@ -108,10 +108,6 @@ enum terakan_hw_state_draw_index {
 
    TERAKAN_HW_STATE_DRAW_CB_BLEND_RGBA,
 
-   TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST,
-   TERAKAN_HW_STATE_DRAW_CB_COLOR_LAST =
-      TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + TERAKAN_LIMITS_HW_COLOR_RAT_COUNT - 1,
-
    /* State items starting from TERAKAN_HW_STATE_DRAW_SPECIAL_START have their modified flags set
     * via some method different from terakan_hw_state_draw_written.
     */
@@ -119,6 +115,8 @@ enum terakan_hw_state_draw_index {
 
    /* Set as modified if any state of any viewport is modified. */
    TERAKAN_HW_STATE_DRAW_VIEWPORT = TERAKAN_HW_STATE_DRAW_SPECIAL_FIRST,
+
+   TERAKAN_HW_STATE_DRAW_CB_COLOR,
 
    TERAKAN_HW_STATE_DRAW_SQ_KCACHE_VS,
    TERAKAN_HW_STATE_DRAW_SQ_KCACHE_TCS,
@@ -238,12 +236,6 @@ struct terakan_hw_state_draw {
    /* TERAKAN_HW_STATE_DRAW_CB_BLEND_RGBA */
    float cb_blend_rgba[4];
 
-   /* TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST...LAST */
-   struct terakan_bo const * cb_color_bo[TERAKAN_LIMITS_HW_COLOR_RAT_COUNT];
-   /* The values are undefined if the respective cb_color_bo is NULL. */
-   struct terakan_color_descriptor cb_color[TERAKAN_LIMITS_HW_COLOR_RAT_COUNT];
-   struct terakan_color_meta_descriptor cb_color_meta[TERAKAN_LIMITS_HW_COLOR_MRT_COUNT];
-
    /* TERAKAN_HW_STATE_DRAW_VIEWPORT
     * Don't use terakan_hw_state_draw_written, instead call
     * terakan_hw_state_draw_ensure_viewport_count before updating the state, and
@@ -252,6 +244,16 @@ struct terakan_hw_state_draw {
    uint32_t viewport_count_ever_written;
    uint16_t viewports_modified;
    struct terakan_hw_state_draw_viewport viewports[TERAKAN_HW_STATE_DRAW_MAX_VIEWPORTS];
+
+   /* TERAKAN_HW_STATE_DRAW_CB_COLOR */
+   struct {
+      uint16_t ever_written;
+      uint16_t modified;
+      struct terakan_bo const * bo[TERAKAN_LIMITS_HW_COLOR_RAT_COUNT];
+      /* The values are undefined if the respective BO is NULL. */
+      struct terakan_color_descriptor color[TERAKAN_LIMITS_HW_COLOR_RAT_COUNT];
+      struct terakan_color_meta_descriptor meta[TERAKAN_LIMITS_HW_COLOR_MRT_COUNT];
+   } cb_color;
 
    /* Sequencer constants.
     * Don't access externally directly, use the respective setters.
@@ -381,6 +383,21 @@ terakan_hw_state_draw_viewport_modified(
    BITSET_SET(state->viewports[viewport_index].state_modified, state_index);
    state->viewports_modified |= (uint16_t)1 << viewport_index;
    BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_VIEWPORT);
+}
+
+static inline void
+terakan_hw_state_draw_cb_color_written(struct terakan_hw_state_draw * const state,
+                                       uint32_t const color_index, bool modified)
+{
+   uint16_t const color_bit = (uint16_t)1 << color_index;
+   if (!(state->cb_color.ever_written & color_bit)) {
+      state->cb_color.ever_written |= color_bit;
+      modified = true;
+   }
+   if (modified) {
+      state->cb_color.modified |= color_bit;
+      BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_CB_COLOR);
+   }
 }
 
 void terakan_hw_state_draw_set_sq_kcache_vs(struct terakan_hw_state_draw * state,

@@ -78,9 +78,7 @@ enum terakan_state_draw_index {
 
    TERAKAN_STATE_DRAW_DB_RENDER_OVERRIDE,
 
-   TERAKAN_STATE_DRAW_CB_COLOR_FIRST,
-   TERAKAN_STATE_DRAW_CB_COLOR_LAST =
-      TERAKAN_STATE_DRAW_CB_COLOR_FIRST + TERAKAN_LIMITS_HW_COLOR_RAT_COUNT - 1,
+   TERAKAN_STATE_DRAW_CB_COLOR,
 
    TERAKAN_STATE_DRAW_COUNT,
 };
@@ -205,11 +203,14 @@ struct terakan_state_draw {
    /* TERAKAN_STATE_DRAW_DB_RENDER_OVERRIDE */
    uint32_t db_render_override;
 
-   /* TERAKAN_STATE_DRAW_CB_COLOR_FIRST...LAST */
-   struct terakan_bo const * cb_color_bo[TERAKAN_LIMITS_HW_COLOR_RAT_COUNT];
-   /* The values are undefined if the respective cb_color_bo is NULL. */
-   struct terakan_color_descriptor cb_color[TERAKAN_LIMITS_HW_COLOR_RAT_COUNT];
-   struct terakan_color_meta_descriptor cb_color_meta[TERAKAN_LIMITS_HW_COLOR_MRT_COUNT];
+   /* TERAKAN_STATE_DRAW_CB_COLOR */
+   struct {
+      uint16_t pending;
+      struct terakan_bo const * bo[TERAKAN_LIMITS_HW_COLOR_RAT_COUNT];
+      /* The values are undefined if the respective BO is NULL. */
+      struct terakan_color_descriptor color[TERAKAN_LIMITS_HW_COLOR_RAT_COUNT];
+      struct terakan_color_meta_descriptor meta[TERAKAN_LIMITS_HW_COLOR_MRT_COUNT];
+   } cb_color;
 };
 
 static inline void
@@ -243,6 +244,14 @@ terakan_state_draw_replace_fields(struct terakan_state_draw * const state,
 
 void terakan_state_draw_set_viewport_count(struct terakan_state_draw * state,
                                            uint32_t viewport_count);
+
+static inline void
+terakan_state_draw_set_cb_color_pending(struct terakan_state_draw * const state,
+                                        uint16_t const color_target_bits)
+{
+   state->cb_color.pending |= color_target_bits;
+   terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_CB_COLOR);
+}
 
 struct terakan_gfx_command_writer;
 

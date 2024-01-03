@@ -26,6 +26,8 @@
 #include "terakan_image.h"
 #include "terakan_state.h"
 
+#include "util/macros.h"
+
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -46,18 +48,17 @@ terakan_CmdBeginRendering(VkCommandBuffer const commandBuffer,
       struct terakan_image_view const * const color_view = terakan_image_view_from_handle(
          pRenderingInfo->pColorAttachments[color_attachment_index].imageView);
       if (color_view != NULL) {
-         state_draw->cb_color_bo[color_attachment_index] = color_view->bo;
-         memcpy(&state_draw->cb_color[color_attachment_index], &color_view->color,
+         state_draw->cb_color.bo[color_attachment_index] = color_view->bo;
+         memcpy(&state_draw->cb_color.color[color_attachment_index], &color_view->color,
                 sizeof(struct terakan_color_descriptor));
          terakan_color_descriptor_image_view_to_color_attachment(
-            &state_draw->cb_color[color_attachment_index]);
-         memcpy(&state_draw->cb_color_meta[color_attachment_index], &color_view->color_meta,
+            &state_draw->cb_color.color[color_attachment_index]);
+         memcpy(&state_draw->cb_color.meta[color_attachment_index], &color_view->color_meta,
                 sizeof(struct terakan_color_meta_descriptor));
       } else {
-         state_draw->cb_color_bo[color_attachment_index] = NULL;
+         state_draw->cb_color.bo[color_attachment_index] = NULL;
       }
-      terakan_state_draw_set_pending(
-         state_draw, (enum terakan_state_draw_index)((uint32_t)TERAKAN_STATE_DRAW_CB_COLOR_FIRST +
-                                                     color_attachment_index));
    }
+   terakan_state_draw_set_cb_color_pending(
+      state_draw, (uint16_t)BITFIELD_MASK(pRenderingInfo->colorAttachmentCount));
 }

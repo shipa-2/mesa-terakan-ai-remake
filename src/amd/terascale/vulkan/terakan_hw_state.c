@@ -24,6 +24,7 @@
 #include "terakan_hw_state.h"
 
 #include "terakan_command_buffer.h"
+#include "terakan_limits.h"
 #include "terakan_physical_device.h"
 
 #include "gallium/drivers/r600/evergreend.h"
@@ -488,136 +489,6 @@ terakan_hw_state_draw_emit_cb_blend_rgba(struct terakan_gfx_command_writer * con
 }
 
 static void
-terakan_hw_state_draw_emit_cb_color(struct terakan_gfx_command_writer * const command_writer,
-                                    enum terakan_hw_state_draw_index const state_index)
-{
-   uint32_t const color_index =
-      (uint32_t)state_index - (uint32_t)TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST;
-   uint32_t const color_register_offset =
-      (R_028C9C_CB_COLOR1_BASE - R_028C60_CB_COLOR0_BASE) * color_index;
-
-   struct terakan_bo const * const color_bo =
-      command_writer->hw_state_draw.cb_color_bo[color_index];
-   struct terakan_color_descriptor const * const color_descriptor =
-      &command_writer->hw_state_draw.cb_color[color_index];
-   if (color_bo != NULL && G_028C70_FORMAT(color_descriptor->info) != V_028C70_COLOR_INVALID) {
-      uint32_t const cb_color_descriptor_dwords =
-         sizeof(struct terakan_color_descriptor) / sizeof(uint32_t);
-      uint32_t const cb_color_meta_descriptor_dwords =
-         sizeof(struct terakan_color_meta_descriptor) / sizeof(uint32_t);
-
-      /* Relocations needed for:
-       * R_028C60_CB_COLOR0_BASE
-       * R_028C74_CB_COLOR0_ATTRIB
-       * R_028C7C_CB_COLOR0_CMASK
-       * R_028C84_CB_COLOR0_FMASK
-       */
-      uint32_t const cb_color_relocation_count = 4;
-
-      uint32_t * packet = terakan_gfx_command_writer_emit(
-         command_writer, 2 + cb_color_descriptor_dwords + cb_color_meta_descriptor_dwords, 1,
-         2 * cb_color_relocation_count, true);
-      if (unlikely(packet == NULL)) {
-         return;
-      }
-
-      *packet++ = PKT3(PKT3_SET_CONTEXT_REG,
-                       cb_color_descriptor_dwords + cb_color_meta_descriptor_dwords, 0);
-      *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028C60_CB_COLOR0_BASE + color_register_offset);
-
-      /* TODO(Triang3l): Higher priority for multisampled color buffers (possibly pass the sample
-       * count via the view not only on R9xx, but on R8xx too, but mask it away here on R8xx - using
-       * the presence of FMask for this purpose is possibly more complicated and not always
-       * reliable).
-       */
-      uint32_t const color_bo_reference = terakan_bo_reference_writer_add_reference(
-         &command_writer->base.bo_reference_writer, color_bo, true, true,
-         G_028C70_RAT(color_descriptor->info) ? TERAKAN_BO_PRIORITY_SHADER_RW_IMAGE
-                                              : TERAKAN_BO_PRIORITY_COLOR_BUFFER);
-
-      memcpy(packet, color_descriptor, sizeof(*color_descriptor));
-      packet += sizeof(*color_descriptor) / sizeof(uint32_t);
-
-      struct terakan_color_meta_descriptor const * const color_meta_descriptor =
-         &command_writer->hw_state_draw.cb_color_meta[color_index];
-      memcpy(packet, color_meta_descriptor, sizeof(*color_meta_descriptor));
-      packet += sizeof(*color_meta_descriptor) / sizeof(uint32_t);
-
-      for (uint32_t cb_color_relocation_index = 0;
-           cb_color_relocation_index < cb_color_relocation_count; ++cb_color_relocation_index) {
-         *packet++ = PKT3(PKT3_NOP, 0, 0);
-         *packet++ = color_bo_reference;
-      }
-   } else {
-      /* Set the format to invalid, not requiring any relocations. */
-      uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, 0, 0, true);
-      if (unlikely(packet == NULL)) {
-         return;
-      }
-      *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
-      *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028C70_CB_COLOR0_INFO + color_register_offset);
-      *packet++ = 0;
-   }
-}
-
-static void
-terakan_hw_state_draw_emit_cb_color_rat_only(
-   struct terakan_gfx_command_writer * const command_writer,
-   enum terakan_hw_state_draw_index const state_index)
-{
-   uint32_t const color_rat_only_index =
-      (uint32_t)state_index - ((uint32_t)TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 8);
-   uint32_t const color_register_offset =
-      (R_028E5C_CB_COLOR9_BASE - R_028E40_CB_COLOR8_BASE) * color_rat_only_index;
-
-   struct terakan_bo const * const color_bo =
-      command_writer->hw_state_draw.cb_color_bo[8 + color_rat_only_index];
-   struct terakan_color_descriptor const * const color_descriptor =
-      &command_writer->hw_state_draw.cb_color[8 + color_rat_only_index];
-   if (color_bo != NULL && G_028C70_FORMAT(color_descriptor->info) != V_028C70_COLOR_INVALID) {
-      uint32_t const cb_color_descriptor_dwords =
-         sizeof(struct terakan_color_descriptor) / sizeof(uint32_t);
-
-      /* Relocations needed for:
-       * R_028E40_CB_COLOR8_BASE
-       * R_028E54_CB_COLOR8_ATTRIB
-       */
-      uint32_t const cb_color_relocation_count = 2;
-
-      uint32_t * packet = terakan_gfx_command_writer_emit(
-         command_writer, 2 + cb_color_descriptor_dwords, 1, 2 * cb_color_relocation_count, true);
-      if (unlikely(packet == NULL)) {
-         return;
-      }
-
-      *packet++ = PKT3(PKT3_SET_CONTEXT_REG, cb_color_descriptor_dwords, 0);
-      *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028E40_CB_COLOR8_BASE + color_register_offset);
-
-      uint32_t const color_bo_reference = terakan_bo_reference_writer_add_reference(
-         &command_writer->base.bo_reference_writer, color_bo, true, true,
-         TERAKAN_BO_PRIORITY_SHADER_RW_IMAGE);
-
-      memcpy(packet, color_descriptor, sizeof(*color_descriptor));
-      packet += sizeof(*color_descriptor) / sizeof(uint32_t);
-
-      for (uint32_t cb_color_relocation_index = 0;
-           cb_color_relocation_index < cb_color_relocation_count; ++cb_color_relocation_index) {
-         *packet++ = PKT3(PKT3_NOP, 0, 0);
-         *packet++ = color_bo_reference;
-      }
-   } else {
-      /* Set the format to invalid, not requiring any relocations. */
-      uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, 0, 0, true);
-      if (unlikely(packet == NULL)) {
-         return;
-      }
-      *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
-      *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028E50_CB_COLOR8_INFO + color_register_offset);
-      *packet++ = 0;
-   }
-}
-
-static void
 terakan_hw_state_draw_emit_viewport(struct terakan_gfx_command_writer * const command_writer,
                                     UNUSED enum terakan_hw_state_draw_index const state_index)
 {
@@ -688,6 +559,89 @@ terakan_hw_state_draw_emit_viewport(struct terakan_gfx_command_writer * const co
        */
       BITSET_ZERO(viewport->state_modified);
       state->viewports_modified &= ~((uint16_t)1 << viewport_index);
+   }
+}
+
+static void
+terakan_hw_state_draw_emit_cb_color(struct terakan_gfx_command_writer * const command_writer,
+                                    UNUSED enum terakan_hw_state_draw_index const state_index)
+{
+   struct terakan_hw_state_draw * const state = &command_writer->hw_state_draw;
+
+   assert(!(state->cb_color.modified & ~state->cb_color.ever_written));
+   while (state->cb_color.modified) {
+      uint32_t const color_index = (uint32_t)ffs((int)state->cb_color.modified) - 1;
+
+      bool const has_meta = color_index < TERAKAN_LIMITS_HW_COLOR_MRT_COUNT;
+
+      uint32_t const register_offset =
+         has_meta ? (R_028C9C_CB_COLOR1_BASE - R_028C60_CB_COLOR0_BASE) * color_index
+                  : (R_028E40_CB_COLOR8_BASE - R_028C60_CB_COLOR0_BASE) +
+                       (R_028E5C_CB_COLOR9_BASE - R_028E40_CB_COLOR8_BASE) *
+                          (color_index - TERAKAN_LIMITS_HW_COLOR_MRT_COUNT);
+
+      struct terakan_bo const * const bo = command_writer->hw_state_draw.cb_color.bo[color_index];
+      struct terakan_color_descriptor const * const descriptor =
+         &command_writer->hw_state_draw.cb_color.color[color_index];
+      if (bo != NULL && G_028C70_FORMAT(descriptor->info) != V_028C70_COLOR_INVALID) {
+         uint32_t const register_count =
+            (sizeof(struct terakan_color_descriptor) +
+             (has_meta ? sizeof(struct terakan_color_meta_descriptor) : 0)) /
+            sizeof(uint32_t);
+         /* Relocations needed for:
+          * R_028C60_CB_COLOR0_BASE
+          * R_028C74_CB_COLOR0_ATTRIB
+          * R_028C7C_CB_COLOR0_CMASK
+          * R_028C84_CB_COLOR0_FMASK
+          */
+         uint32_t const relocation_count = 2 + (has_meta ? 2 : 0);
+
+         uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + register_count, 1,
+                                                             2 * relocation_count, true);
+         if (unlikely(packet == NULL)) {
+            return;
+         }
+
+         *packet++ = PKT3(PKT3_SET_CONTEXT_REG, register_count, 0);
+         *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028C60_CB_COLOR0_BASE + register_offset);
+
+         /* TODO(Triang3l): Higher priority for multisampled color buffers (possibly pass the sample
+          * count via the view not only on R9xx, but on R8xx too, but mask it away here on R8xx -
+          * using the presence of FMask for this purpose is possibly more complicated and not always
+          * reliable).
+          */
+         uint32_t const bo_reference = terakan_bo_reference_writer_add_reference(
+            &command_writer->base.bo_reference_writer, bo, true, true,
+            G_028C70_RAT(descriptor->info) ? TERAKAN_BO_PRIORITY_SHADER_RW_IMAGE
+                                           : TERAKAN_BO_PRIORITY_COLOR_BUFFER);
+
+         memcpy(packet, descriptor, sizeof(*descriptor));
+         packet += sizeof(*descriptor) / sizeof(uint32_t);
+
+         if (has_meta) {
+            struct terakan_color_meta_descriptor const * const meta_descriptor =
+               &command_writer->hw_state_draw.cb_color.meta[color_index];
+            memcpy(packet, meta_descriptor, sizeof(*meta_descriptor));
+            packet += sizeof(*meta_descriptor) / sizeof(uint32_t);
+         }
+
+         for (uint32_t relocation_index = 0; relocation_index < relocation_count;
+              ++relocation_index) {
+            *packet++ = PKT3(PKT3_NOP, 0, 0);
+            *packet++ = bo_reference;
+         }
+      } else {
+         /* Set the format to invalid, not requiring any relocations. */
+         uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, 0, 0, true);
+         if (unlikely(packet == NULL)) {
+            return;
+         }
+         *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
+         *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028C70_CB_COLOR0_INFO + register_offset);
+         *packet++ = 0;
+      }
+
+      state->cb_color.modified &= ~((uint16_t)1 << color_index);
    }
 }
 
@@ -1268,19 +1222,8 @@ static terakan_hw_state_draw_emit_function const
       [TERAKAN_HW_STATE_DRAW_PA_SC_AA_MASK] = terakan_hw_state_draw_emit_pa_sc_aa_mask,
       [TERAKAN_HW_STATE_DRAW_DB_RENDER_OVERRIDE] = terakan_hw_state_draw_emit_db_render_override,
       [TERAKAN_HW_STATE_DRAW_CB_BLEND_RGBA] = terakan_hw_state_draw_emit_cb_blend_rgba,
-      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST] = terakan_hw_state_draw_emit_cb_color,
-      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 1] = terakan_hw_state_draw_emit_cb_color,
-      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 2] = terakan_hw_state_draw_emit_cb_color,
-      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 3] = terakan_hw_state_draw_emit_cb_color,
-      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 4] = terakan_hw_state_draw_emit_cb_color,
-      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 5] = terakan_hw_state_draw_emit_cb_color,
-      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 6] = terakan_hw_state_draw_emit_cb_color,
-      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 7] = terakan_hw_state_draw_emit_cb_color,
-      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 8] = terakan_hw_state_draw_emit_cb_color_rat_only,
-      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 9] = terakan_hw_state_draw_emit_cb_color_rat_only,
-      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 10] = terakan_hw_state_draw_emit_cb_color_rat_only,
-      [TERAKAN_HW_STATE_DRAW_CB_COLOR_FIRST + 11] = terakan_hw_state_draw_emit_cb_color_rat_only,
       [TERAKAN_HW_STATE_DRAW_VIEWPORT] = terakan_hw_state_draw_emit_viewport,
+      [TERAKAN_HW_STATE_DRAW_CB_COLOR] = terakan_hw_state_draw_emit_cb_color,
       [TERAKAN_HW_STATE_DRAW_SQ_KCACHE_VS] = terakan_hw_state_draw_emit_sq_kcache_vs,
       [TERAKAN_HW_STATE_DRAW_SQ_KCACHE_TCS] = terakan_hw_state_draw_emit_sq_kcache_tcs,
       [TERAKAN_HW_STATE_DRAW_SQ_KCACHE_TES] = terakan_hw_state_draw_emit_sq_kcache_tes,
@@ -1752,6 +1695,8 @@ terakan_hw_state_draw_emit_all(struct terakan_gfx_command_writer * const command
       BITSET_ONES(state->viewports[viewport_index].state_modified);
    }
 
+   state->cb_color.modified = state->cb_color.ever_written;
+
    unsigned state_index;
    BITSET_FOREACH_SET (state_index, state->state_ever_written, TERAKAN_HW_STATE_DRAW_COUNT) {
       terakan_hw_state_draw_emit_functions[state_index](
@@ -1769,6 +1714,13 @@ terakan_hw_state_draw_reset(struct terakan_hw_state_draw * const state)
    state->viewports_modified = 0;
    /* For simplicity, consider the viewport state always valid (starting from 0 viewports). */
    BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_VIEWPORT);
+
+   state->cb_color.ever_written = 0;
+   state->cb_color.modified = 0;
+   /* For simplicity, consider the color targets always valid (starting from no color targets ever
+    * bound).
+    */
+   BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_CB_COLOR);
 
    memset(&state->sq_constants_needed, 0, sizeof(state->sq_constants_needed));
 
