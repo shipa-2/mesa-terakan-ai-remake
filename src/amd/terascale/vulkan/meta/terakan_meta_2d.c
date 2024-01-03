@@ -285,7 +285,6 @@ terakan_meta_begin_2d(struct terakan_gfx_command_writer * const command_writer)
       command_writer, TERAKAN_STATE_DRAW_PA_SC_MODE_CNTL_0, TERAKAN_HW_STATE_DRAW_PA_SC_MODE_CNTL_0,
       &command_writer->hw_state_draw.pa_sc_mode_cntl_0, S_028A48_MSAA_ENABLE(num_samples_log2 > 0));
 
-   terakan_state_draw_set_pending(&command_writer->state_draw, TERAKAN_STATE_DRAW_PA_SC_AA_MASK);
    bool const pa_sc_aa_samples_modified =
       command_writer->hw_state_draw.pa_sc_aa_samples.num_samples_log2 != num_samples_log2;
    command_writer->hw_state_draw.pa_sc_aa_samples.num_samples_log2 = num_samples_log2;
