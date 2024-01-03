@@ -53,6 +53,7 @@ VkResult
 terakan_shader_impl_init_from_nir(terakan_shader_impl * const shader, terakan_device * const device,
                                   r600_shader_key const * const key, nir_shader * const nir,
                                   struct terakan_pipeline_layout const * const pipeline_layout,
+                                  uint8_t const fragment_data_uncompacted_locations,
                                   VkAllocationCallbacks const * const allocator)
 {
    VkResult result;
@@ -305,6 +306,8 @@ terakan_shader_impl_init_from_nir(terakan_shader_impl * const shader, terakan_de
          }
       }
    }
+
+   shader->fragment_data_uncompacted_locations = fragment_data_uncompacted_locations;
 
    /* Write the program to the BO. */
    size_t const program_size_bytes = sizeof(uint32_t) * shader->shader.bc.ndw;

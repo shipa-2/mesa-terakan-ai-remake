@@ -394,7 +394,7 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
    terakan_meta_set_vs(command_writer, TERAKAN_META_SHADER_POSITION_FROM_INDEX_VS);
    terakan_meta_set_ps(command_writer, TERAKAN_META_SHADER_COPY_BUFFER_TO_IMAGE_PS);
 
-   terakan_state_draw_set_cb_color_pending(&command_writer->state_draw, 0b1);
+   terakan_meta_begin_cb(command_writer, 0b1111, V_028808_CB_NORMAL);
 
    struct terakan_meta_copy_buffer_to_image_push_constants push_constants = {};
    struct terakan_bo const * push_constants_bo = NULL;

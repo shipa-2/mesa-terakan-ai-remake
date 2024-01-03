@@ -917,6 +917,10 @@ terakan_GetPhysicalDeviceFormatProperties2(VkPhysicalDevice const physicalDevice
       buffer_features = 0;
    }
 
+   /* TODO(Triang3l): On R9xx, disable color attachment and storage features for formats requiring
+    * endian swap according to "Prohibited combinations" in the Programming Guide.
+    */
+
    VkFormatFeatureFlags2 const image_linear_features = is_tiled_only ? 0 : image_features;
    /* If the format supports only linear images, linear tiling is considered optimal. */
    VkFormatFeatureFlags2 const image_optimal_features =

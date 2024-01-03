@@ -30,6 +30,7 @@
 
 #include "compiler/glsl_types.h"
 #include "spirv/nir_spirv.h"
+#include "util/bitscan.h"
 #include "util/macros.h"
 #include "vk_nir.h"
 
@@ -55,7 +56,8 @@ nir_shader *
 terakan_shader_spirv_to_nir(struct terakan_device * const device, size_t const spirv_size_bytes,
                             uint32_t const * const spirv, gl_shader_stage const stage,
                             char const * const entrypoint,
-                            VkSpecializationInfo const * const specialization_info)
+                            VkSpecializationInfo const * const specialization_info,
+                            uint8_t * const fragment_data_uncompacted_locations_out)
 {
    struct terakan_physical_device const * const physical_device =
       container_of(device->vk.physical, struct terakan_physical_device const, vk);
@@ -219,6 +221,35 @@ terakan_shader_spirv_to_nir(struct terakan_device * const device, size_t const s
    }
 
    /* st_finalize_nir. */
+
+   uint8_t fragment_data_uncompacted_locations = 0b0;
+   if (nir->info.stage == MESA_SHADER_FRAGMENT) {
+      NIR_PASS_V(nir, nir_lower_io_arrays_to_elements_no_indirects, true);
+      /* Compact fragment shader output locations so all MRTs precede all RATs as required and so
+       * there are no holes in CB_SHADER_MASK, which, according to RadeonSI (but apparently
+       * applicable to earlier generations), may cause hangs.
+       */
+      nir_foreach_shader_out_variable (var, nir) {
+         if (var->data.location >= FRAG_RESULT_DATA0 && var->data.location <= FRAG_RESULT_DATA7) {
+            fragment_data_uncompacted_locations |=
+               (uint8_t)BITFIELD_BIT(var->data.location - FRAG_RESULT_DATA0);
+         }
+      }
+      if (fragment_data_uncompacted_locations) {
+         nir_foreach_shader_out_variable (var, nir) {
+            if (var->data.location >= FRAG_RESULT_DATA0 &&
+                var->data.location <= FRAG_RESULT_DATA7) {
+               var->data.location =
+                  FRAG_RESULT_DATA0 +
+                  util_bitcount(fragment_data_uncompacted_locations &
+                                BITFIELD_MASK(var->data.location - FRAG_RESULT_DATA0));
+            }
+         }
+      }
+   }
+   if (fragment_data_uncompacted_locations_out != NULL) {
+      *fragment_data_uncompacted_locations_out = fragment_data_uncompacted_locations;
+   }
 
    /* st_nir_assign_varying_locations. */
 

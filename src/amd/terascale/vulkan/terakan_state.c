@@ -33,6 +33,7 @@
 #include "terakan_state_rasterization.h"
 
 #include "gallium/drivers/r600/evergreend.h"
+#include "util/bitscan.h"
 #include "util/macros.h"
 #include "util/u_endian.h"
 #include "util/u_math.h"
@@ -417,36 +418,100 @@ terakan_state_draw_apply_db_render_override(struct terakan_gfx_command_writer * 
 }
 
 static void
-terakan_state_draw_apply_cb_color(struct terakan_gfx_command_writer * const command_writer)
+terakan_state_draw_apply_color_attachment_usage(
+   struct terakan_gfx_command_writer * const command_writer)
 {
-   while (command_writer->state_draw.cb_color.pending) {
-      uint32_t const color_index =
-         (uint32_t)ffs((int)command_writer->state_draw.cb_color.pending) - 1;
-      struct terakan_bo const * const bo = command_writer->state_draw.cb_color.bo[color_index];
-      bool modified = command_writer->hw_state_draw.cb_color.bo[color_index] != bo;
-      command_writer->hw_state_draw.cb_color.bo[color_index] = bo;
-      if (bo != NULL) {
-         if (!modified && memcmp(&command_writer->hw_state_draw.cb_color.color[color_index],
-                                 &command_writer->state_draw.cb_color.color[color_index],
-                                 sizeof(struct terakan_color_descriptor)) != 0) {
-            modified = true;
+   TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_TARGET_MASK, COLOR_ATTACHMENT_USAGE);
+   terakan_state_draw_set_pending(&command_writer->state_draw, TERAKAN_STATE_DRAW_CB_TARGET_MASK);
+   TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_COLOR_MRT, COLOR_ATTACHMENT_USAGE);
+   terakan_state_draw_set_pending(&command_writer->state_draw, TERAKAN_STATE_DRAW_CB_COLOR_MRT);
+}
+
+static void
+terakan_state_draw_apply_cb_target_mask(struct terakan_gfx_command_writer * const command_writer)
+{
+   uint32_t cb_target_mask = 0b0;
+
+   {
+      TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_TARGET_MASK, COLOR_ATTACHMENT_USAGE);
+      unsigned attachments_remaining =
+         command_writer->state_draw.color_attachment_usage.written_by_shader;
+      uint32_t hw_color_index = 0;
+      for (; attachments_remaining; ++hw_color_index) {
+         unsigned const attachment_index = (unsigned)u_bit_scan(&attachments_remaining);
+         if (!(command_writer->state_draw.color_attachment_usage.bound &
+               ((uint8_t)1 << attachment_index))) {
+            continue;
          }
-         memcpy(&command_writer->hw_state_draw.cb_color.color[color_index],
-                &command_writer->state_draw.cb_color.color[color_index],
-                sizeof(struct terakan_color_descriptor));
-         if (color_index < TERAKAN_COLOR_HW_MRT_COUNT) {
-            if (!modified && memcmp(&command_writer->hw_state_draw.cb_color.meta[color_index],
-                                    &command_writer->state_draw.cb_color.meta[color_index],
-                                    sizeof(struct terakan_color_meta_descriptor)) != 0) {
-               modified = true;
-            }
-            memcpy(&command_writer->hw_state_draw.cb_color.meta[color_index],
-                   &command_writer->state_draw.cb_color.meta[color_index],
-                   sizeof(struct terakan_color_meta_descriptor));
-         }
+         cb_target_mask |= 0b1111 << (4 * attachment_index);
+         /* TODO(Triang3l): Blending state mask. */
+         /* TODO(Triang3l): Force-enable channels that don't exist in the format (add a new field
+          * with present channels under the CB_TARGET_MASK state configured in vkCmdBeginRendering),
+          * and force-disable targets that have only missing channels enabled in the blending state.
+          */
       }
-      terakan_hw_state_draw_cb_color_written(&command_writer->hw_state_draw, color_index, modified);
-      command_writer->state_draw.cb_color.pending &= ~((uint16_t)1 << color_index);
+   }
+
+   /* TODO(Triang3l): RATs. */
+
+   bool const modified = command_writer->hw_state_draw.cb_target_mask != cb_target_mask;
+   command_writer->hw_state_draw.cb_target_mask = cb_target_mask;
+   terakan_hw_state_draw_written(&command_writer->hw_state_draw,
+                                 TERAKAN_HW_STATE_DRAW_CB_TARGET_MASK, modified);
+
+   bool const any_target_enabled = cb_target_mask != 0;
+   if (command_writer->state_draw.cb_target_mask.apply_result.any_target_enabled !=
+       any_target_enabled) {
+      command_writer->state_draw.cb_target_mask.apply_result.any_target_enabled =
+         any_target_enabled;
+      TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_COLOR_CONTROL, CB_TARGET_MASK);
+      terakan_state_draw_set_pending(&command_writer->state_draw,
+                                     TERAKAN_STATE_DRAW_CB_COLOR_CONTROL);
+   }
+}
+
+static void
+terakan_state_draw_apply_cb_color_control(struct terakan_gfx_command_writer * const command_writer)
+{
+   TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_COLOR_CONTROL, CB_TARGET_MASK);
+   uint32_t const cb_color_control =
+      S_028808_MODE(command_writer->state_draw.cb_target_mask.apply_result.any_target_enabled
+                       ? V_028808_CB_NORMAL
+                       : V_028808_CB_DISABLE) |
+      S_028808_ROP3(0xCC);
+   bool const modified = command_writer->hw_state_draw.cb_color_control != cb_color_control;
+   command_writer->hw_state_draw.cb_color_control = cb_color_control;
+   terakan_hw_state_draw_written(&command_writer->hw_state_draw,
+                                 TERAKAN_HW_STATE_DRAW_CB_COLOR_CONTROL, modified);
+}
+
+static void
+terakan_state_draw_apply_cb_color_mrt(struct terakan_gfx_command_writer * const command_writer)
+{
+   TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_COLOR_MRT, COLOR_ATTACHMENT_USAGE);
+   unsigned attachments_remaining =
+      command_writer->state_draw.color_attachment_usage.bound &
+      command_writer->state_draw.color_attachment_usage.written_by_shader;
+   while (attachments_remaining) {
+      unsigned const attachment_index = (unsigned)u_bit_scan(&attachments_remaining);
+      struct terakan_state_draw_cb_color const * const attachment =
+         &command_writer->state_draw.attachment_cb_color[attachment_index];
+      unsigned const hw_color_index =
+         util_bitcount(command_writer->state_draw.color_attachment_usage.written_by_shader &
+                       ((1u << attachment_index) - 1));
+      bool const modified =
+         command_writer->hw_state_draw.cb_color.bo[hw_color_index] != attachment->bo ||
+         memcmp(&command_writer->hw_state_draw.cb_color.color[hw_color_index], &attachment->color,
+                sizeof(struct terakan_color_descriptor)) != 0 ||
+         memcmp(&command_writer->hw_state_draw.cb_color.meta[hw_color_index], &attachment->meta,
+                sizeof(struct terakan_color_meta_descriptor)) != 0;
+      command_writer->hw_state_draw.cb_color.bo[hw_color_index] = attachment->bo;
+      memcpy(&command_writer->hw_state_draw.cb_color.color[hw_color_index], &attachment->color,
+             sizeof(struct terakan_color_descriptor));
+      memcpy(&command_writer->hw_state_draw.cb_color.meta[hw_color_index], &attachment->meta,
+             sizeof(struct terakan_color_meta_descriptor));
+      terakan_hw_state_draw_cb_color_written(&command_writer->hw_state_draw, hw_color_index,
+                                             modified);
    }
 }
 
@@ -470,7 +535,10 @@ static terakan_state_draw_apply_function const
       [TERAKAN_STATE_DRAW_PA_SC_MODE_CNTL_0] = terakan_state_draw_apply_pa_sc_mode_cntl_0,
       [TERAKAN_STATE_DRAW_PA_SC_AA_MASK] = terakan_state_draw_apply_pa_sc_aa_mask,
       [TERAKAN_STATE_DRAW_DB_RENDER_OVERRIDE] = terakan_state_draw_apply_db_render_override,
-      [TERAKAN_STATE_DRAW_CB_COLOR] = terakan_state_draw_apply_cb_color,
+      [TERAKAN_STATE_DRAW_COLOR_ATTACHMENT_USAGE] = terakan_state_draw_apply_color_attachment_usage,
+      [TERAKAN_STATE_DRAW_CB_TARGET_MASK] = terakan_state_draw_apply_cb_target_mask,
+      [TERAKAN_STATE_DRAW_CB_COLOR_CONTROL] = terakan_state_draw_apply_cb_color_control,
+      [TERAKAN_STATE_DRAW_CB_COLOR_MRT] = terakan_state_draw_apply_cb_color_mrt,
 };
 
 void
@@ -595,10 +663,10 @@ terakan_state_draw_reset(struct terakan_state_draw * const state,
    /* pSampleMask = NULL */
    state->pa_sc_aa_mask = UINT16_MAX;
 
-   /* No need to make color targets pending until they're enabled in CB_TARGET_MASK. */
-   /* TODO(Triang3l): Handle CB_TARGET_MASK properly, for now it's forced to only MRT 0 enabled. */
-   state->cb_color.pending = 0b1;
-   memset(state->cb_color.bo, 0, sizeof(state->cb_color.bo));
+   state->color_attachment_usage.written_by_shader = 0b0;
+   state->color_attachment_usage.bound = 0b0;
+
+   state->cb_target_mask.apply_result.any_target_enabled = false;
 
    /* Make all state items pending so the defaults are applied before the first draw, even for
     * unsupported features.

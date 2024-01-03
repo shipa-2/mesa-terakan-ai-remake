@@ -105,7 +105,11 @@ enum terakan_hw_state_draw_index {
 
    TERAKAN_HW_STATE_DRAW_DB_RENDER_OVERRIDE,
 
+   TERAKAN_HW_STATE_DRAW_CB_TARGET_MASK,
+
    TERAKAN_HW_STATE_DRAW_CB_BLEND_RGBA,
+
+   TERAKAN_HW_STATE_DRAW_CB_COLOR_CONTROL,
 
    /* State items starting from TERAKAN_HW_STATE_DRAW_SPECIAL_START have their modified flags set
     * via some method different from terakan_hw_state_draw_written.
@@ -232,8 +236,14 @@ struct terakan_hw_state_draw {
    /* TERAKAN_HW_STATE_DRAW_DB_RENDER_OVERRIDE */
    uint32_t db_render_override;
 
+   /* TERAKAN_HW_STATE_DRAW_CB_TARGET_MASK */
+   uint32_t cb_target_mask;
+
    /* TERAKAN_HW_STATE_DRAW_CB_BLEND_RGBA */
    float cb_blend_rgba[4];
+
+   /* TERAKAN_HW_STATE_DRAW_CB_COLOR_CONTROL */
+   uint32_t cb_color_control;
 
    /* TERAKAN_HW_STATE_DRAW_VIEWPORT
     * Don't use terakan_hw_state_draw_written, instead call

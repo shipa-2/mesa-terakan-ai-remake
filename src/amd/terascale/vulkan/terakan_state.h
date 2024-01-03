@@ -77,10 +77,20 @@ enum terakan_state_draw_index {
 
    TERAKAN_STATE_DRAW_DB_RENDER_OVERRIDE,
 
-   TERAKAN_STATE_DRAW_CB_COLOR,
+   TERAKAN_STATE_DRAW_COLOR_ATTACHMENT_USAGE,
+   /* Depends on TERAKAN_STATE_DRAW_COLOR_ATTACHMENT_USAGE. */
+   TERAKAN_STATE_DRAW_CB_TARGET_MASK,
+   /* Depends on TERAKAN_STATE_DRAW_CB_TARGET_MASK. */
+   TERAKAN_STATE_DRAW_CB_COLOR_CONTROL,
+   /* Depends on TERAKAN_STATE_DRAW_COLOR_ATTACHMENT_USAGE. */
+   TERAKAN_STATE_DRAW_CB_COLOR_MRT,
 
    TERAKAN_STATE_DRAW_COUNT,
 };
+
+#define TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(dependent, dependency)                                \
+   static_assert(TERAKAN_STATE_DRAW_##dependent > TERAKAN_STATE_DRAW_##dependency,                 \
+                 #dependent " depends on " #dependency " and thus must have a higher index.")
 
 struct terakan_state_draw_sq_resource_fs {
    VkDeviceSize bo_offset;
@@ -92,6 +102,12 @@ struct terakan_state_draw_sq_resource_fs {
 
 static_assert(MESA_VK_MAX_VIEWPORTS >= TERAKAN_HW_STATE_DRAW_MAX_VIEWPORTS,
               "Expecting that the Mesa Vulkan runtime can expose all hardware viewports.");
+
+struct terakan_state_draw_cb_color {
+   struct terakan_bo const * bo;
+   struct terakan_color_descriptor color;
+   struct terakan_color_meta_descriptor meta;
+};
 
 /* State applied before performing application's draws, and marked for reapplication after internal
  * draws.
@@ -202,14 +218,41 @@ struct terakan_state_draw {
    /* TERAKAN_STATE_DRAW_DB_RENDER_OVERRIDE */
    uint32_t db_render_override;
 
-   /* TERAKAN_STATE_DRAW_CB_COLOR */
+   /* Color target state is indexed by render pass color attachment index (hence the word
+    * "attachment" in the names).
+    * However, color exports in shaders are compacted to make sure all RATs are placed above all
+    * MRTs (the Programming Guide states that it's required, plus that makes it possible to allocate
+    * arrays of RATs without fragmentation), and so CB_SHADER_MASK doesn't have holes (that's needed
+    * to avoid hangs according to RadeonSI, but this appears to apply to earlier hardware too).
+    * Therefore, color target registers are reindexed when they're written to the hardware state,
+    * skipping targets not in `color_attachment_usage.written_by_shader`.
+    */
+
+   /* TERAKAN_STATE_DRAW_COLOR_ATTACHMENT_USAGE */
    struct {
-      uint16_t pending;
-      struct terakan_bo const * bo[TERAKAN_COLOR_HW_MRT_AND_RAT_COUNT];
-      /* The values are undefined if the respective BO is NULL. */
-      struct terakan_color_descriptor color[TERAKAN_COLOR_HW_MRT_AND_RAT_COUNT];
-      struct terakan_color_meta_descriptor meta[TERAKAN_COLOR_HW_MRT_COUNT];
-   } cb_color;
+      /* The mask used for compaction of render pass color attachment indices in this state
+       * structure into hardware state color attachment indices.
+       * Set via terakan_state_draw_set_color_attachments_written_by_shader.
+       */
+      uint8_t written_by_shader;
+      uint8_t bound;
+   } color_attachment_usage;
+
+   /* TERAKAN_STATE_DRAW_CB_TARGET_MASK application feedback for dependent state. */
+   struct {
+      struct {
+         bool any_target_enabled;
+      } apply_result;
+   } cb_target_mask;
+
+   /* TERAKAN_STATE_DRAW_CB_COLOR_MRT
+    * The values are undefined if the color_attachments_bound bit for the color attachment index is
+    * not set.
+    * However, for bound color targets, all fields are expected to have defined values (no special
+    * handling is done for the BO being NULL, for instance). Color attachments with a VK_NULL_HANDLE
+    * view must be excluded from color_attachments_bound, and various invalid bindings also may be.
+    */
+   struct terakan_state_draw_cb_color attachment_cb_color[TERAKAN_COLOR_HW_MRT_COUNT];
 };
 
 static inline void
@@ -243,14 +286,6 @@ terakan_state_draw_replace_fields(struct terakan_state_draw * const state,
 
 void terakan_state_draw_set_viewport_count(struct terakan_state_draw * state,
                                            uint32_t viewport_count);
-
-static inline void
-terakan_state_draw_set_cb_color_pending(struct terakan_state_draw * const state,
-                                        uint16_t const color_target_bits)
-{
-   state->cb_color.pending |= color_target_bits;
-   terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_CB_COLOR);
-}
 
 struct terakan_gfx_command_writer;
 

@@ -29,7 +29,9 @@
 #include "gallium/drivers/r600/eg_sq.h"
 #include "gallium/drivers/r600/evergreend.h"
 #include "gallium/drivers/r600/r600_opcodes.h"
+#include "util/macros.h"
 
+#include <assert.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -234,14 +236,10 @@ terakan_CmdClearAttachments(VkCommandBuffer const commandBuffer, uint32_t const 
          continue;
       }
 
-      struct terakan_bo const * const cb_color_bo =
-         command_writer->state_draw.cb_color.bo[attachment->colorAttachment];
-      if (cb_color_bo == NULL) {
-         continue;
-      }
-      struct terakan_color_descriptor cb_color =
-         command_writer->state_draw.cb_color.color[attachment->colorAttachment];
-      if (G_028C70_FORMAT(cb_color.info) == V_028C70_COLOR_INVALID) {
+      assert(command_writer->state_draw.color_attachment_usage.bound &
+             ((uint8_t)1 << attachment->colorAttachment));
+      if (unlikely(!(command_writer->state_draw.color_attachment_usage.bound &
+                     ((uint8_t)1 << attachment->colorAttachment)))) {
          continue;
       }
 
@@ -267,23 +265,25 @@ terakan_CmdClearAttachments(VkCommandBuffer const commandBuffer, uint32_t const 
             push_constants_bo, push_constants_base);
       }
 
-      terakan_state_draw_set_cb_color_pending(&command_writer->state_draw, 0b1);
+      terakan_meta_begin_cb(command_writer, 0b1111, V_028808_CB_NORMAL);
 
+      struct terakan_state_draw_cb_color const * const attachment_cb_color =
+         &command_writer->state_draw.attachment_cb_color[attachment->colorAttachment];
+      struct terakan_color_descriptor cb_color = attachment_cb_color->color;
       uint32_t const attachment_base_layer = G_028C6C_SLICE_START(cb_color.view);
       cb_color.view = (cb_color.view & C_028C6C_SLICE_START) |
                       S_028C6C_SLICE_START(attachment_base_layer + pRects[0].baseArrayLayer);
-      struct terakan_color_meta_descriptor const * const cb_color_meta =
-         &command_writer->state_draw.cb_color.meta[attachment->colorAttachment];
-      bool const cb_color_modified = command_writer->hw_state_draw.cb_color.bo[0] != cb_color_bo ||
-                                     memcmp(&command_writer->hw_state_draw.cb_color.color[0],
-                                            &cb_color, sizeof(cb_color)) != 0 ||
-                                     memcmp(&command_writer->hw_state_draw.cb_color.meta[0],
-                                            cb_color_meta, sizeof(*cb_color_meta)) != 0;
+      bool const cb_color_modified =
+         command_writer->hw_state_draw.cb_color.bo[0] != attachment_cb_color->bo ||
+         memcmp(&command_writer->hw_state_draw.cb_color.color[0], &cb_color, sizeof(cb_color)) !=
+            0 ||
+         memcmp(&command_writer->hw_state_draw.cb_color.meta[0], &attachment_cb_color->meta,
+                sizeof(attachment_cb_color->meta)) != 0;
       if (cb_color_modified) {
-         command_writer->hw_state_draw.cb_color.bo[0] = cb_color_bo;
+         command_writer->hw_state_draw.cb_color.bo[0] = attachment_cb_color->bo;
          memcpy(&command_writer->hw_state_draw.cb_color.color[0], &cb_color, sizeof(cb_color));
-         memcpy(&command_writer->hw_state_draw.cb_color.meta[0], cb_color_meta,
-                sizeof(*cb_color_meta));
+         memcpy(&command_writer->hw_state_draw.cb_color.meta[0], &attachment_cb_color->meta,
+                sizeof(attachment_cb_color->meta));
       }
       terakan_hw_state_draw_cb_color_written(&command_writer->hw_state_draw, 0, cb_color_modified);
 

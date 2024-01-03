@@ -99,6 +99,9 @@ void terakan_meta_set_vs(struct terakan_gfx_command_writer * command_writer,
 void terakan_meta_set_ps(struct terakan_gfx_command_writer * command_writer,
                          enum terakan_meta_shader_index shader_index);
 
+void terakan_meta_begin_cb(struct terakan_gfx_command_writer * command_writer,
+                           uint32_t cb_target_mask, uint32_t cb_color_control_mode);
+
 void terakan_meta_begin_2d(struct terakan_gfx_command_writer * command_writer);
 
 void terakan_meta_begin_rects(struct terakan_gfx_command_writer * command_writer);

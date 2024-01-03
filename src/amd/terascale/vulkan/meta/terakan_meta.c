@@ -104,3 +104,21 @@ terakan_meta_set_ps(struct terakan_gfx_command_writer * const command_writer,
    terakan_hw_state_draw_set_sq_constants_needed_by_fs(
       &command_writer->hw_state_draw, shader->kcache_needed, shader->resources_needed);
 }
+
+void
+terakan_meta_begin_cb(struct terakan_gfx_command_writer * const command_writer,
+                      uint32_t const cb_target_mask, uint32_t const cb_color_control_mode)
+{
+   terakan_meta_modify_state_draw_dword(
+      command_writer, TERAKAN_STATE_DRAW_CB_TARGET_MASK, TERAKAN_HW_STATE_DRAW_CB_TARGET_MASK,
+      &command_writer->hw_state_draw.cb_target_mask, cb_target_mask);
+   if (cb_target_mask) {
+      /* Going to bind color targets for this meta draw. */
+      terakan_state_draw_set_pending(&command_writer->state_draw, TERAKAN_STATE_DRAW_CB_COLOR_MRT);
+   }
+   terakan_meta_modify_state_draw_dword(
+      command_writer, TERAKAN_STATE_DRAW_CB_COLOR_CONTROL, TERAKAN_HW_STATE_DRAW_CB_COLOR_CONTROL,
+      &command_writer->hw_state_draw.cb_color_control,
+      S_028808_MODE(cb_target_mask ? cb_color_control_mode : V_028808_CB_DISABLE) |
+         S_028808_ROP3(0xCC));
+}

@@ -81,6 +81,8 @@ struct terakan_shader_impl {
 
    BITSET_DECLARE(resources_needed, TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE);
 
+   uint8_t fragment_data_uncompacted_locations;
+
    struct r600_shader shader;
 };
 
@@ -89,7 +91,8 @@ struct terakan_device;
 nir_shader * terakan_shader_spirv_to_nir(struct terakan_device * device, size_t spirv_size_bytes,
                                          uint32_t const * spirv, gl_shader_stage stage,
                                          char const * entrypoint,
-                                         VkSpecializationInfo const * specialization_info);
+                                         VkSpecializationInfo const * specialization_info,
+                                         uint8_t * fragment_data_uncompacted_locations_out);
 
 void terakan_shader_impl_finish(struct terakan_shader_impl * shader,
                                 VkAllocationCallbacks const * allocator);
@@ -99,6 +102,7 @@ VkResult terakan_shader_impl_init_from_nir(struct terakan_shader_impl * shader,
                                            struct terakan_device * device,
                                            union r600_shader_key const * key, nir_shader * nir,
                                            struct terakan_pipeline_layout const * pipeline_layout,
+                                           uint8_t fragment_data_uncompacted_locations,
                                            VkAllocationCallbacks const * allocator);
 
 #ifdef __cplusplus

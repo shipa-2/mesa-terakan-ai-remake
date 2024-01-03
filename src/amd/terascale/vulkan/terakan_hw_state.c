@@ -455,6 +455,18 @@ terakan_hw_state_draw_emit_db_render_override(
 }
 
 static void
+terakan_hw_state_draw_emit_cb_target_mask(struct terakan_gfx_command_writer * const command_writer)
+{
+   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, 0, 0, true);
+   if (unlikely(packet == NULL)) {
+      return;
+   }
+   *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
+   *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028238_CB_TARGET_MASK);
+   *packet++ = command_writer->hw_state_draw.cb_target_mask;
+}
+
+static void
 terakan_hw_state_draw_emit_cb_blend_rgba(struct terakan_gfx_command_writer * const command_writer)
 {
    uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 4, 0, 0, true);
@@ -464,6 +476,18 @@ terakan_hw_state_draw_emit_cb_blend_rgba(struct terakan_gfx_command_writer * con
    *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 4, 0);
    *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028414_CB_BLEND_RED);
    memcpy(packet, command_writer->hw_state_draw.cb_blend_rgba, sizeof(float) * 4);
+}
+
+static void
+terakan_hw_state_draw_emit_cb_color_control(struct terakan_gfx_command_writer * const command_writer)
+{
+   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, 0, 0, true);
+   if (unlikely(packet == NULL)) {
+      return;
+   }
+   *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
+   *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028808_CB_COLOR_CONTROL);
+   *packet++ = command_writer->hw_state_draw.cb_color_control;
 }
 
 static void
@@ -1184,7 +1208,9 @@ static terakan_hw_state_draw_emit_function const
       [TERAKAN_HW_STATE_DRAW_PA_SC_AA_SAMPLES] = terakan_hw_state_draw_emit_pa_sc_aa_samples,
       [TERAKAN_HW_STATE_DRAW_PA_SC_AA_MASK] = terakan_hw_state_draw_emit_pa_sc_aa_mask,
       [TERAKAN_HW_STATE_DRAW_DB_RENDER_OVERRIDE] = terakan_hw_state_draw_emit_db_render_override,
+      [TERAKAN_HW_STATE_DRAW_CB_TARGET_MASK] = terakan_hw_state_draw_emit_cb_target_mask,
       [TERAKAN_HW_STATE_DRAW_CB_BLEND_RGBA] = terakan_hw_state_draw_emit_cb_blend_rgba,
+      [TERAKAN_HW_STATE_DRAW_CB_COLOR_CONTROL] = terakan_hw_state_draw_emit_cb_color_control,
       [TERAKAN_HW_STATE_DRAW_VIEWPORT] = terakan_hw_state_draw_emit_viewport,
       [TERAKAN_HW_STATE_DRAW_CB_COLOR] = terakan_hw_state_draw_emit_cb_color,
       [TERAKAN_HW_STATE_DRAW_SQ_KCACHE_VS] = terakan_hw_state_draw_emit_sq_kcache_vs,

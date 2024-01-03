@@ -346,6 +346,7 @@ terakan_pipeline_graphics_bind(struct terakan_gfx_command_writer * const command
 
    /* Fragment shader. */
 
+   uint8_t color_attachments_written_by_shader;
    if (pipeline->shader_stages & VK_SHADER_STAGE_FRAGMENT_BIT) {
       struct terakan_shader_impl const * const fs = &pipeline->shaders[MESA_SHADER_FRAGMENT];
       bool const sq_pgm_ps_modified = command_writer->hw_state_draw.sq_pgm_ps != &fs->static_state;
@@ -354,8 +355,17 @@ terakan_pipeline_graphics_bind(struct terakan_gfx_command_writer * const command
                                     sq_pgm_ps_modified);
       terakan_hw_state_draw_set_sq_constants_needed_by_fs(&command_writer->hw_state_draw, 0,
                                                           fs->resources_needed);
+      color_attachments_written_by_shader = fs->fragment_data_uncompacted_locations;
    } else {
       terakan_hw_state_draw_set_sq_constants_needed_by_fs(&command_writer->hw_state_draw, 0, NULL);
+      color_attachments_written_by_shader = 0;
+   }
+   if (command_writer->state_draw.color_attachment_usage.written_by_shader !=
+       color_attachments_written_by_shader) {
+      command_writer->state_draw.color_attachment_usage.written_by_shader =
+         color_attachments_written_by_shader;
+      terakan_state_draw_set_pending(&command_writer->state_draw,
+                                     TERAKAN_STATE_DRAW_COLOR_ATTACHMENT_USAGE);
    }
 }
 
@@ -719,26 +729,27 @@ terakan_pipeline_graphics_create(struct terakan_device * const device,
       assert(spirv != NULL);
 
       gl_shader_stage const stage_index = vk_to_mesa_shader_stage(stage_info->stage);
-      nir_shader * nir =
-         terakan_shader_spirv_to_nir(device, spirv_size_bytes, spirv, stage_index,
-                                     stage_info->pName, stage_info->pSpecializationInfo);
+      uint8_t fragment_data_uncompacted_locations = 0b0;
+      nir_shader * nir = terakan_shader_spirv_to_nir(
+         device, spirv_size_bytes, spirv, stage_index, stage_info->pName,
+         stage_info->pSpecializationInfo, &fragment_data_uncompacted_locations);
       if (nir == NULL) {
          result = vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
          goto fail_shaders;
       }
 
-      /* TODO(Triang3l): Construct the shader info from the NIR and, when available, the pipeline
+      /* TODO(Triang3l): Construct the shader key from the NIR and, when available, the pipeline
        * state.
        */
       union r600_shader_key shader_key = {};
-      /* TODO(Triang3l): Remove this color buffer count test. */
       if (stage_index == MESA_SHADER_FRAGMENT) {
-         shader_key.ps.nr_cbufs = 1;
+         shader_key.ps.nr_cbufs = util_bitcount(fragment_data_uncompacted_locations);
       }
 
       result = terakan_shader_impl_init_from_nir(
          &pipeline->shaders[stage_index], device, &shader_key, nir,
-         terakan_pipeline_layout_from_handle(create_info->layout), allocator);
+         terakan_pipeline_layout_from_handle(create_info->layout),
+         fragment_data_uncompacted_locations, allocator);
       ralloc_free(nir);
       if (result != VK_SUCCESS) {
          goto fail_shaders;
