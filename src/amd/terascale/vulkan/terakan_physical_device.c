@@ -1,5 +1,5 @@
 /*
- * Copyright © 2023 Vitaliy Triang3l Kuzmin
+ * Copyright © 2024 Vitaliy Triang3l Kuzmin
  *
  * Based in part on radv_physical_device.c which is:
  * Copyright © 2016 Red Hat.

@@ -1,5 +1,5 @@
 /*
- * Copyright © 2023 Vitaliy Triang3l Kuzmin
+ * Copyright © 2024 Vitaliy Triang3l Kuzmin
  *
  * Based in part on r600_state_common.c and r600_texture.c which are:
  * Copyright 2010 Red Hat Inc.
