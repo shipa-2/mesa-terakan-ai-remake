@@ -64,11 +64,10 @@ terakan_state_translate_window_rect_unpacked(VkRect2D const * const rect, uint16
 }
 
 typedef void (*terakan_state_draw_apply_function)(
-   struct terakan_gfx_command_writer * command_writer, enum terakan_state_draw_index state_index);
+   struct terakan_gfx_command_writer * command_writer);
 
 static void
-terakan_state_draw_apply_vgt_index_type(struct terakan_gfx_command_writer * const command_writer,
-                                        UNUSED enum terakan_state_draw_index const state_index)
+terakan_state_draw_apply_vgt_index_type(struct terakan_gfx_command_writer * const command_writer)
 {
    bool const modified =
       command_writer->hw_state_draw.vgt_index_type != command_writer->state_draw.vgt_index_type;
@@ -78,8 +77,7 @@ terakan_state_draw_apply_vgt_index_type(struct terakan_gfx_command_writer * cons
 }
 
 static void
-terakan_state_draw_apply_vgt_primitive_type(struct terakan_gfx_command_writer * const command_writer,
-                                            UNUSED enum terakan_state_draw_index const state_index)
+terakan_state_draw_apply_vgt_primitive_type(struct terakan_gfx_command_writer * const command_writer)
 {
    bool const modified = command_writer->hw_state_draw.vgt_primitive_type !=
                          command_writer->state_draw.vgt_primitive_type;
@@ -89,8 +87,7 @@ terakan_state_draw_apply_vgt_primitive_type(struct terakan_gfx_command_writer * 
 }
 
 static void
-terakan_state_draw_apply_vgt_index_offset(struct terakan_gfx_command_writer * const command_writer,
-                                          UNUSED enum terakan_state_draw_index const state_index)
+terakan_state_draw_apply_vgt_index_offset(struct terakan_gfx_command_writer * const command_writer)
 {
    bool const modified =
       command_writer->hw_state_draw.vgt_index_offset != command_writer->state_draw.vgt_index_offset;
@@ -100,8 +97,7 @@ terakan_state_draw_apply_vgt_index_offset(struct terakan_gfx_command_writer * co
 }
 
 static void
-terakan_state_draw_apply_sq_pgm_fs(struct terakan_gfx_command_writer * const command_writer,
-                                   UNUSED enum terakan_state_draw_index const state_index)
+terakan_state_draw_apply_sq_pgm_fs(struct terakan_gfx_command_writer * const command_writer)
 {
    struct terakan_state_draw const * const state = &command_writer->state_draw;
 
@@ -183,8 +179,7 @@ terakan_state_draw_apply_sq_pgm_fs(struct terakan_gfx_command_writer * const com
 }
 
 static void
-terakan_state_draw_apply_sq_resources_fs(struct terakan_gfx_command_writer * const command_writer,
-                                         UNUSED enum terakan_state_draw_index const state_index)
+terakan_state_draw_apply_sq_resources_fs(struct terakan_gfx_command_writer * const command_writer)
 {
    bool const is_r9xx = container_of(command_writer->base.command_buffer->vk.base.device->physical,
                                      struct terakan_physical_device const, vk)
@@ -218,8 +213,7 @@ terakan_state_draw_apply_sq_resources_fs(struct terakan_gfx_command_writer * con
 
 static void
 terakan_state_draw_apply_pa_cl_vport_xy_scale_offset(
-   struct terakan_gfx_command_writer * const command_writer,
-   UNUSED enum terakan_state_draw_index const state_index)
+   struct terakan_gfx_command_writer * const command_writer)
 {
    terakan_hw_state_draw_ensure_viewport_count(&command_writer->hw_state_draw,
                                                command_writer->state_draw.viewport_count);
@@ -244,8 +238,7 @@ terakan_state_draw_apply_pa_cl_vport_xy_scale_offset(
 
 static void
 terakan_state_draw_apply_pa_cl_vport_z_scale_offset(
-   struct terakan_gfx_command_writer * const command_writer,
-   UNUSED enum terakan_state_draw_index const state_index)
+   struct terakan_gfx_command_writer * const command_writer)
 {
    terakan_hw_state_draw_ensure_viewport_count(&command_writer->hw_state_draw,
                                                command_writer->state_draw.viewport_count);
@@ -269,8 +262,7 @@ terakan_state_draw_apply_pa_cl_vport_z_scale_offset(
 }
 
 static void
-terakan_state_draw_apply_pa_cl_gb(struct terakan_gfx_command_writer * const command_writer,
-                                  UNUSED enum terakan_state_draw_index const state_index)
+terakan_state_draw_apply_pa_cl_gb(struct terakan_gfx_command_writer * const command_writer)
 {
    float pa_cl_gb_vert_horz_clip_disc_adj[][2] = {{FLT_MAX, 1.0f}, {FLT_MAX, 1.0f}};
    for (uint32_t viewport_index = 0; viewport_index < command_writer->state_draw.viewport_count;
@@ -293,8 +285,7 @@ terakan_state_draw_apply_pa_cl_gb(struct terakan_gfx_command_writer * const comm
 
 static void
 terakan_state_draw_apply_pa_sc_vport_scissor(
-   struct terakan_gfx_command_writer * const command_writer,
-   UNUSED enum terakan_state_draw_index const state_index)
+   struct terakan_gfx_command_writer * const command_writer)
 {
    terakan_hw_state_draw_ensure_viewport_count(&command_writer->hw_state_draw,
                                                command_writer->state_draw.viewport_count);
@@ -328,8 +319,7 @@ terakan_state_draw_apply_pa_sc_vport_scissor(
 
 static void
 terakan_state_draw_apply_pa_sc_vport_z_min_max(
-   struct terakan_gfx_command_writer * const command_writer,
-   UNUSED enum terakan_state_draw_index const state_index)
+   struct terakan_gfx_command_writer * const command_writer)
 {
    terakan_hw_state_draw_ensure_viewport_count(&command_writer->hw_state_draw,
                                                command_writer->state_draw.viewport_count);
@@ -364,8 +354,7 @@ terakan_state_draw_apply_pa_sc_vport_z_min_max(
 }
 
 static void
-terakan_state_draw_apply_pa_cl_clip_cntl(struct terakan_gfx_command_writer * const command_writer,
-                                         UNUSED enum terakan_state_draw_index const state_index)
+terakan_state_draw_apply_pa_cl_clip_cntl(struct terakan_gfx_command_writer * const command_writer)
 {
    bool const modified =
       command_writer->hw_state_draw.pa_cl_clip_cntl != command_writer->state_draw.pa_cl_clip_cntl;
@@ -375,8 +364,7 @@ terakan_state_draw_apply_pa_cl_clip_cntl(struct terakan_gfx_command_writer * con
 }
 
 static void
-terakan_state_draw_apply_pa_su_sc_mode_cntl(struct terakan_gfx_command_writer * const command_writer,
-                                            UNUSED enum terakan_state_draw_index const state_index)
+terakan_state_draw_apply_pa_su_sc_mode_cntl(struct terakan_gfx_command_writer * const command_writer)
 {
    bool const modified = command_writer->hw_state_draw.pa_su_sc_mode_cntl !=
                          command_writer->state_draw.pa_su_sc_mode_cntl;
@@ -386,8 +374,7 @@ terakan_state_draw_apply_pa_su_sc_mode_cntl(struct terakan_gfx_command_writer * 
 }
 
 static void
-terakan_state_draw_apply_pa_cl_vte_cntl(struct terakan_gfx_command_writer * const command_writer,
-                                        UNUSED enum terakan_state_draw_index const state_index)
+terakan_state_draw_apply_pa_cl_vte_cntl(struct terakan_gfx_command_writer * const command_writer)
 {
    uint32_t const pa_cl_vte_cntl = S_028818_VPORT_X_SCALE_ENA(1) | S_028818_VPORT_X_OFFSET_ENA(1) |
                                    S_028818_VPORT_Y_SCALE_ENA(1) | S_028818_VPORT_Y_OFFSET_ENA(1) |
@@ -400,8 +387,7 @@ terakan_state_draw_apply_pa_cl_vte_cntl(struct terakan_gfx_command_writer * cons
 }
 
 static void
-terakan_state_draw_apply_pa_sc_mode_cntl_0(struct terakan_gfx_command_writer * const command_writer,
-                                           UNUSED enum terakan_state_draw_index const state_index)
+terakan_state_draw_apply_pa_sc_mode_cntl_0(struct terakan_gfx_command_writer * const command_writer)
 {
    /* TODO(Triang3l): MSAA_ENABLE, LINE_STIPPLE_ENABLE from a variable. */
    uint32_t const pa_sc_mode_cntl_0 = S_028A48_VPORT_SCISSOR_ENABLE(1);
@@ -412,8 +398,7 @@ terakan_state_draw_apply_pa_sc_mode_cntl_0(struct terakan_gfx_command_writer * c
 }
 
 static void
-terakan_state_draw_apply_pa_sc_aa_mask(struct terakan_gfx_command_writer * const command_writer,
-                                       UNUSED enum terakan_state_draw_index const state_index)
+terakan_state_draw_apply_pa_sc_aa_mask(struct terakan_gfx_command_writer * const command_writer)
 {
    bool const modified =
       command_writer->hw_state_draw.pa_sc_aa_mask != command_writer->state_draw.pa_sc_aa_mask;
@@ -423,8 +408,7 @@ terakan_state_draw_apply_pa_sc_aa_mask(struct terakan_gfx_command_writer * const
 }
 
 static void
-terakan_state_draw_apply_db_render_override(struct terakan_gfx_command_writer * const command_writer,
-                                            UNUSED enum terakan_state_draw_index const state_index)
+terakan_state_draw_apply_db_render_override(struct terakan_gfx_command_writer * const command_writer)
 {
    bool const modified = command_writer->hw_state_draw.db_render_override !=
                          command_writer->state_draw.db_render_override;
@@ -434,8 +418,7 @@ terakan_state_draw_apply_db_render_override(struct terakan_gfx_command_writer * 
 }
 
 static void
-terakan_state_draw_apply_cb_color(struct terakan_gfx_command_writer * const command_writer,
-                                  UNUSED enum terakan_state_draw_index const state_index)
+terakan_state_draw_apply_cb_color(struct terakan_gfx_command_writer * const command_writer)
 {
    while (command_writer->state_draw.cb_color.pending) {
       uint32_t const color_index =
@@ -514,8 +497,7 @@ terakan_state_draw_apply_pending(struct terakan_gfx_command_writer * const comma
          /* Ignore the bits beyond the end of the bitset. */
          break;
       }
-      terakan_state_draw_apply_functions[state_index](command_writer,
-                                                      (enum terakan_state_draw_index)state_index);
+      terakan_state_draw_apply_functions[state_index](command_writer);
       BITSET_CLEAR(state->state_pending, state_index);
       next_state_index = state_index + 1;
    }

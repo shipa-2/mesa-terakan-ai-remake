@@ -70,12 +70,10 @@ uint32_t const terakan_standard_sample_locs[5][16 / 4] = {
 uint32_t const terakan_standard_sample_max_dists[5] = {0, 4, 6, 7, 8};
 
 typedef void (*terakan_hw_state_draw_emit_function)(
-   struct terakan_gfx_command_writer * command_writer,
-   enum terakan_hw_state_draw_index state_index);
+   struct terakan_gfx_command_writer * command_writer);
 
 static void
-terakan_hw_state_draw_emit_vgt_index_type(struct terakan_gfx_command_writer * const command_writer,
-                                          UNUSED enum terakan_hw_state_draw_index const state_index)
+terakan_hw_state_draw_emit_vgt_index_type(struct terakan_gfx_command_writer * const command_writer)
 {
    uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2, 0, 0, true);
    if (unlikely(packet == NULL)) {
@@ -86,9 +84,7 @@ terakan_hw_state_draw_emit_vgt_index_type(struct terakan_gfx_command_writer * co
 }
 
 static void
-terakan_hw_state_draw_emit_vgt_index_buffer(
-   struct terakan_gfx_command_writer * const command_writer,
-   UNUSED enum terakan_hw_state_draw_index const state_index)
+terakan_hw_state_draw_emit_vgt_index_buffer(struct terakan_gfx_command_writer * const command_writer)
 {
    uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 3 + 2, 1, 2, true);
    if (unlikely(packet == NULL)) {
@@ -109,8 +105,7 @@ terakan_hw_state_draw_emit_vgt_index_buffer(
 
 static void
 terakan_hw_state_draw_emit_vgt_primitive_type(
-   struct terakan_gfx_command_writer * const command_writer,
-   UNUSED enum terakan_hw_state_draw_index const state_index)
+   struct terakan_gfx_command_writer * const command_writer)
 {
    uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, 0, 0, true);
    if (unlikely(packet == NULL)) {
@@ -122,9 +117,7 @@ terakan_hw_state_draw_emit_vgt_primitive_type(
 }
 
 static void
-terakan_hw_state_draw_emit_vgt_index_offset(
-   struct terakan_gfx_command_writer * const command_writer,
-   UNUSED enum terakan_hw_state_draw_index const state_index)
+terakan_hw_state_draw_emit_vgt_index_offset(struct terakan_gfx_command_writer * const command_writer)
 {
    uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, 0, 0, true);
    if (unlikely(packet == NULL)) {
@@ -136,8 +129,7 @@ terakan_hw_state_draw_emit_vgt_index_offset(
 }
 
 static void
-terakan_hw_state_draw_emit_sq_pgm_fs(struct terakan_gfx_command_writer * const command_writer,
-                                     UNUSED enum terakan_hw_state_draw_index const state_index)
+terakan_hw_state_draw_emit_sq_pgm_fs(struct terakan_gfx_command_writer * const command_writer)
 {
    uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, 1, 2, true);
    if (unlikely(packet == NULL)) {
@@ -153,8 +145,7 @@ terakan_hw_state_draw_emit_sq_pgm_fs(struct terakan_gfx_command_writer * const c
 }
 
 static void
-terakan_hw_state_draw_emit_sq_pgm_vs(struct terakan_gfx_command_writer * const command_writer,
-                                     UNUSED enum terakan_hw_state_draw_index const state_index)
+terakan_hw_state_draw_emit_sq_pgm_vs(struct terakan_gfx_command_writer * const command_writer)
 {
    struct terakan_shader_static const * const shader = command_writer->hw_state_draw.sq_pgm_vs;
 
@@ -204,8 +195,7 @@ terakan_hw_state_draw_emit_sq_pgm_vs(struct terakan_gfx_command_writer * const c
 }
 
 static void
-terakan_hw_state_draw_emit_sq_pgm_ps(struct terakan_gfx_command_writer * const command_writer,
-                                     UNUSED enum terakan_hw_state_draw_index const state_index)
+terakan_hw_state_draw_emit_sq_pgm_ps(struct terakan_gfx_command_writer * const command_writer)
 {
    struct terakan_shader_static const * const shader = command_writer->hw_state_draw.sq_pgm_ps;
 
@@ -269,8 +259,7 @@ terakan_hw_state_draw_emit_sq_pgm_ps(struct terakan_gfx_command_writer * const c
 
 static void
 terakan_hw_state_draw_emit_sq_vtx_start_inst_loc(
-   struct terakan_gfx_command_writer * const command_writer,
-   UNUSED enum terakan_hw_state_draw_index const state_index)
+   struct terakan_gfx_command_writer * const command_writer)
 {
    uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, 0, 0, true);
    if (unlikely(packet == NULL)) {
@@ -282,8 +271,7 @@ terakan_hw_state_draw_emit_sq_vtx_start_inst_loc(
 }
 
 static void
-terakan_hw_state_draw_emit_pa_cl_clip_cntl(struct terakan_gfx_command_writer * const command_writer,
-                                           UNUSED enum terakan_hw_state_draw_index const state_index)
+terakan_hw_state_draw_emit_pa_cl_clip_cntl(struct terakan_gfx_command_writer * const command_writer)
 {
    uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, 0, 0, true);
    if (unlikely(packet == NULL)) {
@@ -296,8 +284,7 @@ terakan_hw_state_draw_emit_pa_cl_clip_cntl(struct terakan_gfx_command_writer * c
 
 static void
 terakan_hw_state_draw_emit_pa_su_sc_mode_cntl(
-   struct terakan_gfx_command_writer * const command_writer,
-   UNUSED enum terakan_hw_state_draw_index const state_index)
+   struct terakan_gfx_command_writer * const command_writer)
 {
    uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, 0, 0, true);
    if (unlikely(packet == NULL)) {
@@ -309,8 +296,7 @@ terakan_hw_state_draw_emit_pa_su_sc_mode_cntl(
 }
 
 static void
-terakan_hw_state_draw_emit_pa_cl_vte_cntl(struct terakan_gfx_command_writer * const command_writer,
-                                          UNUSED enum terakan_hw_state_draw_index const state_index)
+terakan_hw_state_draw_emit_pa_cl_vte_cntl(struct terakan_gfx_command_writer * const command_writer)
 {
    uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, 0, 0, true);
    if (unlikely(packet == NULL)) {
@@ -323,8 +309,7 @@ terakan_hw_state_draw_emit_pa_cl_vte_cntl(struct terakan_gfx_command_writer * co
 
 static void
 terakan_hw_state_draw_emit_pa_sc_mode_cntl_0(
-   struct terakan_gfx_command_writer * const command_writer,
-   UNUSED enum terakan_hw_state_draw_index const state_index)
+   struct terakan_gfx_command_writer * const command_writer)
 {
    uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, 0, 0, true);
    if (unlikely(packet == NULL)) {
@@ -336,8 +321,7 @@ terakan_hw_state_draw_emit_pa_sc_mode_cntl_0(
 }
 
 static void
-terakan_hw_state_draw_emit_pa_cl_gb(struct terakan_gfx_command_writer * const command_writer,
-                                    UNUSED enum terakan_hw_state_draw_index const state_index)
+terakan_hw_state_draw_emit_pa_cl_gb(struct terakan_gfx_command_writer * const command_writer)
 {
    uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 4, 0, 0, true);
    if (unlikely(packet == NULL)) {
@@ -358,9 +342,7 @@ terakan_hw_state_draw_emit_pa_cl_gb(struct terakan_gfx_command_writer * const co
 }
 
 static void
-terakan_hw_state_draw_emit_pa_sc_aa_samples(
-   struct terakan_gfx_command_writer * const command_writer,
-   UNUSED enum terakan_hw_state_draw_index const state_index)
+terakan_hw_state_draw_emit_pa_sc_aa_samples(struct terakan_gfx_command_writer * const command_writer)
 {
    bool const is_r9xx = container_of(command_writer->base.command_buffer->vk.base.device->physical,
                                      struct terakan_physical_device const, vk)
@@ -430,8 +412,7 @@ terakan_hw_state_draw_emit_pa_sc_aa_samples(
 }
 
 static void
-terakan_hw_state_draw_emit_pa_sc_aa_mask(struct terakan_gfx_command_writer * const command_writer,
-                                         UNUSED enum terakan_hw_state_draw_index const state_index)
+terakan_hw_state_draw_emit_pa_sc_aa_mask(struct terakan_gfx_command_writer * const command_writer)
 {
    uint32_t aa_mask = command_writer->hw_state_draw.pa_sc_aa_mask;
    aa_mask |= aa_mask << 16;
@@ -463,8 +444,7 @@ terakan_hw_state_draw_emit_pa_sc_aa_mask(struct terakan_gfx_command_writer * con
 
 static void
 terakan_hw_state_draw_emit_db_render_override(
-   struct terakan_gfx_command_writer * const command_writer,
-   UNUSED enum terakan_hw_state_draw_index const state_index)
+   struct terakan_gfx_command_writer * const command_writer)
 {
    uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, 0, 0, true);
    if (unlikely(packet == NULL)) {
@@ -476,8 +456,7 @@ terakan_hw_state_draw_emit_db_render_override(
 }
 
 static void
-terakan_hw_state_draw_emit_cb_blend_rgba(struct terakan_gfx_command_writer * const command_writer,
-                                         UNUSED enum terakan_hw_state_draw_index const state_index)
+terakan_hw_state_draw_emit_cb_blend_rgba(struct terakan_gfx_command_writer * const command_writer)
 {
    uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 4, 0, 0, true);
    if (unlikely(packet == NULL)) {
@@ -489,8 +468,7 @@ terakan_hw_state_draw_emit_cb_blend_rgba(struct terakan_gfx_command_writer * con
 }
 
 static void
-terakan_hw_state_draw_emit_viewport(struct terakan_gfx_command_writer * const command_writer,
-                                    UNUSED enum terakan_hw_state_draw_index const state_index)
+terakan_hw_state_draw_emit_viewport(struct terakan_gfx_command_writer * const command_writer)
 {
    struct terakan_hw_state_draw * const state = &command_writer->hw_state_draw;
 
@@ -563,8 +541,7 @@ terakan_hw_state_draw_emit_viewport(struct terakan_gfx_command_writer * const co
 }
 
 static void
-terakan_hw_state_draw_emit_cb_color(struct terakan_gfx_command_writer * const command_writer,
-                                    UNUSED enum terakan_hw_state_draw_index const state_index)
+terakan_hw_state_draw_emit_cb_color(struct terakan_gfx_command_writer * const command_writer)
 {
    struct terakan_hw_state_draw * const state = &command_writer->hw_state_draw;
 
@@ -716,8 +693,7 @@ terakan_hw_state_draw_emit_sq_kcache_for_stage(
 }
 
 static void
-terakan_hw_state_draw_emit_sq_kcache_vs(struct terakan_gfx_command_writer * const command_writer,
-                                        UNUSED enum terakan_hw_state_draw_index const state_index)
+terakan_hw_state_draw_emit_sq_kcache_vs(struct terakan_gfx_command_writer * const command_writer)
 {
    struct terakan_hw_state_draw * const state = &command_writer->hw_state_draw;
 
@@ -793,8 +769,7 @@ terakan_hw_state_draw_emit_sq_kcache_vs(struct terakan_gfx_command_writer * cons
 }
 
 static void
-terakan_hw_state_draw_emit_sq_kcache_tcs(struct terakan_gfx_command_writer * const command_writer,
-                                         UNUSED enum terakan_hw_state_draw_index const state_index)
+terakan_hw_state_draw_emit_sq_kcache_tcs(struct terakan_gfx_command_writer * const command_writer)
 {
    if (!command_writer->hw_state_draw.sq_constants_needed.tcs_tes) {
       return;
@@ -807,8 +782,7 @@ terakan_hw_state_draw_emit_sq_kcache_tcs(struct terakan_gfx_command_writer * con
 }
 
 static void
-terakan_hw_state_draw_emit_sq_kcache_tes(struct terakan_gfx_command_writer * const command_writer,
-                                         UNUSED enum terakan_hw_state_draw_index const state_index)
+terakan_hw_state_draw_emit_sq_kcache_tes(struct terakan_gfx_command_writer * const command_writer)
 {
    struct terakan_hw_state_draw * const state = &command_writer->hw_state_draw;
 
@@ -880,8 +854,7 @@ terakan_hw_state_draw_emit_sq_kcache_tes(struct terakan_gfx_command_writer * con
 }
 
 static void
-terakan_hw_state_draw_emit_sq_kcache_gs(struct terakan_gfx_command_writer * const command_writer,
-                                        UNUSED enum terakan_hw_state_draw_index const state_index)
+terakan_hw_state_draw_emit_sq_kcache_gs(struct terakan_gfx_command_writer * const command_writer)
 {
    if (!terakan_hw_state_draw_sq_constants_needed_by_gs(&command_writer->hw_state_draw)) {
       return;
@@ -894,8 +867,7 @@ terakan_hw_state_draw_emit_sq_kcache_gs(struct terakan_gfx_command_writer * cons
 }
 
 static void
-terakan_hw_state_draw_emit_sq_kcache_fs(struct terakan_gfx_command_writer * const command_writer,
-                                        UNUSED enum terakan_hw_state_draw_index const state_index)
+terakan_hw_state_draw_emit_sq_kcache_fs(struct terakan_gfx_command_writer * const command_writer)
 {
    terakan_hw_state_draw_emit_sq_kcache_for_stage(
       command_writer, TERAKAN_CONTEXT_REG_OFFSET(R_028140_ALU_CONST_BUFFER_SIZE_PS_0),
@@ -992,8 +964,7 @@ terakan_hw_state_draw_emit_sq_resources_for_stage(
 }
 
 static void
-terakan_hw_state_draw_emit_sq_resources_vi(struct terakan_gfx_command_writer * const command_writer,
-                                           UNUSED enum terakan_hw_state_draw_index const state_index)
+terakan_hw_state_draw_emit_sq_resources_vi(struct terakan_gfx_command_writer * const command_writer)
 {
    struct terakan_hw_state_draw * const state = &command_writer->hw_state_draw;
    terakan_hw_state_draw_emit_sq_resources_for_stage(
@@ -1004,8 +975,7 @@ terakan_hw_state_draw_emit_sq_resources_vi(struct terakan_gfx_command_writer * c
 }
 
 static void
-terakan_hw_state_draw_emit_sq_resources_vs(struct terakan_gfx_command_writer * const command_writer,
-                                           UNUSED enum terakan_hw_state_draw_index const state_index)
+terakan_hw_state_draw_emit_sq_resources_vs(struct terakan_gfx_command_writer * const command_writer)
 {
    struct terakan_hw_state_draw * const state = &command_writer->hw_state_draw;
 
@@ -1084,9 +1054,7 @@ terakan_hw_state_draw_emit_sq_resources_vs(struct terakan_gfx_command_writer * c
 }
 
 static void
-terakan_hw_state_draw_emit_sq_resources_tcs(
-   struct terakan_gfx_command_writer * const command_writer,
-   UNUSED enum terakan_hw_state_draw_index const state_index)
+terakan_hw_state_draw_emit_sq_resources_tcs(struct terakan_gfx_command_writer * const command_writer)
 {
    struct terakan_hw_state_draw * const state = &command_writer->hw_state_draw;
    if (!state->sq_constants_needed.tcs_tes) {
@@ -1100,9 +1068,7 @@ terakan_hw_state_draw_emit_sq_resources_tcs(
 }
 
 static void
-terakan_hw_state_draw_emit_sq_resources_tes(
-   struct terakan_gfx_command_writer * const command_writer,
-   UNUSED enum terakan_hw_state_draw_index const state_index)
+terakan_hw_state_draw_emit_sq_resources_tes(struct terakan_gfx_command_writer * const command_writer)
 {
    struct terakan_hw_state_draw * const state = &command_writer->hw_state_draw;
 
@@ -1176,8 +1142,7 @@ terakan_hw_state_draw_emit_sq_resources_tes(
 }
 
 static void
-terakan_hw_state_draw_emit_sq_resources_gs(struct terakan_gfx_command_writer * const command_writer,
-                                           UNUSED enum terakan_hw_state_draw_index const state_index)
+terakan_hw_state_draw_emit_sq_resources_gs(struct terakan_gfx_command_writer * const command_writer)
 {
    struct terakan_hw_state_draw * const state = &command_writer->hw_state_draw;
    if (!terakan_hw_state_draw_sq_constants_needed_by_gs(state)) {
@@ -1191,8 +1156,7 @@ terakan_hw_state_draw_emit_sq_resources_gs(struct terakan_gfx_command_writer * c
 }
 
 static void
-terakan_hw_state_draw_emit_sq_resources_fs(struct terakan_gfx_command_writer * const command_writer,
-                                           UNUSED enum terakan_hw_state_draw_index const state_index)
+terakan_hw_state_draw_emit_sq_resources_fs(struct terakan_gfx_command_writer * const command_writer)
 {
    struct terakan_hw_state_draw * const state = &command_writer->hw_state_draw;
    terakan_hw_state_draw_emit_sq_resources_for_stage(
@@ -1669,8 +1633,7 @@ terakan_hw_state_draw_emit_modified(struct terakan_gfx_command_writer * const co
    struct terakan_hw_state_draw * const state = &command_writer->hw_state_draw;
    unsigned state_index;
    BITSET_FOREACH_SET (state_index, state->state_modified, TERAKAN_HW_STATE_DRAW_COUNT) {
-      terakan_hw_state_draw_emit_functions[state_index](
-         command_writer, (enum terakan_hw_state_draw_index)state_index);
+      terakan_hw_state_draw_emit_functions[state_index](command_writer);
       if (unlikely(!BITSET_TEST(state->state_modified, state_index))) {
          /* If state_modified was zeroed during an emit call, switched to another indirect buffer,
           * and all state has been applied.
@@ -1699,8 +1662,7 @@ terakan_hw_state_draw_emit_all(struct terakan_gfx_command_writer * const command
 
    unsigned state_index;
    BITSET_FOREACH_SET (state_index, state->state_ever_written, TERAKAN_HW_STATE_DRAW_COUNT) {
-      terakan_hw_state_draw_emit_functions[state_index](
-         command_writer, (enum terakan_hw_state_draw_index)state_index);
+      terakan_hw_state_draw_emit_functions[state_index](command_writer);
    }
 }
 
