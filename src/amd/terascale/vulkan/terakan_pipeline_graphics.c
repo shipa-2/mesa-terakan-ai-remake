@@ -64,7 +64,7 @@ terakan_pipeline_graphics_apply_vgt_primitive_type(
 {
    command_writer->state_draw.vgt_primitive_type = pipeline->vertex_input.vgt_primitive_type;
    terakan_state_draw_set_pending(&command_writer->state_draw,
-                                  TERAKAN_STATE_DRAW_VGT_PRIMITIVE_TYPE);
+                                  TERAKAN_STATE_DRAW_INDEX_VGT_PRIMITIVE_TYPE);
 }
 
 static void
@@ -80,7 +80,8 @@ terakan_pipeline_graphics_apply_sq_pgm_fs(
                ->empty_vertex_input;
    if (command_writer->state_draw.sq_pgm_fs.static_state != sq_pgm_fs) {
       command_writer->state_draw.sq_pgm_fs.static_state = sq_pgm_fs;
-      terakan_state_draw_set_pending(&command_writer->state_draw, TERAKAN_STATE_DRAW_SQ_PGM_FS);
+      terakan_state_draw_set_pending(&command_writer->state_draw,
+                                     TERAKAN_STATE_DRAW_INDEX_SQ_PGM_FS);
    }
 }
 
@@ -101,7 +102,8 @@ terakan_pipeline_graphics_apply_sq_resources_fs_stride(
    }
    command_writer->state_draw.sq_resources_fs_pending |=
       pipeline->vertex_input.sq_resources_fs_stride.bindings_with_static_stride;
-   terakan_state_draw_set_pending(&command_writer->state_draw, TERAKAN_STATE_DRAW_SQ_RESOURCES_FS);
+   terakan_state_draw_set_pending(&command_writer->state_draw,
+                                  TERAKAN_STATE_DRAW_INDEX_SQ_RESOURCES_FS);
 }
 
 static void
@@ -125,7 +127,8 @@ terakan_pipeline_graphics_apply_sq_pgm_fs_2048_stride_workaround(
    if ((command_writer->state_draw.sq_pgm_fs.bindings_with_2048_stride_workaround ^
         new_bindings_with_2048_stride_workaround) &
        pipeline->vertex_input.sq_pgm_fs.bindings_needed_by_attributes_and_provided) {
-      terakan_state_draw_set_pending(&command_writer->state_draw, TERAKAN_STATE_DRAW_SQ_PGM_FS);
+      terakan_state_draw_set_pending(&command_writer->state_draw,
+                                     TERAKAN_STATE_DRAW_INDEX_SQ_PGM_FS);
    }
    command_writer->state_draw.sq_pgm_fs.bindings_with_2048_stride_workaround =
       new_bindings_with_2048_stride_workaround;
@@ -142,7 +145,7 @@ terakan_pipeline_graphics_apply_pa_sc_vport_z_min_0_max_1(
       command_writer->state_draw.pa_sc_vport_z_min_0_max_1 =
          pipeline->pre_rasterization.pa_sc_vport_z_min_0_max_1;
       terakan_state_draw_set_pending(&command_writer->state_draw,
-                                     TERAKAN_STATE_DRAW_PA_SC_VPORT_Z_MIN_MAX);
+                                     TERAKAN_STATE_DRAW_INDEX_PA_SC_VPORT_Z_MIN_MAX);
    }
 }
 
@@ -171,27 +174,28 @@ terakan_pipeline_graphics_apply_viewport(
       if (memcmp(state_viewport->pa_cl_vport_xy_scale_offset,
                  pipeline_viewport->pa_cl_vport_xy_scale_offset,
                  sizeof(state_viewport->pa_cl_vport_xy_scale_offset)) != 0) {
-         terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_PA_CL_VPORT_XY_SCALE_OFFSET);
+         terakan_state_draw_set_pending(state,
+                                        TERAKAN_STATE_DRAW_INDEX_PA_CL_VPORT_XY_SCALE_OFFSET);
       }
       if (memcmp(state_viewport->pa_cl_vport_z_gl_dx_scale_offset,
                  pipeline_viewport->pa_cl_vport_z_gl_dx_scale_offset,
                  sizeof(state_viewport->pa_cl_vport_z_gl_dx_scale_offset)) != 0) {
-         terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_PA_CL_VPORT_Z_SCALE_OFFSET);
+         terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_INDEX_PA_CL_VPORT_Z_SCALE_OFFSET);
       }
       if (memcmp(state_viewport->pa_cl_gb_vert_horz_clip_adj,
                  pipeline_viewport->pa_cl_gb_vert_horz_clip_adj,
                  sizeof(state_viewport->pa_cl_gb_vert_horz_clip_adj)) != 0) {
-         terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_PA_CL_GB);
+         terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_INDEX_PA_CL_GB);
       }
       if (memcmp(state_viewport->pa_sc_vport_scissor_tl_br_xy,
                  pipeline_viewport->pa_sc_vport_scissor_tl_br_xy,
                  sizeof(state_viewport->pa_sc_vport_scissor_tl_br_xy)) != 0) {
-         terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_PA_SC_VPORT_SCISSOR);
+         terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_INDEX_PA_SC_VPORT_SCISSOR);
       }
       if (memcmp(state_viewport->pa_sc_vport_z_min_max, pipeline_viewport->pa_sc_vport_z_min_max,
                  sizeof(state_viewport->pa_sc_vport_z_min_max)) != 0 &&
           !state->pa_sc_vport_z_min_0_max_1) {
-         terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_PA_SC_VPORT_Z_MIN_MAX);
+         terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_INDEX_PA_SC_VPORT_Z_MIN_MAX);
       }
       *state_viewport = *pipeline_viewport;
    }
@@ -204,14 +208,14 @@ terakan_pipeline_graphics_apply_pa_sc_vport_generic_scissor(
    UNUSED enum terakan_pipeline_graphics_state_index const state_index)
 {
    if (!terakan_state_draw_is_pending(&command_writer->state_draw,
-                                      TERAKAN_STATE_DRAW_PA_SC_VPORT_SCISSOR) &&
+                                      TERAKAN_STATE_DRAW_INDEX_PA_SC_VPORT_SCISSOR) &&
        memcmp(command_writer->state_draw.pa_sc_vport_generic_scissor_tl_br_xy,
               pipeline->pre_rasterization.pa_sc_vport_generic_scissor_tl_br_xy,
               sizeof(uint16_t) * 4 *
                  MIN2(command_writer->state_draw.viewport_count,
                       pipeline->pre_rasterization.pa_sc_vport_generic_scissor_count)) != 0) {
       terakan_state_draw_set_pending(&command_writer->state_draw,
-                                     TERAKAN_STATE_DRAW_PA_SC_VPORT_SCISSOR);
+                                     TERAKAN_STATE_DRAW_INDEX_PA_SC_VPORT_SCISSOR);
    }
    memcpy(command_writer->state_draw.pa_sc_vport_generic_scissor_tl_br_xy,
           pipeline->pre_rasterization.pa_sc_vport_generic_scissor_tl_br_xy,
@@ -226,7 +230,7 @@ terakan_pipeline_graphics_apply_pa_cl_clip_cntl(
 {
    uint32_t const old_pa_cl_clip_cntl = command_writer->state_draw.pa_cl_clip_cntl;
    terakan_state_draw_replace_fields(&command_writer->state_draw,
-                                     TERAKAN_STATE_DRAW_PA_CL_CLIP_CNTL,
+                                     TERAKAN_STATE_DRAW_INDEX_PA_CL_CLIP_CNTL,
                                      &command_writer->state_draw.pa_cl_clip_cntl,
                                      pipeline->pre_rasterization.pa_cl_clip_cntl_clear,
                                      pipeline->pre_rasterization.pa_cl_clip_cntl);
@@ -234,7 +238,7 @@ terakan_pipeline_graphics_apply_pa_cl_clip_cntl(
    if (G_028810_DX_CLIP_SPACE_DEF(old_pa_cl_clip_cntl) !=
        G_028810_DX_CLIP_SPACE_DEF(new_pa_cl_clip_cntl)) {
       terakan_state_draw_set_pending(&command_writer->state_draw,
-                                     TERAKAN_STATE_DRAW_PA_CL_VPORT_Z_SCALE_OFFSET);
+                                     TERAKAN_STATE_DRAW_INDEX_PA_CL_VPORT_Z_SCALE_OFFSET);
    }
 }
 
@@ -245,7 +249,7 @@ terakan_pipeline_graphics_apply_pa_su_sc_mode_cntl(
    UNUSED enum terakan_pipeline_graphics_state_index const state_index)
 {
    terakan_state_draw_replace_fields(&command_writer->state_draw,
-                                     TERAKAN_STATE_DRAW_PA_SU_SC_MODE_CNTL,
+                                     TERAKAN_STATE_DRAW_INDEX_PA_SU_SC_MODE_CNTL,
                                      &command_writer->state_draw.pa_su_sc_mode_cntl,
                                      pipeline->pre_rasterization.pa_su_sc_mode_cntl_clear,
                                      pipeline->pre_rasterization.pa_su_sc_mode_cntl);
@@ -258,7 +262,7 @@ terakan_pipeline_graphics_apply_db_render_override_pre_rasterization(
    UNUSED enum terakan_pipeline_graphics_state_index const state_index)
 {
    terakan_state_draw_replace_fields(&command_writer->state_draw,
-                                     TERAKAN_STATE_DRAW_DB_RENDER_OVERRIDE,
+                                     TERAKAN_STATE_DRAW_INDEX_DB_RENDER_OVERRIDE,
                                      &command_writer->state_draw.db_render_override,
                                      pipeline->pre_rasterization.db_render_override_clear,
                                      pipeline->pre_rasterization.db_render_override);
@@ -271,7 +275,8 @@ terakan_pipeline_graphics_apply_pa_sc_aa_mask(
    UNUSED enum terakan_pipeline_graphics_state_index const state_index)
 {
    command_writer->state_draw.pa_sc_aa_mask = pipeline->multisample.pa_sc_aa_mask;
-   terakan_state_draw_set_pending(&command_writer->state_draw, TERAKAN_STATE_DRAW_PA_SC_AA_MASK);
+   terakan_state_draw_set_pending(&command_writer->state_draw,
+                                  TERAKAN_STATE_DRAW_INDEX_PA_SC_AA_MASK);
 }
 
 static terakan_pipeline_graphics_apply_state_function const
@@ -321,8 +326,8 @@ terakan_pipeline_graphics_bind(struct terakan_gfx_command_writer * const command
 
    bool const sq_pgm_vs_modified = command_writer->hw_state_draw.sq_pgm_vs != &vs->static_state;
    command_writer->hw_state_draw.sq_pgm_vs = &vs->static_state;
-   terakan_hw_state_draw_written(&command_writer->hw_state_draw, TERAKAN_HW_STATE_DRAW_SQ_PGM_VS,
-                                 sq_pgm_vs_modified);
+   terakan_hw_state_draw_written(&command_writer->hw_state_draw,
+                                 TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_VS, sq_pgm_vs_modified);
    terakan_hw_state_draw_set_sq_constants_needed_by_vs(
       &command_writer->hw_state_draw, 0, vs->resources_needed, VK_SHADER_STAGE_FRAGMENT_BIT);
 
@@ -336,7 +341,7 @@ terakan_pipeline_graphics_bind(struct terakan_gfx_command_writer * const command
              command_writer->state_draw.sq_pgm_fs.dynamic_state
                 .attributes_provided[attribute_word_index]) {
             terakan_state_draw_set_pending(&command_writer->state_draw,
-                                           TERAKAN_STATE_DRAW_SQ_PGM_FS);
+                                           TERAKAN_STATE_DRAW_INDEX_SQ_PGM_FS);
             break;
          }
       }
@@ -351,8 +356,8 @@ terakan_pipeline_graphics_bind(struct terakan_gfx_command_writer * const command
       struct terakan_shader_impl const * const fs = &pipeline->shaders[MESA_SHADER_FRAGMENT];
       bool const sq_pgm_ps_modified = command_writer->hw_state_draw.sq_pgm_ps != &fs->static_state;
       command_writer->hw_state_draw.sq_pgm_ps = &fs->static_state;
-      terakan_hw_state_draw_written(&command_writer->hw_state_draw, TERAKAN_HW_STATE_DRAW_SQ_PGM_PS,
-                                    sq_pgm_ps_modified);
+      terakan_hw_state_draw_written(&command_writer->hw_state_draw,
+                                    TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_PS, sq_pgm_ps_modified);
       terakan_hw_state_draw_set_sq_constants_needed_by_fs(&command_writer->hw_state_draw, 0,
                                                           fs->resources_needed);
       color_attachments_written_by_shader = fs->fragment_data_uncompacted_locations;
@@ -365,7 +370,7 @@ terakan_pipeline_graphics_bind(struct terakan_gfx_command_writer * const command
       command_writer->state_draw.color_attachment_usage.written_by_shader =
          color_attachments_written_by_shader;
       terakan_state_draw_set_pending(&command_writer->state_draw,
-                                     TERAKAN_STATE_DRAW_COLOR_ATTACHMENT_USAGE);
+                                     TERAKAN_STATE_DRAW_INDEX_COLOR_ATTACHMENT_USAGE);
    }
 }
 

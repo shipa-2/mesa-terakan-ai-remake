@@ -1244,7 +1244,7 @@ terakan_CmdSetVertexInputEXT(
       uint16_t const binding_stride = (uint16_t)binding_description->stride;
       if (binding_resource->stride != binding_stride && binding_resource->bo != NULL) {
          state->sq_resources_fs_pending |= binding_bit;
-         terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_SQ_RESOURCES_FS);
+         terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_INDEX_SQ_RESOURCES_FS);
       }
       binding_resource->stride = binding_stride;
       if (binding_stride >= 2048) {
@@ -1304,7 +1304,7 @@ terakan_CmdSetVertexInputEXT(
       /* Don't create an empty fetch shader, use the static one instead. */
       if (state->sq_pgm_fs.static_state != &device->empty_vertex_input) {
          state->sq_pgm_fs.static_state = &device->empty_vertex_input;
-         terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_SQ_PGM_FS);
+         terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_INDEX_SQ_PGM_FS);
       }
       if (!is_r9xx) {
          state->sq_pgm_fs.bindings_with_2048_stride_workaround =
@@ -1364,7 +1364,7 @@ terakan_CmdSetVertexInputEXT(
    }
 
    if (fetch_shader_creation_needed) {
-      terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_SQ_PGM_FS);
+      terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_INDEX_SQ_PGM_FS);
    }
 }
 
@@ -1383,7 +1383,7 @@ terakan_CmdBindVertexBuffers2(VkCommandBuffer const commandBuffer, uint32_t cons
    struct terakan_state_draw * const state = &command_writer->state_draw;
 
    state->sq_resources_fs_pending |= BITFIELD_RANGE(firstBinding, bindingCount);
-   terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_SQ_RESOURCES_FS);
+   terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_INDEX_SQ_RESOURCES_FS);
 
    /* Update the buffers. */
    for (uint32_t buffer_index = 0; buffer_index < bindingCount; ++buffer_index) {
@@ -1440,7 +1440,7 @@ terakan_CmdBindVertexBuffers2(VkCommandBuffer const commandBuffer, uint32_t cons
              (state->sq_pgm_fs.static_state != NULL
                  ? state->sq_pgm_fs.static_state->bindings_needed_by_attributes_and_provided
                  : state->sq_pgm_fs.dynamic_state.bindings_needed_by_attributes_and_provided)) {
-            terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_SQ_PGM_FS);
+            terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_INDEX_SQ_PGM_FS);
          }
          state->sq_pgm_fs.bindings_with_2048_stride_workaround =
             bindings_with_2048_stride_workaround;

@@ -39,9 +39,9 @@ terakan_CmdBeginRendering(VkCommandBuffer const commandBuffer,
    struct terakan_state_draw * const state =
       &terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx->state_draw;
 
-   terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_COLOR_ATTACHMENT_USAGE);
+   terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_INDEX_COLOR_ATTACHMENT_USAGE);
    state->color_attachment_usage.bound = 0;
-   terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_CB_COLOR_MRT);
+   terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_INDEX_CB_COLOR_MRT);
    for (uint32_t color_attachment_index = 0;
         color_attachment_index < pRenderingInfo->colorAttachmentCount; ++color_attachment_index) {
       struct terakan_image_view const * const color_view = terakan_image_view_from_handle(

@@ -265,45 +265,49 @@ struct terakan_meta_shader const terakan_meta_position_from_index_vs = {
 void
 terakan_meta_begin_2d(struct terakan_gfx_command_writer * const command_writer)
 {
-   terakan_meta_modify_state_draw_dword(
-      command_writer, TERAKAN_STATE_DRAW_PA_CL_CLIP_CNTL, TERAKAN_HW_STATE_DRAW_PA_CL_CLIP_CNTL,
-      &command_writer->hw_state_draw.pa_cl_clip_cntl, S_028810_CLIP_DISABLE(1));
+   terakan_meta_modify_state_draw_dword(command_writer, TERAKAN_STATE_DRAW_INDEX_PA_CL_CLIP_CNTL,
+                                        TERAKAN_HW_STATE_DRAW_INDEX_PA_CL_CLIP_CNTL,
+                                        &command_writer->hw_state_draw.pa_cl_clip_cntl,
+                                        S_028810_CLIP_DISABLE(1));
 
-   terakan_meta_modify_state_draw_dword(command_writer, TERAKAN_STATE_DRAW_PA_SU_SC_MODE_CNTL,
-                                        TERAKAN_HW_STATE_DRAW_PA_SU_SC_MODE_CNTL,
+   terakan_meta_modify_state_draw_dword(command_writer, TERAKAN_STATE_DRAW_INDEX_PA_SU_SC_MODE_CNTL,
+                                        TERAKAN_HW_STATE_DRAW_INDEX_PA_SU_SC_MODE_CNTL,
                                         &command_writer->hw_state_draw.pa_su_sc_mode_cntl, 0);
 
-   terakan_meta_modify_state_draw_dword(command_writer, TERAKAN_STATE_DRAW_PA_CL_VTE_CNTL,
-                                        TERAKAN_HW_STATE_DRAW_PA_CL_VTE_CNTL,
+   terakan_meta_modify_state_draw_dword(command_writer, TERAKAN_STATE_DRAW_INDEX_PA_CL_VTE_CNTL,
+                                        TERAKAN_HW_STATE_DRAW_INDEX_PA_CL_VTE_CNTL,
                                         &command_writer->hw_state_draw.pa_cl_vte_cntl,
                                         S_028818_VTX_XY_FMT(1) | S_028818_VTX_Z_FMT(1));
 
    uint32_t const num_samples_log2 = 0;
    /* TODO(Triang3l): Make what depends on the sample count pending in state_draw. */
 
-   terakan_meta_modify_state_draw_dword(
-      command_writer, TERAKAN_STATE_DRAW_PA_SC_MODE_CNTL_0, TERAKAN_HW_STATE_DRAW_PA_SC_MODE_CNTL_0,
-      &command_writer->hw_state_draw.pa_sc_mode_cntl_0, S_028A48_MSAA_ENABLE(num_samples_log2 > 0));
+   terakan_meta_modify_state_draw_dword(command_writer, TERAKAN_STATE_DRAW_INDEX_PA_SC_MODE_CNTL_0,
+                                        TERAKAN_HW_STATE_DRAW_INDEX_PA_SC_MODE_CNTL_0,
+                                        &command_writer->hw_state_draw.pa_sc_mode_cntl_0,
+                                        S_028A48_MSAA_ENABLE(num_samples_log2 > 0));
 
    bool const pa_sc_aa_samples_modified =
       command_writer->hw_state_draw.pa_sc_aa_samples.num_samples_log2 != num_samples_log2;
    command_writer->hw_state_draw.pa_sc_aa_samples.num_samples_log2 = num_samples_log2;
    terakan_hw_state_draw_written(&command_writer->hw_state_draw,
-                                 TERAKAN_HW_STATE_DRAW_PA_SC_AA_SAMPLES, pa_sc_aa_samples_modified);
+                                 TERAKAN_HW_STATE_DRAW_INDEX_PA_SC_AA_SAMPLES,
+                                 pa_sc_aa_samples_modified);
 
-   terakan_state_draw_set_pending(&command_writer->state_draw, TERAKAN_STATE_DRAW_PA_SC_AA_MASK);
+   terakan_state_draw_set_pending(&command_writer->state_draw,
+                                  TERAKAN_STATE_DRAW_INDEX_PA_SC_AA_MASK);
    uint16_t const pa_sc_aa_mask = ~(uint16_t)0;
    bool const pa_sc_aa_mask_modified = command_writer->hw_state_draw.pa_sc_aa_mask != pa_sc_aa_mask;
    command_writer->hw_state_draw.pa_sc_aa_mask = pa_sc_aa_mask;
    terakan_hw_state_draw_written(&command_writer->hw_state_draw,
-                                 TERAKAN_HW_STATE_DRAW_PA_SC_AA_MASK, pa_sc_aa_mask_modified);
+                                 TERAKAN_HW_STATE_DRAW_INDEX_PA_SC_AA_MASK, pa_sc_aa_mask_modified);
 }
 
 void
 terakan_meta_begin_rects(struct terakan_gfx_command_writer * const command_writer)
 {
-   terakan_meta_modify_state_draw_dword(command_writer, TERAKAN_STATE_DRAW_VGT_PRIMITIVE_TYPE,
-                                        TERAKAN_HW_STATE_DRAW_VGT_PRIMITIVE_TYPE,
+   terakan_meta_modify_state_draw_dword(command_writer, TERAKAN_STATE_DRAW_INDEX_VGT_PRIMITIVE_TYPE,
+                                        TERAKAN_HW_STATE_DRAW_INDEX_VGT_PRIMITIVE_TYPE,
                                         &command_writer->hw_state_draw.vgt_primitive_type,
                                         S_008958_PRIM_TYPE(V_008958_DI_PT_RECTLIST));
 }
@@ -311,12 +315,13 @@ terakan_meta_begin_rects(struct terakan_gfx_command_writer * const command_write
 void
 terakan_meta_begin_index_immediate_32(struct terakan_gfx_command_writer * const command_writer)
 {
-   terakan_meta_modify_state_draw_dword(
-      command_writer, TERAKAN_STATE_DRAW_VGT_INDEX_TYPE, TERAKAN_HW_STATE_DRAW_VGT_INDEX_TYPE,
-      &command_writer->hw_state_draw.vgt_index_type, VGT_INDEX_32);
+   terakan_meta_modify_state_draw_dword(command_writer, TERAKAN_STATE_DRAW_INDEX_VGT_INDEX_TYPE,
+                                        TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_TYPE,
+                                        &command_writer->hw_state_draw.vgt_index_type,
+                                        VGT_INDEX_32);
 
-   terakan_meta_modify_state_draw_dword(command_writer, TERAKAN_STATE_DRAW_VGT_INDEX_OFFSET,
-                                        TERAKAN_HW_STATE_DRAW_VGT_INDEX_OFFSET,
+   terakan_meta_modify_state_draw_dword(command_writer, TERAKAN_STATE_DRAW_INDEX_VGT_INDEX_OFFSET,
+                                        TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_OFFSET,
                                         &command_writer->hw_state_draw.vgt_index_offset, 0);
 }
 

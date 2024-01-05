@@ -75,66 +75,66 @@ enum terakan_hw_state_draw_index {
     * each unit, by the register addresses.
     */
 
-   TERAKAN_HW_STATE_DRAW_VGT_INDEX_TYPE,
+   TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_TYPE,
 
-   TERAKAN_HW_STATE_DRAW_VGT_INDEX_BUFFER,
+   TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_BUFFER,
 
-   TERAKAN_HW_STATE_DRAW_VGT_PRIMITIVE_TYPE,
+   TERAKAN_HW_STATE_DRAW_INDEX_VGT_PRIMITIVE_TYPE,
 
-   TERAKAN_HW_STATE_DRAW_VGT_INDEX_OFFSET,
+   TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_OFFSET,
 
-   TERAKAN_HW_STATE_DRAW_SQ_PGM_FS,
-   TERAKAN_HW_STATE_DRAW_SQ_PGM_VS,
-   TERAKAN_HW_STATE_DRAW_SQ_PGM_PS,
+   TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_FS,
+   TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_VS,
+   TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_PS,
 
-   TERAKAN_HW_STATE_DRAW_SQ_VTX_START_INST_LOC,
+   TERAKAN_HW_STATE_DRAW_INDEX_SQ_VTX_START_INST_LOC,
 
-   TERAKAN_HW_STATE_DRAW_PA_CL_CLIP_CNTL,
+   TERAKAN_HW_STATE_DRAW_INDEX_PA_CL_CLIP_CNTL,
 
-   TERAKAN_HW_STATE_DRAW_PA_SU_SC_MODE_CNTL,
+   TERAKAN_HW_STATE_DRAW_INDEX_PA_SU_SC_MODE_CNTL,
 
-   TERAKAN_HW_STATE_DRAW_PA_CL_VTE_CNTL,
+   TERAKAN_HW_STATE_DRAW_INDEX_PA_CL_VTE_CNTL,
 
-   TERAKAN_HW_STATE_DRAW_PA_SC_MODE_CNTL_0,
+   TERAKAN_HW_STATE_DRAW_INDEX_PA_SC_MODE_CNTL_0,
 
-   TERAKAN_HW_STATE_DRAW_PA_CL_GB,
+   TERAKAN_HW_STATE_DRAW_INDEX_PA_CL_GB,
 
-   TERAKAN_HW_STATE_DRAW_PA_SC_AA_SAMPLES,
+   TERAKAN_HW_STATE_DRAW_INDEX_PA_SC_AA_SAMPLES,
 
-   TERAKAN_HW_STATE_DRAW_PA_SC_AA_MASK,
+   TERAKAN_HW_STATE_DRAW_INDEX_PA_SC_AA_MASK,
 
-   TERAKAN_HW_STATE_DRAW_DB_RENDER_OVERRIDE,
+   TERAKAN_HW_STATE_DRAW_INDEX_DB_RENDER_OVERRIDE,
 
-   TERAKAN_HW_STATE_DRAW_CB_TARGET_MASK,
+   TERAKAN_HW_STATE_DRAW_INDEX_CB_TARGET_MASK,
 
-   TERAKAN_HW_STATE_DRAW_CB_BLEND_RGBA,
+   TERAKAN_HW_STATE_DRAW_INDEX_CB_BLEND_RGBA,
 
-   TERAKAN_HW_STATE_DRAW_CB_COLOR_CONTROL,
+   TERAKAN_HW_STATE_DRAW_INDEX_CB_COLOR_CONTROL,
 
-   /* State items starting from TERAKAN_HW_STATE_DRAW_SPECIAL_START have their modified flags set
-    * via some method different from terakan_hw_state_draw_written.
+   /* State items starting from TERAKAN_HW_STATE_DRAW_INDEX_SPECIAL_FIRST have their modified flags
+    * set via some method different from terakan_hw_state_draw_written.
     */
-   TERAKAN_HW_STATE_DRAW_SPECIAL_FIRST,
+   TERAKAN_HW_STATE_DRAW_INDEX_SPECIAL_FIRST,
 
    /* Set as modified if any state of any viewport is modified. */
-   TERAKAN_HW_STATE_DRAW_VIEWPORT = TERAKAN_HW_STATE_DRAW_SPECIAL_FIRST,
+   TERAKAN_HW_STATE_DRAW_INDEX_VIEWPORT = TERAKAN_HW_STATE_DRAW_INDEX_SPECIAL_FIRST,
 
-   TERAKAN_HW_STATE_DRAW_CB_COLOR,
+   TERAKAN_HW_STATE_DRAW_INDEX_CB_COLOR,
 
-   TERAKAN_HW_STATE_DRAW_SQ_KCACHE_VS,
-   TERAKAN_HW_STATE_DRAW_SQ_KCACHE_TCS,
-   TERAKAN_HW_STATE_DRAW_SQ_KCACHE_TES,
-   TERAKAN_HW_STATE_DRAW_SQ_KCACHE_GS,
-   TERAKAN_HW_STATE_DRAW_SQ_KCACHE_FS,
+   TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_VS,
+   TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_TCS,
+   TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_TES,
+   TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_GS,
+   TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_FS,
 
-   TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_VI,
-   TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_VS,
-   TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_TCS,
-   TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_TES,
-   TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_GS,
-   TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_FS,
+   TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_VI,
+   TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_VS,
+   TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_TCS,
+   TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_TES,
+   TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_GS,
+   TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_FS,
 
-   TERAKAN_HW_STATE_DRAW_COUNT,
+   TERAKAN_HW_STATE_DRAW_INDEX_COUNT,
 };
 
 extern uint32_t const terakan_standard_sample_locs[5][16 / 4];
@@ -174,14 +174,14 @@ struct terakan_hw_state_draw {
    /* Whether each state item has ever been written, and thus has a value that's not complete junk,
     * and is potentially relevant to the current command buffer.
     */
-   BITSET_DECLARE(state_ever_written, TERAKAN_HW_STATE_DRAW_COUNT);
+   BITSET_DECLARE(state_ever_written, TERAKAN_HW_STATE_DRAW_INDEX_COUNT);
    /* Whether each state item has been modified and needs to be emitted before the next draw. */
-   BITSET_DECLARE(state_modified, TERAKAN_HW_STATE_DRAW_COUNT);
+   BITSET_DECLARE(state_modified, TERAKAN_HW_STATE_DRAW_INDEX_COUNT);
 
-   /* TERAKAN_HW_STATE_DRAW_VGT_INDEX_TYPE */
+   /* TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_TYPE */
    uint32_t vgt_index_type;
 
-   /* TERAKAN_HW_STATE_DRAW_VGT_INDEX_BUFFER */
+   /* TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_BUFFER */
    struct {
       struct terakan_bo const * bo;
       uint64_t base;
@@ -189,63 +189,63 @@ struct terakan_hw_state_draw {
       uint32_t size;
    } vgt_index_buffer;
 
-   /* TERAKAN_HW_STATE_DRAW_VGT_PRIMITIVE_TYPE */
+   /* TERAKAN_HW_STATE_DRAW_INDEX_VGT_PRIMITIVE_TYPE */
    uint32_t vgt_primitive_type;
 
-   /* TERAKAN_HW_STATE_DRAW_VGT_INDEX_OFFSET */
+   /* TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_OFFSET */
    uint32_t vgt_index_offset;
 
-   /* TERAKAN_HW_STATE_DRAW_SQ_PGM_FS */
+   /* TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_FS */
    struct {
       struct terakan_bo const * bo;
       uint32_t start;
    } sq_pgm_fs;
 
-   /* TERAKAN_HW_STATE_DRAW_SQ_PGM_VS */
+   /* TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_VS */
    struct terakan_shader_static const * sq_pgm_vs;
 
-   /* TERAKAN_HW_STATE_DRAW_SQ_PGM_PS */
+   /* TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_PS */
    struct terakan_shader_static const * sq_pgm_ps;
 
-   /* TERAKAN_HW_STATE_DRAW_SQ_VTX_START_INST_LOC */
+   /* TERAKAN_HW_STATE_DRAW_INDEX_SQ_VTX_START_INST_LOC */
    uint32_t sq_vtx_start_inst_loc;
 
-   /* TERAKAN_HW_STATE_DRAW_PA_CL_CLIP_CNTL */
+   /* TERAKAN_HW_STATE_DRAW_INDEX_PA_CL_CLIP_CNTL */
    uint32_t pa_cl_clip_cntl;
 
-   /* TERAKAN_HW_STATE_DRAW_PA_SU_SC_MODE_CNTL */
+   /* TERAKAN_HW_STATE_DRAW_INDEX_PA_SU_SC_MODE_CNTL */
    uint32_t pa_su_sc_mode_cntl;
 
-   /* TERAKAN_HW_STATE_DRAW_PA_CL_VTE_CNTL */
+   /* TERAKAN_HW_STATE_DRAW_INDEX_PA_CL_VTE_CNTL */
    uint32_t pa_cl_vte_cntl;
 
-   /* TERAKAN_HW_STATE_DRAW_PA_SC_MODE_CNTL_0 */
+   /* TERAKAN_HW_STATE_DRAW_INDEX_PA_SC_MODE_CNTL_0 */
    uint32_t pa_sc_mode_cntl_0;
 
-   /* TERAKAN_HW_STATE_DRAW_PA_CL_GB */
+   /* TERAKAN_HW_STATE_DRAW_INDEX_PA_CL_GB */
    float pa_cl_gb_vert_horz_clip_disc_adj[2][2];
 
-   /* TERAKAN_HW_STATE_DRAW_PA_SC_AA_SAMPLES */
+   /* TERAKAN_HW_STATE_DRAW_INDEX_PA_SC_AA_SAMPLES */
    struct {
       uint32_t num_samples_log2;
    } pa_sc_aa_samples;
 
-   /* TERAKAN_HW_STATE_DRAW_PA_SC_AA_MASK */
+   /* TERAKAN_HW_STATE_DRAW_INDEX_PA_SC_AA_MASK */
    uint16_t pa_sc_aa_mask;
 
-   /* TERAKAN_HW_STATE_DRAW_DB_RENDER_OVERRIDE */
+   /* TERAKAN_HW_STATE_DRAW_INDEX_DB_RENDER_OVERRIDE */
    uint32_t db_render_override;
 
-   /* TERAKAN_HW_STATE_DRAW_CB_TARGET_MASK */
+   /* TERAKAN_HW_STATE_DRAW_INDEX_CB_TARGET_MASK */
    uint32_t cb_target_mask;
 
-   /* TERAKAN_HW_STATE_DRAW_CB_BLEND_RGBA */
+   /* TERAKAN_HW_STATE_DRAW_INDEX_CB_BLEND_RGBA */
    float cb_blend_rgba[4];
 
-   /* TERAKAN_HW_STATE_DRAW_CB_COLOR_CONTROL */
+   /* TERAKAN_HW_STATE_DRAW_INDEX_CB_COLOR_CONTROL */
    uint32_t cb_color_control;
 
-   /* TERAKAN_HW_STATE_DRAW_VIEWPORT
+   /* TERAKAN_HW_STATE_DRAW_INDEX_VIEWPORT
     * Don't use terakan_hw_state_draw_written, instead call
     * terakan_hw_state_draw_ensure_viewport_count before updating the state, and
     * terakan_hw_state_draw_viewport_modified after writing a different value.
@@ -254,7 +254,7 @@ struct terakan_hw_state_draw {
    uint16_t viewports_modified;
    struct terakan_hw_state_draw_viewport viewports[TERAKAN_HW_STATE_DRAW_MAX_VIEWPORTS];
 
-   /* TERAKAN_HW_STATE_DRAW_CB_COLOR */
+   /* TERAKAN_HW_STATE_DRAW_INDEX_CB_COLOR */
    struct {
       uint16_t ever_written;
       uint16_t modified;
@@ -369,7 +369,7 @@ static inline void
 terakan_hw_state_draw_written(struct terakan_hw_state_draw * const state,
                               enum terakan_hw_state_draw_index const state_index, bool modified)
 {
-   assert(state_index < TERAKAN_HW_STATE_DRAW_SPECIAL_FIRST);
+   assert(state_index < TERAKAN_HW_STATE_DRAW_INDEX_SPECIAL_FIRST);
    if (!BITSET_TEST(state->state_ever_written, state_index)) {
       BITSET_SET(state->state_ever_written, state_index);
       modified = true;
@@ -391,7 +391,7 @@ terakan_hw_state_draw_viewport_modified(
    assert(viewport_index < state->viewport_count_ever_written);
    BITSET_SET(state->viewports[viewport_index].state_modified, state_index);
    state->viewports_modified |= (uint16_t)1 << viewport_index;
-   BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_VIEWPORT);
+   BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_VIEWPORT);
 }
 
 static inline void
@@ -405,7 +405,7 @@ terakan_hw_state_draw_cb_color_written(struct terakan_hw_state_draw * const stat
    }
    if (modified) {
       state->cb_color.modified |= color_bit;
-      BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_CB_COLOR);
+      BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_CB_COLOR);
    }
 }
 

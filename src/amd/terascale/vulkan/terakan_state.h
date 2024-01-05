@@ -49,47 +49,47 @@ extern "C" {
 void terakan_state_translate_window_rect_unpacked(VkRect2D const * rect, uint16_t tl_br_xy_out[4]);
 
 enum terakan_state_draw_index {
-   TERAKAN_STATE_DRAW_VGT_INDEX_TYPE,
+   TERAKAN_STATE_DRAW_INDEX_VGT_INDEX_TYPE,
 
-   TERAKAN_STATE_DRAW_VGT_PRIMITIVE_TYPE,
+   TERAKAN_STATE_DRAW_INDEX_VGT_PRIMITIVE_TYPE,
 
-   TERAKAN_STATE_DRAW_VGT_INDEX_OFFSET,
+   TERAKAN_STATE_DRAW_INDEX_VGT_INDEX_OFFSET,
 
-   TERAKAN_STATE_DRAW_SQ_PGM_FS,
+   TERAKAN_STATE_DRAW_INDEX_SQ_PGM_FS,
 
-   TERAKAN_STATE_DRAW_SQ_RESOURCES_FS,
+   TERAKAN_STATE_DRAW_INDEX_SQ_RESOURCES_FS,
 
-   TERAKAN_STATE_DRAW_PA_CL_VPORT_XY_SCALE_OFFSET,
-   TERAKAN_STATE_DRAW_PA_CL_VPORT_Z_SCALE_OFFSET,
-   TERAKAN_STATE_DRAW_PA_CL_GB,
-   TERAKAN_STATE_DRAW_PA_SC_VPORT_SCISSOR,
-   TERAKAN_STATE_DRAW_PA_SC_VPORT_Z_MIN_MAX,
+   TERAKAN_STATE_DRAW_INDEX_PA_CL_VPORT_XY_SCALE_OFFSET,
+   TERAKAN_STATE_DRAW_INDEX_PA_CL_VPORT_Z_SCALE_OFFSET,
+   TERAKAN_STATE_DRAW_INDEX_PA_CL_GB,
+   TERAKAN_STATE_DRAW_INDEX_PA_SC_VPORT_SCISSOR,
+   TERAKAN_STATE_DRAW_INDEX_PA_SC_VPORT_Z_MIN_MAX,
 
-   TERAKAN_STATE_DRAW_PA_CL_CLIP_CNTL,
+   TERAKAN_STATE_DRAW_INDEX_PA_CL_CLIP_CNTL,
 
-   TERAKAN_STATE_DRAW_PA_SU_SC_MODE_CNTL,
+   TERAKAN_STATE_DRAW_INDEX_PA_SU_SC_MODE_CNTL,
 
-   TERAKAN_STATE_DRAW_PA_CL_VTE_CNTL,
+   TERAKAN_STATE_DRAW_INDEX_PA_CL_VTE_CNTL,
 
-   TERAKAN_STATE_DRAW_PA_SC_MODE_CNTL_0,
+   TERAKAN_STATE_DRAW_INDEX_PA_SC_MODE_CNTL_0,
 
-   TERAKAN_STATE_DRAW_PA_SC_AA_MASK,
+   TERAKAN_STATE_DRAW_INDEX_PA_SC_AA_MASK,
 
-   TERAKAN_STATE_DRAW_DB_RENDER_OVERRIDE,
+   TERAKAN_STATE_DRAW_INDEX_DB_RENDER_OVERRIDE,
 
-   TERAKAN_STATE_DRAW_COLOR_ATTACHMENT_USAGE,
-   /* Depends on TERAKAN_STATE_DRAW_COLOR_ATTACHMENT_USAGE. */
-   TERAKAN_STATE_DRAW_CB_TARGET_MASK,
-   /* Depends on TERAKAN_STATE_DRAW_CB_TARGET_MASK. */
-   TERAKAN_STATE_DRAW_CB_COLOR_CONTROL,
-   /* Depends on TERAKAN_STATE_DRAW_COLOR_ATTACHMENT_USAGE. */
-   TERAKAN_STATE_DRAW_CB_COLOR_MRT,
+   TERAKAN_STATE_DRAW_INDEX_COLOR_ATTACHMENT_USAGE,
+   /* Depends on TERAKAN_STATE_DRAW_INDEX_COLOR_ATTACHMENT_USAGE. */
+   TERAKAN_STATE_DRAW_INDEX_CB_TARGET_MASK,
+   /* Depends on TERAKAN_STATE_DRAW_INDEX_CB_TARGET_MASK. */
+   TERAKAN_STATE_DRAW_INDEX_CB_COLOR_CONTROL,
+   /* Depends on TERAKAN_STATE_DRAW_INDEX_COLOR_ATTACHMENT_USAGE. */
+   TERAKAN_STATE_DRAW_INDEX_CB_COLOR_MRT,
 
-   TERAKAN_STATE_DRAW_COUNT,
+   TERAKAN_STATE_DRAW_INDEX_COUNT,
 };
 
 #define TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(dependent, dependency)                                \
-   static_assert(TERAKAN_STATE_DRAW_##dependent > TERAKAN_STATE_DRAW_##dependency,                 \
+   static_assert(TERAKAN_STATE_DRAW_INDEX_##dependent > TERAKAN_STATE_DRAW_INDEX_##dependency,     \
                  #dependent " depends on " #dependency " and thus must have a higher index.")
 
 struct terakan_state_draw_sq_resource_fs {
@@ -116,21 +116,21 @@ struct terakan_state_draw {
    /* Whether each state item has been modified, overridden by an internal draw, or had its
     * dependencies changed, and needs to be applied before the next draw.
     */
-   BITSET_DECLARE(state_pending, TERAKAN_STATE_DRAW_COUNT);
+   BITSET_DECLARE(state_pending, TERAKAN_STATE_DRAW_INDEX_COUNT);
 
    /* Configuration of state setting commands themselves. */
    bool cmd_set_depth_clamp_enable_sets_depth_clip_enable;
 
-   /* TERAKAN_STATE_DRAW_VGT_INDEX_TYPE */
+   /* TERAKAN_STATE_DRAW_INDEX_VGT_INDEX_TYPE */
    uint32_t vgt_index_type;
 
-   /* TERAKAN_STATE_DRAW_VGT_PRIMITIVE_TYPE */
+   /* TERAKAN_STATE_DRAW_INDEX_VGT_PRIMITIVE_TYPE */
    uint32_t vgt_primitive_type;
 
-   /* TERAKAN_STATE_DRAW_VGT_INDEX_OFFSET */
+   /* TERAKAN_STATE_DRAW_INDEX_VGT_INDEX_OFFSET */
    uint32_t vgt_index_offset;
 
-   /* TERAKAN_STATE_DRAW_SQ_PGM_FS */
+   /* TERAKAN_STATE_DRAW_INDEX_SQ_PGM_FS */
    struct {
       /* Vertex input state can be either static (from a pipeline with non-dynamic vertex input
        * state and a vertex shader) or dynamic (from vkCmdSetVertexInputEXT).
@@ -174,23 +174,23 @@ struct terakan_state_draw {
       uint32_t bindings_with_2048_stride_workaround;
    } sq_pgm_fs;
 
-   /* TERAKAN_STATE_DRAW_SQ_RESOURCES_FS */
+   /* TERAKAN_STATE_DRAW_INDEX_SQ_RESOURCES_FS */
    uint32_t sq_resources_fs_pending;
    struct terakan_state_draw_sq_resource_fs sq_resources_fs[TERAKAN_RESOURCE_HW_COUNT_FETCH];
 
    /* Set via terakan_state_draw_set_viewport_count. */
    uint32_t viewport_count;
 
-   /* TERAKAN_STATE_DRAW_PA_CL_VPORT_XY_SCALE_OFFSET:
+   /* TERAKAN_STATE_DRAW_INDEX_PA_CL_VPORT_XY_SCALE_OFFSET:
     * - pa_cl_vport_xy_scale_offset
-    * TERAKAN_STATE_DRAW_PA_CL_VPORT_Z_SCALE_OFFSET:
+    * TERAKAN_STATE_DRAW_INDEX_PA_CL_VPORT_Z_SCALE_OFFSET:
     * - pa_cl_vport_z_gl_dx_scale_offset
-    * TERAKAN_STATE_DRAW_PA_CL_GB:
+    * TERAKAN_STATE_DRAW_INDEX_PA_CL_GB:
     * - pa_cl_gb_vert_horz_clip_adj
-    * TERAKAN_STATE_DRAW_PA_SC_VPORT_SCISSOR:
+    * TERAKAN_STATE_DRAW_INDEX_PA_SC_VPORT_SCISSOR:
     * - pa_sc_vport_scissor_tl_br_xy
     * - pa_sc_vport_generic_scissor_tl_br_xy
-    * TERAKAN_STATE_DRAW_PA_SC_VPORT_Z_MIN_MAX:
+    * TERAKAN_STATE_DRAW_INDEX_PA_SC_VPORT_Z_MIN_MAX:
     * - pa_sc_vport_z_min_max
     * - pa_sc_vport_z_min_0_max_1
     */
@@ -204,18 +204,18 @@ struct terakan_state_draw {
     */
    bool pa_sc_vport_z_min_0_max_1;
 
-   /* All: TERAKAN_STATE_DRAW_PA_CL_CLIP_CNTL
-    * DX_CLIP_SPACE_DEF: additionally TERAKAN_STATE_DRAW_PA_CL_VPORT_Z_SCALE_OFFSET
+   /* All: TERAKAN_STATE_DRAW_INDEX_PA_CL_CLIP_CNTL
+    * DX_CLIP_SPACE_DEF: additionally TERAKAN_STATE_DRAW_INDEX_PA_CL_VPORT_Z_SCALE_OFFSET
     */
    uint32_t pa_cl_clip_cntl;
 
-   /* TERAKAN_STATE_DRAW_PA_SU_SC_MODE_CNTL */
+   /* TERAKAN_STATE_DRAW_INDEX_PA_SU_SC_MODE_CNTL */
    uint32_t pa_su_sc_mode_cntl;
 
-   /* TERAKAN_STATE_DRAW_PA_SC_AA_MASK */
+   /* TERAKAN_STATE_DRAW_INDEX_PA_SC_AA_MASK */
    uint16_t pa_sc_aa_mask;
 
-   /* TERAKAN_STATE_DRAW_DB_RENDER_OVERRIDE */
+   /* TERAKAN_STATE_DRAW_INDEX_DB_RENDER_OVERRIDE */
    uint32_t db_render_override;
 
    /* Color target state is indexed by render pass color attachment index (hence the word
@@ -228,7 +228,7 @@ struct terakan_state_draw {
     * skipping targets not in `color_attachment_usage.written_by_shader`.
     */
 
-   /* TERAKAN_STATE_DRAW_COLOR_ATTACHMENT_USAGE */
+   /* TERAKAN_STATE_DRAW_INDEX_COLOR_ATTACHMENT_USAGE */
    struct {
       /* The mask used for compaction of render pass color attachment indices in this state
        * structure into hardware state color attachment indices.
@@ -238,14 +238,14 @@ struct terakan_state_draw {
       uint8_t bound;
    } color_attachment_usage;
 
-   /* TERAKAN_STATE_DRAW_CB_TARGET_MASK application feedback for dependent state. */
+   /* TERAKAN_STATE_DRAW_INDEX_CB_TARGET_MASK application feedback for dependent state. */
    struct {
       struct {
          bool any_target_enabled;
       } apply_result;
    } cb_target_mask;
 
-   /* TERAKAN_STATE_DRAW_CB_COLOR_MRT
+   /* TERAKAN_STATE_DRAW_INDEX_CB_COLOR_MRT
     * The values are undefined if the color_attachments_bound bit for the color attachment index is
     * not set.
     * However, for bound color targets, all fields are expected to have defined values (no special

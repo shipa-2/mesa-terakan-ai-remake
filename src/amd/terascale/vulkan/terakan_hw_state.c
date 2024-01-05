@@ -1190,40 +1190,44 @@ terakan_hw_state_draw_emit_sq_resources_fs(struct terakan_gfx_command_writer * c
 }
 
 static terakan_hw_state_draw_emit_function const
-   terakan_hw_state_draw_emit_functions[TERAKAN_HW_STATE_DRAW_COUNT] = {
-      [TERAKAN_HW_STATE_DRAW_VGT_INDEX_TYPE] = terakan_hw_state_draw_emit_vgt_index_type,
-      [TERAKAN_HW_STATE_DRAW_VGT_INDEX_BUFFER] = terakan_hw_state_draw_emit_vgt_index_buffer,
-      [TERAKAN_HW_STATE_DRAW_VGT_PRIMITIVE_TYPE] = terakan_hw_state_draw_emit_vgt_primitive_type,
-      [TERAKAN_HW_STATE_DRAW_VGT_INDEX_OFFSET] = terakan_hw_state_draw_emit_vgt_index_offset,
-      [TERAKAN_HW_STATE_DRAW_SQ_PGM_FS] = terakan_hw_state_draw_emit_sq_pgm_fs,
-      [TERAKAN_HW_STATE_DRAW_SQ_PGM_VS] = terakan_hw_state_draw_emit_sq_pgm_vs,
-      [TERAKAN_HW_STATE_DRAW_SQ_PGM_PS] = terakan_hw_state_draw_emit_sq_pgm_ps,
-      [TERAKAN_HW_STATE_DRAW_SQ_VTX_START_INST_LOC] =
+   terakan_hw_state_draw_emit_functions[TERAKAN_HW_STATE_DRAW_INDEX_COUNT] = {
+      [TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_TYPE] = terakan_hw_state_draw_emit_vgt_index_type,
+      [TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_BUFFER] = terakan_hw_state_draw_emit_vgt_index_buffer,
+      [TERAKAN_HW_STATE_DRAW_INDEX_VGT_PRIMITIVE_TYPE] =
+         terakan_hw_state_draw_emit_vgt_primitive_type,
+      [TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_OFFSET] = terakan_hw_state_draw_emit_vgt_index_offset,
+      [TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_FS] = terakan_hw_state_draw_emit_sq_pgm_fs,
+      [TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_VS] = terakan_hw_state_draw_emit_sq_pgm_vs,
+      [TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_PS] = terakan_hw_state_draw_emit_sq_pgm_ps,
+      [TERAKAN_HW_STATE_DRAW_INDEX_SQ_VTX_START_INST_LOC] =
          terakan_hw_state_draw_emit_sq_vtx_start_inst_loc,
-      [TERAKAN_HW_STATE_DRAW_PA_CL_CLIP_CNTL] = terakan_hw_state_draw_emit_pa_cl_clip_cntl,
-      [TERAKAN_HW_STATE_DRAW_PA_SU_SC_MODE_CNTL] = terakan_hw_state_draw_emit_pa_su_sc_mode_cntl,
-      [TERAKAN_HW_STATE_DRAW_PA_CL_VTE_CNTL] = terakan_hw_state_draw_emit_pa_cl_vte_cntl,
-      [TERAKAN_HW_STATE_DRAW_PA_SC_MODE_CNTL_0] = terakan_hw_state_draw_emit_pa_sc_mode_cntl_0,
-      [TERAKAN_HW_STATE_DRAW_PA_CL_GB] = terakan_hw_state_draw_emit_pa_cl_gb,
-      [TERAKAN_HW_STATE_DRAW_PA_SC_AA_SAMPLES] = terakan_hw_state_draw_emit_pa_sc_aa_samples,
-      [TERAKAN_HW_STATE_DRAW_PA_SC_AA_MASK] = terakan_hw_state_draw_emit_pa_sc_aa_mask,
-      [TERAKAN_HW_STATE_DRAW_DB_RENDER_OVERRIDE] = terakan_hw_state_draw_emit_db_render_override,
-      [TERAKAN_HW_STATE_DRAW_CB_TARGET_MASK] = terakan_hw_state_draw_emit_cb_target_mask,
-      [TERAKAN_HW_STATE_DRAW_CB_BLEND_RGBA] = terakan_hw_state_draw_emit_cb_blend_rgba,
-      [TERAKAN_HW_STATE_DRAW_CB_COLOR_CONTROL] = terakan_hw_state_draw_emit_cb_color_control,
-      [TERAKAN_HW_STATE_DRAW_VIEWPORT] = terakan_hw_state_draw_emit_viewport,
-      [TERAKAN_HW_STATE_DRAW_CB_COLOR] = terakan_hw_state_draw_emit_cb_color,
-      [TERAKAN_HW_STATE_DRAW_SQ_KCACHE_VS] = terakan_hw_state_draw_emit_sq_kcache_vs,
-      [TERAKAN_HW_STATE_DRAW_SQ_KCACHE_TCS] = terakan_hw_state_draw_emit_sq_kcache_tcs,
-      [TERAKAN_HW_STATE_DRAW_SQ_KCACHE_TES] = terakan_hw_state_draw_emit_sq_kcache_tes,
-      [TERAKAN_HW_STATE_DRAW_SQ_KCACHE_GS] = terakan_hw_state_draw_emit_sq_kcache_gs,
-      [TERAKAN_HW_STATE_DRAW_SQ_KCACHE_FS] = terakan_hw_state_draw_emit_sq_kcache_fs,
-      [TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_VI] = terakan_hw_state_draw_emit_sq_resources_vi,
-      [TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_VS] = terakan_hw_state_draw_emit_sq_resources_vs,
-      [TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_TCS] = terakan_hw_state_draw_emit_sq_resources_tcs,
-      [TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_TES] = terakan_hw_state_draw_emit_sq_resources_tes,
-      [TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_GS] = terakan_hw_state_draw_emit_sq_resources_gs,
-      [TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_FS] = terakan_hw_state_draw_emit_sq_resources_fs,
+      [TERAKAN_HW_STATE_DRAW_INDEX_PA_CL_CLIP_CNTL] = terakan_hw_state_draw_emit_pa_cl_clip_cntl,
+      [TERAKAN_HW_STATE_DRAW_INDEX_PA_SU_SC_MODE_CNTL] =
+         terakan_hw_state_draw_emit_pa_su_sc_mode_cntl,
+      [TERAKAN_HW_STATE_DRAW_INDEX_PA_CL_VTE_CNTL] = terakan_hw_state_draw_emit_pa_cl_vte_cntl,
+      [TERAKAN_HW_STATE_DRAW_INDEX_PA_SC_MODE_CNTL_0] =
+         terakan_hw_state_draw_emit_pa_sc_mode_cntl_0,
+      [TERAKAN_HW_STATE_DRAW_INDEX_PA_CL_GB] = terakan_hw_state_draw_emit_pa_cl_gb,
+      [TERAKAN_HW_STATE_DRAW_INDEX_PA_SC_AA_SAMPLES] = terakan_hw_state_draw_emit_pa_sc_aa_samples,
+      [TERAKAN_HW_STATE_DRAW_INDEX_PA_SC_AA_MASK] = terakan_hw_state_draw_emit_pa_sc_aa_mask,
+      [TERAKAN_HW_STATE_DRAW_INDEX_DB_RENDER_OVERRIDE] =
+         terakan_hw_state_draw_emit_db_render_override,
+      [TERAKAN_HW_STATE_DRAW_INDEX_CB_TARGET_MASK] = terakan_hw_state_draw_emit_cb_target_mask,
+      [TERAKAN_HW_STATE_DRAW_INDEX_CB_BLEND_RGBA] = terakan_hw_state_draw_emit_cb_blend_rgba,
+      [TERAKAN_HW_STATE_DRAW_INDEX_CB_COLOR_CONTROL] = terakan_hw_state_draw_emit_cb_color_control,
+      [TERAKAN_HW_STATE_DRAW_INDEX_VIEWPORT] = terakan_hw_state_draw_emit_viewport,
+      [TERAKAN_HW_STATE_DRAW_INDEX_CB_COLOR] = terakan_hw_state_draw_emit_cb_color,
+      [TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_VS] = terakan_hw_state_draw_emit_sq_kcache_vs,
+      [TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_TCS] = terakan_hw_state_draw_emit_sq_kcache_tcs,
+      [TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_TES] = terakan_hw_state_draw_emit_sq_kcache_tes,
+      [TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_GS] = terakan_hw_state_draw_emit_sq_kcache_gs,
+      [TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_FS] = terakan_hw_state_draw_emit_sq_kcache_fs,
+      [TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_VI] = terakan_hw_state_draw_emit_sq_resources_vi,
+      [TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_VS] = terakan_hw_state_draw_emit_sq_resources_vs,
+      [TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_TCS] = terakan_hw_state_draw_emit_sq_resources_tcs,
+      [TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_TES] = terakan_hw_state_draw_emit_sq_resources_tes,
+      [TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_GS] = terakan_hw_state_draw_emit_sq_resources_gs,
+      [TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_FS] = terakan_hw_state_draw_emit_sq_resources_fs,
 };
 
 void
@@ -1258,7 +1262,7 @@ terakan_hw_state_draw_ensure_viewport_count(struct terakan_hw_state_draw * const
 
    state->viewport_count_ever_written = viewport_count;
 
-   BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_VIEWPORT);
+   BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_VIEWPORT);
 }
 
 /* Returns whether the buffer is now modified. */
@@ -1309,7 +1313,7 @@ terakan_hw_state_draw_set_sq_kcache_vs(struct terakan_hw_state_draw * const stat
           state, buffer_index, size_lines, bo, base_lines,
           TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_VS,
           TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_VS_IN_VSES,
-          TERAKAN_HW_STATE_DRAW_SQ_KCACHE_VS)) {
+          TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_VS)) {
       state->sq_constants_modified
          .kcache[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_VS_IN_LS] |= (uint16_t)1
                                                                                 << buffer_index;
@@ -1325,7 +1329,7 @@ terakan_hw_state_draw_set_sq_kcache_tcs(struct terakan_hw_state_draw * const sta
    terakan_hw_state_draw_set_sq_kcache_buffer(state, buffer_index, size_lines, bo, base_lines,
                                               TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_TCS,
                                               TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_TCS,
-                                              TERAKAN_HW_STATE_DRAW_SQ_KCACHE_TCS);
+                                              TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_TCS);
 }
 
 void
@@ -1338,7 +1342,7 @@ terakan_hw_state_draw_set_sq_kcache_tes(struct terakan_hw_state_draw * const sta
       state, buffer_index, size_lines, bo, base_lines,
       TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_TES,
       TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_TES_IN_VSES,
-      TERAKAN_HW_STATE_DRAW_SQ_KCACHE_TES);
+      TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_TES);
 }
 
 void
@@ -1350,7 +1354,7 @@ terakan_hw_state_draw_set_sq_kcache_gs(struct terakan_hw_state_draw * const stat
    terakan_hw_state_draw_set_sq_kcache_buffer(state, buffer_index, size_lines, bo, base_lines,
                                               TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_GS,
                                               TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_GS,
-                                              TERAKAN_HW_STATE_DRAW_SQ_KCACHE_GS);
+                                              TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_GS);
 }
 
 void
@@ -1362,7 +1366,7 @@ terakan_hw_state_draw_set_sq_kcache_fs(struct terakan_hw_state_draw * const stat
    terakan_hw_state_draw_set_sq_kcache_buffer(state, buffer_index, size_lines, bo, base_lines,
                                               TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_FS,
                                               TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_FS,
-                                              TERAKAN_HW_STATE_DRAW_SQ_KCACHE_FS);
+                                              TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_FS);
 }
 
 /* Returns whether the resource is now modified. */
@@ -1409,7 +1413,7 @@ terakan_hw_state_draw_set_sq_resource_vi(struct terakan_hw_state_draw * const st
    terakan_hw_state_draw_set_sq_resource(
       state, index, bo, descriptor, state->sq_resources_not_null.vi, state->sq_resource_bos.vi,
       state->sq_resource_descriptors.vi[0], state->sq_constants_needed.resources.vi,
-      state->sq_constants_modified.resources.vi, TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_VI);
+      state->sq_constants_modified.resources.vi, TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_VI);
 }
 
 void
@@ -1421,7 +1425,7 @@ terakan_hw_state_draw_set_sq_resource_vs(struct terakan_hw_state_draw * const st
           state, index, bo, descriptor, state->sq_resources_not_null.vs, state->sq_resource_bos.vs,
           state->sq_resource_descriptors.vs[0], state->sq_constants_needed.resources.vs,
           state->sq_constants_modified.resources.vs_in_vses,
-          TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_VS)) {
+          TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_VS)) {
       BITSET_SET(state->sq_constants_modified.resources.vs_in_ls, index);
    }
 }
@@ -1434,7 +1438,7 @@ terakan_hw_state_draw_set_sq_resource_tcs(struct terakan_hw_state_draw * const s
    terakan_hw_state_draw_set_sq_resource(
       state, index, bo, descriptor, state->sq_resources_not_null.tcs, state->sq_resource_bos.tcs,
       state->sq_resource_descriptors.tcs[0], state->sq_constants_needed.resources.tcs,
-      state->sq_constants_modified.resources.tcs, TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_TCS);
+      state->sq_constants_modified.resources.tcs, TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_TCS);
 }
 
 void
@@ -1445,7 +1449,8 @@ terakan_hw_state_draw_set_sq_resource_tes(struct terakan_hw_state_draw * const s
    terakan_hw_state_draw_set_sq_resource(
       state, index, bo, descriptor, state->sq_resources_not_null.tes, state->sq_resource_bos.tes,
       state->sq_resource_descriptors.tes[0], state->sq_constants_needed.resources.tes,
-      state->sq_constants_modified.resources.tes_in_vses, TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_TES);
+      state->sq_constants_modified.resources.tes_in_vses,
+      TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_TES);
 }
 
 void
@@ -1456,7 +1461,7 @@ terakan_hw_state_draw_set_sq_resource_gs(struct terakan_hw_state_draw * const st
    terakan_hw_state_draw_set_sq_resource(
       state, index, bo, descriptor, state->sq_resources_not_null.gs, state->sq_resource_bos.gs,
       state->sq_resource_descriptors.gs[0], state->sq_constants_needed.resources.gs,
-      state->sq_constants_modified.resources.gs, TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_GS);
+      state->sq_constants_modified.resources.gs, TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_GS);
 }
 
 void
@@ -1467,7 +1472,7 @@ terakan_hw_state_draw_set_sq_resource_fs(struct terakan_hw_state_draw * const st
    terakan_hw_state_draw_set_sq_resource(
       state, index, bo, descriptor, state->sq_resources_not_null.fs, state->sq_resource_bos.fs,
       state->sq_resource_descriptors.fs[0], state->sq_constants_needed.resources.fs,
-      state->sq_constants_modified.resources.fs, TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_FS);
+      state->sq_constants_modified.resources.fs, TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_FS);
 }
 
 static void
@@ -1514,11 +1519,11 @@ terakan_hw_state_draw_update_sq_constants_gs_needed(struct terakan_hw_state_draw
       return;
    }
    if (gs_needed) {
-      BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_SQ_KCACHE_GS);
-      BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_GS);
+      BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_GS);
+      BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_GS);
    } else {
-      BITSET_CLEAR(state->state_modified, TERAKAN_HW_STATE_DRAW_SQ_KCACHE_GS);
-      BITSET_CLEAR(state->state_modified, TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_GS);
+      BITSET_CLEAR(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_GS);
+      BITSET_CLEAR(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_GS);
    }
 }
 
@@ -1529,14 +1534,14 @@ terakan_hw_state_draw_set_sq_constants_needed_by_vi(struct terakan_hw_state_draw
    size_t const resource_bitset_size =
       sizeof(BITSET_WORD) * BITSET_WORDS(TERAKAN_RESOURCE_HW_COUNT_FETCH);
    if (resources_opt != NULL) {
-      if (!BITSET_TEST(state->state_modified, TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_VI) &&
+      if (!BITSET_TEST(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_VI) &&
           memcmp(state->sq_constants_needed.resources.vi, resources_opt, resource_bitset_size) !=
              0) {
-         BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_VI);
+         BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_VI);
       }
       memcpy(state->sq_constants_needed.resources.vi, resources_opt, resource_bitset_size);
    } else {
-      BITSET_CLEAR(state->state_modified, TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_VI);
+      BITSET_CLEAR(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_VI);
       memset(state->sq_constants_needed.resources.vi, 0, resource_bitset_size);
    }
 }
@@ -1549,22 +1554,22 @@ terakan_hw_state_draw_set_sq_constants_needed_by_vs(struct terakan_hw_state_draw
 {
    terakan_hw_state_draw_set_sq_constants_needed(
       state, kcache, resources_opt, true, TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_VS,
-      TERAKAN_HW_STATE_DRAW_SQ_KCACHE_VS, TERAKAN_RESOURCE_HW_COUNT_VERTEX,
-      state->sq_constants_needed.resources.vs, TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_VS);
+      TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_VS, TERAKAN_RESOURCE_HW_COUNT_VERTEX,
+      state->sq_constants_needed.resources.vs, TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_VS);
 
    bool const tcs_tes_needed = next_stage == VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
    if (state->sq_constants_needed.tcs_tes != tcs_tes_needed) {
       state->sq_constants_needed.tcs_tes = tcs_tes_needed;
       if (tcs_tes_needed) {
-         BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_SQ_KCACHE_TCS);
-         BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_SQ_KCACHE_TES);
-         BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_TCS);
-         BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_TES);
+         BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_TCS);
+         BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_TES);
+         BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_TCS);
+         BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_TES);
       } else {
-         BITSET_CLEAR(state->state_modified, TERAKAN_HW_STATE_DRAW_SQ_KCACHE_TCS);
-         BITSET_CLEAR(state->state_modified, TERAKAN_HW_STATE_DRAW_SQ_KCACHE_TES);
-         BITSET_CLEAR(state->state_modified, TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_TCS);
-         BITSET_CLEAR(state->state_modified, TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_TES);
+         BITSET_CLEAR(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_TCS);
+         BITSET_CLEAR(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_TES);
+         BITSET_CLEAR(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_TCS);
+         BITSET_CLEAR(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_TES);
       }
    }
 
@@ -1580,9 +1585,9 @@ terakan_hw_state_draw_set_sq_constants_needed_by_tcs(struct terakan_hw_state_dra
 {
    terakan_hw_state_draw_set_sq_constants_needed(
       state, kcache, resources_opt, state->sq_constants_needed.tcs_tes,
-      TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_TCS, TERAKAN_HW_STATE_DRAW_SQ_KCACHE_TCS,
-      TERAKAN_RESOURCE_HW_COUNT_VERTEX, state->sq_constants_needed.resources.tcs,
-      TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_TCS);
+      TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_TCS,
+      TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_TCS, TERAKAN_RESOURCE_HW_COUNT_VERTEX,
+      state->sq_constants_needed.resources.tcs, TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_TCS);
 }
 
 void
@@ -1593,9 +1598,9 @@ terakan_hw_state_draw_set_sq_constants_needed_by_tes(struct terakan_hw_state_dra
 {
    terakan_hw_state_draw_set_sq_constants_needed(
       state, kcache, resources_opt, state->sq_constants_needed.tcs_tes,
-      TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_TES, TERAKAN_HW_STATE_DRAW_SQ_KCACHE_TES,
-      TERAKAN_RESOURCE_HW_COUNT_VERTEX, state->sq_constants_needed.resources.tes,
-      TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_TES);
+      TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_TES,
+      TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_TES, TERAKAN_RESOURCE_HW_COUNT_VERTEX,
+      state->sq_constants_needed.resources.tes, TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_TES);
 
    bool const gs_was_needed = terakan_hw_state_draw_sq_constants_needed_by_gs(state);
    state->sq_constants_needed.gs_after_tes = next_stage_is_gs;
@@ -1609,9 +1614,9 @@ terakan_hw_state_draw_set_sq_constants_needed_by_gs(struct terakan_hw_state_draw
 {
    terakan_hw_state_draw_set_sq_constants_needed(
       state, kcache, resources_opt, terakan_hw_state_draw_sq_constants_needed_by_gs(state),
-      TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_GS, TERAKAN_HW_STATE_DRAW_SQ_KCACHE_GS,
+      TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_GS, TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_GS,
       TERAKAN_RESOURCE_HW_COUNT_VERTEX, state->sq_constants_needed.resources.gs,
-      TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_GS);
+      TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_GS);
 }
 
 void
@@ -1621,8 +1626,8 @@ terakan_hw_state_draw_set_sq_constants_needed_by_fs(struct terakan_hw_state_draw
 {
    terakan_hw_state_draw_set_sq_constants_needed(
       state, kcache, resources_opt, true, TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_FS,
-      TERAKAN_HW_STATE_DRAW_SQ_KCACHE_FS, TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE,
-      state->sq_constants_needed.resources.fs, TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_FS);
+      TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_FS, TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE,
+      state->sq_constants_needed.resources.fs, TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_FS);
 }
 
 void
@@ -1657,7 +1662,7 @@ terakan_hw_state_draw_emit_modified(struct terakan_gfx_command_writer * const co
 {
    struct terakan_hw_state_draw * const state = &command_writer->hw_state_draw;
    unsigned state_index;
-   BITSET_FOREACH_SET (state_index, state->state_modified, TERAKAN_HW_STATE_DRAW_COUNT) {
+   BITSET_FOREACH_SET (state_index, state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_COUNT) {
       terakan_hw_state_draw_emit_functions[state_index](command_writer);
       if (unlikely(!BITSET_TEST(state->state_modified, state_index))) {
          /* If state_modified was zeroed during an emit call, switched to another indirect buffer,
@@ -1686,7 +1691,7 @@ terakan_hw_state_draw_emit_all(struct terakan_gfx_command_writer * const command
    state->cb_color.modified = state->cb_color.ever_written;
 
    unsigned state_index;
-   BITSET_FOREACH_SET (state_index, state->state_ever_written, TERAKAN_HW_STATE_DRAW_COUNT) {
+   BITSET_FOREACH_SET (state_index, state->state_ever_written, TERAKAN_HW_STATE_DRAW_INDEX_COUNT) {
       terakan_hw_state_draw_emit_functions[state_index](command_writer);
    }
 }
@@ -1700,14 +1705,14 @@ terakan_hw_state_draw_reset(struct terakan_hw_state_draw * const state)
    state->viewport_count_ever_written = 0;
    state->viewports_modified = 0;
    /* For simplicity, consider the viewport state always valid (starting from 0 viewports). */
-   BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_VIEWPORT);
+   BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_INDEX_VIEWPORT);
 
    state->cb_color.ever_written = 0;
    state->cb_color.modified = 0;
    /* For simplicity, consider the color targets always valid (starting from no color targets ever
     * bound).
     */
-   BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_CB_COLOR);
+   BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_INDEX_CB_COLOR);
 
    memset(&state->sq_constants_needed, 0, sizeof(state->sq_constants_needed));
 
@@ -1721,16 +1726,16 @@ terakan_hw_state_draw_reset(struct terakan_hw_state_draw * const state)
     * been initialized to a valid state (to all being null).
     */
 
-   BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_SQ_KCACHE_VS);
-   BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_SQ_KCACHE_TCS);
-   BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_SQ_KCACHE_TES);
-   BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_SQ_KCACHE_GS);
-   BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_SQ_KCACHE_FS);
+   BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_VS);
+   BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_TCS);
+   BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_TES);
+   BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_GS);
+   BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_FS);
 
-   BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_VI);
-   BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_VS);
-   BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_TCS);
-   BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_TES);
-   BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_GS);
-   BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_SQ_RESOURCES_FS);
+   BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_VI);
+   BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_VS);
+   BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_TCS);
+   BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_TES);
+   BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_GS);
+   BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_FS);
 }

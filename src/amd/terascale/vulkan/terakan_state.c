@@ -73,7 +73,7 @@ terakan_state_draw_apply_vgt_index_type(struct terakan_gfx_command_writer * cons
       command_writer->hw_state_draw.vgt_index_type != command_writer->state_draw.vgt_index_type;
    command_writer->hw_state_draw.vgt_index_type = command_writer->state_draw.vgt_index_type;
    terakan_hw_state_draw_written(&command_writer->hw_state_draw,
-                                 TERAKAN_HW_STATE_DRAW_VGT_INDEX_TYPE, modified);
+                                 TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_TYPE, modified);
 }
 
 static void
@@ -83,7 +83,7 @@ terakan_state_draw_apply_vgt_primitive_type(struct terakan_gfx_command_writer * 
                          command_writer->state_draw.vgt_primitive_type;
    command_writer->hw_state_draw.vgt_primitive_type = command_writer->state_draw.vgt_primitive_type;
    terakan_hw_state_draw_written(&command_writer->hw_state_draw,
-                                 TERAKAN_HW_STATE_DRAW_VGT_PRIMITIVE_TYPE, modified);
+                                 TERAKAN_HW_STATE_DRAW_INDEX_VGT_PRIMITIVE_TYPE, modified);
 }
 
 static void
@@ -93,7 +93,7 @@ terakan_state_draw_apply_vgt_index_offset(struct terakan_gfx_command_writer * co
       command_writer->hw_state_draw.vgt_index_offset != command_writer->state_draw.vgt_index_offset;
    command_writer->hw_state_draw.vgt_index_offset = command_writer->state_draw.vgt_index_offset;
    terakan_hw_state_draw_written(&command_writer->hw_state_draw,
-                                 TERAKAN_HW_STATE_DRAW_VGT_INDEX_OFFSET, modified);
+                                 TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_OFFSET, modified);
 }
 
 static void
@@ -171,8 +171,8 @@ terakan_state_draw_apply_sq_pgm_fs(struct terakan_gfx_command_writer * const com
                                  command_writer->hw_state_draw.sq_pgm_fs.start != program_start;
    command_writer->hw_state_draw.sq_pgm_fs.bo = program_bo;
    command_writer->hw_state_draw.sq_pgm_fs.start = program_start;
-   terakan_hw_state_draw_written(&command_writer->hw_state_draw, TERAKAN_HW_STATE_DRAW_SQ_PGM_FS,
-                                 program_modified);
+   terakan_hw_state_draw_written(&command_writer->hw_state_draw,
+                                 TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_FS, program_modified);
 
    terakan_hw_state_draw_set_sq_constants_needed_by_vi(&command_writer->hw_state_draw,
                                                        resources_needed);
@@ -279,8 +279,8 @@ terakan_state_draw_apply_pa_cl_gb(struct terakan_gfx_command_writer * const comm
              pa_cl_gb_vert_horz_clip_disc_adj, sizeof(pa_cl_gb_vert_horz_clip_disc_adj)) != 0;
    memcpy(command_writer->hw_state_draw.pa_cl_gb_vert_horz_clip_disc_adj,
           pa_cl_gb_vert_horz_clip_disc_adj, sizeof(pa_cl_gb_vert_horz_clip_disc_adj));
-   terakan_hw_state_draw_written(&command_writer->hw_state_draw, TERAKAN_HW_STATE_DRAW_PA_CL_GB,
-                                 modified);
+   terakan_hw_state_draw_written(&command_writer->hw_state_draw,
+                                 TERAKAN_HW_STATE_DRAW_INDEX_PA_CL_GB, modified);
 }
 
 static void
@@ -360,7 +360,7 @@ terakan_state_draw_apply_pa_cl_clip_cntl(struct terakan_gfx_command_writer * con
       command_writer->hw_state_draw.pa_cl_clip_cntl != command_writer->state_draw.pa_cl_clip_cntl;
    command_writer->hw_state_draw.pa_cl_clip_cntl = command_writer->state_draw.pa_cl_clip_cntl;
    terakan_hw_state_draw_written(&command_writer->hw_state_draw,
-                                 TERAKAN_HW_STATE_DRAW_PA_CL_CLIP_CNTL, modified);
+                                 TERAKAN_HW_STATE_DRAW_INDEX_PA_CL_CLIP_CNTL, modified);
 }
 
 static void
@@ -370,7 +370,7 @@ terakan_state_draw_apply_pa_su_sc_mode_cntl(struct terakan_gfx_command_writer * 
                          command_writer->state_draw.pa_su_sc_mode_cntl;
    command_writer->hw_state_draw.pa_su_sc_mode_cntl = command_writer->state_draw.pa_su_sc_mode_cntl;
    terakan_hw_state_draw_written(&command_writer->hw_state_draw,
-                                 TERAKAN_HW_STATE_DRAW_PA_SU_SC_MODE_CNTL, modified);
+                                 TERAKAN_HW_STATE_DRAW_INDEX_PA_SU_SC_MODE_CNTL, modified);
 }
 
 static void
@@ -383,7 +383,7 @@ terakan_state_draw_apply_pa_cl_vte_cntl(struct terakan_gfx_command_writer * cons
    bool const modified = command_writer->hw_state_draw.pa_cl_vte_cntl != pa_cl_vte_cntl;
    command_writer->hw_state_draw.pa_cl_vte_cntl = pa_cl_vte_cntl;
    terakan_hw_state_draw_written(&command_writer->hw_state_draw,
-                                 TERAKAN_HW_STATE_DRAW_PA_CL_VTE_CNTL, modified);
+                                 TERAKAN_HW_STATE_DRAW_INDEX_PA_CL_VTE_CNTL, modified);
 }
 
 static void
@@ -394,7 +394,7 @@ terakan_state_draw_apply_pa_sc_mode_cntl_0(struct terakan_gfx_command_writer * c
    bool const modified = command_writer->hw_state_draw.pa_sc_mode_cntl_0 != pa_sc_mode_cntl_0;
    command_writer->hw_state_draw.pa_sc_mode_cntl_0 = pa_sc_mode_cntl_0;
    terakan_hw_state_draw_written(&command_writer->hw_state_draw,
-                                 TERAKAN_HW_STATE_DRAW_PA_SC_MODE_CNTL_0, modified);
+                                 TERAKAN_HW_STATE_DRAW_INDEX_PA_SC_MODE_CNTL_0, modified);
 }
 
 static void
@@ -404,7 +404,7 @@ terakan_state_draw_apply_pa_sc_aa_mask(struct terakan_gfx_command_writer * const
       command_writer->hw_state_draw.pa_sc_aa_mask != command_writer->state_draw.pa_sc_aa_mask;
    command_writer->hw_state_draw.pa_sc_aa_mask = command_writer->state_draw.pa_sc_aa_mask;
    terakan_hw_state_draw_written(&command_writer->hw_state_draw,
-                                 TERAKAN_HW_STATE_DRAW_PA_SC_AA_MASK, modified);
+                                 TERAKAN_HW_STATE_DRAW_INDEX_PA_SC_AA_MASK, modified);
 }
 
 static void
@@ -414,7 +414,7 @@ terakan_state_draw_apply_db_render_override(struct terakan_gfx_command_writer * 
                          command_writer->state_draw.db_render_override;
    command_writer->hw_state_draw.db_render_override = command_writer->state_draw.db_render_override;
    terakan_hw_state_draw_written(&command_writer->hw_state_draw,
-                                 TERAKAN_HW_STATE_DRAW_DB_RENDER_OVERRIDE, modified);
+                                 TERAKAN_HW_STATE_DRAW_INDEX_DB_RENDER_OVERRIDE, modified);
 }
 
 static void
@@ -422,9 +422,11 @@ terakan_state_draw_apply_color_attachment_usage(
    struct terakan_gfx_command_writer * const command_writer)
 {
    TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_TARGET_MASK, COLOR_ATTACHMENT_USAGE);
-   terakan_state_draw_set_pending(&command_writer->state_draw, TERAKAN_STATE_DRAW_CB_TARGET_MASK);
+   terakan_state_draw_set_pending(&command_writer->state_draw,
+                                  TERAKAN_STATE_DRAW_INDEX_CB_TARGET_MASK);
    TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_COLOR_MRT, COLOR_ATTACHMENT_USAGE);
-   terakan_state_draw_set_pending(&command_writer->state_draw, TERAKAN_STATE_DRAW_CB_COLOR_MRT);
+   terakan_state_draw_set_pending(&command_writer->state_draw,
+                                  TERAKAN_STATE_DRAW_INDEX_CB_COLOR_MRT);
 }
 
 static void
@@ -457,7 +459,7 @@ terakan_state_draw_apply_cb_target_mask(struct terakan_gfx_command_writer * cons
    bool const modified = command_writer->hw_state_draw.cb_target_mask != cb_target_mask;
    command_writer->hw_state_draw.cb_target_mask = cb_target_mask;
    terakan_hw_state_draw_written(&command_writer->hw_state_draw,
-                                 TERAKAN_HW_STATE_DRAW_CB_TARGET_MASK, modified);
+                                 TERAKAN_HW_STATE_DRAW_INDEX_CB_TARGET_MASK, modified);
 
    bool const any_target_enabled = cb_target_mask != 0;
    if (command_writer->state_draw.cb_target_mask.apply_result.any_target_enabled !=
@@ -466,7 +468,7 @@ terakan_state_draw_apply_cb_target_mask(struct terakan_gfx_command_writer * cons
          any_target_enabled;
       TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_COLOR_CONTROL, CB_TARGET_MASK);
       terakan_state_draw_set_pending(&command_writer->state_draw,
-                                     TERAKAN_STATE_DRAW_CB_COLOR_CONTROL);
+                                     TERAKAN_STATE_DRAW_INDEX_CB_COLOR_CONTROL);
    }
 }
 
@@ -482,7 +484,7 @@ terakan_state_draw_apply_cb_color_control(struct terakan_gfx_command_writer * co
    bool const modified = command_writer->hw_state_draw.cb_color_control != cb_color_control;
    command_writer->hw_state_draw.cb_color_control = cb_color_control;
    terakan_hw_state_draw_written(&command_writer->hw_state_draw,
-                                 TERAKAN_HW_STATE_DRAW_CB_COLOR_CONTROL, modified);
+                                 TERAKAN_HW_STATE_DRAW_INDEX_CB_COLOR_CONTROL, modified);
 }
 
 static void
@@ -516,29 +518,31 @@ terakan_state_draw_apply_cb_color_mrt(struct terakan_gfx_command_writer * const 
 }
 
 static terakan_state_draw_apply_function const
-   terakan_state_draw_apply_functions[TERAKAN_STATE_DRAW_COUNT] = {
-      [TERAKAN_STATE_DRAW_VGT_INDEX_TYPE] = terakan_state_draw_apply_vgt_index_type,
-      [TERAKAN_STATE_DRAW_VGT_PRIMITIVE_TYPE] = terakan_state_draw_apply_vgt_primitive_type,
-      [TERAKAN_STATE_DRAW_VGT_INDEX_OFFSET] = terakan_state_draw_apply_vgt_index_offset,
-      [TERAKAN_STATE_DRAW_SQ_PGM_FS] = terakan_state_draw_apply_sq_pgm_fs,
-      [TERAKAN_STATE_DRAW_SQ_RESOURCES_FS] = terakan_state_draw_apply_sq_resources_fs,
-      [TERAKAN_STATE_DRAW_PA_CL_VPORT_XY_SCALE_OFFSET] =
+   terakan_state_draw_apply_functions[TERAKAN_STATE_DRAW_INDEX_COUNT] = {
+      [TERAKAN_STATE_DRAW_INDEX_VGT_INDEX_TYPE] = terakan_state_draw_apply_vgt_index_type,
+      [TERAKAN_STATE_DRAW_INDEX_VGT_PRIMITIVE_TYPE] = terakan_state_draw_apply_vgt_primitive_type,
+      [TERAKAN_STATE_DRAW_INDEX_VGT_INDEX_OFFSET] = terakan_state_draw_apply_vgt_index_offset,
+      [TERAKAN_STATE_DRAW_INDEX_SQ_PGM_FS] = terakan_state_draw_apply_sq_pgm_fs,
+      [TERAKAN_STATE_DRAW_INDEX_SQ_RESOURCES_FS] = terakan_state_draw_apply_sq_resources_fs,
+      [TERAKAN_STATE_DRAW_INDEX_PA_CL_VPORT_XY_SCALE_OFFSET] =
          terakan_state_draw_apply_pa_cl_vport_xy_scale_offset,
-      [TERAKAN_STATE_DRAW_PA_CL_VPORT_Z_SCALE_OFFSET] =
+      [TERAKAN_STATE_DRAW_INDEX_PA_CL_VPORT_Z_SCALE_OFFSET] =
          terakan_state_draw_apply_pa_cl_vport_z_scale_offset,
-      [TERAKAN_STATE_DRAW_PA_CL_GB] = terakan_state_draw_apply_pa_cl_gb,
-      [TERAKAN_STATE_DRAW_PA_SC_VPORT_SCISSOR] = terakan_state_draw_apply_pa_sc_vport_scissor,
-      [TERAKAN_STATE_DRAW_PA_SC_VPORT_Z_MIN_MAX] = terakan_state_draw_apply_pa_sc_vport_z_min_max,
-      [TERAKAN_STATE_DRAW_PA_CL_CLIP_CNTL] = terakan_state_draw_apply_pa_cl_clip_cntl,
-      [TERAKAN_STATE_DRAW_PA_SU_SC_MODE_CNTL] = terakan_state_draw_apply_pa_su_sc_mode_cntl,
-      [TERAKAN_STATE_DRAW_PA_CL_VTE_CNTL] = terakan_state_draw_apply_pa_cl_vte_cntl,
-      [TERAKAN_STATE_DRAW_PA_SC_MODE_CNTL_0] = terakan_state_draw_apply_pa_sc_mode_cntl_0,
-      [TERAKAN_STATE_DRAW_PA_SC_AA_MASK] = terakan_state_draw_apply_pa_sc_aa_mask,
-      [TERAKAN_STATE_DRAW_DB_RENDER_OVERRIDE] = terakan_state_draw_apply_db_render_override,
-      [TERAKAN_STATE_DRAW_COLOR_ATTACHMENT_USAGE] = terakan_state_draw_apply_color_attachment_usage,
-      [TERAKAN_STATE_DRAW_CB_TARGET_MASK] = terakan_state_draw_apply_cb_target_mask,
-      [TERAKAN_STATE_DRAW_CB_COLOR_CONTROL] = terakan_state_draw_apply_cb_color_control,
-      [TERAKAN_STATE_DRAW_CB_COLOR_MRT] = terakan_state_draw_apply_cb_color_mrt,
+      [TERAKAN_STATE_DRAW_INDEX_PA_CL_GB] = terakan_state_draw_apply_pa_cl_gb,
+      [TERAKAN_STATE_DRAW_INDEX_PA_SC_VPORT_SCISSOR] = terakan_state_draw_apply_pa_sc_vport_scissor,
+      [TERAKAN_STATE_DRAW_INDEX_PA_SC_VPORT_Z_MIN_MAX] =
+         terakan_state_draw_apply_pa_sc_vport_z_min_max,
+      [TERAKAN_STATE_DRAW_INDEX_PA_CL_CLIP_CNTL] = terakan_state_draw_apply_pa_cl_clip_cntl,
+      [TERAKAN_STATE_DRAW_INDEX_PA_SU_SC_MODE_CNTL] = terakan_state_draw_apply_pa_su_sc_mode_cntl,
+      [TERAKAN_STATE_DRAW_INDEX_PA_CL_VTE_CNTL] = terakan_state_draw_apply_pa_cl_vte_cntl,
+      [TERAKAN_STATE_DRAW_INDEX_PA_SC_MODE_CNTL_0] = terakan_state_draw_apply_pa_sc_mode_cntl_0,
+      [TERAKAN_STATE_DRAW_INDEX_PA_SC_AA_MASK] = terakan_state_draw_apply_pa_sc_aa_mask,
+      [TERAKAN_STATE_DRAW_INDEX_DB_RENDER_OVERRIDE] = terakan_state_draw_apply_db_render_override,
+      [TERAKAN_STATE_DRAW_INDEX_COLOR_ATTACHMENT_USAGE] =
+         terakan_state_draw_apply_color_attachment_usage,
+      [TERAKAN_STATE_DRAW_INDEX_CB_TARGET_MASK] = terakan_state_draw_apply_cb_target_mask,
+      [TERAKAN_STATE_DRAW_INDEX_CB_COLOR_CONTROL] = terakan_state_draw_apply_cb_color_control,
+      [TERAKAN_STATE_DRAW_INDEX_CB_COLOR_MRT] = terakan_state_draw_apply_cb_color_mrt,
 };
 
 void
@@ -550,7 +554,7 @@ terakan_state_draw_apply_pending(struct terakan_gfx_command_writer * const comma
     * if the latter depend on the former.
     */
    unsigned next_state_index = 0;
-   while (next_state_index < TERAKAN_STATE_DRAW_COUNT) {
+   while (next_state_index < TERAKAN_STATE_DRAW_INDEX_COUNT) {
       unsigned const next_state_word_index = BITSET_BITWORD(next_state_index);
       BITSET_WORD const next_state_word_remaining =
          state->state_pending[next_state_word_index] & ~(BITSET_BIT(next_state_index) - 1);
@@ -560,7 +564,7 @@ terakan_state_draw_apply_pending(struct terakan_gfx_command_writer * const comma
       }
       unsigned const state_index =
          BITSET_WORDBITS * next_state_word_index + (ffs(next_state_word_remaining) - 1);
-      if (state_index >= TERAKAN_STATE_DRAW_COUNT) {
+      if (state_index >= TERAKAN_STATE_DRAW_INDEX_COUNT) {
          /* Ignore the bits beyond the end of the bitset. */
          break;
       }

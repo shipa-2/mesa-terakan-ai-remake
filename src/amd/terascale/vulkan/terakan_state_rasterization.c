@@ -117,25 +117,27 @@ terakan_CmdSetViewport(VkCommandBuffer const commandBuffer, uint32_t const first
       }
       if (memcmp(viewport->pa_cl_vport_xy_scale_offset, old_viewport.pa_cl_vport_xy_scale_offset,
                  sizeof(viewport->pa_cl_vport_xy_scale_offset)) != 0) {
-         terakan_state_draw_set_pending(state_draw, TERAKAN_STATE_DRAW_PA_CL_VPORT_XY_SCALE_OFFSET);
+         terakan_state_draw_set_pending(state_draw,
+                                        TERAKAN_STATE_DRAW_INDEX_PA_CL_VPORT_XY_SCALE_OFFSET);
       }
       if (memcmp(viewport->pa_cl_vport_z_gl_dx_scale_offset,
                  old_viewport.pa_cl_vport_z_gl_dx_scale_offset,
                  sizeof(viewport->pa_cl_vport_z_gl_dx_scale_offset)) != 0) {
-         terakan_state_draw_set_pending(state_draw, TERAKAN_STATE_DRAW_PA_CL_VPORT_Z_SCALE_OFFSET);
+         terakan_state_draw_set_pending(state_draw,
+                                        TERAKAN_STATE_DRAW_INDEX_PA_CL_VPORT_Z_SCALE_OFFSET);
       }
       if (memcmp(viewport->pa_cl_gb_vert_horz_clip_adj, old_viewport.pa_cl_gb_vert_horz_clip_adj,
                  sizeof(viewport->pa_cl_gb_vert_horz_clip_adj)) != 0) {
-         terakan_state_draw_set_pending(state_draw, TERAKAN_STATE_DRAW_PA_CL_GB);
+         terakan_state_draw_set_pending(state_draw, TERAKAN_STATE_DRAW_INDEX_PA_CL_GB);
       }
       if (memcmp(viewport->pa_sc_vport_scissor_tl_br_xy, old_viewport.pa_sc_vport_scissor_tl_br_xy,
                  sizeof(viewport->pa_sc_vport_scissor_tl_br_xy)) != 0) {
-         terakan_state_draw_set_pending(state_draw, TERAKAN_STATE_DRAW_PA_SC_VPORT_SCISSOR);
+         terakan_state_draw_set_pending(state_draw, TERAKAN_STATE_DRAW_INDEX_PA_SC_VPORT_SCISSOR);
       }
       if (memcmp(viewport->pa_sc_vport_z_min_max, old_viewport.pa_sc_vport_z_min_max,
                  sizeof(viewport->pa_sc_vport_z_min_max)) != 0 &&
           !state_draw->pa_sc_vport_z_min_0_max_1) {
-         terakan_state_draw_set_pending(state_draw, TERAKAN_STATE_DRAW_PA_SC_VPORT_Z_MIN_MAX);
+         terakan_state_draw_set_pending(state_draw, TERAKAN_STATE_DRAW_INDEX_PA_SC_VPORT_Z_MIN_MAX);
       }
    }
 }
@@ -149,15 +151,15 @@ terakan_state_draw_set_viewport_count(struct terakan_state_draw * const state,
       return;
    }
    if (viewport_count > state->viewport_count) {
-      terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_PA_CL_VPORT_XY_SCALE_OFFSET);
-      terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_PA_CL_VPORT_Z_SCALE_OFFSET);
-      terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_PA_SC_VPORT_SCISSOR);
+      terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_INDEX_PA_CL_VPORT_XY_SCALE_OFFSET);
+      terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_INDEX_PA_CL_VPORT_Z_SCALE_OFFSET);
+      terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_INDEX_PA_SC_VPORT_SCISSOR);
       /* Make sure either the actual Z min / max or 0 to 1 is applied to the new viewports depending
        * on the pa_sc_vport_z_min_0_max_1 setting.
        */
-      terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_PA_SC_VPORT_Z_MIN_MAX);
+      terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_INDEX_PA_SC_VPORT_Z_MIN_MAX);
    }
-   terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_PA_CL_GB);
+   terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_INDEX_PA_CL_GB);
    state->viewport_count = viewport_count;
 }
 
@@ -186,7 +188,7 @@ terakan_CmdSetScissor(VkCommandBuffer const commandBuffer, uint32_t const firstS
       terakan_state_translate_window_rect_unpacked(&pScissors[scissor_index], scissor);
       if (viewport_index < state_draw->viewport_count &&
           memcmp(viewport_scissor, scissor, sizeof(scissor)) != 0) {
-         terakan_state_draw_set_pending(state_draw, TERAKAN_STATE_DRAW_PA_SC_VPORT_SCISSOR);
+         terakan_state_draw_set_pending(state_draw, TERAKAN_STATE_DRAW_INDEX_PA_SC_VPORT_SCISSOR);
       }
       memcpy(viewport_scissor, scissor, sizeof(scissor));
    }
@@ -207,9 +209,10 @@ terakan_CmdSetDepthClipNegativeOneToOneEXT(VkCommandBuffer const commandBuffer,
       &terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx->state_draw;
    uint32_t const dx_clip_space_def = !negativeOneToOne;
    if (G_028810_DX_CLIP_SPACE_DEF(state_draw->pa_cl_clip_cntl) != dx_clip_space_def) {
-      terakan_state_draw_set_pending(state_draw, TERAKAN_STATE_DRAW_PA_CL_VPORT_Z_SCALE_OFFSET);
+      terakan_state_draw_set_pending(state_draw,
+                                     TERAKAN_STATE_DRAW_INDEX_PA_CL_VPORT_Z_SCALE_OFFSET);
    }
-   terakan_state_draw_replace_fields(state_draw, TERAKAN_STATE_DRAW_PA_CL_CLIP_CNTL,
+   terakan_state_draw_replace_fields(state_draw, TERAKAN_STATE_DRAW_INDEX_PA_CL_CLIP_CNTL,
                                      &state_draw->pa_cl_clip_cntl, C_028810_DX_CLIP_SPACE_DEF,
                                      S_028810_DX_CLIP_SPACE_DEF(dx_clip_space_def));
 }
@@ -221,7 +224,7 @@ terakan_CmdSetRasterizerDiscardEnable(VkCommandBuffer const commandBuffer,
    struct terakan_state_draw * const state_draw =
       &terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx->state_draw;
    terakan_state_draw_replace_fields(
-      state_draw, TERAKAN_STATE_DRAW_PA_CL_CLIP_CNTL, &state_draw->pa_cl_clip_cntl,
+      state_draw, TERAKAN_STATE_DRAW_INDEX_PA_CL_CLIP_CNTL, &state_draw->pa_cl_clip_cntl,
       TERAKAN_STATE_DRAW_RASTERIZER_DISCARD_ENABLE_PA_CL_CLIP_CNTL_CLEAR,
       terakan_state_draw_rasterizer_discard_enable_pa_cl_clip_cntl(rasterizerDiscardEnable));
 }
@@ -236,18 +239,18 @@ terakan_CmdSetDepthClampEnableEXT(VkCommandBuffer const commandBuffer,
    bool const depth_clamp_disable = !depthClampEnable;
    if (state_draw->cmd_set_depth_clamp_enable_sets_depth_clip_enable) {
       terakan_state_draw_replace_fields(
-         state_draw, TERAKAN_STATE_DRAW_PA_CL_CLIP_CNTL, &state_draw->pa_cl_clip_cntl,
+         state_draw, TERAKAN_STATE_DRAW_INDEX_PA_CL_CLIP_CNTL, &state_draw->pa_cl_clip_cntl,
          TERAKAN_STATE_DRAW_DEPTH_CLIP_ENABLE_PA_CL_CLIP_CNTL_CLEAR,
          terakan_state_draw_depth_clip_enable_pa_cl_clip_cntl(depth_clamp_disable));
    }
    if (command_buffer->vk.pool->base.device->enabled_extensions.EXT_depth_range_unrestricted) {
       terakan_state_draw_replace_fields(
-         state_draw, TERAKAN_STATE_DRAW_DB_RENDER_OVERRIDE, &state_draw->db_render_override,
+         state_draw, TERAKAN_STATE_DRAW_INDEX_DB_RENDER_OVERRIDE, &state_draw->db_render_override,
          C_02800C_DISABLE_VIEWPORT_CLAMP, S_02800C_DISABLE_VIEWPORT_CLAMP(depth_clamp_disable));
    } else {
       if (state_draw->pa_sc_vport_z_min_0_max_1 != depth_clamp_disable) {
          state_draw->pa_sc_vport_z_min_0_max_1 = depth_clamp_disable;
-         terakan_state_draw_set_pending(state_draw, TERAKAN_STATE_DRAW_PA_SC_VPORT_Z_MIN_MAX);
+         terakan_state_draw_set_pending(state_draw, TERAKAN_STATE_DRAW_INDEX_PA_SC_VPORT_Z_MIN_MAX);
       }
    }
 }
@@ -259,7 +262,7 @@ terakan_CmdSetDepthClipEnableEXT(VkCommandBuffer const commandBuffer,
    struct terakan_state_draw * const state_draw =
       &terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx->state_draw;
    terakan_state_draw_replace_fields(
-      state_draw, TERAKAN_STATE_DRAW_PA_CL_CLIP_CNTL, &state_draw->pa_cl_clip_cntl,
+      state_draw, TERAKAN_STATE_DRAW_INDEX_PA_CL_CLIP_CNTL, &state_draw->pa_cl_clip_cntl,
       TERAKAN_STATE_DRAW_DEPTH_CLIP_ENABLE_PA_CL_CLIP_CNTL_CLEAR,
       terakan_state_draw_depth_clip_enable_pa_cl_clip_cntl(depthClipEnable));
 }
@@ -270,7 +273,7 @@ terakan_CmdSetPolygonModeEXT(VkCommandBuffer const commandBuffer, VkPolygonMode 
    struct terakan_state_draw * const state_draw =
       &terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx->state_draw;
    terakan_state_draw_replace_fields(
-      state_draw, TERAKAN_STATE_DRAW_PA_SU_SC_MODE_CNTL, &state_draw->pa_su_sc_mode_cntl,
+      state_draw, TERAKAN_STATE_DRAW_INDEX_PA_SU_SC_MODE_CNTL, &state_draw->pa_su_sc_mode_cntl,
       TERAKAN_STATE_DRAW_POLYGON_MODE_PA_SU_SC_MODE_CNTL_CLEAR,
       terakan_state_draw_polygon_mode_pa_su_sc_mode_cntl(polygonMode));
 }
@@ -280,7 +283,7 @@ terakan_CmdSetCullMode(VkCommandBuffer const commandBuffer, VkCullModeFlags cons
 {
    struct terakan_state_draw * const state_draw =
       &terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx->state_draw;
-   terakan_state_draw_replace_fields(state_draw, TERAKAN_STATE_DRAW_PA_SU_SC_MODE_CNTL,
+   terakan_state_draw_replace_fields(state_draw, TERAKAN_STATE_DRAW_INDEX_PA_SU_SC_MODE_CNTL,
                                      &state_draw->pa_su_sc_mode_cntl,
                                      TERAKAN_STATE_DRAW_CULL_MODE_PA_SU_SC_MODE_CNTL_CLEAR,
                                      terakan_state_draw_cull_mode_pa_su_sc_mode_cntl(cullMode));
@@ -291,7 +294,7 @@ terakan_CmdSetFrontFace(VkCommandBuffer const commandBuffer, VkFrontFace const f
 {
    struct terakan_state_draw * const state_draw =
       &terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx->state_draw;
-   terakan_state_draw_replace_fields(state_draw, TERAKAN_STATE_DRAW_PA_SU_SC_MODE_CNTL,
+   terakan_state_draw_replace_fields(state_draw, TERAKAN_STATE_DRAW_INDEX_PA_SU_SC_MODE_CNTL,
                                      &state_draw->pa_su_sc_mode_cntl,
                                      TERAKAN_STATE_DRAW_FRONT_FACE_PA_SU_SC_MODE_CNTL_CLEAR,
                                      terakan_state_draw_front_face_pa_su_sc_mode_cntl(frontFace));
@@ -304,7 +307,7 @@ terakan_CmdSetProvokingVertexModeEXT(VkCommandBuffer const commandBuffer,
    struct terakan_state_draw * const state_draw =
       &terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx->state_draw;
    terakan_state_draw_replace_fields(
-      state_draw, TERAKAN_STATE_DRAW_PA_SU_SC_MODE_CNTL, &state_draw->pa_su_sc_mode_cntl,
+      state_draw, TERAKAN_STATE_DRAW_INDEX_PA_SU_SC_MODE_CNTL, &state_draw->pa_su_sc_mode_cntl,
       TERAKAN_STATE_DRAW_PROVOKING_VERTEX_MODE_PA_SU_SC_MODE_CNTL_CLEAR,
       terakan_state_draw_provoking_vertex_mode_pa_su_sc_mode_cntl(provokingVertexMode));
 }
@@ -315,7 +318,7 @@ terakan_CmdSetDepthBiasEnable(VkCommandBuffer const commandBuffer, VkBool32 cons
    struct terakan_state_draw * const state_draw =
       &terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx->state_draw;
    terakan_state_draw_replace_fields(
-      state_draw, TERAKAN_STATE_DRAW_PA_SU_SC_MODE_CNTL, &state_draw->pa_su_sc_mode_cntl,
+      state_draw, TERAKAN_STATE_DRAW_INDEX_PA_SU_SC_MODE_CNTL, &state_draw->pa_su_sc_mode_cntl,
       TERAKAN_STATE_DRAW_DEPTH_BIAS_ENABLE_PA_SU_SC_MODE_CNTL_CLEAR,
       terakan_state_draw_depth_bias_enable_pa_su_sc_mode_cntl(depthBiasEnable));
 }

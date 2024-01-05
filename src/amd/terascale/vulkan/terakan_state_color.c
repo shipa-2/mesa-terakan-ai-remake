@@ -39,5 +39,6 @@ terakan_CmdSetBlendConstants(VkCommandBuffer const commandBuffer, float const bl
    bool const modified =
       memcmp(hw_state_draw->cb_blend_rgba, blendConstants, sizeof(float) * 4) != 0;
    memcpy(hw_state_draw->cb_blend_rgba, blendConstants, sizeof(float) * 4);
-   terakan_hw_state_draw_written(hw_state_draw, TERAKAN_HW_STATE_DRAW_CB_BLEND_RGBA, modified);
+   terakan_hw_state_draw_written(hw_state_draw, TERAKAN_HW_STATE_DRAW_INDEX_CB_BLEND_RGBA,
+                                 modified);
 }

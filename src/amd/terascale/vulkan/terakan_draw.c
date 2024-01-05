@@ -70,7 +70,8 @@ terakan_CmdBindIndexBuffer(VkCommandBuffer const commandBuffer, VkBuffer const b
    vgt_index_buffer_size = MIN2(vgt_index_buffer_size, UINT32_MAX);
 
    command_writer->state_draw.vgt_index_type = vgt_index_type;
-   terakan_state_draw_set_pending(&command_writer->state_draw, TERAKAN_STATE_DRAW_VGT_INDEX_TYPE);
+   terakan_state_draw_set_pending(&command_writer->state_draw,
+                                  TERAKAN_STATE_DRAW_INDEX_VGT_INDEX_TYPE);
 
    /* The index buffer is not needed by internal draws, modify hw_state_draw directly. */
    uint64_t const vgt_index_buffer_base = buffer->bo_offset + offset;
@@ -82,7 +83,8 @@ terakan_CmdBindIndexBuffer(VkCommandBuffer const commandBuffer, VkBuffer const b
    command_writer->hw_state_draw.vgt_index_buffer.base = vgt_index_buffer_base;
    command_writer->hw_state_draw.vgt_index_buffer.size = vgt_index_buffer_size;
    terakan_hw_state_draw_written(&command_writer->hw_state_draw,
-                                 TERAKAN_HW_STATE_DRAW_VGT_INDEX_BUFFER, vgt_index_buffer_modified);
+                                 TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_BUFFER,
+                                 vgt_index_buffer_modified);
 }
 
 static void
@@ -90,14 +92,15 @@ terakan_set_vertex_instance_offsets(struct terakan_gfx_command_writer * const co
                                     uint32_t const vertex_offset, uint32_t const instance_offset)
 {
    command_writer->state_draw.vgt_index_offset = vertex_offset;
-   terakan_state_draw_set_pending(&command_writer->state_draw, TERAKAN_STATE_DRAW_VGT_INDEX_OFFSET);
+   terakan_state_draw_set_pending(&command_writer->state_draw,
+                                  TERAKAN_STATE_DRAW_INDEX_VGT_INDEX_OFFSET);
 
    /* The instance offset is not needed by internal draws, modify hw_state_draw directly. */
    bool const sq_vtx_start_inst_loc_modified =
       command_writer->hw_state_draw.sq_vtx_start_inst_loc != instance_offset;
    command_writer->hw_state_draw.sq_vtx_start_inst_loc = instance_offset;
    terakan_hw_state_draw_written(&command_writer->hw_state_draw,
-                                 TERAKAN_HW_STATE_DRAW_SQ_VTX_START_INST_LOC,
+                                 TERAKAN_HW_STATE_DRAW_INDEX_SQ_VTX_START_INST_LOC,
                                  sq_vtx_start_inst_loc_modified);
 }
 

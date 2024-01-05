@@ -58,7 +58,7 @@ terakan_meta_set_vs(struct terakan_gfx_command_writer * const command_writer,
    struct terakan_shader_static const * const shader_static = &device->meta_shaders[shader_index];
 
    if (BITSET_TEST(command_writer->hw_state_draw.state_ever_written,
-                   TERAKAN_HW_STATE_DRAW_SQ_PGM_VS) &&
+                   TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_VS) &&
        command_writer->hw_state_draw.sq_pgm_vs == shader_static) {
       /* If this shader was set via this function previously, everything else set by this function
        * must still be up to date.
@@ -67,8 +67,8 @@ terakan_meta_set_vs(struct terakan_gfx_command_writer * const command_writer,
    }
 
    command_writer->hw_state_draw.sq_pgm_vs = shader_static;
-   terakan_hw_state_draw_written(&command_writer->hw_state_draw, TERAKAN_HW_STATE_DRAW_SQ_PGM_VS,
-                                 true);
+   terakan_hw_state_draw_written(&command_writer->hw_state_draw,
+                                 TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_VS, true);
 
    struct terakan_meta_shader const * const shader = terakan_meta_shaders[shader_index];
 
@@ -87,7 +87,7 @@ terakan_meta_set_ps(struct terakan_gfx_command_writer * const command_writer,
    struct terakan_shader_static const * const shader_static = &device->meta_shaders[shader_index];
 
    if (BITSET_TEST(command_writer->hw_state_draw.state_ever_written,
-                   TERAKAN_HW_STATE_DRAW_SQ_PGM_PS) &&
+                   TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_PS) &&
        command_writer->hw_state_draw.sq_pgm_ps == shader_static) {
       /* If this shader was set via this function previously, everything else set by this function
        * must still be up to date.
@@ -96,8 +96,8 @@ terakan_meta_set_ps(struct terakan_gfx_command_writer * const command_writer,
    }
 
    command_writer->hw_state_draw.sq_pgm_ps = shader_static;
-   terakan_hw_state_draw_written(&command_writer->hw_state_draw, TERAKAN_HW_STATE_DRAW_SQ_PGM_PS,
-                                 true);
+   terakan_hw_state_draw_written(&command_writer->hw_state_draw,
+                                 TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_PS, true);
 
    struct terakan_meta_shader const * const shader = terakan_meta_shaders[shader_index];
 
@@ -109,16 +109,18 @@ void
 terakan_meta_begin_cb(struct terakan_gfx_command_writer * const command_writer,
                       uint32_t const cb_target_mask, uint32_t const cb_color_control_mode)
 {
-   terakan_meta_modify_state_draw_dword(
-      command_writer, TERAKAN_STATE_DRAW_CB_TARGET_MASK, TERAKAN_HW_STATE_DRAW_CB_TARGET_MASK,
-      &command_writer->hw_state_draw.cb_target_mask, cb_target_mask);
+   terakan_meta_modify_state_draw_dword(command_writer, TERAKAN_STATE_DRAW_INDEX_CB_TARGET_MASK,
+                                        TERAKAN_HW_STATE_DRAW_INDEX_CB_TARGET_MASK,
+                                        &command_writer->hw_state_draw.cb_target_mask,
+                                        cb_target_mask);
    if (cb_target_mask) {
       /* Going to bind color targets for this meta draw. */
-      terakan_state_draw_set_pending(&command_writer->state_draw, TERAKAN_STATE_DRAW_CB_COLOR_MRT);
+      terakan_state_draw_set_pending(&command_writer->state_draw,
+                                     TERAKAN_STATE_DRAW_INDEX_CB_COLOR_MRT);
    }
    terakan_meta_modify_state_draw_dword(
-      command_writer, TERAKAN_STATE_DRAW_CB_COLOR_CONTROL, TERAKAN_HW_STATE_DRAW_CB_COLOR_CONTROL,
-      &command_writer->hw_state_draw.cb_color_control,
+      command_writer, TERAKAN_STATE_DRAW_INDEX_CB_COLOR_CONTROL,
+      TERAKAN_HW_STATE_DRAW_INDEX_CB_COLOR_CONTROL, &command_writer->hw_state_draw.cb_color_control,
       S_028808_MODE(cb_target_mask ? cb_color_control_mode : V_028808_CB_DISABLE) |
          S_028808_ROP3(0xCC));
 }

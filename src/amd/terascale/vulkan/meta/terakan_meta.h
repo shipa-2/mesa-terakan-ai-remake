@@ -88,8 +88,8 @@ static inline void
 terakan_meta_set_db_render_override(struct terakan_gfx_command_writer * const command_writer,
                                     uint32_t const db_render_override)
 {
-   terakan_meta_modify_state_draw_dword(command_writer, TERAKAN_STATE_DRAW_DB_RENDER_OVERRIDE,
-                                        TERAKAN_HW_STATE_DRAW_DB_RENDER_OVERRIDE,
+   terakan_meta_modify_state_draw_dword(command_writer, TERAKAN_STATE_DRAW_INDEX_DB_RENDER_OVERRIDE,
+                                        TERAKAN_HW_STATE_DRAW_INDEX_DB_RENDER_OVERRIDE,
                                         &command_writer->hw_state_draw.db_render_override,
                                         db_render_override);
 }
