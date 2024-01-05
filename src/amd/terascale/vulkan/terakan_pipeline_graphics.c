@@ -142,7 +142,7 @@ terakan_pipeline_graphics_apply_pa_sc_vport_z_min_0_max_1(
       command_writer->state_draw.pa_sc_vport_z_min_0_max_1 =
          pipeline->pre_rasterization.pa_sc_vport_z_min_0_max_1;
       terakan_state_draw_set_pending(&command_writer->state_draw,
-                                     TERAKAN_HW_STATE_DRAW_VIEWPORT_PA_SC_VPORT_Z_MIN_MAX);
+                                     TERAKAN_STATE_DRAW_PA_SC_VPORT_Z_MIN_MAX);
    }
 }
 

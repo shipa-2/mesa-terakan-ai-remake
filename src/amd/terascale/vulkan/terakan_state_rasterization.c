@@ -247,8 +247,7 @@ terakan_CmdSetDepthClampEnableEXT(VkCommandBuffer const commandBuffer,
    } else {
       if (state_draw->pa_sc_vport_z_min_0_max_1 != depth_clamp_disable) {
          state_draw->pa_sc_vport_z_min_0_max_1 = depth_clamp_disable;
-         terakan_state_draw_set_pending(state_draw,
-                                        TERAKAN_HW_STATE_DRAW_VIEWPORT_PA_SC_VPORT_Z_MIN_MAX);
+         terakan_state_draw_set_pending(state_draw, TERAKAN_STATE_DRAW_PA_SC_VPORT_Z_MIN_MAX);
       }
    }
 }
