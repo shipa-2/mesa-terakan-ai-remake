@@ -59,3 +59,9 @@ terakan_CmdBeginRendering(VkCommandBuffer const commandBuffer,
       state->color_attachment_usage.bound |= (uint8_t)1 << color_attachment_index;
    }
 }
+
+VKAPI_ATTR void VKAPI_CALL
+terakan_CmdEndRendering(UNUSED VkCommandBuffer const commandBuffer)
+{
+   /* TODO(Triang3l): Resolve the attachments. */
+}
