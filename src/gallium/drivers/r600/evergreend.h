@@ -26,14 +26,19 @@
 #define EVERGREEN_CTL_CONST_END                     0x0003FF0C
 
 #define EVENT_TYPE_CS_PARTIAL_FLUSH            0x07
+#define EVENT_TYPE_VS_PARTIAL_FLUSH            0x0f
 #define EVENT_TYPE_PS_PARTIAL_FLUSH            0x10
 #define EVENT_TYPE_ZPASS_DONE                  0x15
 #define EVENT_TYPE_CACHE_FLUSH_AND_INV_EVENT   0x16
 #define EVENT_TYPE_SO_VGTSTREAMOUT_FLUSH       0x1f
 #define EVENT_TYPE_VGT_FLUSH                   0x24
+#define EVENT_TYPE_DB_CACHE_FLUSH_AND_INV      0x2a
+#define EVENT_TYPE_FLUSH_AND_INV_DB_DATA_TS    0x2b
 #define EVENT_TYPE_FLUSH_AND_INV_DB_META       0x2c
+#define EVENT_TYPE_FLUSH_AND_INV_CB_DATA_TS    0x2d
 #define EVENT_TYPE_CS_DONE                     0x2f
 #define EVENT_TYPE_PS_DONE                     0x30
+#define EVENT_TYPE_FLUSH_AND_INV_CB_PIXEL_DATA 0x31
 
 #define		EVENT_TYPE(x)                           ((x) << 0)
 #define		EVENT_INDEX(x)                          ((x) << 8)
