@@ -35,6 +35,7 @@
 
 #include <assert.h>
 #include <stdint.h>
+#include <string.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -46,8 +47,25 @@ struct terakan_descriptor_set_resource {
 };
 
 struct terakan_descriptor_set_sampler {
-   struct terakan_sampler const * sampler;
+   /* The sampler constant itself, not a pointer to the sampler object, is stored, because
+    * descriptors in bindings not statically used by the pipeline can be undefined according to the
+    * "Allocation of Descriptor Sets" section of the Vulkan specification, and thus descriptors of
+    * unused samplers may point to samplers that have already been destroyed.
+    */
+   uint32_t sampler[3];
+   float border_color[4];
+   bool unnormalized_coordinates;
 };
+
+static inline void
+terakan_descriptor_set_sampler_init(struct terakan_descriptor_set_sampler * const sampler_descriptor,
+                                    struct terakan_sampler const * const sampler)
+{
+   memcpy(sampler_descriptor->sampler, sampler->sampler, sizeof(uint32_t) * 3);
+   memcpy(sampler_descriptor->border_color, sampler->vk.border_color_value.float32,
+          sizeof(float) * 4);
+   sampler_descriptor->unnormalized_coordinates = sampler->unnormalized_coordinates;
+}
 
 struct terakan_descriptor_set_rat {
    struct terakan_bo const * bo;
@@ -68,10 +86,9 @@ static_assert(
          0,
    "Assuming that descriptors of different types can be tightly packed in descriptor sets "
    "arbitrarily, and placing descriptors of any different types next to each other won't cause "
-   "them to become misaligned. If this expectation stops being true (for instance, if 3-dword "
-   "sampler descriptors start being used instead of pointers, and thus their size stops being a "
-   "multiple of the BO pointer size on architectures with 64-bit pointers), wrap the descriptor "
-   "structures in #pragma pack(pop, 4).");
+   "them to become misaligned. If this expectation stops being true, add padding to the "
+   "underaligned structures using `alignas`, or wrap all descriptor structures in "
+   "`#pragma pack(push, 4)`.");
 
 struct terakan_descriptor_set {
    struct vk_object_base base;

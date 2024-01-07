@@ -70,8 +70,8 @@ struct terakan_descriptor_set_layout_binding {
 struct terakan_descriptor_set_layout_shader_range {
    /* Of the range's type. */
    uint16_t first_set_descriptor;
-   /* UINT16_MAX if not using an immutable sampler or dynamic offset. */
-   uint16_t first_immutable_sampler_or_dynamic_offset;
+   /* UINT16_MAX if not using a dynamic offset. */
+   uint16_t first_dynamic_offset;
    /* Of the range's type. */
    uint8_t first_shader_descriptor;
    uint8_t descriptor_count;
@@ -96,12 +96,22 @@ struct terakan_descriptor_set_layout {
 
    /* Resources are the in the beginning of the set's descriptor memory. */
    uint32_t pool_first_sampler_offset_bytes;
-   /* Immutable samplers are not included in the sampler allocation. */
+   /* For simplicity of copying descriptors (the destination must not be immutable, but the source
+    * may be - VUID-VkCopyDescriptorSet-dstBinding-02753), immutable samplers are stored in the set
+    * memory, but are initialized when allocating a set.
+    * This also simplifies binding, which is done frequently. Note that immutable samplers must be
+    * bound at vkCmdBindDescriptorSets time, while vkCmdBindPipeline (or draws / dispatches) must
+    * not destructively overwrite bindings from previously bound sets, to maintain pipeline layout
+    * compatibility - binding a pipeline or drawing / dispatching doesn't disturb descriptor sets,
+    * binding descriptor sets does.
+    */
    uint32_t pool_first_rat_offset_bytes;
    uint32_t pool_size_bytes;
 
    uint16_t dynamic_offset_count;
+   uint8_t immutable_sampler_count;
 
+   uint8_t * immutable_sampler_indices_in_set;
    struct terakan_sampler const ** immutable_samplers;
 
    /* Primarily for binding. */

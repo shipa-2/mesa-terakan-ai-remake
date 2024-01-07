@@ -73,11 +73,10 @@ terakan_descriptor_set_layout_shader_range_try_extend(
    if (range->first_set_descriptor + range->descriptor_count != extension->first_set_descriptor ||
        range->first_shader_descriptor + range->descriptor_count !=
           extension->first_shader_descriptor ||
-       ((range->first_immutable_sampler_or_dynamic_offset != UINT16_MAX) !=
-        (extension->first_immutable_sampler_or_dynamic_offset != UINT16_MAX)) ||
-       (range->first_immutable_sampler_or_dynamic_offset != UINT16_MAX &&
-        range->first_immutable_sampler_or_dynamic_offset + range->descriptor_count !=
-           extension->first_immutable_sampler_or_dynamic_offset)) {
+       ((range->first_dynamic_offset != UINT16_MAX) !=
+        (extension->first_dynamic_offset != UINT16_MAX)) ||
+       (range->first_dynamic_offset != UINT16_MAX &&
+        range->first_dynamic_offset + range->descriptor_count != extension->first_dynamic_offset)) {
       return false;
    }
    range->descriptor_count += extension->descriptor_count;
@@ -156,7 +155,7 @@ terakan_CreateDescriptorSetLayout(VkDevice const deviceHandle,
       /* Coarsely validate the binding count against the numeric limit. */
       if (binding->descriptorCount >= MAX3(TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_NON_PIXEL,
                                            TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL,
-                                           TERAKAN_SAMPLERS_PER_STAGE)) {
+                                           TERAKAN_SAMPLER_HW_COUNT_PER_STAGE)) {
          goto too_many_descriptors;
       }
       uint8_t binding_shader_range_count = 0;
@@ -168,7 +167,7 @@ terakan_CreateDescriptorSetLayout(VkDevice const deviceHandle,
       }
       if (terakan_descriptor_type_has_sampler(binding_type)) {
          if (binding->pImmutableSamplers != NULL) {
-            if (TERAKAN_SAMPLERS_PER_STAGE * MESA_SHADER_STAGES - immutable_sampler_count <
+            if (TERAKAN_SAMPLER_HW_COUNT_PER_STAGE * MESA_SHADER_STAGES - immutable_sampler_count <
                 binding->descriptorCount) {
                goto too_many_descriptors;
             }
@@ -182,17 +181,19 @@ terakan_CreateDescriptorSetLayout(VkDevice const deviceHandle,
 
    /* Ordered by access frequency in the allocation:
     * - Shader ranges - primarily for binding.
-    * - Immutable samplers - primarily for binding, needed by shader ranges conditionally.
-    * - Bindings - primarily for shader compilation and writing.
+    * - Bindings - primarily for writing and shader compilation.
+    * - Immutable samplers - primarily for allocating.
     */
    VK_MULTIALLOC(multialloc);
    VK_MULTIALLOC_DECL(&multialloc, struct terakan_descriptor_set_layout, layout, 1);
    VK_MULTIALLOC_DECL(&multialloc, struct terakan_descriptor_set_layout_shader_range, shader_ranges,
                       shader_range_count);
-   VK_MULTIALLOC_DECL(&multialloc, struct terakan_sampler const *, immutable_samplers,
-                      immutable_sampler_count);
    VK_MULTIALLOC_DECL(&multialloc, struct terakan_descriptor_set_layout_binding, bindings,
                       binding_count);
+   VK_MULTIALLOC_DECL(&multialloc, uint8_t, immutable_sampler_indices_in_set,
+                      immutable_sampler_count);
+   VK_MULTIALLOC_DECL(&multialloc, struct terakan_sampler const *, immutable_samplers,
+                      immutable_sampler_count);
    /* Mesa descriptor set layout has a different lifetime than the corresponding
     * VkDescriptorSetLayout since other objects hold additional references to them, allocation must
     * be done in the device scope.
@@ -201,6 +202,7 @@ terakan_CreateDescriptorSetLayout(VkDevice const deviceHandle,
       vk_free2(&device->vk.alloc, pAllocator, sorted_create_info_bindings);
       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
    }
+   layout->immutable_sampler_indices_in_set = immutable_sampler_indices_in_set;
    layout->immutable_samplers = immutable_samplers;
    layout->shader_ranges = shader_ranges;
    layout->binding_count = binding_count;
@@ -228,30 +230,6 @@ terakan_CreateDescriptorSetLayout(VkDevice const deviceHandle,
       uint32_t const binding_descriptor_count = create_info_binding->descriptorCount;
       layout_binding->descriptor_count = binding_descriptor_count;
 
-      layout_binding->first_immutable_sampler_or_dynamic_offset = UINT16_MAX;
-
-      bool const binding_has_samplers = terakan_descriptor_type_has_sampler(binding_type);
-      if (binding_has_samplers) {
-         assert(immutable_sampler_count - next_immutable_sampler_index >= binding_descriptor_count);
-         layout_binding->first_immutable_sampler_or_dynamic_offset = next_immutable_sampler_index;
-         next_immutable_sampler_index += binding_descriptor_count;
-         for (uint32_t immutable_sampler_index = 0;
-              immutable_sampler_index < binding_descriptor_count; ++immutable_sampler_index) {
-            struct terakan_sampler const * const immutable_sampler = terakan_sampler_from_handle(
-               create_info_binding->pImmutableSamplers[immutable_sampler_index]);
-            layout->immutable_samplers[layout_binding->first_immutable_sampler_or_dynamic_offset +
-                                       immutable_sampler_index] = immutable_sampler;
-            if (immutable_sampler->unnormalized_coordinates) {
-               layout_binding->immutable_samplers_unnormalized_coordinates |=
-                  (uint32_t)1 << immutable_sampler_index;
-            }
-         }
-      } else if (binding_type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC ||
-                 binding_type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC) {
-         layout_binding->first_immutable_sampler_or_dynamic_offset = dynamic_offset_count;
-         dynamic_offset_count += binding_descriptor_count;
-      }
-
       /* Write the offsets used in descriptor updating regardless of the descriptor type.
        * This isn't necessary due to the requirements for consecutive bindings in
        * vkUpdateDescriptorSets, but trivially allows for more graceful handling of invalid usage.
@@ -275,13 +253,44 @@ terakan_CreateDescriptorSetLayout(VkDevice const deviceHandle,
          }
          set_resource_count += binding_descriptor_count;
       }
-      if (binding_has_samplers &&
-          layout_binding->first_immutable_sampler_or_dynamic_offset == UINT16_MAX) {
-         if (TERAKAN_SAMPLERS_PER_STAGE * MESA_SHADER_STAGES - set_sampler_count <
+      bool const binding_has_samplers = terakan_descriptor_type_has_sampler(binding_type);
+      if (binding_has_samplers) {
+         if (TERAKAN_SAMPLER_HW_COUNT_PER_STAGE * MESA_SHADER_STAGES - set_sampler_count <
              binding_descriptor_count) {
             goto too_many_descriptors_destroy;
          }
          set_sampler_count += binding_descriptor_count;
+      }
+
+      layout_binding->first_immutable_sampler_or_dynamic_offset = UINT16_MAX;
+
+      if (binding_has_samplers) {
+         if (create_info_binding->pImmutableSamplers != NULL) {
+            assert(immutable_sampler_count - next_immutable_sampler_index >=
+                   binding_descriptor_count);
+            layout_binding->first_immutable_sampler_or_dynamic_offset =
+               next_immutable_sampler_index;
+            next_immutable_sampler_index += binding_descriptor_count;
+            for (uint32_t immutable_sampler_index = 0;
+                 immutable_sampler_index < binding_descriptor_count; ++immutable_sampler_index) {
+               struct terakan_sampler const * const immutable_sampler = terakan_sampler_from_handle(
+                  create_info_binding->pImmutableSamplers[immutable_sampler_index]);
+               uint32_t const layout_immutable_sampler_index =
+                  layout_binding->first_immutable_sampler_or_dynamic_offset +
+                  immutable_sampler_index;
+               layout->immutable_sampler_indices_in_set[layout_immutable_sampler_index] =
+                  layout_binding->first_set_sampler + immutable_sampler_index;
+               layout->immutable_samplers[layout_immutable_sampler_index] = immutable_sampler;
+               if (immutable_sampler->unnormalized_coordinates) {
+                  layout_binding->immutable_samplers_unnormalized_coordinates |=
+                     (uint32_t)1 << immutable_sampler_index;
+               }
+            }
+         }
+      } else if (binding_type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC ||
+                 binding_type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC) {
+         layout_binding->first_immutable_sampler_or_dynamic_offset = dynamic_offset_count;
+         dynamic_offset_count += binding_descriptor_count;
       }
 
       layout_binding->stage_flags = (uint8_t)(create_info_binding->stageFlags & stage_mask);
@@ -297,6 +306,7 @@ terakan_CreateDescriptorSetLayout(VkDevice const deviceHandle,
                              sizeof(struct terakan_descriptor_set_rat) * set_rat_count;
 
    layout->dynamic_offset_count = dynamic_offset_count;
+   layout->immutable_sampler_count = immutable_sampler_count;
 
    /* Set up the layout for each shader stage. */
 
@@ -340,8 +350,11 @@ terakan_CreateDescriptorSetLayout(VkDevice const deviceHandle,
          struct terakan_descriptor_set_layout_shader_range * const shader_range =
             &layout->shader_ranges[next_shader_range_index];
          shader_range->first_set_descriptor = binding->first_set_resource;
-         shader_range->first_immutable_sampler_or_dynamic_offset =
-            binding->first_immutable_sampler_or_dynamic_offset;
+         shader_range->first_dynamic_offset =
+            binding->descriptor_type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC ||
+                  binding->descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC
+               ? binding->first_immutable_sampler_or_dynamic_offset
+               : UINT16_MAX;
          shader_range->first_shader_descriptor = stage_resource_count;
          shader_range->descriptor_count = binding->descriptor_count;
          if (next_shader_range_index == layout_shader->first_resource_range ||
@@ -389,7 +402,7 @@ terakan_CreateDescriptorSetLayout(VkDevice const deviceHandle,
             continue;
          }
 
-         if (TERAKAN_SAMPLERS_PER_STAGE - stage_sampler_count < binding->descriptor_count) {
+         if (TERAKAN_SAMPLER_HW_COUNT_PER_STAGE - stage_sampler_count < binding->descriptor_count) {
             goto too_many_descriptors_destroy;
          }
 
@@ -399,8 +412,7 @@ terakan_CreateDescriptorSetLayout(VkDevice const deviceHandle,
          struct terakan_descriptor_set_layout_shader_range * const shader_range =
             &layout->shader_ranges[next_shader_range_index];
          shader_range->first_set_descriptor = binding->first_set_sampler;
-         shader_range->first_immutable_sampler_or_dynamic_offset =
-            binding->first_immutable_sampler_or_dynamic_offset;
+         shader_range->first_dynamic_offset = UINT16_MAX;
          shader_range->first_shader_descriptor = stage_sampler_count;
          shader_range->descriptor_count = binding->descriptor_count;
          if (next_shader_range_index == layout_shader->first_sampler_range ||

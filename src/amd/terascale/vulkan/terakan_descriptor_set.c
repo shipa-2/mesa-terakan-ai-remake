@@ -99,12 +99,15 @@ terakan_UpdateDescriptorSets(UNUSED VkDevice const device, uint32_t const descri
       case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
       case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
       case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT: {
-         if (descriptor_write->descriptorType == VK_DESCRIPTOR_TYPE_SAMPLER ||
-             descriptor_write->descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) {
+         if ((descriptor_write->descriptorType == VK_DESCRIPTOR_TYPE_SAMPLER ||
+              descriptor_write->descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) &&
+             dst_binding->first_immutable_sampler_or_dynamic_offset == UINT16_MAX) {
             for (uint32_t descriptor_index = 0; descriptor_index < descriptor_count;
                  ++descriptor_index) {
-               dst_samplers[descriptor_index].sampler = terakan_sampler_from_handle(
-                  descriptor_write->pImageInfo[descriptor_index].sampler);
+               terakan_descriptor_set_sampler_init(
+                  &dst_samplers[descriptor_index],
+                  terakan_sampler_from_handle(
+                     descriptor_write->pImageInfo[descriptor_index].sampler));
             }
          }
          if (descriptor_write->descriptorType != VK_DESCRIPTOR_TYPE_SAMPLER) {
@@ -457,6 +460,28 @@ terakan_AllocateDescriptorSets(VkDevice const deviceHandle,
 
       vk_descriptor_set_layout_ref(&set_layout->vk);
       set->layout = set_layout;
+
+      /* Section 14.2.3. "Allocation of Descriptor Sets" of the Vulkan 1.3.275 specification says:
+       *
+       *     "Entries that are not used by a pipeline can have undefined descriptors."
+       *
+       * Make sure hardware binding setters can work with potentially outdated, but never with
+       * completely invalid data with potentially broken invariants. Initialize BO pointers to NULL,
+       * and samplers to TYPE = 0, border color unused, and unnormalized coordinates disabled.
+       */
+      memset(set->descriptors, 0, set_size);
+
+      /* Write immutable samplers. */
+      struct terakan_descriptor_set_sampler * const set_samplers =
+         (struct terakan_descriptor_set_sampler *)(set->descriptors +
+                                                   set_layout->pool_first_sampler_offset_bytes);
+      for (uint8_t immutable_sampler_index = 0;
+           immutable_sampler_index < set_layout->immutable_sampler_count;
+           ++immutable_sampler_index) {
+         terakan_descriptor_set_sampler_init(
+            &set_samplers[set_layout->immutable_sampler_indices_in_set[immutable_sampler_index]],
+            set_layout->immutable_samplers[immutable_sampler_index]);
+      }
 
       pDescriptorSets[array_set_index] = terakan_descriptor_set_to_handle(set);
    }

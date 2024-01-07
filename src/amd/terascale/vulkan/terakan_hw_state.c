@@ -649,9 +649,11 @@ terakan_hw_state_draw_emit_cb_color(struct terakan_gfx_command_writer * const co
  * enabled on the device.
  */
 
-/* Returns whether the setting was actually emitted, if false, it might have been aborted, for
- * instance, due to a new indirect buffer being started and all state having been re-emitted.
+/* The individual binding emission functions return whether the setting was actually emitted.
+ * If false, emission might have been aborted, for instance, due to a new indirect buffer being
+ * started and all state having been re-emitted.
  */
+
 static bool
 terakan_hw_state_draw_emit_sq_kcache_buffer(
    struct terakan_gfx_command_writer * const command_writer, uint32_t const size_register_offset,
@@ -686,223 +688,7 @@ terakan_hw_state_draw_emit_sq_kcache_buffer(
    return true;
 }
 
-static void
-terakan_hw_state_draw_emit_sq_kcache_for_stage(
-   struct terakan_gfx_command_writer * const command_writer, uint32_t const size_register_offset,
-   uint32_t const base_register_offset,
-   enum terakan_hw_state_draw_sq_constants_needed_stage const needed_stage,
-   enum terakan_hw_state_draw_sq_constants_modified_stage const modified_stage)
-{
-   struct terakan_hw_state_draw * const state = &command_writer->hw_state_draw;
-
-   uint16_t * const buffers_modified = &state->sq_constants_modified.kcache[modified_stage];
-
-   uint16_t buffers_remaining = *buffers_modified & state->sq_constants_needed.kcache[needed_stage];
-
-   int buffer_index;
-   while ((buffer_index = ffs(buffers_remaining) - 1) >= 0) {
-      uint16_t const buffer_bit = (uint16_t)1 << buffer_index;
-
-      buffers_remaining &= ~buffer_bit;
-
-      if (!terakan_hw_state_draw_emit_sq_kcache_buffer(
-             command_writer, size_register_offset + buffer_index,
-             base_register_offset + buffer_index,
-             &state->sq_kcache_buffers[needed_stage][buffer_index])) {
-         return;
-      }
-      *buffers_modified &= ~buffer_bit;
-   }
-}
-
-static void
-terakan_hw_state_draw_emit_sq_kcache_vs(struct terakan_gfx_command_writer * const command_writer)
-{
-   struct terakan_hw_state_draw * const state = &command_writer->hw_state_draw;
-
-   if (state->sq_constants_needed.tcs_tes) {
-      terakan_hw_state_draw_emit_sq_kcache_for_stage(
-         command_writer, TERAKAN_CONTEXT_REG_OFFSET(R_028FC0_ALU_CONST_BUFFER_SIZE_LS_0),
-         TERAKAN_CONTEXT_REG_OFFSET(R_028F40_ALU_CONST_CACHE_LS_0),
-         TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_VS,
-         TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_VS_IN_LS);
-      return;
-   }
-
-   /* TODO(Triang3l): Fast path for tessellation not enabled on the device. */
-
-   uint16_t * const buffers_modified =
-      &state->sq_constants_modified
-          .kcache[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_VS_IN_VSES];
-
-   uint16_t buffers_remaining =
-      (*buffers_modified | state->sq_constants_for_vs_overwritten_in_vses_by_tes.kcache) &
-      state->sq_constants_needed.kcache[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_VS];
-
-   int buffer_index;
-   while ((buffer_index = ffs(buffers_remaining) - 1) >= 0) {
-      uint16_t const buffer_bit = (uint16_t)1 << buffer_index;
-
-      buffers_remaining &= ~buffer_bit;
-
-      bool emit_buffer = false;
-
-      struct terakan_hw_state_sq_kcache_buffer const * const buffer =
-         &state->sq_kcache_buffers[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_VS][buffer_index];
-
-      if (*buffers_modified & buffer_bit) {
-         /* Completely new buffer needed for the Vulkan VS stage. */
-         emit_buffer = true;
-         *buffers_modified &= ~buffer_bit;
-         /* Next time the hardware binding is needed for TES, make sure the TES one is applied.
-          * Simply mark as overwritten for now to avoid overhead within non-tesellated draws, defer
-          * all more complex logic until tessellation is enabled.
-          */
-         state->sq_constants_for_tes_overwritten_in_vses_by_vs.kcache |= buffer_bit;
-      } else {
-         /* The previous VS buffer is still up to date, but VSES bindings now include the TES
-          * binding instead, which may be different, or the same.
-          */
-         struct terakan_hw_state_sq_kcache_buffer const * const tes_buffer =
-            &state->sq_kcache_buffers[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_TES]
-                                     [buffer_index];
-         if (buffer->size_lines != tes_buffer->size_lines ||
-             (buffer->size_lines &&
-              (buffer->bo != tes_buffer->bo || buffer->base_lines != tes_buffer->base_lines))) {
-            /* VS and TES buffers for this binding are different, emit the VS buffer now, and emit
-             * the TES buffer next time it's needed.
-             */
-            emit_buffer = true;
-            state->sq_constants_for_tes_overwritten_in_vses_by_vs.kcache |= buffer_bit;
-         } else {
-            state->sq_constants_for_tes_overwritten_in_vses_by_vs.kcache &= ~buffer_bit;
-         }
-      }
-
-      if (emit_buffer &&
-          !terakan_hw_state_draw_emit_sq_kcache_buffer(
-             command_writer,
-             TERAKAN_CONTEXT_REG_OFFSET(R_028180_ALU_CONST_BUFFER_SIZE_VS_0) + buffer_index,
-             TERAKAN_CONTEXT_REG_OFFSET(R_028980_ALU_CONST_CACHE_VS_0) + buffer_index, buffer)) {
-         return;
-      }
-
-      state->sq_constants_for_vs_overwritten_in_vses_by_tes.kcache &= ~buffer_bit;
-   }
-}
-
-static void
-terakan_hw_state_draw_emit_sq_kcache_tcs(struct terakan_gfx_command_writer * const command_writer)
-{
-   if (!command_writer->hw_state_draw.sq_constants_needed.tcs_tes) {
-      return;
-   }
-   terakan_hw_state_draw_emit_sq_kcache_for_stage(
-      command_writer, TERAKAN_CONTEXT_REG_OFFSET(R_028F80_ALU_CONST_BUFFER_SIZE_HS_0),
-      TERAKAN_CONTEXT_REG_OFFSET(R_028F00_ALU_CONST_CACHE_HS_0),
-      TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_TCS,
-      TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_TCS);
-}
-
-static void
-terakan_hw_state_draw_emit_sq_kcache_tes(struct terakan_gfx_command_writer * const command_writer)
-{
-   struct terakan_hw_state_draw * const state = &command_writer->hw_state_draw;
-
-   if (!state->sq_constants_needed.tcs_tes) {
-      return;
-   }
-
-   /* TODO(Triang3l): Fast path for R9xx USE_LS_CONSTS. */
-
-   uint16_t * const buffers_modified =
-      &state->sq_constants_modified
-          .kcache[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_TES_IN_VSES];
-
-   uint16_t buffers_remaining =
-      (*buffers_modified | state->sq_constants_for_tes_overwritten_in_vses_by_vs.kcache) &
-      state->sq_constants_needed.kcache[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_TES];
-
-   int buffer_index;
-   while ((buffer_index = ffs(buffers_remaining) - 1) >= 0) {
-      uint16_t const buffer_bit = (uint16_t)1 << buffer_index;
-
-      buffers_remaining &= ~buffer_bit;
-
-      bool emit_buffer = false;
-
-      struct terakan_hw_state_sq_kcache_buffer const * const buffer =
-         &state
-             ->sq_kcache_buffers[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_TES][buffer_index];
-
-      if (*buffers_modified & buffer_bit) {
-         /* Completely new buffer needed for the Vulkan TES stage. */
-         emit_buffer = true;
-         *buffers_modified &= ~buffer_bit;
-         /* Next time the hardware binding is needed for VS, make sure the VS one is applied.
-          * Simply mark as overwritten for now to avoid overhead within tesellated draws, defer all
-          * more complex logic until tessellation is disabled.
-          */
-         state->sq_constants_for_vs_overwritten_in_vses_by_tes.kcache |= buffer_bit;
-      } else {
-         /* The previous TES buffer is still up to date, but VSES bindings now include the VS
-          * binding instead, which may be different, or the same.
-          */
-         struct terakan_hw_state_sq_kcache_buffer const * const vs_buffer =
-            &state->sq_kcache_buffers[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_VS]
-                                     [buffer_index];
-         if (buffer->size_lines != vs_buffer->size_lines ||
-             (buffer->size_lines &&
-              (buffer->bo != vs_buffer->bo || buffer->base_lines != vs_buffer->base_lines))) {
-            /* VS and TES buffers for this binding are different, emit the TES buffer now, and emit
-             * the VS buffer next time it's needed.
-             */
-            emit_buffer = true;
-            state->sq_constants_for_vs_overwritten_in_vses_by_tes.kcache |= buffer_bit;
-         } else {
-            state->sq_constants_for_vs_overwritten_in_vses_by_tes.kcache &= ~buffer_bit;
-         }
-      }
-
-      if (emit_buffer &&
-          !terakan_hw_state_draw_emit_sq_kcache_buffer(
-             command_writer,
-             TERAKAN_CONTEXT_REG_OFFSET(R_028180_ALU_CONST_BUFFER_SIZE_VS_0) + buffer_index,
-             TERAKAN_CONTEXT_REG_OFFSET(R_028980_ALU_CONST_CACHE_VS_0) + buffer_index, buffer)) {
-         return;
-      }
-
-      state->sq_constants_for_tes_overwritten_in_vses_by_vs.kcache &= ~buffer_bit;
-   }
-}
-
-static void
-terakan_hw_state_draw_emit_sq_kcache_gs(struct terakan_gfx_command_writer * const command_writer)
-{
-   if (!terakan_hw_state_draw_sq_constants_needed_by_gs(&command_writer->hw_state_draw)) {
-      return;
-   }
-   terakan_hw_state_draw_emit_sq_kcache_for_stage(
-      command_writer, TERAKAN_CONTEXT_REG_OFFSET(R_0281C0_ALU_CONST_BUFFER_SIZE_GS_0),
-      TERAKAN_CONTEXT_REG_OFFSET(R_0289C0_ALU_CONST_CACHE_GS_0),
-      TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_GS,
-      TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_GS);
-}
-
-static void
-terakan_hw_state_draw_emit_sq_kcache_fs(struct terakan_gfx_command_writer * const command_writer)
-{
-   terakan_hw_state_draw_emit_sq_kcache_for_stage(
-      command_writer, TERAKAN_CONTEXT_REG_OFFSET(R_028140_ALU_CONST_BUFFER_SIZE_PS_0),
-      TERAKAN_CONTEXT_REG_OFFSET(R_028940_ALU_CONST_CACHE_PS_0),
-      TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_FS,
-      TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_FS);
-}
-
-/* bo and descriptor are undefined if not_null == false.
- * Returns whether the setting was actually emitted, if false, it might have been aborted, for
- * instance, due to a new indirect buffer being started and all state having been re-emitted.
- */
+/* bo and descriptor are undefined if not_null == false. */
 static bool
 terakan_hw_state_draw_emit_resource(struct terakan_gfx_command_writer * const command_writer,
                                     uint32_t const global_index, bool const not_null,
@@ -960,6 +746,64 @@ terakan_hw_state_draw_emit_resource(struct terakan_gfx_command_writer * const co
    return true;
 }
 
+static bool
+terakan_hw_state_draw_emit_sq_sampler(struct terakan_gfx_command_writer * const command_writer,
+                                      uint32_t const global_index, uint32_t const sampler[3])
+{
+   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 3, 0, 0, true);
+   if (unlikely(packet == NULL)) {
+      return false;
+   }
+   *packet++ = PKT3(PKT3_SET_SAMPLER, 3, 0);
+   *packet++ = 3 * global_index;
+   memcpy(packet, sampler, sizeof(uint32_t) * 3);
+   return true;
+}
+
+static bool
+terakan_hw_state_draw_emit_sq_sampler_border_color(
+   struct terakan_gfx_command_writer * const command_writer, uint32_t const index_register_offset,
+   uint32_t const stage_local_index, float const border_color[4])
+{
+   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 5, 0, 0, true);
+   if (unlikely(packet == NULL)) {
+      return false;
+   }
+   *packet++ = PKT3(PKT3_SET_CONFIG_REG, 5, 0);
+   *packet++ = index_register_offset;
+   *packet++ = stage_local_index;
+   memcpy(packet, border_color, sizeof(float) * 4);
+   return true;
+}
+
+static void
+terakan_hw_state_draw_emit_sq_kcache_for_stage(
+   struct terakan_gfx_command_writer * const command_writer, uint32_t const size_register_offset,
+   uint32_t const base_register_offset,
+   enum terakan_hw_state_draw_sq_constants_needed_stage const needed_stage,
+   enum terakan_hw_state_draw_sq_constants_modified_stage const modified_stage)
+{
+   struct terakan_hw_state_draw * const state = &command_writer->hw_state_draw;
+
+   uint16_t * const bindings_modified = &state->sq_constants_modified.kcache[modified_stage];
+   uint16_t update_bindings = *bindings_modified & state->sq_constants_needed.kcache[needed_stage];
+
+   uint16_t bindings_remaining = update_bindings;
+   int binding_index;
+   while ((binding_index = ffs(bindings_remaining) - 1) >= 0) {
+      uint16_t const binding_bit = (uint16_t)1 << binding_index;
+      bindings_remaining &= ~binding_bit;
+      if (!terakan_hw_state_draw_emit_sq_kcache_buffer(
+             command_writer, size_register_offset + binding_index,
+             base_register_offset + binding_index,
+             &state->sq_kcache_buffers[needed_stage][binding_index])) {
+         return;
+      }
+   }
+
+   *bindings_modified &= ~update_bindings;
+}
+
 static void
 terakan_hw_state_draw_emit_sq_resources_for_stage(
    struct terakan_gfx_command_writer * const command_writer, uint32_t const global_offset,
@@ -969,32 +813,160 @@ terakan_hw_state_draw_emit_sq_resources_for_stage(
 {
    unsigned const word_count = BITSET_WORDS(count);
 
-   BITSET_DECLARE(resources_needed, TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE);
+   BITSET_DECLARE(update_bindings, TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE);
    for (unsigned word_index = 0; word_index < word_count; ++word_index) {
-      resources_needed[word_index] = modified_bitset[word_index] & needed_bitset[word_index];
+      update_bindings[word_index] = modified_bitset[word_index] & needed_bitset[word_index];
    }
 
-   unsigned resource_index;
-   BITSET_FOREACH_SET (resource_index, resources_needed, count) {
-      if (!terakan_hw_state_draw_emit_resource(command_writer, global_offset + resource_index,
-                                               BITSET_TEST(not_null_bitset, resource_index),
-                                               bos[resource_index],
-                                               descriptors + 8 * resource_index)) {
+   unsigned binding_index;
+   BITSET_FOREACH_SET (binding_index, update_bindings, count) {
+      if (!terakan_hw_state_draw_emit_resource(command_writer, global_offset + binding_index,
+                                               BITSET_TEST(not_null_bitset, binding_index),
+                                               bos[binding_index],
+                                               descriptors + 8 * binding_index)) {
          return;
       }
-      BITSET_CLEAR(modified_bitset, resource_index);
+      BITSET_CLEAR(modified_bitset, binding_index);
    }
 }
 
 static void
-terakan_hw_state_draw_emit_sq_resources_vi(struct terakan_gfx_command_writer * const command_writer)
+terakan_hw_state_draw_emit_sq_samplers_for_stage(
+   struct terakan_gfx_command_writer * const command_writer, uint32_t const global_offset,
+   enum terakan_hw_state_draw_sq_constants_needed_stage const needed_stage,
+   enum terakan_hw_state_draw_sq_constants_modified_stage const modified_stage)
 {
    struct terakan_hw_state_draw * const state = &command_writer->hw_state_draw;
-   terakan_hw_state_draw_emit_sq_resources_for_stage(
-      command_writer, TERAKAN_RESOURCE_HW_OFFSET_FS, TERAKAN_RESOURCE_HW_COUNT_FETCH,
-      state->sq_resources_not_null.vi, state->sq_resource_bos.vi,
-      state->sq_resource_descriptors.vi[0], state->sq_constants_needed.resources.vi,
-      state->sq_constants_modified.resources.vi);
+
+   uint32_t * const bindings_modified = &state->sq_constants_modified.samplers[modified_stage];
+   uint32_t update_bindings =
+      *bindings_modified & state->sq_constants_needed.samplers[needed_stage];
+
+   uint32_t bindings_remaining = update_bindings;
+   int binding_index;
+   while ((binding_index = ffs(bindings_remaining) - 1) >= 0) {
+      uint32_t const binding_bit = (uint16_t)1 << binding_index;
+      bindings_remaining &= ~binding_bit;
+      if (!terakan_hw_state_draw_emit_sq_sampler(command_writer, global_offset + binding_index,
+                                                 state->sq_samplers[needed_stage][binding_index])) {
+         return;
+      }
+   }
+
+   *bindings_modified &= ~update_bindings;
+}
+
+static void
+terakan_hw_state_draw_emit_sq_sampler_border_colors_for_stage(
+   struct terakan_gfx_command_writer * const command_writer, uint32_t const index_register_offset,
+   enum terakan_hw_state_draw_sq_constants_needed_stage const needed_stage,
+   enum terakan_hw_state_draw_sq_constants_modified_stage const modified_stage)
+{
+   struct terakan_hw_state_draw * const state = &command_writer->hw_state_draw;
+
+   uint32_t * const bindings_modified =
+      &state->sq_constants_modified.sampler_border_colors[modified_stage];
+   uint32_t update_bindings = *bindings_modified &
+                              state->sq_samplers_with_border_color[needed_stage] &
+                              state->sq_constants_needed.samplers[needed_stage];
+
+   uint32_t bindings_remaining = update_bindings;
+   int binding_index;
+   while ((binding_index = ffs(bindings_remaining) - 1) >= 0) {
+      uint32_t const binding_bit = (uint16_t)1 << binding_index;
+      bindings_remaining &= ~binding_bit;
+      if (!terakan_hw_state_draw_emit_sq_sampler_border_color(
+             command_writer, index_register_offset, binding_index,
+             state->sq_sampler_border_colors[needed_stage][binding_index])) {
+         return;
+      }
+   }
+
+   *bindings_modified &= ~update_bindings;
+}
+
+static void
+terakan_hw_state_draw_emit_sq_kcache_vs(struct terakan_gfx_command_writer * const command_writer)
+{
+   struct terakan_hw_state_draw * const state = &command_writer->hw_state_draw;
+
+   if (state->sq_constants_needed.tcs_tes) {
+      terakan_hw_state_draw_emit_sq_kcache_for_stage(
+         command_writer, TERAKAN_CONTEXT_REG_OFFSET(R_028FC0_ALU_CONST_BUFFER_SIZE_LS_0),
+         TERAKAN_CONTEXT_REG_OFFSET(R_028F40_ALU_CONST_CACHE_LS_0),
+         TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_VS,
+         TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_VS_IN_LS);
+      return;
+   }
+
+   /* TODO(Triang3l): Fast path for tessellation not enabled on the device. */
+
+   uint16_t const bindings_modified =
+      state->sq_constants_modified
+         .kcache[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_VS_IN_VSES];
+   uint16_t const update_bindings =
+      (bindings_modified | state->sq_constants_for_vs_overwritten_in_vses_by_tes.kcache) &
+      state->sq_constants_needed.kcache[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_VS];
+
+   uint16_t bindings_remaining = update_bindings;
+   int binding_index;
+   while ((binding_index = ffs(bindings_remaining) - 1) >= 0) {
+      uint16_t const binding_bit = (uint16_t)1 << binding_index;
+      bindings_remaining &= ~binding_bit;
+
+      bool emit_binding = false;
+
+      struct terakan_hw_state_sq_kcache_buffer const * const buffer =
+         &state
+             ->sq_kcache_buffers[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_VS][binding_index];
+
+      if (bindings_modified & binding_bit) {
+         /* Completely new binding needed for the Vulkan VS stage. */
+         emit_binding = true;
+      } else {
+         /* The previous VS binding is still up to date, but VSES bindings now include the TES
+          * binding instead, which may be different, or the same (VS | TES bindings in the
+          * beginning of the pipeline layout, may happen in applications having a common descriptor
+          * set referenced by all shaders).
+          */
+         struct terakan_hw_state_sq_kcache_buffer const * const tes_buffer =
+            &state->sq_kcache_buffers[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_TES]
+                                     [binding_index];
+         if (buffer->size_lines != tes_buffer->size_lines ||
+             (buffer->size_lines &&
+              (buffer->bo != tes_buffer->bo || buffer->base_lines != tes_buffer->base_lines))) {
+            /* VS and TES bindings at this index are different, emit the VS binding now, and emit
+             * the TES binding next time it's needed.
+             */
+            emit_binding = true;
+            state->sq_constants_for_tes_overwritten_in_vses_by_vs.kcache |= binding_bit;
+         } else {
+            /* VS and TES bindings at this index are the same, continue using the binding for both
+             * VS for this emission and TES later.
+             */
+            state->sq_constants_for_tes_overwritten_in_vses_by_vs.kcache &= ~binding_bit;
+         }
+      }
+
+      if (emit_binding &&
+          !terakan_hw_state_draw_emit_sq_kcache_buffer(
+             command_writer,
+             TERAKAN_CONTEXT_REG_OFFSET(R_028180_ALU_CONST_BUFFER_SIZE_VS_0) + binding_index,
+             TERAKAN_CONTEXT_REG_OFFSET(R_028980_ALU_CONST_CACHE_VS_0) + binding_index, buffer)) {
+         return;
+      }
+   }
+
+   state->sq_constants_modified
+      .kcache[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_VS_IN_VSES] &= ~update_bindings;
+   state->sq_constants_for_vs_overwritten_in_vses_by_tes.kcache &= ~update_bindings;
+   /* Next time the hardware constants now used for new VS bindings are needed for TES, make sure
+    * the TES ones are applied.
+    * Simply mark as overwritten for now to avoid overhead within non-tesellated draws, defer all
+    * more complex logic until tessellation is enabled.
+    */
+   state->sq_constants_for_tes_overwritten_in_vses_by_vs.kcache |=
+      update_bindings & bindings_modified;
 }
 
 static void
@@ -1013,67 +985,194 @@ terakan_hw_state_draw_emit_sq_resources_vs(struct terakan_gfx_command_writer * c
 
    /* TODO(Triang3l): Fast path for tessellation not enabled on the device. */
 
-   BITSET_DECLARE(resources_needed, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
+   BITSET_DECLARE(update_bindings, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
    for (unsigned word_index = 0; word_index < BITSET_WORDS(TERAKAN_RESOURCE_HW_COUNT_VERTEX);
         ++word_index) {
-      resources_needed[word_index] =
+      update_bindings[word_index] =
          (state->sq_constants_modified.resources.vs_in_vses[word_index] |
           state->sq_constants_for_vs_overwritten_in_vses_by_tes.resources[word_index]) &
          state->sq_constants_needed.resources.vs[word_index];
    }
 
-   unsigned resource_index;
-   BITSET_FOREACH_SET (resource_index, resources_needed, TERAKAN_RESOURCE_HW_COUNT_VERTEX) {
-      bool emit_resource = false;
+   unsigned binding_index;
+   BITSET_FOREACH_SET (binding_index, update_bindings, TERAKAN_RESOURCE_HW_COUNT_VERTEX) {
+      bool emit_binding = false;
 
-      bool const resource_not_null = BITSET_TEST(state->sq_resources_not_null.vs, resource_index);
+      bool const resource_not_null = BITSET_TEST(state->sq_resources_not_null.vs, binding_index);
 
-      if (BITSET_TEST(state->sq_constants_modified.resources.vs_in_vses, resource_index)) {
-         /* Completely new resource needed for the Vulkan VS stage. */
-         emit_resource = true;
-         BITSET_CLEAR(state->sq_constants_modified.resources.vs_in_vses, resource_index);
-         /* Next time the hardware binding is needed for TES, make sure the TES one is applied.
-          * Simply mark as overwritten for now to avoid overhead within non-tesellated draws, defer
-          * all more complex logic until tessellation is enabled.
-          */
-         BITSET_SET(state->sq_constants_for_tes_overwritten_in_vses_by_vs.resources,
-                    resource_index);
+      if (BITSET_TEST(state->sq_constants_modified.resources.vs_in_vses, binding_index)) {
+         emit_binding = true;
+         BITSET_CLEAR(state->sq_constants_modified.resources.vs_in_vses, binding_index);
+         BITSET_SET(state->sq_constants_for_tes_overwritten_in_vses_by_vs.resources, binding_index);
       } else {
-         /* The previous VS resource is still up to date, but VSES bindings now include the TES
-          * binding instead, which may be different, or the same (VS | TES bindings in the
-          * beginning of the pipeline layout, may happen in applications having a common descriptor
-          * set referenced by all shaders).
-          */
-         if ((resource_not_null != BITSET_TEST(state->sq_resources_not_null.tes, resource_index)) ||
-             (resource_not_null && (state->sq_resource_bos.vs[resource_index] !=
-                                       state->sq_resource_bos.tes[resource_index] ||
-                                    memcmp(state->sq_resource_descriptors.vs[resource_index],
-                                           state->sq_resource_descriptors.tes[resource_index],
+         if ((resource_not_null != BITSET_TEST(state->sq_resources_not_null.tes, binding_index)) ||
+             (resource_not_null && (state->sq_resource_bos.vs[binding_index] !=
+                                       state->sq_resource_bos.tes[binding_index] ||
+                                    memcmp(state->sq_resource_descriptors.vs[binding_index],
+                                           state->sq_resource_descriptors.tes[binding_index],
                                            sizeof(uint32_t) * 8) != 0))) {
-            /* VS and TES resources for this binding are different, emit the VS resource now, and
-             * emit the TES resource next time it's needed.
-             */
-            emit_resource = true;
+            emit_binding = true;
             BITSET_SET(state->sq_constants_for_tes_overwritten_in_vses_by_vs.resources,
-                       resource_index);
+                       binding_index);
          } else {
-            /* VS and TES resources at this index are the same, continue using the resource for both
-             * VS for this emission and TES later.
-             */
             BITSET_CLEAR(state->sq_constants_for_tes_overwritten_in_vses_by_vs.resources,
-                         resource_index);
+                         binding_index);
          }
       }
 
-      if (emit_resource && !terakan_hw_state_draw_emit_resource(
-                              command_writer, TERAKAN_RESOURCE_HW_OFFSET_VSES + resource_index,
-                              resource_not_null, state->sq_resource_bos.vs[resource_index],
-                              state->sq_resource_descriptors.vs[resource_index])) {
+      if (emit_binding && !terakan_hw_state_draw_emit_resource(
+                             command_writer, TERAKAN_RESOURCE_HW_OFFSET_VSES + binding_index,
+                             resource_not_null, state->sq_resource_bos.vs[binding_index],
+                             state->sq_resource_descriptors.vs[binding_index])) {
          return;
       }
 
-      BITSET_CLEAR(state->sq_constants_for_vs_overwritten_in_vses_by_tes.resources, resource_index);
+      BITSET_CLEAR(state->sq_constants_for_vs_overwritten_in_vses_by_tes.resources, binding_index);
    }
+}
+
+static void
+terakan_hw_state_draw_emit_sq_samplers_vs(struct terakan_gfx_command_writer * const command_writer)
+{
+   struct terakan_hw_state_draw * const state = &command_writer->hw_state_draw;
+
+   if (state->sq_constants_needed.tcs_tes) {
+      terakan_hw_state_draw_emit_sq_samplers_for_stage(
+         command_writer, TERAKAN_SAMPLER_HW_OFFSET_LS,
+         TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_VS,
+         TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_VS_IN_LS);
+      return;
+   }
+
+   /* TODO(Triang3l): Fast path for tessellation not enabled on the device. */
+
+   uint32_t const bindings_modified =
+      state->sq_constants_modified
+         .samplers[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_VS_IN_VSES];
+   uint32_t const update_bindings =
+      (bindings_modified | state->sq_constants_for_vs_overwritten_in_vses_by_tes.samplers) &
+      state->sq_constants_needed.samplers[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_VS];
+
+   uint32_t bindings_remaining = update_bindings;
+   int binding_index;
+   while ((binding_index = ffs(bindings_remaining) - 1) >= 0) {
+      uint32_t const binding_bit = (uint32_t)1 << binding_index;
+      bindings_remaining &= ~binding_bit;
+
+      bool emit_binding = false;
+
+      uint32_t const * const sampler =
+         state->sq_samplers[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_VS][binding_index];
+
+      if (bindings_modified & binding_bit) {
+         emit_binding = true;
+      } else {
+         if (memcmp(sampler,
+                    state->sq_samplers[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_TES]
+                                      [binding_index],
+                    sizeof(uint32_t) * 3) != 0) {
+            emit_binding = true;
+            state->sq_constants_for_tes_overwritten_in_vses_by_vs.samplers |= binding_bit;
+         } else {
+            state->sq_constants_for_tes_overwritten_in_vses_by_vs.samplers &= ~binding_bit;
+         }
+      }
+
+      if (emit_binding &&
+          !terakan_hw_state_draw_emit_sq_sampler(
+             command_writer, TERAKAN_SAMPLER_HW_OFFSET_VSES + binding_index, sampler)) {
+         return;
+      }
+   }
+
+   state->sq_constants_modified
+      .samplers[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_VS_IN_VSES] &= ~update_bindings;
+   state->sq_constants_for_vs_overwritten_in_vses_by_tes.samplers &= ~update_bindings;
+   state->sq_constants_for_tes_overwritten_in_vses_by_vs.samplers |=
+      update_bindings & bindings_modified;
+}
+
+static void
+terakan_hw_state_draw_emit_sq_sampler_border_colors_vs(
+   struct terakan_gfx_command_writer * const command_writer)
+{
+   struct terakan_hw_state_draw * const state = &command_writer->hw_state_draw;
+
+   if (state->sq_constants_needed.tcs_tes) {
+      terakan_hw_state_draw_emit_sq_sampler_border_colors_for_stage(
+         command_writer, TERAKAN_CONFIG_REG_OFFSET(R_00A450_TD_LS_SAMPLER0_BORDER_COLOR_INDEX),
+         TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_VS,
+         TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_VS_IN_LS);
+      return;
+   }
+
+   /* TODO(Triang3l): Fast path for tessellation not enabled on the device. */
+
+   uint32_t const bindings_modified =
+      state->sq_constants_modified
+         .sampler_border_colors[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_VS_IN_VSES];
+   uint32_t const update_bindings =
+      (bindings_modified |
+       state->sq_constants_for_vs_overwritten_in_vses_by_tes.sampler_border_colors) &
+      state->sq_samplers_with_border_color[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_VS] &
+      state->sq_constants_needed.samplers[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_VS];
+
+   uint32_t bindings_remaining = update_bindings;
+   int binding_index;
+   while ((binding_index = ffs(bindings_remaining) - 1) >= 0) {
+      uint32_t const binding_bit = (uint32_t)1 << binding_index;
+      bindings_remaining &= ~binding_bit;
+
+      bool emit_binding = false;
+
+      float const * const border_color =
+         state->sq_sampler_border_colors[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_VS]
+                                        [binding_index];
+
+      if (bindings_modified & binding_bit) {
+         emit_binding = true;
+      } else {
+         if (memcmp(
+                border_color,
+                state->sq_sampler_border_colors[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_TES]
+                                               [binding_index],
+                sizeof(float) * 4) != 0) {
+            emit_binding = true;
+            state->sq_constants_for_tes_overwritten_in_vses_by_vs.sampler_border_colors |=
+               binding_bit;
+         } else {
+            state->sq_constants_for_tes_overwritten_in_vses_by_vs.sampler_border_colors &=
+               ~binding_bit;
+         }
+      }
+
+      if (emit_binding &&
+          !terakan_hw_state_draw_emit_sq_sampler_border_color(
+             command_writer, TERAKAN_CONFIG_REG_OFFSET(R_00A414_TD_VS_SAMPLER0_BORDER_INDEX),
+             binding_index, border_color)) {
+         return;
+      }
+   }
+
+   state->sq_constants_modified
+      .sampler_border_colors[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_VS_IN_VSES] &=
+      ~update_bindings;
+   state->sq_constants_for_vs_overwritten_in_vses_by_tes.sampler_border_colors &= ~update_bindings;
+   state->sq_constants_for_tes_overwritten_in_vses_by_vs.sampler_border_colors |=
+      update_bindings & bindings_modified;
+}
+
+static void
+terakan_hw_state_draw_emit_sq_kcache_tcs(struct terakan_gfx_command_writer * const command_writer)
+{
+   if (!command_writer->hw_state_draw.sq_constants_needed.tcs_tes) {
+      return;
+   }
+   terakan_hw_state_draw_emit_sq_kcache_for_stage(
+      command_writer, TERAKAN_CONTEXT_REG_OFFSET(R_028F80_ALU_CONST_BUFFER_SIZE_HS_0),
+      TERAKAN_CONTEXT_REG_OFFSET(R_028F00_ALU_CONST_CACHE_HS_0),
+      TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_TCS,
+      TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_TCS);
 }
 
 static void
@@ -1091,6 +1190,110 @@ terakan_hw_state_draw_emit_sq_resources_tcs(struct terakan_gfx_command_writer * 
 }
 
 static void
+terakan_hw_state_draw_emit_sq_samplers_tcs(struct terakan_gfx_command_writer * const command_writer)
+{
+   if (!command_writer->hw_state_draw.sq_constants_needed.tcs_tes) {
+      return;
+   }
+   terakan_hw_state_draw_emit_sq_samplers_for_stage(
+      command_writer, TERAKAN_SAMPLER_HW_OFFSET_HS,
+      TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_TCS,
+      TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_TCS);
+}
+
+static void
+terakan_hw_state_draw_emit_sq_sampler_border_colors_tcs(
+   struct terakan_gfx_command_writer * const command_writer)
+{
+   if (!command_writer->hw_state_draw.sq_constants_needed.tcs_tes) {
+      return;
+   }
+   terakan_hw_state_draw_emit_sq_sampler_border_colors_for_stage(
+      command_writer, TERAKAN_CONFIG_REG_OFFSET(R_00A43C_TD_HS_SAMPLER0_BORDER_COLOR_INDEX),
+      TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_TCS,
+      TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_TCS);
+}
+
+static void
+terakan_hw_state_draw_emit_sq_kcache_tes(struct terakan_gfx_command_writer * const command_writer)
+{
+   struct terakan_hw_state_draw * const state = &command_writer->hw_state_draw;
+
+   if (!state->sq_constants_needed.tcs_tes) {
+      return;
+   }
+
+   /* TODO(Triang3l): Fast path for R9xx USE_LS_CONSTS. */
+
+   uint16_t const bindings_modified =
+      state->sq_constants_modified
+         .kcache[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_TES_IN_VSES];
+   uint16_t const update_bindings =
+      (bindings_modified | state->sq_constants_for_tes_overwritten_in_vses_by_vs.kcache) &
+      state->sq_constants_needed.kcache[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_TES];
+
+   uint16_t bindings_remaining = update_bindings;
+   int binding_index;
+   while ((binding_index = ffs(bindings_remaining) - 1) >= 0) {
+      uint16_t const binding_bit = (uint16_t)1 << binding_index;
+      bindings_remaining &= ~binding_bit;
+
+      bool emit_binding = false;
+
+      struct terakan_hw_state_sq_kcache_buffer const * const buffer =
+         &state->sq_kcache_buffers[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_TES]
+                                  [binding_index];
+
+      if (bindings_modified & binding_bit) {
+         /* Completely new binding needed for the Vulkan TES stage. */
+         emit_binding = true;
+      } else {
+         /* The previous TES binding is still up to date, but VSES bindings now include the VS
+          * binding instead, which may be different, or the same (VS | TES bindings in the
+          * beginning of the pipeline layout, may happen in applications having a common descriptor
+          * set referenced by all shaders).
+          */
+         struct terakan_hw_state_sq_kcache_buffer const * const vs_buffer =
+            &state->sq_kcache_buffers[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_VS]
+                                     [binding_index];
+         if (buffer->size_lines != vs_buffer->size_lines ||
+             (buffer->size_lines &&
+              (buffer->bo != vs_buffer->bo || buffer->base_lines != vs_buffer->base_lines))) {
+            /* VS and TES bindings at this index are different, emit the TES buffer now, and emit
+             * the VS binding next time it's needed.
+             */
+            emit_binding = true;
+            state->sq_constants_for_vs_overwritten_in_vses_by_tes.kcache |= binding_bit;
+         } else {
+            /* VS and TES bindings at this index are the same, continue using the binding for both
+             * TES for this emission and VS later.
+             */
+            state->sq_constants_for_vs_overwritten_in_vses_by_tes.kcache &= ~binding_bit;
+         }
+      }
+
+      if (emit_binding &&
+          !terakan_hw_state_draw_emit_sq_kcache_buffer(
+             command_writer,
+             TERAKAN_CONTEXT_REG_OFFSET(R_028180_ALU_CONST_BUFFER_SIZE_VS_0) + binding_index,
+             TERAKAN_CONTEXT_REG_OFFSET(R_028980_ALU_CONST_CACHE_VS_0) + binding_index, buffer)) {
+         return;
+      }
+   }
+
+   state->sq_constants_modified
+      .kcache[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_TES_IN_VSES] &= ~update_bindings;
+   state->sq_constants_for_tes_overwritten_in_vses_by_vs.kcache &= ~update_bindings;
+   /* Next time the hardware constants now used for new TES bindings are needed for VS, make sure
+    * the VS ones are applied.
+    * Simply mark as overwritten for now to avoid overhead within tesellated draws, defer all more
+    * complex logic until tessellation is disabled.
+    */
+   state->sq_constants_for_vs_overwritten_in_vses_by_tes.kcache |=
+      update_bindings & bindings_modified;
+}
+
+static void
 terakan_hw_state_draw_emit_sq_resources_tes(struct terakan_gfx_command_writer * const command_writer)
 {
    struct terakan_hw_state_draw * const state = &command_writer->hw_state_draw;
@@ -1101,67 +1304,186 @@ terakan_hw_state_draw_emit_sq_resources_tes(struct terakan_gfx_command_writer * 
 
    /* TODO(Triang3l): Fast path for R9xx USE_LS_CONSTS. */
 
-   BITSET_DECLARE(resources_needed, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
+   BITSET_DECLARE(update_bindings, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
    for (unsigned word_index = 0; word_index < BITSET_WORDS(TERAKAN_RESOURCE_HW_COUNT_VERTEX);
         ++word_index) {
-      resources_needed[word_index] =
+      update_bindings[word_index] =
          (state->sq_constants_modified.resources.tes_in_vses[word_index] |
           state->sq_constants_for_tes_overwritten_in_vses_by_vs.resources[word_index]) &
          state->sq_constants_needed.resources.tes[word_index];
    }
 
-   unsigned resource_index;
-   BITSET_FOREACH_SET (resource_index, resources_needed, TERAKAN_RESOURCE_HW_COUNT_VERTEX) {
-      bool emit_resource = false;
+   unsigned binding_index;
+   BITSET_FOREACH_SET (binding_index, update_bindings, TERAKAN_RESOURCE_HW_COUNT_VERTEX) {
+      bool emit_binding = false;
 
-      bool const resource_not_null = BITSET_TEST(state->sq_resources_not_null.tes, resource_index);
+      bool const resource_not_null = BITSET_TEST(state->sq_resources_not_null.tes, binding_index);
 
-      if (BITSET_TEST(state->sq_constants_modified.resources.tes_in_vses, resource_index)) {
-         /* Completely new resource needed for the Vulkan TES stage. */
-         emit_resource = true;
-         BITSET_CLEAR(state->sq_constants_modified.resources.tes_in_vses, resource_index);
-         /* Next time the hardware binding is needed for VS, make sure the VS one is applied.
-          * Simply mark as overwritten for now to avoid overhead within tesellated draws, defer all
-          * more complex logic until tessellation is disabled.
-          */
-         BITSET_SET(state->sq_constants_for_vs_overwritten_in_vses_by_tes.resources,
-                    resource_index);
+      if (BITSET_TEST(state->sq_constants_modified.resources.tes_in_vses, binding_index)) {
+         emit_binding = true;
+         BITSET_CLEAR(state->sq_constants_modified.resources.tes_in_vses, binding_index);
+         BITSET_SET(state->sq_constants_for_vs_overwritten_in_vses_by_tes.resources, binding_index);
       } else {
-         /* The previous TES resource is still up to date, but VSES bindings now include the VS
-          * binding instead, which may be different, or the same (VS | TES bindings in the
-          * beginning of the pipeline layout, may happen in applications having a common descriptor
-          * set referenced by all shaders).
-          */
-         if ((resource_not_null != BITSET_TEST(state->sq_resources_not_null.vs, resource_index)) ||
-             (resource_not_null && (state->sq_resource_bos.tes[resource_index] !=
-                                       state->sq_resource_bos.vs[resource_index] ||
-                                    memcmp(state->sq_resource_descriptors.tes[resource_index],
-                                           state->sq_resource_descriptors.vs[resource_index],
+         if ((resource_not_null != BITSET_TEST(state->sq_resources_not_null.vs, binding_index)) ||
+             (resource_not_null && (state->sq_resource_bos.tes[binding_index] !=
+                                       state->sq_resource_bos.vs[binding_index] ||
+                                    memcmp(state->sq_resource_descriptors.tes[binding_index],
+                                           state->sq_resource_descriptors.vs[binding_index],
                                            sizeof(uint32_t) * 8) != 0))) {
-            /* VS and TES resources for this binding are different, emit the TES resource now, and
-             * emit the VS resource next time it's needed.
-             */
-            emit_resource = true;
+            emit_binding = true;
             BITSET_SET(state->sq_constants_for_vs_overwritten_in_vses_by_tes.resources,
-                       resource_index);
+                       binding_index);
          } else {
-            /* VS and TES resources at this index are the same, continue using the resource for both
-             * TES for this emission and VS later.
-             */
             BITSET_CLEAR(state->sq_constants_for_vs_overwritten_in_vses_by_tes.resources,
-                         resource_index);
+                         binding_index);
          }
       }
 
-      if (emit_resource && !terakan_hw_state_draw_emit_resource(
-                              command_writer, TERAKAN_RESOURCE_HW_OFFSET_VSES + resource_index,
-                              resource_not_null, state->sq_resource_bos.tes[resource_index],
-                              state->sq_resource_descriptors.tes[resource_index])) {
+      if (emit_binding && !terakan_hw_state_draw_emit_resource(
+                             command_writer, TERAKAN_RESOURCE_HW_OFFSET_VSES + binding_index,
+                             resource_not_null, state->sq_resource_bos.tes[binding_index],
+                             state->sq_resource_descriptors.tes[binding_index])) {
          return;
       }
 
-      BITSET_CLEAR(state->sq_constants_for_tes_overwritten_in_vses_by_vs.resources, resource_index);
+      BITSET_CLEAR(state->sq_constants_for_tes_overwritten_in_vses_by_vs.resources, binding_index);
    }
+}
+
+static void
+terakan_hw_state_draw_emit_sq_samplers_tes(struct terakan_gfx_command_writer * const command_writer)
+{
+   struct terakan_hw_state_draw * const state = &command_writer->hw_state_draw;
+
+   if (!state->sq_constants_needed.tcs_tes) {
+      return;
+   }
+
+   /* TODO(Triang3l): Fast path for R9xx USE_LS_CONSTS. */
+
+   uint32_t const bindings_modified =
+      state->sq_constants_modified
+         .samplers[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_TES_IN_VSES];
+   uint32_t const update_bindings =
+      (bindings_modified | state->sq_constants_for_tes_overwritten_in_vses_by_vs.samplers) &
+      state->sq_constants_needed.samplers[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_TES];
+
+   uint32_t bindings_remaining = update_bindings;
+   int binding_index;
+   while ((binding_index = ffs(bindings_remaining) - 1) >= 0) {
+      uint32_t const binding_bit = (uint32_t)1 << binding_index;
+      bindings_remaining &= ~binding_bit;
+
+      bool emit_binding = false;
+
+      uint32_t const * const sampler =
+         state->sq_samplers[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_TES][binding_index];
+
+      if (bindings_modified & binding_bit) {
+         emit_binding = true;
+      } else {
+         if (memcmp(sampler,
+                    state->sq_samplers[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_VS]
+                                      [binding_index],
+                    sizeof(uint32_t) * 3) != 0) {
+            emit_binding = true;
+            state->sq_constants_for_vs_overwritten_in_vses_by_tes.samplers |= binding_bit;
+         } else {
+            state->sq_constants_for_vs_overwritten_in_vses_by_tes.samplers &= ~binding_bit;
+         }
+      }
+
+      if (emit_binding &&
+          !terakan_hw_state_draw_emit_sq_sampler(
+             command_writer, TERAKAN_SAMPLER_HW_OFFSET_VSES + binding_index, sampler)) {
+         return;
+      }
+   }
+
+   state->sq_constants_modified
+      .samplers[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_TES_IN_VSES] &= ~update_bindings;
+   state->sq_constants_for_tes_overwritten_in_vses_by_vs.samplers &= ~update_bindings;
+   state->sq_constants_for_vs_overwritten_in_vses_by_tes.samplers |=
+      update_bindings & bindings_modified;
+}
+
+static void
+terakan_hw_state_draw_emit_sq_sampler_border_colors_tes(
+   struct terakan_gfx_command_writer * const command_writer)
+{
+   struct terakan_hw_state_draw * const state = &command_writer->hw_state_draw;
+
+   if (!state->sq_constants_needed.tcs_tes) {
+      return;
+   }
+
+   /* TODO(Triang3l): Fast path for R9xx USE_LS_CONSTS. */
+
+   uint32_t const bindings_modified =
+      state->sq_constants_modified
+         .sampler_border_colors[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_TES_IN_VSES];
+   uint32_t const update_bindings =
+      (bindings_modified |
+       state->sq_constants_for_tes_overwritten_in_vses_by_vs.sampler_border_colors) &
+      state->sq_samplers_with_border_color[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_TES] &
+      state->sq_constants_needed.samplers[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_TES];
+
+   uint32_t bindings_remaining = update_bindings;
+   int binding_index;
+   while ((binding_index = ffs(bindings_remaining) - 1) >= 0) {
+      uint32_t const binding_bit = (uint32_t)1 << binding_index;
+      bindings_remaining &= ~binding_bit;
+
+      bool emit_binding = false;
+
+      float const * const border_color =
+         state->sq_sampler_border_colors[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_TES]
+                                        [binding_index];
+
+      if (bindings_modified & binding_bit) {
+         emit_binding = true;
+      } else {
+         if (memcmp(
+                border_color,
+                state->sq_sampler_border_colors[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_VS]
+                                               [binding_index],
+                sizeof(float) * 4) != 0) {
+            emit_binding = true;
+            state->sq_constants_for_vs_overwritten_in_vses_by_tes.sampler_border_colors |=
+               binding_bit;
+         } else {
+            state->sq_constants_for_vs_overwritten_in_vses_by_tes.sampler_border_colors &=
+               ~binding_bit;
+         }
+      }
+
+      if (emit_binding &&
+          !terakan_hw_state_draw_emit_sq_sampler_border_color(
+             command_writer, TERAKAN_CONFIG_REG_OFFSET(R_00A414_TD_VS_SAMPLER0_BORDER_INDEX),
+             binding_index, border_color)) {
+         return;
+      }
+   }
+
+   state->sq_constants_modified
+      .sampler_border_colors[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_TES_IN_VSES] &=
+      ~update_bindings;
+   state->sq_constants_for_tes_overwritten_in_vses_by_vs.sampler_border_colors &= ~update_bindings;
+   state->sq_constants_for_vs_overwritten_in_vses_by_tes.sampler_border_colors |=
+      update_bindings & bindings_modified;
+}
+
+static void
+terakan_hw_state_draw_emit_sq_kcache_gs(struct terakan_gfx_command_writer * const command_writer)
+{
+   if (!terakan_hw_state_draw_sq_constants_needed_by_gs(&command_writer->hw_state_draw)) {
+      return;
+   }
+   terakan_hw_state_draw_emit_sq_kcache_for_stage(
+      command_writer, TERAKAN_CONTEXT_REG_OFFSET(R_0281C0_ALU_CONST_BUFFER_SIZE_GS_0),
+      TERAKAN_CONTEXT_REG_OFFSET(R_0289C0_ALU_CONST_CACHE_GS_0),
+      TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_GS,
+      TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_GS);
 }
 
 static void
@@ -1179,6 +1501,41 @@ terakan_hw_state_draw_emit_sq_resources_gs(struct terakan_gfx_command_writer * c
 }
 
 static void
+terakan_hw_state_draw_emit_sq_samplers_gs(struct terakan_gfx_command_writer * const command_writer)
+{
+   if (!terakan_hw_state_draw_sq_constants_needed_by_gs(&command_writer->hw_state_draw)) {
+      return;
+   }
+   terakan_hw_state_draw_emit_sq_samplers_for_stage(
+      command_writer, TERAKAN_SAMPLER_HW_OFFSET_GS,
+      TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_GS,
+      TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_GS);
+}
+
+static void
+terakan_hw_state_draw_emit_sq_sampler_border_colors_gs(
+   struct terakan_gfx_command_writer * const command_writer)
+{
+   if (!terakan_hw_state_draw_sq_constants_needed_by_gs(&command_writer->hw_state_draw)) {
+      return;
+   }
+   terakan_hw_state_draw_emit_sq_sampler_border_colors_for_stage(
+      command_writer, TERAKAN_CONFIG_REG_OFFSET(R_00A428_TD_GS_SAMPLER0_BORDER_INDEX),
+      TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_GS,
+      TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_GS);
+}
+
+static void
+terakan_hw_state_draw_emit_sq_kcache_fs(struct terakan_gfx_command_writer * const command_writer)
+{
+   terakan_hw_state_draw_emit_sq_kcache_for_stage(
+      command_writer, TERAKAN_CONTEXT_REG_OFFSET(R_028140_ALU_CONST_BUFFER_SIZE_PS_0),
+      TERAKAN_CONTEXT_REG_OFFSET(R_028940_ALU_CONST_CACHE_PS_0),
+      TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_FS,
+      TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_FS);
+}
+
+static void
 terakan_hw_state_draw_emit_sq_resources_fs(struct terakan_gfx_command_writer * const command_writer)
 {
    struct terakan_hw_state_draw * const state = &command_writer->hw_state_draw;
@@ -1187,6 +1544,36 @@ terakan_hw_state_draw_emit_sq_resources_fs(struct terakan_gfx_command_writer * c
       state->sq_resources_not_null.fs, state->sq_resource_bos.fs,
       state->sq_resource_descriptors.fs[0], state->sq_constants_needed.resources.fs,
       state->sq_constants_modified.resources.fs);
+}
+
+static void
+terakan_hw_state_draw_emit_sq_samplers_fs(struct terakan_gfx_command_writer * const command_writer)
+{
+   terakan_hw_state_draw_emit_sq_samplers_for_stage(
+      command_writer, TERAKAN_SAMPLER_HW_OFFSET_PS,
+      TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_FS,
+      TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_FS);
+}
+
+static void
+terakan_hw_state_draw_emit_sq_sampler_border_colors_fs(
+   struct terakan_gfx_command_writer * const command_writer)
+{
+   terakan_hw_state_draw_emit_sq_sampler_border_colors_for_stage(
+      command_writer, TERAKAN_CONFIG_REG_OFFSET(R_00A400_TD_PS_SAMPLER0_BORDER_INDEX),
+      TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_FS,
+      TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_FS);
+}
+
+static void
+terakan_hw_state_draw_emit_sq_resources_vi(struct terakan_gfx_command_writer * const command_writer)
+{
+   struct terakan_hw_state_draw * const state = &command_writer->hw_state_draw;
+   terakan_hw_state_draw_emit_sq_resources_for_stage(
+      command_writer, TERAKAN_RESOURCE_HW_OFFSET_FS, TERAKAN_RESOURCE_HW_COUNT_FETCH,
+      state->sq_resources_not_null.vi, state->sq_resource_bos.vi,
+      state->sq_resource_descriptors.vi[0], state->sq_constants_needed.resources.vi,
+      state->sq_constants_modified.resources.vi);
 }
 
 static terakan_hw_state_draw_emit_function const
@@ -1228,6 +1615,21 @@ static terakan_hw_state_draw_emit_function const
       [TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_TES] = terakan_hw_state_draw_emit_sq_resources_tes,
       [TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_GS] = terakan_hw_state_draw_emit_sq_resources_gs,
       [TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_FS] = terakan_hw_state_draw_emit_sq_resources_fs,
+      [TERAKAN_HW_STATE_DRAW_INDEX_SQ_SAMPLERS_VS] = terakan_hw_state_draw_emit_sq_samplers_vs,
+      [TERAKAN_HW_STATE_DRAW_INDEX_SQ_SAMPLERS_TCS] = terakan_hw_state_draw_emit_sq_samplers_tcs,
+      [TERAKAN_HW_STATE_DRAW_INDEX_SQ_SAMPLERS_TES] = terakan_hw_state_draw_emit_sq_samplers_tes,
+      [TERAKAN_HW_STATE_DRAW_INDEX_SQ_SAMPLERS_GS] = terakan_hw_state_draw_emit_sq_samplers_gs,
+      [TERAKAN_HW_STATE_DRAW_INDEX_SQ_SAMPLERS_FS] = terakan_hw_state_draw_emit_sq_samplers_fs,
+      [TERAKAN_HW_STATE_DRAW_INDEX_SQ_SAMPLER_BORDER_COLORS_VS] =
+         terakan_hw_state_draw_emit_sq_sampler_border_colors_vs,
+      [TERAKAN_HW_STATE_DRAW_INDEX_SQ_SAMPLER_BORDER_COLORS_TCS] =
+         terakan_hw_state_draw_emit_sq_sampler_border_colors_tcs,
+      [TERAKAN_HW_STATE_DRAW_INDEX_SQ_SAMPLER_BORDER_COLORS_TES] =
+         terakan_hw_state_draw_emit_sq_sampler_border_colors_tes,
+      [TERAKAN_HW_STATE_DRAW_INDEX_SQ_SAMPLER_BORDER_COLORS_GS] =
+         terakan_hw_state_draw_emit_sq_sampler_border_colors_gs,
+      [TERAKAN_HW_STATE_DRAW_INDEX_SQ_SAMPLER_BORDER_COLORS_FS] =
+         terakan_hw_state_draw_emit_sq_sampler_border_colors_fs,
 };
 
 void
@@ -1265,28 +1667,25 @@ terakan_hw_state_draw_ensure_viewport_count(struct terakan_hw_state_draw * const
    BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_VIEWPORT);
 }
 
-/* Returns whether the buffer is now modified. */
-static bool
+static void
 terakan_hw_state_draw_set_sq_kcache_buffer(
-   struct terakan_hw_state_draw * const state, uint32_t const buffer_index,
-   uint32_t const size_lines, struct terakan_bo const * const bo, uint32_t const base_lines,
+   struct terakan_hw_state_draw * const state, uint32_t const index, uint32_t const size_lines,
+   struct terakan_bo const * const bo, uint32_t const base_lines,
    enum terakan_hw_state_draw_sq_constants_needed_stage const needed_stage,
-   enum terakan_hw_state_draw_sq_constants_modified_stage const modified_stage,
-   enum terakan_hw_state_draw_index const state_index)
+   enum terakan_hw_state_draw_sq_constants_modified_stage const modified_stage)
 {
    assert(!(size_lines != 0 && bo == NULL));
 
-   uint16_t const buffer_bit = (uint16_t)1 << buffer_index;
+   uint16_t const buffer_bit = (uint16_t)1 << index;
 
    uint16_t * const buffers_modified = &state->sq_constants_modified.kcache[modified_stage];
 
    struct terakan_hw_state_sq_kcache_buffer * const buffer_ptr =
-      &state->sq_kcache_buffers[needed_stage][buffer_index];
+      &state->sq_kcache_buffers[needed_stage][index];
 
    if (!(*buffers_modified & buffer_bit) && buffer_ptr->size_lines == size_lines &&
        (size_lines == 0 || (buffer_ptr->bo == bo && buffer_ptr->base_lines == base_lines))) {
       /* Not modified. */
-      return false;
    }
 
    buffer_ptr->bo = bo;
@@ -1297,80 +1696,71 @@ terakan_hw_state_draw_set_sq_kcache_buffer(
 
    if (state->sq_constants_needed.kcache[needed_stage] & buffer_bit) {
       /* Emit before the next draw. */
-      BITSET_SET(state->state_modified, state_index);
+      BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_VS + needed_stage);
    }
-
-   return true;
 }
 
 void
 terakan_hw_state_draw_set_sq_kcache_vs(struct terakan_hw_state_draw * const state,
-                                       uint32_t const buffer_index, uint32_t const size_lines,
+                                       uint32_t const index, uint32_t const size_lines,
                                        struct terakan_bo const * const bo,
                                        uint32_t const base_lines)
 {
-   if (terakan_hw_state_draw_set_sq_kcache_buffer(
-          state, buffer_index, size_lines, bo, base_lines,
-          TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_VS,
-          TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_VS_IN_VSES,
-          TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_VS)) {
+   terakan_hw_state_draw_set_sq_kcache_buffer(
+      state, index, size_lines, bo, base_lines, TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_VS,
+      TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_VS_IN_LS);
+   state->sq_constants_modified
+      .kcache[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_VS_IN_VSES] |=
       state->sq_constants_modified
-         .kcache[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_VS_IN_LS] |= (uint16_t)1
-                                                                                << buffer_index;
-   }
+         .kcache[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_VS_IN_LS] &
+      ((uint16_t)1 << index);
 }
 
 void
 terakan_hw_state_draw_set_sq_kcache_tcs(struct terakan_hw_state_draw * const state,
-                                        uint32_t const buffer_index, uint32_t const size_lines,
-                                        struct terakan_bo const * const bo,
-                                        uint32_t const base_lines)
-{
-   terakan_hw_state_draw_set_sq_kcache_buffer(state, buffer_index, size_lines, bo, base_lines,
-                                              TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_TCS,
-                                              TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_TCS,
-                                              TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_TCS);
-}
-
-void
-terakan_hw_state_draw_set_sq_kcache_tes(struct terakan_hw_state_draw * const state,
-                                        uint32_t const buffer_index, uint32_t const size_lines,
+                                        uint32_t const index, uint32_t const size_lines,
                                         struct terakan_bo const * const bo,
                                         uint32_t const base_lines)
 {
    terakan_hw_state_draw_set_sq_kcache_buffer(
-      state, buffer_index, size_lines, bo, base_lines,
-      TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_TES,
-      TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_TES_IN_VSES,
-      TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_TES);
+      state, index, size_lines, bo, base_lines, TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_TCS,
+      TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_TCS);
+}
+
+void
+terakan_hw_state_draw_set_sq_kcache_tes(struct terakan_hw_state_draw * const state,
+                                        uint32_t const index, uint32_t const size_lines,
+                                        struct terakan_bo const * const bo,
+                                        uint32_t const base_lines)
+{
+   terakan_hw_state_draw_set_sq_kcache_buffer(
+      state, index, size_lines, bo, base_lines, TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_TES,
+      TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_TES_IN_VSES);
 }
 
 void
 terakan_hw_state_draw_set_sq_kcache_gs(struct terakan_hw_state_draw * const state,
-                                       uint32_t const buffer_index, uint32_t const size_lines,
+                                       uint32_t const index, uint32_t const size_lines,
                                        struct terakan_bo const * const bo,
                                        uint32_t const base_lines)
 {
-   terakan_hw_state_draw_set_sq_kcache_buffer(state, buffer_index, size_lines, bo, base_lines,
+   terakan_hw_state_draw_set_sq_kcache_buffer(state, index, size_lines, bo, base_lines,
                                               TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_GS,
-                                              TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_GS,
-                                              TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_GS);
+                                              TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_GS);
 }
 
 void
 terakan_hw_state_draw_set_sq_kcache_fs(struct terakan_hw_state_draw * const state,
-                                       uint32_t const buffer_index, uint32_t const size_lines,
+                                       uint32_t const index, uint32_t const size_lines,
                                        struct terakan_bo const * const bo,
                                        uint32_t const base_lines)
 {
-   terakan_hw_state_draw_set_sq_kcache_buffer(state, buffer_index, size_lines, bo, base_lines,
+   terakan_hw_state_draw_set_sq_kcache_buffer(state, index, size_lines, bo, base_lines,
                                               TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_FS,
-                                              TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_FS,
-                                              TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_FS);
+                                              TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_FS);
 }
 
-/* Returns whether the resource is now modified. */
-static bool
+static void
 terakan_hw_state_draw_set_sq_resource(
    struct terakan_hw_state_draw * const state, uint32_t const index,
    struct terakan_bo const * const bo, uint32_t const descriptor[8],
@@ -1384,7 +1774,7 @@ terakan_hw_state_draw_set_sq_resource(
        (!not_null || (bos[index] == bo &&
                       memcmp(descriptors + 8 * index, descriptor, sizeof(uint32_t) * 8) == 0))) {
       /* Not modified. */
-      return false;
+      return;
    }
 
    if (not_null) {
@@ -1401,8 +1791,6 @@ terakan_hw_state_draw_set_sq_resource(
       /* Emit before the next draw. */
       BITSET_SET(state->state_modified, state_index);
    }
-
-   return true;
 }
 
 void
@@ -1421,12 +1809,12 @@ terakan_hw_state_draw_set_sq_resource_vs(struct terakan_hw_state_draw * const st
                                          uint32_t const index, struct terakan_bo const * const bo,
                                          uint32_t const descriptor[8])
 {
-   if (terakan_hw_state_draw_set_sq_resource(
-          state, index, bo, descriptor, state->sq_resources_not_null.vs, state->sq_resource_bos.vs,
-          state->sq_resource_descriptors.vs[0], state->sq_constants_needed.resources.vs,
-          state->sq_constants_modified.resources.vs_in_vses,
-          TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_VS)) {
-      BITSET_SET(state->sq_constants_modified.resources.vs_in_ls, index);
+   terakan_hw_state_draw_set_sq_resource(
+      state, index, bo, descriptor, state->sq_resources_not_null.vs, state->sq_resource_bos.vs,
+      state->sq_resource_descriptors.vs[0], state->sq_constants_needed.resources.vs,
+      state->sq_constants_modified.resources.vs_in_ls, TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_VS);
+   if (BITSET_TEST(state->sq_constants_modified.resources.vs_in_ls, index)) {
+      BITSET_SET(state->sq_constants_modified.resources.vs_in_vses, index);
    }
 }
 
@@ -1476,14 +1864,137 @@ terakan_hw_state_draw_set_sq_resource_fs(struct terakan_hw_state_draw * const st
 }
 
 static void
+terakan_hw_state_draw_set_sq_sampler(
+   struct terakan_hw_state_draw * const state, uint32_t const index, uint32_t const sampler[3],
+   float const border_color[4],
+   enum terakan_hw_state_draw_sq_constants_needed_stage const needed_stage,
+   enum terakan_hw_state_draw_sq_constants_modified_stage const modified_stage)
+{
+   assert(G_03C008_TYPE(sampler[2]));
+
+   uint32_t const sampler_bit = (uint32_t)1 << index;
+
+   bool const sampler_needed =
+      (state->sq_constants_needed.samplers[needed_stage] & sampler_bit) != 0;
+
+   uint32_t * const samplers_ever_written = &state->sq_samplers_ever_written[needed_stage];
+   uint32_t * const samplers_modified = &state->sq_constants_modified.samplers[modified_stage];
+   uint32_t * const state_sampler = state->sq_samplers[needed_stage][index];
+   if (!(*samplers_ever_written & sampler_bit) ||
+       memcmp(state_sampler, sampler, sizeof(uint32_t) * 3) != 0) {
+      memcpy(state_sampler, sampler, sizeof(uint32_t) * 3);
+      *samplers_ever_written |= sampler_bit;
+      *samplers_modified |= sampler_bit;
+      if (sampler_needed) {
+         /* Emit before the next draw. */
+         BITSET_SET(state->state_modified,
+                    TERAKAN_HW_STATE_DRAW_INDEX_SQ_SAMPLERS_VS + needed_stage);
+      }
+   }
+
+   if (G_03C000_BORDER_COLOR_TYPE(sampler[0]) == V_03C000_SQ_TEX_BORDER_COLOR_REGISTER) {
+      state->sq_samplers_with_border_color[needed_stage] |= sampler_bit;
+      uint32_t * const border_colors_ever_written =
+         &state->sq_sampler_border_colors_ever_written[needed_stage];
+      uint32_t * const border_colors_modified =
+         &state->sq_constants_modified.sampler_border_colors[modified_stage];
+      float * const state_border_color = state->sq_sampler_border_colors[needed_stage][index];
+      if (!(*border_colors_ever_written & sampler_bit) ||
+          memcmp(state_border_color, border_color, sizeof(float) * 4) != 0) {
+         memcpy(state_border_color, border_color, sizeof(float) * 4);
+         *border_colors_ever_written |= sampler_bit;
+         *border_colors_modified |= sampler_bit;
+      }
+      /* Make sure the border color is emitted not only if it was modified by this call, but also if
+       * it was modified previously, however hasn't been yet emitted because the sampler at this
+       * index previously didn't need it.
+       */
+      if (sampler_needed && (*border_colors_modified & sampler_bit)) {
+         BITSET_SET(state->state_modified,
+                    TERAKAN_HW_STATE_DRAW_INDEX_SQ_SAMPLER_BORDER_COLORS_VS + needed_stage);
+      }
+   } else {
+      state->sq_samplers_with_border_color[needed_stage] &= ~sampler_bit;
+   }
+}
+
+void
+terakan_hw_state_draw_set_sq_sampler_vs(struct terakan_hw_state_draw * const state,
+                                        uint32_t const index, uint32_t const sampler[3],
+                                        float const border_color[4])
+{
+   terakan_hw_state_draw_set_sq_sampler(state, index, sampler, border_color,
+                                        TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_VS,
+                                        TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_VS_IN_LS);
+   uint32_t const sampler_bit = (uint32_t)1 << index;
+   state->sq_constants_modified
+      .samplers[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_VS_IN_VSES] |=
+      state->sq_constants_modified
+         .samplers[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_VS_IN_LS] &
+      sampler_bit;
+   state->sq_constants_modified
+      .sampler_border_colors[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_VS_IN_VSES] |=
+      state->sq_constants_modified
+         .sampler_border_colors[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_VS_IN_LS] &
+      sampler_bit;
+}
+
+void
+terakan_hw_state_draw_set_sq_sampler_tcs(struct terakan_hw_state_draw * const state,
+                                         uint32_t const index, uint32_t const sampler[3],
+                                         float const border_color[4])
+{
+   terakan_hw_state_draw_set_sq_sampler(state, index, sampler, border_color,
+                                        TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_TCS,
+                                        TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_TCS);
+}
+
+void
+terakan_hw_state_draw_set_sq_sampler_tes(struct terakan_hw_state_draw * const state,
+                                         uint32_t const index, uint32_t const sampler[3],
+                                         float const border_color[4])
+{
+   terakan_hw_state_draw_set_sq_sampler(
+      state, index, sampler, border_color, TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_TES,
+      TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_TES_IN_VSES);
+}
+
+void
+terakan_hw_state_draw_set_sq_sampler_gs(struct terakan_hw_state_draw * const state,
+                                        uint32_t const index, uint32_t const sampler[3],
+                                        float const border_color[4])
+{
+   terakan_hw_state_draw_set_sq_sampler(state, index, sampler, border_color,
+                                        TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_GS,
+                                        TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_GS);
+}
+
+void
+terakan_hw_state_draw_set_sq_sampler_fs(struct terakan_hw_state_draw * const state,
+                                        uint32_t const index, uint32_t const sampler[3],
+                                        float const border_color[4])
+{
+   terakan_hw_state_draw_set_sq_sampler(state, index, sampler, border_color,
+                                        TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_FS,
+                                        TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_FS);
+}
+
+static void
 terakan_hw_state_draw_set_sq_constants_needed(
    struct terakan_hw_state_draw * const state, uint16_t const kcache,
-   uint32_t const * const resources_opt, bool const stage_needed,
+   uint32_t const * const resources_opt, uint32_t const samplers, bool const stage_needed,
    enum terakan_hw_state_draw_sq_constants_needed_stage const constants_needed_stage,
-   enum terakan_hw_state_draw_index const kcache_state_index, uint32_t const resource_count,
-   BITSET_WORD * const resources_needed_bitset,
-   enum terakan_hw_state_draw_index const resources_state_index)
+   uint32_t const resource_count, BITSET_WORD * const resources_needed_bitset)
 {
+   enum terakan_hw_state_draw_index const kcache_state_index =
+      TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_VS + constants_needed_stage;
+   enum terakan_hw_state_draw_index const resources_state_index =
+      TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_VS + constants_needed_stage;
+   enum terakan_hw_state_draw_index const samplers_state_index =
+      TERAKAN_HW_STATE_DRAW_INDEX_SQ_SAMPLERS_VS + constants_needed_stage;
+   enum terakan_hw_state_draw_index const sampler_border_colors_state_index =
+      TERAKAN_HW_STATE_DRAW_INDEX_SQ_SAMPLER_BORDER_COLORS_VS + constants_needed_stage;
+
    size_t const resource_bitset_size = sizeof(BITSET_WORD) * BITSET_WORDS(resource_count);
 
    if (stage_needed) {
@@ -1494,6 +2005,16 @@ terakan_hw_state_draw_set_sq_constants_needed(
       if (resources_opt != NULL && !BITSET_TEST(state->state_modified, resources_state_index) &&
           memcmp(resources_needed_bitset, resources_opt, resource_bitset_size) != 0) {
          BITSET_SET(state->state_modified, resources_state_index);
+      }
+
+      uint32_t const samplers_needed_different =
+         state->sq_constants_needed.samplers[constants_needed_stage] ^ samplers;
+      if (samplers_needed_different) {
+         BITSET_SET(state->state_modified, samplers_state_index);
+         if (samplers_needed_different &
+             state->sq_samplers_with_border_color[constants_needed_stage]) {
+            BITSET_SET(state->state_modified, sampler_border_colors_state_index);
+         }
       }
    }
 
@@ -1508,6 +2029,14 @@ terakan_hw_state_draw_set_sq_constants_needed(
       BITSET_CLEAR(state->state_modified, resources_state_index);
       memset(resources_needed_bitset, 0, resource_bitset_size);
    }
+
+   state->sq_constants_needed.samplers[constants_needed_stage] = samplers;
+   if (!(samplers & state->sq_samplers_with_border_color[constants_needed_stage])) {
+      BITSET_CLEAR(state->state_modified, sampler_border_colors_state_index);
+      if (!samplers) {
+         BITSET_CLEAR(state->state_modified, samplers_state_index);
+      }
+   }
 }
 
 static inline void
@@ -1521,9 +2050,13 @@ terakan_hw_state_draw_update_sq_constants_gs_needed(struct terakan_hw_state_draw
    if (gs_needed) {
       BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_GS);
       BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_GS);
+      BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_SQ_SAMPLERS_GS);
+      BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_SQ_SAMPLER_BORDER_COLORS_GS);
    } else {
       BITSET_CLEAR(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_GS);
       BITSET_CLEAR(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_GS);
+      BITSET_CLEAR(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_SQ_SAMPLERS_GS);
+      BITSET_CLEAR(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_SQ_SAMPLER_BORDER_COLORS_GS);
    }
 }
 
@@ -1550,12 +2083,13 @@ void
 terakan_hw_state_draw_set_sq_constants_needed_by_vs(struct terakan_hw_state_draw * const state,
                                                     uint16_t const kcache,
                                                     BITSET_WORD const * const resources_opt,
+                                                    uint32_t const samplers,
                                                     VkShaderStageFlags const next_stage)
 {
-   terakan_hw_state_draw_set_sq_constants_needed(
-      state, kcache, resources_opt, true, TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_VS,
-      TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_VS, TERAKAN_RESOURCE_HW_COUNT_VERTEX,
-      state->sq_constants_needed.resources.vs, TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_VS);
+   terakan_hw_state_draw_set_sq_constants_needed(state, kcache, resources_opt, samplers, true,
+                                                 TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_VS,
+                                                 TERAKAN_RESOURCE_HW_COUNT_VERTEX,
+                                                 state->sq_constants_needed.resources.vs);
 
    bool const tcs_tes_needed = next_stage == VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
    if (state->sq_constants_needed.tcs_tes != tcs_tes_needed) {
@@ -1565,11 +2099,23 @@ terakan_hw_state_draw_set_sq_constants_needed_by_vs(struct terakan_hw_state_draw
          BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_TES);
          BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_TCS);
          BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_TES);
+         BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_SQ_SAMPLERS_TCS);
+         BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_SQ_SAMPLERS_TES);
+         BITSET_SET(state->state_modified,
+                    TERAKAN_HW_STATE_DRAW_INDEX_SQ_SAMPLER_BORDER_COLORS_TCS);
+         BITSET_SET(state->state_modified,
+                    TERAKAN_HW_STATE_DRAW_INDEX_SQ_SAMPLER_BORDER_COLORS_TES);
       } else {
          BITSET_CLEAR(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_TCS);
          BITSET_CLEAR(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_TES);
          BITSET_CLEAR(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_TCS);
          BITSET_CLEAR(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_TES);
+         BITSET_CLEAR(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_SQ_SAMPLERS_TCS);
+         BITSET_CLEAR(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_SQ_SAMPLERS_TES);
+         BITSET_CLEAR(state->state_modified,
+                      TERAKAN_HW_STATE_DRAW_INDEX_SQ_SAMPLER_BORDER_COLORS_TCS);
+         BITSET_CLEAR(state->state_modified,
+                      TERAKAN_HW_STATE_DRAW_INDEX_SQ_SAMPLER_BORDER_COLORS_TES);
       }
    }
 
@@ -1581,26 +2127,26 @@ terakan_hw_state_draw_set_sq_constants_needed_by_vs(struct terakan_hw_state_draw
 void
 terakan_hw_state_draw_set_sq_constants_needed_by_tcs(struct terakan_hw_state_draw * const state,
                                                      uint16_t const kcache,
-                                                     BITSET_WORD const * const resources_opt)
+                                                     BITSET_WORD const * const resources_opt,
+                                                     uint32_t const samplers)
 {
    terakan_hw_state_draw_set_sq_constants_needed(
-      state, kcache, resources_opt, state->sq_constants_needed.tcs_tes,
-      TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_TCS,
-      TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_TCS, TERAKAN_RESOURCE_HW_COUNT_VERTEX,
-      state->sq_constants_needed.resources.tcs, TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_TCS);
+      state, kcache, resources_opt, samplers, state->sq_constants_needed.tcs_tes,
+      TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_TCS, TERAKAN_RESOURCE_HW_COUNT_VERTEX,
+      state->sq_constants_needed.resources.tcs);
 }
 
 void
 terakan_hw_state_draw_set_sq_constants_needed_by_tes(struct terakan_hw_state_draw * const state,
                                                      uint16_t const kcache,
                                                      BITSET_WORD const * const resources_opt,
+                                                     uint32_t const samplers,
                                                      bool const next_stage_is_gs)
 {
    terakan_hw_state_draw_set_sq_constants_needed(
-      state, kcache, resources_opt, state->sq_constants_needed.tcs_tes,
-      TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_TES,
-      TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_TES, TERAKAN_RESOURCE_HW_COUNT_VERTEX,
-      state->sq_constants_needed.resources.tes, TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_TES);
+      state, kcache, resources_opt, samplers, state->sq_constants_needed.tcs_tes,
+      TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_TES, TERAKAN_RESOURCE_HW_COUNT_VERTEX,
+      state->sq_constants_needed.resources.tes);
 
    bool const gs_was_needed = terakan_hw_state_draw_sq_constants_needed_by_gs(state);
    state->sq_constants_needed.gs_after_tes = next_stage_is_gs;
@@ -1610,24 +2156,26 @@ terakan_hw_state_draw_set_sq_constants_needed_by_tes(struct terakan_hw_state_dra
 void
 terakan_hw_state_draw_set_sq_constants_needed_by_gs(struct terakan_hw_state_draw * const state,
                                                     uint16_t const kcache,
-                                                    BITSET_WORD const * const resources_opt)
+                                                    BITSET_WORD const * const resources_opt,
+                                                    uint32_t const samplers)
 {
    terakan_hw_state_draw_set_sq_constants_needed(
-      state, kcache, resources_opt, terakan_hw_state_draw_sq_constants_needed_by_gs(state),
-      TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_GS, TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_GS,
-      TERAKAN_RESOURCE_HW_COUNT_VERTEX, state->sq_constants_needed.resources.gs,
-      TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_GS);
+      state, kcache, resources_opt, samplers,
+      terakan_hw_state_draw_sq_constants_needed_by_gs(state),
+      TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_GS, TERAKAN_RESOURCE_HW_COUNT_VERTEX,
+      state->sq_constants_needed.resources.gs);
 }
 
 void
 terakan_hw_state_draw_set_sq_constants_needed_by_fs(struct terakan_hw_state_draw * const state,
                                                     uint16_t const kcache,
-                                                    BITSET_WORD const * const resources_opt)
+                                                    BITSET_WORD const * const resources_opt,
+                                                    uint32_t const samplers)
 {
-   terakan_hw_state_draw_set_sq_constants_needed(
-      state, kcache, resources_opt, true, TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_FS,
-      TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_FS, TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE,
-      state->sq_constants_needed.resources.fs, TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_FS);
+   terakan_hw_state_draw_set_sq_constants_needed(state, kcache, resources_opt, samplers, true,
+                                                 TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_FS,
+                                                 TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE,
+                                                 state->sq_constants_needed.resources.fs);
 }
 
 void
@@ -1642,13 +2190,30 @@ terakan_hw_state_draw_indirect_buffer_begun_and_sq_resources_cleared(
     * Make sure those that shouldn't be null are emitted next time they're needed.
     */
    BITSET_COPY(state->sq_constants_modified.resources.vi, state->sq_resources_not_null.vi);
-   BITSET_COPY(state->sq_constants_modified.resources.vs_in_vses, state->sq_resources_not_null.vs);
    BITSET_COPY(state->sq_constants_modified.resources.vs_in_ls, state->sq_resources_not_null.vs);
+   BITSET_COPY(state->sq_constants_modified.resources.vs_in_vses, state->sq_resources_not_null.vs);
    BITSET_COPY(state->sq_constants_modified.resources.tcs, state->sq_resources_not_null.tcs);
    BITSET_COPY(state->sq_constants_modified.resources.tes_in_vses,
                state->sq_resources_not_null.tes);
    BITSET_COPY(state->sq_constants_modified.resources.gs, state->sq_resources_not_null.gs);
    BITSET_COPY(state->sq_constants_modified.resources.fs, state->sq_resources_not_null.fs);
+
+   /* Samplers are undefined in the hardware. */
+   state->sq_constants_modified
+      .samplers[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_VS_IN_LS] =
+      state->sq_samplers_ever_written[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_VS];
+   state->sq_constants_modified
+      .samplers[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_VS_IN_VSES] =
+      state->sq_samplers_ever_written[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_VS];
+   state->sq_constants_modified.samplers[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_TCS] =
+      state->sq_samplers_ever_written[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_TCS];
+   state->sq_constants_modified
+      .samplers[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_TES_IN_VSES] =
+      state->sq_samplers_ever_written[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_TES];
+   state->sq_constants_modified.samplers[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_GS] =
+      state->sq_samplers_ever_written[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_GS];
+   state->sq_constants_modified.samplers[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_FS] =
+      state->sq_samplers_ever_written[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_FS];
 
    /* Constants for VS or TES have not been emitted in the current indirect buffer yet. */
    memset(&state->sq_constants_for_vs_overwritten_in_vses_by_tes, 0,
@@ -1721,21 +2286,22 @@ terakan_hw_state_draw_reset(struct terakan_hw_state_draw * const state)
    memset(&state->sq_kcache_buffers, 0, sizeof(state->sq_kcache_buffers));
    memset(&state->sq_resources_not_null, 0, sizeof(state->sq_resources_not_null));
 
+   memset(&state->sq_samplers_ever_written, 0, sizeof(state->sq_samplers_ever_written));
+   memset(&state->sq_sampler_border_colors_ever_written, 0,
+          sizeof(state->sq_sampler_border_colors_ever_written));
+   memset(&state->sq_samplers_with_border_color, 0, sizeof(state->sq_samplers_with_border_color));
+
    /* state_modified is set specially for sequencer constants, and state_ever_written is not
     * updated for them, but make sure they are emitted next full state emission - they've also just
     * been initialized to a valid state (to all being null).
     */
-
-   BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_VS);
-   BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_TCS);
-   BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_TES);
-   BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_GS);
-   BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_FS);
-
+   for (unsigned stage = 0; stage < TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_COUNT;
+        ++stage) {
+      BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_VS + stage);
+      BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_VS + stage);
+      BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_INDEX_SQ_SAMPLERS_VS + stage);
+      BITSET_SET(state->state_ever_written,
+                 TERAKAN_HW_STATE_DRAW_INDEX_SQ_SAMPLER_BORDER_COLORS_VS + stage);
+   }
    BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_VI);
-   BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_VS);
-   BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_TCS);
-   BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_TES);
-   BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_GS);
-   BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_FS);
 }

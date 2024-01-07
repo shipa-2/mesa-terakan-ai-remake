@@ -71,6 +71,34 @@ static terakan_pipeline_layout_set_resource_function const
       [MESA_SHADER_FRAGMENT] = terakan_pipeline_layout_set_resource_to_fs,
 };
 
+typedef void (*terakan_pipeline_layout_set_sampler_function)(
+   struct terakan_gfx_command_writer * command_writer, uint8_t index,
+   struct terakan_descriptor_set_sampler const * sampler);
+
+#define TERAKAN_PIPELINE_LAYOUT_SET_SAMPLER_FOR_GRAPHICS(stage)                                    \
+   static void terakan_pipeline_layout_set_sampler_to_##stage(                                     \
+      struct terakan_gfx_command_writer * const command_writer, uint8_t const index,               \
+      struct terakan_descriptor_set_sampler const * const sampler)                                 \
+   {                                                                                               \
+      terakan_hw_state_draw_set_sq_sampler_##stage(&command_writer->hw_state_draw, index,          \
+                                                   sampler->sampler, sampler->border_color);       \
+   }
+
+TERAKAN_PIPELINE_LAYOUT_SET_SAMPLER_FOR_GRAPHICS(vs)
+TERAKAN_PIPELINE_LAYOUT_SET_SAMPLER_FOR_GRAPHICS(tcs)
+TERAKAN_PIPELINE_LAYOUT_SET_SAMPLER_FOR_GRAPHICS(tes)
+TERAKAN_PIPELINE_LAYOUT_SET_SAMPLER_FOR_GRAPHICS(gs)
+TERAKAN_PIPELINE_LAYOUT_SET_SAMPLER_FOR_GRAPHICS(fs)
+
+static terakan_pipeline_layout_set_sampler_function const
+   terakan_pipeline_layout_set_sampler_to_stage[] = {
+      [MESA_SHADER_VERTEX] = terakan_pipeline_layout_set_sampler_to_vs,
+      [MESA_SHADER_TESS_CTRL] = terakan_pipeline_layout_set_sampler_to_tcs,
+      [MESA_SHADER_TESS_EVAL] = terakan_pipeline_layout_set_sampler_to_tes,
+      [MESA_SHADER_GEOMETRY] = terakan_pipeline_layout_set_sampler_to_gs,
+      [MESA_SHADER_FRAGMENT] = terakan_pipeline_layout_set_sampler_to_fs,
+};
+
 VKAPI_ATTR void VKAPI_CALL
 terakan_CmdBindDescriptorSets(VkCommandBuffer const commandBuffer,
                               VkPipelineBindPoint const pipelineBindPoint,
@@ -109,6 +137,10 @@ terakan_CmdBindDescriptorSets(VkCommandBuffer const commandBuffer,
 
       struct terakan_descriptor_set_resource const * const set_resources =
          (struct terakan_descriptor_set_resource const *)set->descriptors;
+      struct terakan_descriptor_set_sampler const * const set_samplers =
+         (struct terakan_descriptor_set_sampler const *)(set->descriptors +
+                                                         set_layout
+                                                            ->pool_first_sampler_offset_bytes);
 
       for (gl_shader_stage shader_stage = shader_stage_first; shader_stage <= shader_stage_last;
            ++shader_stage) {
@@ -130,15 +162,17 @@ terakan_CmdBindDescriptorSets(VkCommandBuffer const commandBuffer,
                set_resources + range->first_set_descriptor;
             uint8_t const range_shader_base =
                shader_resource_set_base + range->first_shader_descriptor;
-            uint16_t const range_first_dynamic_offset_in_set =
-               range->first_immutable_sampler_or_dynamic_offset;
-            if (range_first_dynamic_offset_in_set != UINT16_MAX) {
+            if (range->first_dynamic_offset != UINT16_MAX) {
                uint32_t const * const range_dynamic_offsets =
-                  set_dynamic_offsets + range_first_dynamic_offset_in_set;
+                  set_dynamic_offsets + range->first_dynamic_offset;
                for (uint8_t resource_index = 0; resource_index < range->descriptor_count;
                     ++resource_index) {
                   struct terakan_descriptor_set_resource resource =
                      range_set_resources[resource_index];
+                  /* Because descriptors for bindings not statically referenced by the pipeline can
+                   * be undefined, the BO pointer must not be dereferenced here as it may be
+                   * outdated.
+                   */
                   if (resource.bo != NULL) {
                      assert(G_03001C_TYPE(resource.resource[7]) ==
                             V_03001C_SQ_TEX_VTX_VALID_BUFFER);
@@ -158,6 +192,36 @@ terakan_CmdBindDescriptorSets(VkCommandBuffer const commandBuffer,
                   resource_setter(command_writer, range_shader_base + resource_index,
                                   &range_set_resources[resource_index]);
                }
+            }
+         }
+
+         /* Samplers. */
+
+         terakan_pipeline_layout_set_sampler_function const sampler_setter =
+            terakan_pipeline_layout_set_sampler_to_stage[shader_stage];
+         uint8_t const shader_sampler_set_base = layout_set->first_shader_samplers[shader_stage];
+         struct terakan_descriptor_set_layout_shader_range const * const sampler_ranges =
+            set_layout->shader_ranges + set_layout_shader->first_sampler_range;
+         for (uint8_t range_index = 0; range_index < set_layout_shader->sampler_range_count;
+              ++range_index) {
+            struct terakan_descriptor_set_layout_shader_range const * const range =
+               &sampler_ranges[range_index];
+            struct terakan_descriptor_set_sampler const * const range_set_samplers =
+               set_samplers + range->first_set_descriptor;
+            uint8_t const range_shader_base =
+               shader_sampler_set_base + range->first_shader_descriptor;
+            for (uint8_t sampler_index = 0; sampler_index < range->descriptor_count;
+                 ++sampler_index) {
+               struct terakan_descriptor_set_sampler const * const sampler =
+                  &range_set_samplers[sampler_index];
+               /* Skip uninitialized (zeroed in descriptor set allocation) samplers, as descriptors
+                * may be left uninitialized if they're not statically referenced by the pipeline.
+                */
+               if (likely(G_03C008_TYPE(sampler->sampler[2]))) {
+                  sampler_setter(command_writer, range_shader_base + sampler_index,
+                                 &range_set_samplers[sampler_index]);
+               }
+               /* TODO(Triang3l): Unnormalized coordinates on R8xx. */
             }
          }
       }
@@ -224,7 +288,8 @@ terakan_pipeline_layout_create(struct terakan_device * const device,
          next_first_shader_uniform_buffers[stage_index] += set_layout_shader->uniform_buffer_count;
 
          uint8_t const first_shader_sampler = next_first_shader_samplers[stage_index];
-         if (TERAKAN_SAMPLERS_PER_STAGE - first_shader_sampler < set_layout_shader->sampler_count) {
+         if (TERAKAN_SAMPLER_HW_COUNT_PER_STAGE - first_shader_sampler <
+             set_layout_shader->sampler_count) {
             goto too_many_descriptors;
          }
          set->first_shader_samplers[stage_index] = first_shader_sampler;

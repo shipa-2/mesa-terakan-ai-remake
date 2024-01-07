@@ -289,7 +289,7 @@ terakan_physical_device_get_capabilities(
 
    properties_out->bufferImageGranularity = 1;
 
-   properties_out->maxPerStageDescriptorSamplers = TERAKAN_SAMPLERS_PER_STAGE;
+   properties_out->maxPerStageDescriptorSamplers = TERAKAN_SAMPLER_HW_COUNT_PER_STAGE;
    properties_out->maxPerStageDescriptorUniformBuffers = instance->max_per_stage_uniform_buffers;
    properties_out->maxPerStageDescriptorStorageBuffers = instance->max_per_stage_storage_buffers;
    properties_out->maxPerStageDescriptorSampledImages = instance->max_per_stage_sampled_images;

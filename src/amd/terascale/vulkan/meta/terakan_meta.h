@@ -58,6 +58,7 @@ struct terakan_meta_shader {
 
    uint16_t kcache_needed;
    BITSET_DECLARE(resources_needed, TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE);
+   uint32_t samplers_needed;
 };
 
 enum terakan_meta_shader_index {
