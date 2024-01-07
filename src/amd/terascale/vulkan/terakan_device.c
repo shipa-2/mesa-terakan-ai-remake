@@ -56,6 +56,8 @@ terakan_device_finish(struct terakan_device * const device)
 
    terakan_bo_free(device->meta_shaders_bo, NULL);
 
+   terakan_bo_free(device->event_write_eop_data_discard_bo, NULL);
+
    vk_device_finish(&device->vk);
 }
 
@@ -100,6 +102,15 @@ terakan_device_init(struct terakan_device * const device,
 
    device->last_bo_creation_number = 0;
 
+   result = device->winsys_fn->bo->allocate_device_memory(
+      device, sizeof(uint32_t), sizeof(uint32_t), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0, NULL,
+      VK_SYSTEM_ALLOCATION_SCOPE_DEVICE, &device->event_write_eop_data_discard_bo);
+   if (result != VK_SUCCESS) {
+      result = vk_errorf(physical_device->vk.instance, result,
+                         "Failed to allocate memory for a EVENT_WRITE_EOP data discarding buffer");
+      goto fail_device;
+   }
+
    bool const is_r9xx = physical_device->chip_family_info.is_r9xx;
 
    /* The first shader is the empty fetch shader. */
@@ -128,7 +139,7 @@ terakan_device_init(struct terakan_device * const device,
    if (result != VK_SUCCESS) {
       result = vk_errorf(physical_device->vk.instance, result,
                          "Failed to allocate memory for internal shaders");
-      goto fail_device;
+      goto fail_event_write_eop_data_discard_bo;
    }
    {
       char * const meta_shaders_bo_mapping = terakan_bo_map(device->meta_shaders_bo);
@@ -210,6 +221,8 @@ fail_completion_mutex:
    mtx_destroy(&device->completion_mutex);
 fail_meta_shaders_bo:
    terakan_bo_free(device->meta_shaders_bo, NULL);
+fail_event_write_eop_data_discard_bo:
+   terakan_bo_free(device->event_write_eop_data_discard_bo, NULL);
 fail_device:
    vk_device_finish(&device->vk);
    return result;

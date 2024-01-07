@@ -24,6 +24,7 @@
 #ifndef TERAKAN_COMMAND_BUFFER_H
 #define TERAKAN_COMMAND_BUFFER_H
 
+#include "terakan_barrier.h"
 #include "terakan_bo.h"
 #include "terakan_hw_state.h"
 #include "terakan_state.h"
@@ -193,6 +194,8 @@ struct terakan_gfx_command_writer {
 
    bool is_beginning_indirect_buffer;
 
+   enum terakan_barrier_action_flags pending_barrier_actions;
+
    struct terakan_hw_state_draw hw_state_draw;
 
    struct terakan_state_draw state_draw;
@@ -214,6 +217,9 @@ uint32_t * terakan_gfx_command_writer_emit(struct terakan_gfx_command_writer * c
                                            uint32_t packet_dwords, uint32_t bo_count,
                                            uint32_t relocation_packet_dwords,
                                            bool abort_if_all_state_emitted);
+
+void terakan_gfx_command_writer_emit_event_write_eop_discarding_data(
+   struct terakan_gfx_command_writer * command_writer, uint32_t event);
 
 struct terakan_command_pool {
    struct vk_command_pool vk;

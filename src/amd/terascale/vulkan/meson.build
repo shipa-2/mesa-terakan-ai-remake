@@ -43,6 +43,7 @@ libterakan_files = files(
   'meta/terakan_meta_copy_buffer_to_image.c',
   'nir/terakan_nir.h',
   'nir/terakan_nir_lower_bindings.c',
+  'terakan_barrier.c',
   'terakan_bo.c',
   'terakan_bo.h',
   'terakan_buffer.c',

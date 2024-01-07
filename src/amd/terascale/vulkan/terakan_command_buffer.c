@@ -1020,11 +1020,36 @@ terakan_gfx_command_writer_emit(struct terakan_gfx_command_writer * const comman
    return indirect_buffer_allocation;
 }
 
+void
+terakan_gfx_command_writer_emit_event_write_eop_discarding_data(
+   struct terakan_gfx_command_writer * const command_writer, uint32_t const event)
+{
+   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 6, 1, 2, false);
+   if (unlikely(packet == NULL)) {
+      return;
+   }
+   *packet++ = PKT3(PKT3_EVENT_WRITE_EOP, 5 - 1, 0);
+   *packet++ = event;
+   *packet++ = 0; /* ADDRESS_LO */
+   *packet++ = 0; /* ADDRESS_HI, INT_SEL, DATA_SEL */
+   *packet++ = 0; /* DATA_LO */
+   *packet++ = 0; /* DATA_HI */
+   *packet++ = PKT3(PKT3_NOP, 0, 0);
+   *packet++ = terakan_bo_reference_writer_add_reference(
+      &command_writer->base.bo_reference_writer,
+      container_of(command_writer->base.command_buffer->vk.pool->base.device,
+                   struct terakan_device const, vk)
+         ->event_write_eop_data_discard_bo,
+      false, true, TERAKAN_BO_PRIORITY_FENCE_TRACE);
+}
+
 VKAPI_ATTR VkResult VKAPI_CALL
 terakan_EndCommandBuffer(VkCommandBuffer const commandBuffer)
 {
    struct terakan_command_buffer * const command_buffer =
       terakan_command_buffer_from_handle(commandBuffer);
+
+   terakan_barrier_emit_pending_actions(command_buffer->command_writer.gfx);
 
    terakan_gfx_command_writer_end_indirect_buffer(command_buffer->command_writer.gfx);
 
@@ -1065,6 +1090,8 @@ terakan_BeginCommandBuffer(VkCommandBuffer const commandBuffer,
    command_buffer->command_writer.gfx->indirect_buffer_ever_begun = false;
 
    command_buffer->command_writer.gfx->is_beginning_indirect_buffer = false;
+
+   command_buffer->command_writer.gfx->pending_barrier_actions = 0;
 
    terakan_hw_state_draw_reset(&command_buffer->command_writer.gfx->hw_state_draw);
 
