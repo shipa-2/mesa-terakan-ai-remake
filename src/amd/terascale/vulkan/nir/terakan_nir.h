@@ -29,12 +29,14 @@
 #include "util/bitset.h"
 #include "nir.h"
 
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 void terakan_nir_lower_bindings(nir_shader * shader, struct terakan_pipeline_layout const * layout,
-                                BITSET_WORD * resources_needed);
+                                BITSET_WORD * resources_needed, uint32_t * samplers_needed);
 
 #ifdef __cplusplus
 }

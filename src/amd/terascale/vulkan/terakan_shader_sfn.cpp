@@ -74,7 +74,8 @@ terakan_shader_impl_init_from_nir(terakan_shader_impl * const shader, terakan_de
    r600_finalize_nir_common(nir, gfx_level);
    /* For r600_lower_and_optimize_nir, for fields like number bit sizes. */
    nir_shader_gather_info(nir, nir_shader_get_entrypoint(nir));
-   terakan_nir_lower_bindings(nir, pipeline_layout, shader->resources_needed);
+   terakan_nir_lower_bindings(nir, pipeline_layout, shader->resources_needed,
+                              &shader->samplers_needed);
    r600_lower_and_optimize_nir(nir, key, gfx_level, &so_info);
 
    r600::ShaderBindingLayout binding_layout;

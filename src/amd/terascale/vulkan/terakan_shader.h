@@ -80,6 +80,7 @@ struct terakan_shader_impl {
    BITSET_DECLARE(vertex_attributes_needed, TERAKAN_VERTEX_INPUT_MAX_ATTRIBUTES);
 
    BITSET_DECLARE(resources_needed, TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE);
+   uint32_t samplers_needed;
 
    uint8_t fragment_data_uncompacted_locations;
 

@@ -328,8 +328,9 @@ terakan_pipeline_graphics_bind(struct terakan_gfx_command_writer * const command
    command_writer->hw_state_draw.sq_pgm_vs = &vs->static_state;
    terakan_hw_state_draw_written(&command_writer->hw_state_draw,
                                  TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_VS, sq_pgm_vs_modified);
-   terakan_hw_state_draw_set_sq_constants_needed_by_vs(
-      &command_writer->hw_state_draw, 0, vs->resources_needed, 0, VK_SHADER_STAGE_FRAGMENT_BIT);
+   terakan_hw_state_draw_set_sq_constants_needed_by_vs(&command_writer->hw_state_draw, 0,
+                                                       vs->resources_needed, vs->samplers_needed,
+                                                       VK_SHADER_STAGE_FRAGMENT_BIT);
 
    if (command_writer->state_draw.sq_pgm_fs.static_state == NULL) {
       for (unsigned attribute_word_index = 0;
@@ -358,8 +359,8 @@ terakan_pipeline_graphics_bind(struct terakan_gfx_command_writer * const command
       command_writer->hw_state_draw.sq_pgm_ps = &fs->static_state;
       terakan_hw_state_draw_written(&command_writer->hw_state_draw,
                                     TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_PS, sq_pgm_ps_modified);
-      terakan_hw_state_draw_set_sq_constants_needed_by_fs(&command_writer->hw_state_draw, 0,
-                                                          fs->resources_needed, 0);
+      terakan_hw_state_draw_set_sq_constants_needed_by_fs(
+         &command_writer->hw_state_draw, 0, fs->resources_needed, fs->samplers_needed);
       color_attachments_written_by_shader = fs->fragment_data_uncompacted_locations;
    } else {
       terakan_hw_state_draw_set_sq_constants_needed_by_fs(&command_writer->hw_state_draw, 0, NULL,
