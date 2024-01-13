@@ -1039,7 +1039,7 @@ terakan_gfx_command_writer_emit_event_write_eop_discarding_data(
       &command_writer->base.bo_reference_writer,
       container_of(command_writer->base.command_buffer->vk.pool->base.device,
                    struct terakan_device const, vk)
-         ->event_write_eop_data_discard_bo,
+         ->gfx_discard_bo,
       false, true, TERAKAN_BO_PRIORITY_FENCE_TRACE);
 }
 

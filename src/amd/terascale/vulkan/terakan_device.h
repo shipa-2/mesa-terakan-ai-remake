@@ -66,7 +66,11 @@ struct terakan_device {
 
    uint32_t last_bo_creation_number;
 
-   struct terakan_bo * event_write_eop_data_discard_bo;
+   /* BO for data that needs to be discarded on the graphics queue:
+    * - EVENT_WRITE_EOP fence (4 bytes).
+    * - CP DMA size misalignment (TERAKAN_CP_DMA_COPY_OPTIMAL_ALIGNMENT * 2).
+    */
+   struct terakan_bo * gfx_discard_bo;
 
    struct terakan_bo * meta_shaders_bo;
    struct terakan_shader_static meta_shaders[TERAKAN_META_SHADER_COUNT];

@@ -50,6 +50,8 @@ libterakan_files = files(
   'terakan_buffer.h',
   'terakan_command_buffer.c',
   'terakan_command_buffer.h',
+  'terakan_cp_dma.c',
+  'terakan_cp_dma.h',
   'terakan_descriptor.c',
   'terakan_descriptor.h',
   'terakan_descriptor_set.c',

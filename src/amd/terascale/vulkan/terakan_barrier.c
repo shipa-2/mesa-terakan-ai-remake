@@ -23,6 +23,7 @@
 
 #include "terakan_barrier.h"
 #include "terakan_command_buffer.h"
+#include "terakan_cp_dma.h"
 #include "terakan_device.h"
 #include "terakan_entrypoints.h"
 #include "terakan_physical_device.h"
@@ -37,9 +38,12 @@
 #include <stdint.h>
 
 static enum terakan_barrier_action_flags
-terakan_barrier_get_src_stage_actions(VkPipelineStageFlags2 const expanded_src_stages)
+terakan_barrier_get_src_stage_actions(VkPipelineStageFlags2 const expanded_buffer_src_stages,
+                                      VkPipelineStageFlags2 const expanded_image_src_stages)
 {
    enum terakan_barrier_action_flags actions = 0;
+   VkPipelineStageFlags2 const expanded_src_stages =
+      expanded_buffer_src_stages | expanded_image_src_stages;
    if (expanded_src_stages &
        (VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT)) {
       actions |= TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CS;
@@ -55,6 +59,14 @@ terakan_barrier_get_src_stage_actions(VkPipelineStageFlags2 const expanded_src_s
                VK_PIPELINE_STAGE_2_TESSELLATION_EVALUATION_SHADER_BIT |
                VK_PIPELINE_STAGE_2_GEOMETRY_SHADER_BIT)) {
       actions |= TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_VS;
+   }
+   if (expanded_src_stages & (VK_PIPELINE_STAGE_2_COPY_BIT | VK_PIPELINE_STAGE_2_CLEAR_BIT)) {
+      actions |= TERAKAN_BARRIER_ACTION_SYNC_ME_TO_CP_DMA;
+      if (expanded_buffer_src_stages &
+          (VK_PIPELINE_STAGE_2_COPY_BIT | VK_PIPELINE_STAGE_2_CLEAR_BIT)) {
+         /* Indirect and index buffers can be read by PFP. */
+         actions |= TERAKAN_BARRIER_ACTION_SYNC_PFP_TO_ME;
+      }
    }
    return actions;
 }
@@ -113,7 +125,7 @@ terakan_barrier_get_hw_access(struct terakan_device const * const device, VkAcce
 
    enum terakan_barrier_access_flags hw_access = 0;
 
-   /* TODO(Triang3l): CP PFP/ME, VGT, CP DMA access types. */
+   /* TODO(Triang3l): CP PFP/ME, VGT access types. */
 
    /* INDIRECT_COMMAND_READ: Draw parameters or NumWorkgroups.
     * SHADER_STORAGE_READ: Read-only bindings (in non-RAT stages or with `restrict`). RAT immediate
@@ -363,6 +375,21 @@ terakan_barrier_emit_pending_actions(struct terakan_gfx_command_writer * const c
       *surface_sync_packet++ = 0;          /* CP_COHER_BASE */
       *surface_sync_packet++ = 0xA;        /* POLL_INTERVAL */
    }
+
+   if (actions & TERAKAN_BARRIER_ACTION_SYNC_ME_TO_CP_DMA) {
+      terakan_cp_dma_sync_cp_me(command_writer);
+   }
+
+   /* If CP DMA needs to be awaited at PFP, this must be done after the CP DMA sync. */
+   if (actions & TERAKAN_BARRIER_ACTION_SYNC_PFP_TO_ME) {
+      uint32_t * pfp_sync_me_packet =
+         terakan_gfx_command_writer_emit(command_writer, 2, 0, 0, false);
+      if (unlikely(pfp_sync_me_packet == NULL)) {
+         return;
+      }
+      *pfp_sync_me_packet++ = PKT3(PKT3_PFP_SYNC_ME, 0, 0);
+      *pfp_sync_me_packet++ = 0;
+   }
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -374,7 +401,7 @@ terakan_CmdPipelineBarrier2(VkCommandBuffer const commandBuffer,
    struct terakan_device const * const device = container_of(
       command_writer->base.command_buffer->vk.base.device, struct terakan_device const, vk);
 
-   VkPipelineStageFlags2 total_src_stages = 0;
+   VkPipelineStageFlags2 total_buffer_src_stages = 0, total_image_src_stages = 0;
    enum terakan_barrier_access_flags total_src_access = 0, total_dst_access = 0;
 
    for (uint32_t barrier_index = 0; barrier_index < pDependencyInfo->memoryBarrierCount;
@@ -382,7 +409,8 @@ terakan_CmdPipelineBarrier2(VkCommandBuffer const commandBuffer,
       VkMemoryBarrier2 const * const barrier = &pDependencyInfo->pMemoryBarriers[barrier_index];
       VkPipelineStageFlags2 const barrier_src_stages =
          vk_expand_src_stage_flags2(barrier->srcStageMask);
-      total_src_stages |= barrier_src_stages;
+      total_buffer_src_stages |= barrier_src_stages;
+      total_image_src_stages |= barrier_src_stages;
       total_src_access |= terakan_barrier_get_hw_access(device, barrier->srcAccessMask,
                                                         barrier_src_stages, true, true);
       total_dst_access |= terakan_barrier_get_hw_access(
@@ -398,7 +426,7 @@ terakan_CmdPipelineBarrier2(VkCommandBuffer const commandBuffer,
          &pDependencyInfo->pBufferMemoryBarriers[barrier_index];
       VkPipelineStageFlags2 const barrier_src_stages =
          vk_expand_src_stage_flags2(barrier->srcStageMask);
-      total_src_stages |= barrier_src_stages;
+      total_buffer_src_stages |= barrier_src_stages;
       total_src_access |= terakan_barrier_get_hw_access(device, barrier->srcAccessMask,
                                                         barrier_src_stages, true, false);
       total_dst_access |= terakan_barrier_get_hw_access(
@@ -412,7 +440,7 @@ terakan_CmdPipelineBarrier2(VkCommandBuffer const commandBuffer,
          &pDependencyInfo->pImageMemoryBarriers[barrier_index];
       VkPipelineStageFlags2 const barrier_src_stages =
          vk_expand_src_stage_flags2(barrier->srcStageMask);
-      total_src_stages |= barrier_src_stages;
+      total_image_src_stages |= barrier_src_stages;
       total_src_access |= terakan_barrier_get_hw_access(device, barrier->srcAccessMask,
                                                         barrier_src_stages, false, true);
       total_dst_access |= terakan_barrier_get_hw_access(
@@ -421,6 +449,6 @@ terakan_CmdPipelineBarrier2(VkCommandBuffer const commandBuffer,
    }
 
    command_writer->pending_barrier_actions |=
-      terakan_barrier_get_src_stage_actions(total_src_stages) |
+      terakan_barrier_get_src_stage_actions(total_buffer_src_stages, total_image_src_stages) |
       terakan_barrier_get_cache_actions(total_src_access, total_dst_access);
 }
