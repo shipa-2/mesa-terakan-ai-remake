@@ -417,9 +417,13 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
          (uint32_t)((region->imageExtent.height & (image->surface.blk_h - 1)) != 0);
 
       /* Buffer row length and image height are block-aligned. */
-      uint32_t const buffer_y_pitch = region->bufferRowLength / image->surface.blk_w;
+      uint32_t const buffer_y_pitch =
+         (region->bufferRowLength != 0 ? region->bufferRowLength : region->imageExtent.width) /
+         image->surface.blk_w;
       uint32_t const buffer_z_pitch =
-         buffer_y_pitch * (region->bufferImageHeight / image->surface.blk_h);
+         buffer_y_pitch * ((region->bufferImageHeight != 0 ? region->bufferImageHeight
+                                                           : region->imageExtent.height) /
+                           image->surface.blk_h);
       if (push_constants.image_offset_x != rect.offset.x ||
           push_constants.image_offset_y != rect.offset.y ||
           push_constants.buffer_y_pitch != buffer_y_pitch ||
