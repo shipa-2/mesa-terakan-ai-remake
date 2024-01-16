@@ -35,6 +35,16 @@
 extern "C" {
 #endif
 
+/* Compact fragment shader data output locations, so all MRTs precede all RATs as required and to be
+ * able to allocate arrays of RATs without fragmentation, and so there are no holes in
+ * CB_SHADER_MASK, which, according to RadeonSI (but apparently applicable to earlier generations),
+ * may cause hangs.
+ * The mask of which pre-compaction fragment data outputs are used is written to
+ * uncompacted_locations_out.
+ */
+bool terakan_nir_compact_fragment_data_locations(nir_shader * shader,
+                                                 uint8_t * uncompacted_locations_out);
+
 void terakan_nir_lower_bindings(nir_shader * shader, struct terakan_pipeline_layout const * layout,
                                 BITSET_WORD * resources_needed, uint32_t * samplers_needed);
 

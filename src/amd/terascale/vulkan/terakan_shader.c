@@ -23,6 +23,7 @@
 
 #include "terakan_shader.h"
 
+#include "nir/terakan_nir.h"
 #include "terakan_bo.h"
 #include "terakan_descriptor.h"
 #include "terakan_device.h"
@@ -223,30 +224,8 @@ terakan_shader_spirv_to_nir(struct terakan_device * const device, size_t const s
    /* st_finalize_nir. */
 
    uint8_t fragment_data_uncompacted_locations = 0b0;
-   if (nir->info.stage == MESA_SHADER_FRAGMENT) {
-      NIR_PASS_V(nir, nir_lower_io_arrays_to_elements_no_indirects, true);
-      /* Compact fragment shader output locations so all MRTs precede all RATs as required and so
-       * there are no holes in CB_SHADER_MASK, which, according to RadeonSI (but apparently
-       * applicable to earlier generations), may cause hangs.
-       */
-      nir_foreach_shader_out_variable (var, nir) {
-         if (var->data.location >= FRAG_RESULT_DATA0 && var->data.location <= FRAG_RESULT_DATA7) {
-            fragment_data_uncompacted_locations |=
-               (uint8_t)BITFIELD_BIT(var->data.location - FRAG_RESULT_DATA0);
-         }
-      }
-      if (fragment_data_uncompacted_locations) {
-         nir_foreach_shader_out_variable (var, nir) {
-            if (var->data.location >= FRAG_RESULT_DATA0 &&
-                var->data.location <= FRAG_RESULT_DATA7) {
-               var->data.location =
-                  FRAG_RESULT_DATA0 +
-                  util_bitcount(fragment_data_uncompacted_locations &
-                                BITFIELD_MASK(var->data.location - FRAG_RESULT_DATA0));
-            }
-         }
-      }
-   }
+   NIR_PASS(_, nir, terakan_nir_compact_fragment_data_locations,
+            &fragment_data_uncompacted_locations);
    if (fragment_data_uncompacted_locations_out != NULL) {
       *fragment_data_uncompacted_locations_out = fragment_data_uncompacted_locations;
    }
