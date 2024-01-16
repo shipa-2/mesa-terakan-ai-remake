@@ -101,10 +101,13 @@ struct terakan_image {
 
 VK_DEFINE_NONDISP_HANDLE_CASTS(terakan_image, vk.base, VkImage, VK_OBJECT_TYPE_IMAGE)
 
-bool terakan_image_uses_tc_non_display_tiling(bool is_r9xx, VkFormat image_format,
-                                              bool level_is_linear);
-bool terakan_image_uses_cb_non_display_tiling(bool is_r9xx, VkFormat image_format,
-                                              bool level_is_linear);
+struct terakan_image_non_display_tiling {
+   bool tc;
+   bool cb;
+};
+
+struct terakan_image_non_display_tiling
+terakan_image_get_non_display_tiling(bool is_r9xx, VkFormat image_format, bool level_is_linear);
 
 bool terakan_image_create_resource_descriptor(VkImageViewCreateInfo const * image_view_create_info,
                                               uint32_t descriptor_out[8]);

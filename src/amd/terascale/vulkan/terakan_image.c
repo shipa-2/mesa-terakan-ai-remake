@@ -213,30 +213,29 @@ terakan_BindImageMemory2(VkDevice const device, uint32_t const bindInfoCount,
    return VK_SUCCESS;
 }
 
-bool
-terakan_image_uses_tc_non_display_tiling(bool const is_r9xx, VkFormat const image_format,
-                                         bool const level_is_linear)
+struct terakan_image_non_display_tiling
+terakan_image_get_non_display_tiling(bool const is_r9xx, VkFormat const image_format,
+                                     bool const level_is_linear)
 {
-   if (level_is_linear) {
-      /* Linear textures must use display tiling, but it's not supported for 128bpp at all on R9xx.
-       */
-      return is_r9xx && vk_format_get_blocksizebits(image_format) >= 128;
+   /* Depth, stencil and FMask implicitly utilize non-display tiling.
+    * Linear depth / stencil formats are not allowed for depth / stencil attachment use in the
+    * driver, but still may be used as generic 8_UINT / 16_UNORM / 24_UNORM / 32_FLOAT formats for
+    * simplicity - this doesn't apply to them.
+    *
+    * In addition, R9xx doesn't support display tiling for 128bpp images at all.
+    */
+   if ((!level_is_linear && vk_format_is_depth_or_stencil(image_format)) ||
+       (is_r9xx && vk_format_get_blocksizebits(image_format) >= 128)) {
+      return (struct terakan_image_non_display_tiling){.tc = true, .cb = true};
    }
-   /* Depth, stencil and FMask implicitly utilize non-display tiling. */
-   if (vk_format_is_depth_or_stencil(image_format)) {
-      return true;
-   }
-   /* Non-display tiling is supported for 8, 16, 32, 64 and 128bpe textures. */
-   unsigned const block_size_bits = vk_format_get_blocksizebits(image_format);
-   return block_size_bits >= 8 && util_is_power_of_two_or_zero(block_size_bits);
-}
 
-bool
-terakan_image_uses_cb_non_display_tiling(bool const is_r9xx, VkFormat const image_format,
-                                         bool const level_is_linear)
-{
-   return level_is_linear || vk_format_is_depth_or_stencil(image_format) ||
-          (is_r9xx && vk_format_get_blocksizebits(image_format) >= 128);
+   /* TC supports non-display tiling for 8bpp, 16bpp, 32bpp, 64bpp, 128bpp and BC textures.
+    * CB supports it for all formats.
+    * For linear, TC requires display, CB requires non-display.
+    *
+    * Use the display tiling wherever supported.
+    */
+   return (struct terakan_image_non_display_tiling){.tc = false, .cb = level_is_linear};
 }
 
 bool
@@ -327,9 +326,10 @@ terakan_image_create_resource_descriptor(VkImageViewCreateInfo const * const ima
    struct terakan_physical_device const * const physical_device =
       container_of(image->vk.base.device->physical, struct terakan_physical_device const, vk);
 
-   bool const non_display_tiling = terakan_image_uses_tc_non_display_tiling(
-      physical_device->chip_family_info.is_r9xx, image->vk.format,
-      level->mode <= RADEON_SURF_MODE_LINEAR_ALIGNED);
+   bool const non_display_tiling = terakan_image_get_non_display_tiling(
+                                      physical_device->chip_family_info.is_r9xx, image->vk.format,
+                                      level->mode <= RADEON_SURF_MODE_LINEAR_ALIGNED)
+                                      .tc;
 
    uint32_t width =
       u_minify(image->vk.extent.width, image_view_create_info->subresourceRange.baseMipLevel);
@@ -563,9 +563,10 @@ terakan_image_create_color_descriptor(
    struct terakan_physical_device const * const physical_device =
       container_of(image->vk.base.device->physical, struct terakan_physical_device const, vk);
    descriptor_out->attrib =
-      S_028C74_NON_DISP_TILING_ORDER(terakan_image_uses_cb_non_display_tiling(
-         physical_device->chip_family_info.is_r9xx, image->vk.format,
-         level->mode <= RADEON_SURF_MODE_LINEAR_ALIGNED)) |
+      S_028C74_NON_DISP_TILING_ORDER(terakan_image_get_non_display_tiling(
+                                        physical_device->chip_family_info.is_r9xx, image->vk.format,
+                                        level->mode <= RADEON_SURF_MODE_LINEAR_ALIGNED)
+                                        .cb) |
       S_028C74_TILE_SPLIT(terakan_image_tile_split_bytes_to_hw(
          is_stencil_layout ? image->surface.u.legacy.stencil_tile_split
                            : image->surface.u.legacy.tile_split)) |
