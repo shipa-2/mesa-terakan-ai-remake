@@ -391,7 +391,13 @@ terakan_nir_lower_bindings(nir_shader * const shader,
    bool constant_folding_progress;
    do {
       constant_folding_progress = false;
-      NIR_PASS(constant_folding_progress, shader, nir_copy_prop);
+      bool copy_prop_progress = false;
+      NIR_PASS(copy_prop_progress, shader, nir_copy_prop);
+      if (copy_prop_progress) {
+         constant_folding_progress = true;
+         /* Cleanup to prevent the same propagations from happening infinitely. */
+         NIR_PASS(constant_folding_progress, shader, nir_opt_dce);
+      }
       NIR_PASS(constant_folding_progress, shader, nir_opt_constant_folding);
    } while (constant_folding_progress);
 

@@ -338,7 +338,7 @@ terakan_pipeline_graphics_bind(struct terakan_gfx_command_writer * const command
            ++attribute_word_index) {
          if ((command_writer->state_draw.sq_pgm_fs.dynamic_state
                  .attributes_needed_by_vs[attribute_word_index] ^
-              vs->vertex_attributes_needed[attribute_word_index]) &
+              vs->vs.vertex_attributes_needed[attribute_word_index]) &
              command_writer->state_draw.sq_pgm_fs.dynamic_state
                 .attributes_provided[attribute_word_index]) {
             terakan_state_draw_set_pending(&command_writer->state_draw,
@@ -348,7 +348,7 @@ terakan_pipeline_graphics_bind(struct terakan_gfx_command_writer * const command
       }
    }
    BITSET_COPY(command_writer->state_draw.sq_pgm_fs.dynamic_state.attributes_needed_by_vs,
-               vs->vertex_attributes_needed);
+               vs->vs.vertex_attributes_needed);
 
    /* Fragment shader. */
 
@@ -361,7 +361,7 @@ terakan_pipeline_graphics_bind(struct terakan_gfx_command_writer * const command
                                     TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_PS, sq_pgm_ps_modified);
       terakan_hw_state_draw_set_sq_constants_needed_by_fs(
          &command_writer->hw_state_draw, 0, fs->resources_needed, fs->samplers_needed);
-      color_attachments_written_by_shader = fs->fragment_data_uncompacted_locations;
+      color_attachments_written_by_shader = fs->fs.fragment_data_uncompacted_locations;
    } else {
       terakan_hw_state_draw_set_sq_constants_needed_by_fs(&command_writer->hw_state_draw, 0, NULL,
                                                           0);
@@ -736,27 +736,31 @@ terakan_pipeline_graphics_create(struct terakan_device * const device,
       assert(spirv != NULL);
 
       gl_shader_stage const stage_index = vk_to_mesa_shader_stage(stage_info->stage);
-      uint8_t fragment_data_uncompacted_locations = 0b0;
-      nir_shader * nir = terakan_shader_spirv_to_nir(
-         device, spirv_size_bytes, spirv, stage_index, stage_info->pName,
-         stage_info->pSpecializationInfo, &fragment_data_uncompacted_locations);
+
+      nir_shader * nir =
+         terakan_shader_spirv_to_nir(device, spirv_size_bytes, spirv, stage_index,
+                                     stage_info->pName, stage_info->pSpecializationInfo);
       if (nir == NULL) {
          result = vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
          goto fail_shaders;
       }
+
+      struct terakan_shader_impl * const shader = &pipeline->shaders[stage_index];
+      memset(shader, 0, sizeof(*shader));
+
+      terakan_shader_lower_and_optimize_post_link(
+         nir, terakan_pipeline_layout_from_handle(create_info->layout), shader->resources_needed,
+         &shader->samplers_needed, &shader->fs.fragment_data_uncompacted_locations);
 
       /* TODO(Triang3l): Construct the shader key from the NIR and, when available, the pipeline
        * state.
        */
       union r600_shader_key shader_key = {};
       if (stage_index == MESA_SHADER_FRAGMENT) {
-         shader_key.ps.nr_cbufs = util_bitcount(fragment_data_uncompacted_locations);
+         shader_key.ps.nr_cbufs = util_bitcount(shader->fs.fragment_data_uncompacted_locations);
       }
 
-      result = terakan_shader_impl_init_from_nir(
-         &pipeline->shaders[stage_index], device, &shader_key, nir,
-         terakan_pipeline_layout_from_handle(create_info->layout),
-         fragment_data_uncompacted_locations, allocator);
+      result = terakan_shader_impl_compile(shader, device, &shader_key, nir, allocator);
       ralloc_free(nir);
       if (result != VK_SUCCESS) {
          goto fail_shaders;
@@ -777,7 +781,7 @@ terakan_pipeline_graphics_create(struct terakan_device * const device,
    result = terakan_pipeline_graphics_vertex_input_init(
       pipeline, &state, device,
       pipeline->shader_stages & VK_SHADER_STAGE_VERTEX_BIT
-         ? pipeline->shaders[MESA_SHADER_VERTEX].vertex_attributes_needed
+         ? pipeline->shaders[MESA_SHADER_VERTEX].vs.vertex_attributes_needed
          : NULL,
       allocator);
    if (result != VK_SUCCESS) {

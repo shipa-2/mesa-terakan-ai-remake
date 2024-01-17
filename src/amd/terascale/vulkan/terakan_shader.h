@@ -77,34 +77,44 @@ struct terakan_shader_impl {
    /* TODO(Triang3l): Shader suballocation. */
    struct terakan_shader_static static_state;
 
-   BITSET_DECLARE(vertex_attributes_needed, TERAKAN_VERTEX_INPUT_MAX_ATTRIBUTES);
-
    BITSET_DECLARE(resources_needed, TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE);
    uint32_t samplers_needed;
 
-   uint8_t fragment_data_uncompacted_locations;
+   struct {
+      BITSET_DECLARE(vertex_attributes_needed, TERAKAN_VERTEX_INPUT_MAX_ATTRIBUTES);
+   } vs;
+
+   struct {
+      uint8_t fragment_data_uncompacted_locations;
+   } fs;
 
    struct r600_shader shader;
 };
 
 struct terakan_device;
 
+/* Converts SPIR-V to NIR and performs pre-link lowerings. */
 nir_shader * terakan_shader_spirv_to_nir(struct terakan_device * device, size_t spirv_size_bytes,
                                          uint32_t const * spirv, gl_shader_stage stage,
                                          char const * entrypoint,
-                                         VkSpecializationInfo const * specialization_info,
-                                         uint8_t * fragment_data_uncompacted_locations_out);
+                                         VkSpecializationInfo const * specialization_info);
+
+void terakan_shader_lower_and_optimize_post_link(
+   nir_shader * nir, struct terakan_pipeline_layout const * pipeline_layout,
+   BITSET_WORD * resources_needed, uint32_t * samplers_needed,
+   uint8_t * fragment_data_uncompacted_locations_out);
 
 void terakan_shader_impl_finish(struct terakan_shader_impl * shader,
                                 VkAllocationCallbacks const * allocator);
 
-/* Modifies the input NIR, clone externally if needed. */
-VkResult terakan_shader_impl_init_from_nir(struct terakan_shader_impl * shader,
-                                           struct terakan_device * device,
-                                           union r600_shader_key const * key, nir_shader * nir,
-                                           struct terakan_pipeline_layout const * pipeline_layout,
-                                           uint8_t fragment_data_uncompacted_locations,
-                                           VkAllocationCallbacks const * allocator);
+/* Compiles the shader into the microcode written to a BO, and fills the info from the backend
+ * compiler. Assumes that everything in the shader not intended to be filled directly from the NIR
+ * has been zeroed prior to the call.
+ */
+VkResult terakan_shader_impl_compile(struct terakan_shader_impl * shader,
+                                     struct terakan_device * device,
+                                     union r600_shader_key const * key, nir_shader * nir,
+                                     VkAllocationCallbacks const * allocator);
 
 #ifdef __cplusplus
 }

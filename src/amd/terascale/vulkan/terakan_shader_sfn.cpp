@@ -50,15 +50,11 @@
 #include <cstring>
 
 VkResult
-terakan_shader_impl_init_from_nir(terakan_shader_impl * const shader, terakan_device * const device,
-                                  r600_shader_key const * const key, nir_shader * const nir,
-                                  struct terakan_pipeline_layout const * const pipeline_layout,
-                                  uint8_t const fragment_data_uncompacted_locations,
-                                  VkAllocationCallbacks const * const allocator)
+terakan_shader_impl_compile(terakan_shader_impl * const shader, terakan_device * const device,
+                            r600_shader_key const * const key, nir_shader * const nir,
+                            VkAllocationCallbacks const * const allocator)
 {
    VkResult result;
-
-   std::memset(shader, 0, sizeof(*shader));
 
    terakan_physical_device const & physical_device =
       *container_of(device->vk.physical, terakan_physical_device const, vk);
@@ -71,11 +67,11 @@ terakan_shader_impl_init_from_nir(terakan_shader_impl * const shader, terakan_de
 
    r600::init_pool();
 
+#if 0
    r600_finalize_nir_common(nir, gfx_level);
+#endif
    /* For r600_lower_and_optimize_nir, for fields like number bit sizes. */
    nir_shader_gather_info(nir, nir_shader_get_entrypoint(nir));
-   NIR_PASS(_, nir, terakan_nir_lower_bindings, pipeline_layout, shader->resources_needed,
-            &shader->samplers_needed);
    r600_lower_and_optimize_nir(nir, key, gfx_level, &so_info);
 
    r600::ShaderBindingLayout binding_layout;
@@ -303,12 +299,10 @@ terakan_shader_impl_init_from_nir(terakan_shader_impl * const shader, terakan_de
          assert(input->gpr > 0);
          assert(input->gpr - 1 < TERAKAN_VERTEX_INPUT_MAX_ATTRIBUTES);
          if (input->gpr > 0 && input->gpr - 1 < TERAKAN_VERTEX_INPUT_MAX_ATTRIBUTES) {
-            BITSET_SET(shader->vertex_attributes_needed, input->gpr - 1);
+            BITSET_SET(shader->vs.vertex_attributes_needed, input->gpr - 1);
          }
       }
    }
-
-   shader->fragment_data_uncompacted_locations = fragment_data_uncompacted_locations;
 
    /* Write the program to the BO. */
    size_t const program_size_bytes = sizeof(uint32_t) * shader->shader.bc.ndw;
