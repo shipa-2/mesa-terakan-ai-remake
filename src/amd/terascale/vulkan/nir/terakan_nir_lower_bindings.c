@@ -364,24 +364,28 @@ terakan_nir_lower_bindings_instr(nir_builder * const b, nir_instr * const instr,
    return false;
 }
 
-void
+bool
 terakan_nir_lower_bindings(nir_shader * const shader,
                            struct terakan_pipeline_layout const * const layout,
                            BITSET_WORD * const resources_needed, uint32_t * const samplers_needed)
 {
-   NIR_PASS_V(shader, nir_lower_ubo_vec4);
+   bool progress = false;
+
+   NIR_PASS(_, shader, nir_lower_ubo_vec4);
 
    /* TODO(Triang3l): Lower 64-bit buffer access. */
 
    /* Lower load_vulkan_descriptor and vulkan_resource_reindex chains to vulkan_resource_index. */
-   nir_shader_lower_instructions(shader, terakan_nir_lower_load_vulkan_descriptor_filter,
-                                 terakan_nir_lower_load_vulkan_descriptor_impl, NULL);
-   nir_shader_instructions_pass(shader, terakan_nir_lower_vulkan_resource_reindex_instr,
-                                nir_metadata_block_index | nir_metadata_dominance, NULL);
+   progress |=
+      nir_shader_lower_instructions(shader, terakan_nir_lower_load_vulkan_descriptor_filter,
+                                    terakan_nir_lower_load_vulkan_descriptor_impl, NULL);
+   progress |=
+      nir_shader_instructions_pass(shader, terakan_nir_lower_vulkan_resource_reindex_instr,
+                                   nir_metadata_block_index | nir_metadata_dominance, NULL);
 
    /* Make data offsets in buffers relative to 0. */
-   nir_shader_lower_instructions(shader, terakan_nir_zero_vulkan_resource_offset_filter,
-                                 terakan_nir_zero_vulkan_resource_offset_impl, NULL);
+   progress |= nir_shader_lower_instructions(shader, terakan_nir_zero_vulkan_resource_offset_filter,
+                                             terakan_nir_zero_vulkan_resource_offset_impl, NULL);
 
    /* Make sure resource indices and data offsets are known to be constant if they are. */
    bool constant_folding_progress;
@@ -397,6 +401,9 @@ terakan_nir_lower_bindings(nir_shader * const shader,
       .resources_needed = resources_needed,
       .samplers_needed = samplers_needed,
    };
-   nir_shader_instructions_pass(shader, terakan_nir_lower_bindings_instr, nir_metadata_none,
-                                &state);
+   progress |= nir_shader_instructions_pass(shader, terakan_nir_lower_bindings_instr,
+                                            nir_metadata_none, &state);
+
+   nir_shader_preserve_all_metadata(shader);
+   return progress;
 }

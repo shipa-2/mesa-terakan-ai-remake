@@ -45,7 +45,7 @@ extern "C" {
 bool terakan_nir_compact_fragment_data_locations(nir_shader * shader,
                                                  uint8_t * uncompacted_locations_out);
 
-void terakan_nir_lower_bindings(nir_shader * shader, struct terakan_pipeline_layout const * layout,
+bool terakan_nir_lower_bindings(nir_shader * shader, struct terakan_pipeline_layout const * layout,
                                 BITSET_WORD * resources_needed, uint32_t * samplers_needed);
 
 #ifdef __cplusplus
