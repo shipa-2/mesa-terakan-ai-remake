@@ -141,6 +141,21 @@ terakan_shader_spirv_to_nir(struct terakan_device * const device, size_t const s
    return nir;
 }
 
+static bool
+terakan_nir_should_vectorize_load_store(unsigned const align_mul, unsigned const align_offset,
+                                        unsigned const bit_size, unsigned const num_components,
+                                        int64_t hole_size, nir_intrinsic_instr * const low,
+                                        UNUSED nir_intrinsic_instr * const high, void * const data)
+{
+   if (num_components > 4 || hole_size != 0) {
+      return false;
+   }
+
+   /* TODO(Triang3l): Handle the alignment. */
+
+   return true;
+}
+
 void
 terakan_shader_lower_and_optimize_post_link(
    nir_shader * const nir, struct terakan_pipeline_layout const * const pipeline_layout,
@@ -193,6 +208,16 @@ terakan_shader_lower_and_optimize_post_link(
    if (nir->info.stage == MESA_SHADER_FRAGMENT) {
       nir_assign_io_var_locations(nir, nir_var_shader_out, &nir->num_outputs, nir->info.stage);
    }
+
+   /* Vectorize loads that will be lowered to typed buffer load (vertex fetch) instructions. */
+
+   nir_load_store_vectorize_options const load_store_vectorize_options = {
+      .callback = terakan_nir_should_vectorize_load_store,
+      .modes = nir_var_mem_ubo,
+      /* TODO(Triang3l): Vectorize SSBO loads, but not those done via a RAT. */
+      /* TODO(Triang3l): Robust access variable modes. */
+   };
+   NIR_PASS(_, nir, nir_opt_load_store_vectorize, &load_store_vectorize_options);
 
    /* Lower bindings according to the pipeline layout.
     * In fragment shaders, this is done after compacting the fragment data output locations as RATs

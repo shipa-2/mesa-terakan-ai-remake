@@ -321,7 +321,7 @@ terakan_nir_lower_bindings_instr(nir_builder * const b, nir_instr * const instr,
    if (instr->type == nir_instr_type_intrinsic) {
       nir_intrinsic_instr * const intrin = nir_instr_as_intrinsic(instr);
       switch (intrin->intrinsic) {
-      case nir_intrinsic_load_ubo_vec4: {
+      case nir_intrinsic_load_ubo: {
          /* UBOs are referenced by a chain involving vulkan_resource_index's result. */
 
          binding = terakan_nir_get_binding_for_index_chain(
@@ -341,17 +341,15 @@ terakan_nir_lower_bindings_instr(nir_builder * const b, nir_instr * const instr,
          b->cursor = nir_before_instr(instr);
          /* The array index is always present for UBO loads unlike for textures. */
          assert(array_index.ssa != NULL);
-         /* TODO(Triang3l): Load from the constant cache, and better addressing such as making sure
-          * the base doesn't go out of bounds.
-          */
+         /* TODO(Triang3l): Load from the constant cache. */
+         /* TODO(Triang3l): Constant offset. */
+         /* TODO(Triang3l): Handle align_offset more cleanly. */
+         assert((nir_intrinsic_align_offset(intrin) & (sizeof(uint32_t) - 1)) == 0);
          nir_def_rewrite_uses(
-            &intrin->def,
-            nir_load_buffer_resource_r600(
-               b, intrin->num_components, intrin->def.bit_size, array_index.ssa, intrin->src[1].ssa,
-               .access = nir_intrinsic_access(intrin), .id_base = resource_index_base,
-               .base = 16 * nir_intrinsic_base(intrin),
-               .component = nir_intrinsic_component(intrin),
-               .format = PIPE_FORMAT_R32G32B32A32_UINT, .mega_fetch_count_r600 = 16));
+            &intrin->def, terakan_nir_load_raw_resource_buffer(
+                             b, intrin->num_components, intrin->def.bit_size,
+                             nir_intrinsic_access(intrin), resource_index_base, array_index.ssa, 0,
+                             intrin->src[1].ssa, nir_intrinsic_align(intrin)));
          nir_instr_remove(instr);
          return true;
       } break;
@@ -370,8 +368,6 @@ terakan_nir_lower_bindings(nir_shader * const shader,
                            BITSET_WORD * const resources_needed, uint32_t * const samplers_needed)
 {
    bool progress = false;
-
-   NIR_PASS(_, shader, nir_lower_ubo_vec4);
 
    /* TODO(Triang3l): Lower 64-bit buffer access. */
 

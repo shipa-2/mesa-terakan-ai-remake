@@ -79,10 +79,7 @@ terakan_descriptor_create_for_uniform_buffer(struct terakan_bo const * const bo,
 
    resource_out[0] = (uint32_t)bo_offset;
    resource_out[1] = (uint32_t)(range_aligned - 1);
-   resource_out[2] = S_030008_BASE_ADDRESS_HI(bo_offset >> 32) |
-                     S_030008_STRIDE(sizeof(uint32_t) * 4) | S_030008_DATA_FORMAT(FMT_32_32_32_32) |
-                     S_030008_NUM_FORMAT_ALL(V_030008_SQ_NUM_FORMAT_INT) |
-                     S_030008_ENDIAN_SWAP(UTIL_ARCH_BIG_ENDIAN ? ENDIAN_8IN32 : 0);
+   resource_out[2] = S_030008_BASE_ADDRESS_HI(bo_offset >> 32) | S_030008_STRIDE(1);
    resource_out[3] = S_03000C_DST_SEL_X(V_03000C_SQ_SEL_X) | S_03000C_DST_SEL_Y(V_03000C_SQ_SEL_Y) |
                      S_03000C_DST_SEL_Z(V_03000C_SQ_SEL_Z) | S_03000C_DST_SEL_W(V_03000C_SQ_SEL_W);
    resource_out[4] = (uint32_t)(range_aligned / (sizeof(uint32_t) * 4));
