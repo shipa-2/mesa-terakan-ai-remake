@@ -27,6 +27,7 @@
 #include "terakan_bo.h"
 #include "terakan_descriptor.h"
 #include "terakan_pipeline_layout.h"
+#include "terakan_push_constants.h"
 #include "terakan_vertex_input.h"
 
 #include "gallium/drivers/r600/r600_shader_common.h"
@@ -76,6 +77,8 @@ struct terakan_shader_impl {
    /* This object owns the BO in `static_state`. */
    /* TODO(Triang3l): Shader suballocation. */
    struct terakan_shader_static static_state;
+
+   struct terakan_push_constants_usage push_constants_usage;
 
    BITSET_DECLARE(resources_needed, TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE);
    uint32_t samplers_needed;

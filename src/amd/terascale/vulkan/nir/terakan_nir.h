@@ -57,8 +57,8 @@ nir_def * terakan_nir_load_raw_resource_buffer(nir_builder * b, unsigned num_com
 bool terakan_nir_compact_fragment_data_locations(nir_shader * shader,
                                                  uint8_t * uncompacted_locations_out);
 
-/* Translate Vulkan set and binding indices into hardware constant indices, and lower various
- * instructions involving bindings into TeraScale-specific intrinsics and logic.
+/* Translate Vulkan set and binding indices and push constant loads into hardware constant indices,
+ * and lower various instructions involving bindings into TeraScale-specific intrinsics and logic.
  *
  * Works with instructions generated from nir_lower_explicit_io.
  *

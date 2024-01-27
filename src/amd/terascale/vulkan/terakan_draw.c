@@ -26,8 +26,6 @@
 #include "terakan_buffer.h"
 #include "terakan_command_buffer.h"
 #include "terakan_entrypoints.h"
-#include "terakan_hw_state.h"
-#include "terakan_state.h"
 
 #include "gallium/drivers/r600/evergreend.h"
 #include "gallium/drivers/r600/r600d_common.h"
@@ -119,6 +117,8 @@ static void
 terakan_before_draw(struct terakan_gfx_command_writer * const command_writer)
 {
    terakan_state_draw_apply_pending(command_writer);
+
+   terakan_push_constants_apply(command_writer, false);
 
    terakan_before_hw_draw(command_writer);
 }

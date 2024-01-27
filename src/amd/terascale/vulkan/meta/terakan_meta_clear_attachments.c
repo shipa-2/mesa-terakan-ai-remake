@@ -226,6 +226,9 @@ terakan_CmdClearAttachments(VkCommandBuffer const commandBuffer, uint32_t const 
     * registers if clearing the entire image.
     */
 
+   command_writer->push_constants_state.up_to_date_push_constants_bound_to_stages &=
+      ~VK_SHADER_STAGE_FRAGMENT_BIT;
+
    struct terakan_meta_clear_color_push_constants push_constants = {};
    struct terakan_bo const * push_constants_bo = NULL;
    uint32_t push_constants_base;

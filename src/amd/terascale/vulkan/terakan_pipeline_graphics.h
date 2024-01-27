@@ -150,6 +150,9 @@ struct terakan_pipeline_graphics {
    VkShaderStageFlags shader_stages;
    struct terakan_shader_impl shaders[MESA_SHADER_FRAGMENT + 1];
 
+   struct terakan_push_constants_usage pre_rasterization_push_constants_usage;
+   uint32_t shader_stages_using_push_constants;
+
    BITSET_DECLARE(static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_COUNT);
 
    /* Precompiling the state into register values rather than simply layering pipeline binding over

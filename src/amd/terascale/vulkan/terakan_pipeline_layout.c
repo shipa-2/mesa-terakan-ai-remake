@@ -43,62 +43,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-typedef void (*terakan_pipeline_layout_set_resource_function)(
-   struct terakan_gfx_command_writer * command_writer, uint8_t index,
-   struct terakan_descriptor_set_resource const * resource);
-
-#define TERAKAN_PIPELINE_LAYOUT_SET_RESOURCE_FOR_GRAPHICS(stage)                                   \
-   static void terakan_pipeline_layout_set_resource_to_##stage(                                    \
-      struct terakan_gfx_command_writer * const command_writer, uint8_t const index,               \
-      struct terakan_descriptor_set_resource const * const resource)                               \
-   {                                                                                               \
-      terakan_hw_state_draw_set_sq_resource_##stage(&command_writer->hw_state_draw, index,         \
-                                                    resource->bo, resource->resource);             \
-   }
-
-TERAKAN_PIPELINE_LAYOUT_SET_RESOURCE_FOR_GRAPHICS(vs)
-TERAKAN_PIPELINE_LAYOUT_SET_RESOURCE_FOR_GRAPHICS(tcs)
-TERAKAN_PIPELINE_LAYOUT_SET_RESOURCE_FOR_GRAPHICS(tes)
-TERAKAN_PIPELINE_LAYOUT_SET_RESOURCE_FOR_GRAPHICS(gs)
-TERAKAN_PIPELINE_LAYOUT_SET_RESOURCE_FOR_GRAPHICS(fs)
-
-static terakan_pipeline_layout_set_resource_function const
-   terakan_pipeline_layout_set_resource_to_stage[] = {
-      [MESA_SHADER_VERTEX] = terakan_pipeline_layout_set_resource_to_vs,
-      [MESA_SHADER_TESS_CTRL] = terakan_pipeline_layout_set_resource_to_tcs,
-      [MESA_SHADER_TESS_EVAL] = terakan_pipeline_layout_set_resource_to_tes,
-      [MESA_SHADER_GEOMETRY] = terakan_pipeline_layout_set_resource_to_gs,
-      [MESA_SHADER_FRAGMENT] = terakan_pipeline_layout_set_resource_to_fs,
-};
-
-typedef void (*terakan_pipeline_layout_set_sampler_function)(
-   struct terakan_gfx_command_writer * command_writer, uint8_t index,
-   struct terakan_descriptor_set_sampler const * sampler);
-
-#define TERAKAN_PIPELINE_LAYOUT_SET_SAMPLER_FOR_GRAPHICS(stage)                                    \
-   static void terakan_pipeline_layout_set_sampler_to_##stage(                                     \
-      struct terakan_gfx_command_writer * const command_writer, uint8_t const index,               \
-      struct terakan_descriptor_set_sampler const * const sampler)                                 \
-   {                                                                                               \
-      terakan_hw_state_draw_set_sq_sampler_##stage(&command_writer->hw_state_draw, index,          \
-                                                   sampler->sampler, sampler->border_color);       \
-   }
-
-TERAKAN_PIPELINE_LAYOUT_SET_SAMPLER_FOR_GRAPHICS(vs)
-TERAKAN_PIPELINE_LAYOUT_SET_SAMPLER_FOR_GRAPHICS(tcs)
-TERAKAN_PIPELINE_LAYOUT_SET_SAMPLER_FOR_GRAPHICS(tes)
-TERAKAN_PIPELINE_LAYOUT_SET_SAMPLER_FOR_GRAPHICS(gs)
-TERAKAN_PIPELINE_LAYOUT_SET_SAMPLER_FOR_GRAPHICS(fs)
-
-static terakan_pipeline_layout_set_sampler_function const
-   terakan_pipeline_layout_set_sampler_to_stage[] = {
-      [MESA_SHADER_VERTEX] = terakan_pipeline_layout_set_sampler_to_vs,
-      [MESA_SHADER_TESS_CTRL] = terakan_pipeline_layout_set_sampler_to_tcs,
-      [MESA_SHADER_TESS_EVAL] = terakan_pipeline_layout_set_sampler_to_tes,
-      [MESA_SHADER_GEOMETRY] = terakan_pipeline_layout_set_sampler_to_gs,
-      [MESA_SHADER_FRAGMENT] = terakan_pipeline_layout_set_sampler_to_fs,
-};
-
 VKAPI_ATTR void VKAPI_CALL
 terakan_CmdBindDescriptorSets(VkCommandBuffer const commandBuffer,
                               VkPipelineBindPoint const pipelineBindPoint,
@@ -114,12 +58,11 @@ terakan_CmdBindDescriptorSets(VkCommandBuffer const commandBuffer,
    struct terakan_pipeline_layout const * const layout =
       terakan_pipeline_layout_from_handle(layoutHandle);
 
-   gl_shader_stage const shader_stage_first = pipelineBindPoint == VK_PIPELINE_BIND_POINT_COMPUTE
-                                                 ? MESA_SHADER_COMPUTE
-                                                 : MESA_SHADER_VERTEX;
-   gl_shader_stage const shader_stage_last = pipelineBindPoint == VK_PIPELINE_BIND_POINT_COMPUTE
-                                                ? MESA_SHADER_COMPUTE
-                                                : MESA_SHADER_FRAGMENT;
+   bool const is_compute = pipelineBindPoint == VK_PIPELINE_BIND_POINT_COMPUTE;
+   gl_shader_stage const shader_stage_first = is_compute ? MESA_SHADER_COMPUTE : MESA_SHADER_VERTEX;
+   gl_shader_stage const shader_stage_last =
+      is_compute ? MESA_SHADER_COMPUTE : MESA_SHADER_FRAGMENT;
+   /* TODO(Triang3l): Apply bindings to the compute stage. */
 
    uint32_t const * set_dynamic_offsets = pDynamicOffsets;
 
@@ -149,8 +92,8 @@ terakan_CmdBindDescriptorSets(VkCommandBuffer const commandBuffer,
 
          /* Resources. */
 
-         terakan_pipeline_layout_set_resource_function const resource_setter =
-            terakan_pipeline_layout_set_resource_to_stage[shader_stage];
+         terakan_hw_state_draw_set_sq_resource_function const graphics_resource_setter =
+            is_compute ? NULL : terakan_hw_state_draw_set_sq_resource_for_stage[shader_stage];
          uint8_t const shader_resource_set_base = layout_set->first_shader_resources[shader_stage];
          struct terakan_descriptor_set_layout_shader_range const * const resource_ranges =
             set_layout->shader_ranges + set_layout_shader->first_resource_range;
@@ -184,21 +127,26 @@ terakan_CmdBindDescriptorSets(VkCommandBuffer const commandBuffer,
                      resource.resource[2] = (resource.resource[2] & C_030008_BASE_ADDRESS_HI) |
                                             S_030008_BASE_ADDRESS_HI(resource_address >> 32);
                   }
-                  resource_setter(command_writer, range_shader_base + resource_index, &resource);
+                  graphics_resource_setter(&command_writer->hw_state_draw,
+                                           range_shader_base + resource_index, resource.bo,
+                                           resource.resource);
                }
             } else {
                for (uint8_t resource_index = 0; resource_index < range->descriptor_count;
                     ++resource_index) {
-                  resource_setter(command_writer, range_shader_base + resource_index,
-                                  &range_set_resources[resource_index]);
+                  struct terakan_descriptor_set_resource const * const resource =
+                     &range_set_resources[resource_index];
+                  graphics_resource_setter(&command_writer->hw_state_draw,
+                                           range_shader_base + resource_index, resource->bo,
+                                           resource->resource);
                }
             }
          }
 
          /* Samplers. */
 
-         terakan_pipeline_layout_set_sampler_function const sampler_setter =
-            terakan_pipeline_layout_set_sampler_to_stage[shader_stage];
+         terakan_hw_state_draw_set_sq_sampler_function const graphics_sampler_setter =
+            is_compute ? NULL : terakan_hw_state_draw_set_sq_sampler_for_stage[shader_stage];
          uint8_t const shader_sampler_set_base = layout_set->first_shader_samplers[shader_stage];
          struct terakan_descriptor_set_layout_shader_range const * const sampler_ranges =
             set_layout->shader_ranges + set_layout_shader->first_sampler_range;
@@ -218,8 +166,9 @@ terakan_CmdBindDescriptorSets(VkCommandBuffer const commandBuffer,
                 * may be left uninitialized if they're not statically referenced by the pipeline.
                 */
                if (likely(G_03C008_TYPE(sampler->sampler[2]))) {
-                  sampler_setter(command_writer, range_shader_base + sampler_index,
-                                 &range_set_samplers[sampler_index]);
+                  graphics_sampler_setter(&command_writer->hw_state_draw,
+                                          range_shader_base + sampler_index, sampler->sampler,
+                                          sampler->border_color);
                }
                /* TODO(Triang3l): Unnormalized coordinates on R8xx. */
             }
@@ -310,10 +259,10 @@ terakan_pipeline_layout_create(struct terakan_device * const device,
          push_constant_range->offset + push_constant_range->size;
       unsigned remaining_stages = (unsigned)(push_constant_range->stageFlags & stage_mask);
       while (remaining_stages) {
-         uint32_t * const shader_push_constant_extent =
-            &layout->shader_push_constant_extents_bytes[u_bit_scan(&remaining_stages)];
-         *shader_push_constant_extent =
-            MAX2(push_constant_range_extent, *shader_push_constant_extent);
+         uint32_t * const shader_app_push_constants_extent =
+            &layout->shader_app_push_constants_extents_bytes[u_bit_scan(&remaining_stages)];
+         *shader_app_push_constants_extent =
+            MAX2(push_constant_range_extent, *shader_app_push_constants_extent);
       }
    }
 

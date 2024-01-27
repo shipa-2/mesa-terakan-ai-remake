@@ -1760,6 +1760,15 @@ terakan_hw_state_draw_set_sq_kcache_fs(struct terakan_hw_state_draw * const stat
                                               TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_FS);
 }
 
+terakan_hw_state_draw_set_sq_kcache_function const
+   terakan_hw_state_draw_set_sq_kcache_for_stage[MESA_SHADER_FRAGMENT + 1] = {
+      [MESA_SHADER_VERTEX] = terakan_hw_state_draw_set_sq_kcache_vs,
+      [MESA_SHADER_TESS_CTRL] = terakan_hw_state_draw_set_sq_kcache_tcs,
+      [MESA_SHADER_TESS_EVAL] = terakan_hw_state_draw_set_sq_kcache_tes,
+      [MESA_SHADER_GEOMETRY] = terakan_hw_state_draw_set_sq_kcache_gs,
+      [MESA_SHADER_FRAGMENT] = terakan_hw_state_draw_set_sq_kcache_fs,
+};
+
 static void
 terakan_hw_state_draw_set_sq_resource(
    struct terakan_hw_state_draw * const state, uint32_t const index,
@@ -1862,6 +1871,15 @@ terakan_hw_state_draw_set_sq_resource_fs(struct terakan_hw_state_draw * const st
       state->sq_resource_descriptors.fs[0], state->sq_constants_needed.resources.fs,
       state->sq_constants_modified.resources.fs, TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_FS);
 }
+
+terakan_hw_state_draw_set_sq_resource_function const
+   terakan_hw_state_draw_set_sq_resource_for_stage[MESA_SHADER_FRAGMENT + 1] = {
+      [MESA_SHADER_VERTEX] = terakan_hw_state_draw_set_sq_resource_vs,
+      [MESA_SHADER_TESS_CTRL] = terakan_hw_state_draw_set_sq_resource_tcs,
+      [MESA_SHADER_TESS_EVAL] = terakan_hw_state_draw_set_sq_resource_tes,
+      [MESA_SHADER_GEOMETRY] = terakan_hw_state_draw_set_sq_resource_gs,
+      [MESA_SHADER_FRAGMENT] = terakan_hw_state_draw_set_sq_resource_fs,
+};
 
 static void
 terakan_hw_state_draw_set_sq_sampler(
@@ -1978,6 +1996,15 @@ terakan_hw_state_draw_set_sq_sampler_fs(struct terakan_hw_state_draw * const sta
                                         TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_FS,
                                         TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_FS);
 }
+
+terakan_hw_state_draw_set_sq_sampler_function const
+   terakan_hw_state_draw_set_sq_sampler_for_stage[MESA_SHADER_FRAGMENT + 1] = {
+      [MESA_SHADER_VERTEX] = terakan_hw_state_draw_set_sq_sampler_vs,
+      [MESA_SHADER_TESS_CTRL] = terakan_hw_state_draw_set_sq_sampler_tcs,
+      [MESA_SHADER_TESS_EVAL] = terakan_hw_state_draw_set_sq_sampler_tes,
+      [MESA_SHADER_GEOMETRY] = terakan_hw_state_draw_set_sq_sampler_gs,
+      [MESA_SHADER_FRAGMENT] = terakan_hw_state_draw_set_sq_sampler_fs,
+};
 
 static void
 terakan_hw_state_draw_set_sq_constants_needed(

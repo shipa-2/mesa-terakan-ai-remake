@@ -28,6 +28,7 @@
 #include "terakan_descriptor.h"
 #include "terakan_shader.h"
 
+#include "compiler/shader_enums.h"
 #include "util/bitset.h"
 #include "vk_limits.h"
 
@@ -460,6 +461,10 @@ terakan_hw_state_draw_cb_color_written(struct terakan_hw_state_draw * const stat
  * - Bindings not statically used by shaders must not be emitted.
  */
 
+typedef void (*terakan_hw_state_draw_set_sq_kcache_function)(struct terakan_hw_state_draw * state,
+                                                             uint32_t index, uint32_t size_lines,
+                                                             struct terakan_bo const * bo,
+                                                             uint32_t base_lines);
 void terakan_hw_state_draw_set_sq_kcache_vs(struct terakan_hw_state_draw * state, uint32_t index,
                                             uint32_t size_lines, struct terakan_bo const * bo,
                                             uint32_t base_lines);
@@ -475,7 +480,13 @@ void terakan_hw_state_draw_set_sq_kcache_gs(struct terakan_hw_state_draw * state
 void terakan_hw_state_draw_set_sq_kcache_fs(struct terakan_hw_state_draw * state, uint32_t index,
                                             uint32_t size_lines, struct terakan_bo const * bo,
                                             uint32_t base_lines);
+extern terakan_hw_state_draw_set_sq_kcache_function const
+   terakan_hw_state_draw_set_sq_kcache_for_stage[MESA_SHADER_FRAGMENT + 1];
 
+typedef void (*terakan_hw_state_draw_set_sq_resource_function)(struct terakan_hw_state_draw * state,
+                                                               uint32_t index,
+                                                               struct terakan_bo const * bo,
+                                                               uint32_t const descriptor[8]);
 void terakan_hw_state_draw_set_sq_resource_vi(struct terakan_hw_state_draw * state, uint32_t index,
                                               struct terakan_bo const * bo,
                                               uint32_t const descriptor[8]);
@@ -494,8 +505,14 @@ void terakan_hw_state_draw_set_sq_resource_gs(struct terakan_hw_state_draw * sta
 void terakan_hw_state_draw_set_sq_resource_fs(struct terakan_hw_state_draw * state, uint32_t index,
                                               struct terakan_bo const * bo,
                                               uint32_t const descriptor[8]);
+extern terakan_hw_state_draw_set_sq_resource_function const
+   terakan_hw_state_draw_set_sq_resource_for_stage[MESA_SHADER_FRAGMENT + 1];
 
 /* The border color can be NULL if BORDER_COLOR_TYPE is not REGISTER. */
+typedef void (*terakan_hw_state_draw_set_sq_sampler_function)(struct terakan_hw_state_draw * state,
+                                                              uint32_t index,
+                                                              uint32_t const sampler[3],
+                                                              float const border_color[4]);
 void terakan_hw_state_draw_set_sq_sampler_vs(struct terakan_hw_state_draw * state, uint32_t index,
                                              uint32_t const sampler[3],
                                              float const border_color[4]);
@@ -511,6 +528,8 @@ void terakan_hw_state_draw_set_sq_sampler_gs(struct terakan_hw_state_draw * stat
 void terakan_hw_state_draw_set_sq_sampler_fs(struct terakan_hw_state_draw * state, uint32_t index,
                                              uint32_t const sampler[3],
                                              float const border_color[4]);
+extern terakan_hw_state_draw_set_sq_sampler_function const
+   terakan_hw_state_draw_set_sq_sampler_for_stage[MESA_SHADER_FRAGMENT + 1];
 
 static inline bool
 terakan_hw_state_draw_sq_constants_needed_by_gs(struct terakan_hw_state_draw const * const state)

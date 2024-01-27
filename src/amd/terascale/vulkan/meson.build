@@ -83,6 +83,8 @@ libterakan_files = files(
   'terakan_pipeline_graphics.h',
   'terakan_pipeline_layout.c',
   'terakan_pipeline_layout.h',
+  'terakan_push_constants.c',
+  'terakan_push_constants.h',
   'terakan_render_pass.c',
   'terakan_queue.c',
   'terakan_queue.h',

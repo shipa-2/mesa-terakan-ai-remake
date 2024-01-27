@@ -21,9 +21,11 @@
  * IN THE SOFTWARE.
  */
 
+#include "terakan_descriptor.h"
 #include "terakan_descriptor_set_layout.h"
 #include "terakan_nir.h"
 #include "terakan_pipeline_layout.h"
+#include "terakan_push_constants.h"
 
 #include "util/macros.h"
 #include "nir_builder.h"
@@ -351,6 +353,25 @@ terakan_nir_lower_bindings_instr(nir_builder * const b, nir_instr * const instr,
                              nir_intrinsic_access(intrin), resource_index_base, array_index.ssa, 0,
                              intrin->src[1].ssa, nir_intrinsic_align(intrin)));
          nir_instr_remove(instr);
+         return true;
+      } break;
+
+      case nir_intrinsic_load_push_constant: {
+         b->cursor = nir_before_instr(instr);
+         /* TODO(Triang3l): Load from the constant cache. */
+         /* TODO(Triang3l): Constant offset. */
+         /* TODO(Triang3l): Handle align_offset more cleanly. */
+         assert((nir_intrinsic_align_offset(intrin) & (sizeof(uint32_t) - 1)) == 0);
+         BITSET_SET(state->resources_needed, TERAKAN_RESOURCE_RANGE_PUSH_CONSTANTS);
+         /* Push constants don't have robust access, simply add the base without an integer overflow
+          * check.
+          */
+         nir_def_rewrite_uses(&intrin->def,
+                              terakan_nir_load_raw_resource_buffer(
+                                 b, intrin->num_components, intrin->def.bit_size, 0,
+                                 TERAKAN_RESOURCE_RANGE_PUSH_CONSTANTS, nir_imm_int(b, 0),
+                                 TERAKAN_PUSH_CONSTANTS_APP_BASE_BYTES + nir_intrinsic_base(intrin),
+                                 intrin->src[0].ssa, nir_intrinsic_align(intrin)));
          return true;
       } break;
 

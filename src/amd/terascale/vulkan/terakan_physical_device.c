@@ -33,6 +33,7 @@
 #include "terakan_image.h"
 #include "terakan_instance.h"
 #include "terakan_limits.h"
+#include "terakan_push_constants.h"
 #include "terakan_vertex_input.h"
 #include "terakan_wsi.h"
 
@@ -278,10 +279,7 @@ terakan_physical_device_get_capabilities(
     */
    properties_out->maxStorageBufferRange = ~(((uint32_t)1 << tile_pipe_interleave_bytes_log2) - 1);
 
-   /* TODO(Triang3l): Exclude internal constants like the draw ID, ring layout, sample locations,
-    * RAT alignment offsets.
-    */
-   properties_out->maxPushConstantsSize = TERAKAN_KCACHE_HW_MAX_BUFFER_SIZE_BYTES;
+   properties_out->maxPushConstantsSize = TERAKAN_PUSH_CONSTANTS_APP_SIZE_BYTES;
 
    properties_out->maxMemoryAllocationCount = UINT32_MAX;
 

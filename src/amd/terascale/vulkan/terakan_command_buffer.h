@@ -27,6 +27,7 @@
 #include "terakan_barrier.h"
 #include "terakan_bo.h"
 #include "terakan_hw_state.h"
+#include "terakan_push_constants.h"
 #include "terakan_state.h"
 
 #include "gallium/drivers/r600/evergreend.h"
@@ -197,6 +198,8 @@ struct terakan_gfx_command_writer {
    enum terakan_barrier_action_flags pending_barrier_actions;
 
    struct terakan_hw_state_draw hw_state_draw;
+
+   struct terakan_push_constants_state push_constants_state;
 
    struct terakan_state_draw state_draw;
 };

@@ -142,10 +142,7 @@ terakan_command_buffer_allocate_push_constants(struct terakan_command_buffer * c
                                                struct terakan_bo const ** const bo_out,
                                                uint32_t * base_kcache_lines_out)
 {
-   assert(size_bytes <= TERAKAN_KCACHE_HW_MAX_BUFFER_SIZE_BYTES);
-
-   uint32_t const size_kcache_lines =
-      (size_bytes + (TERAKAN_KCACHE_HW_LINE_BYTES - 1)) / TERAKAN_KCACHE_HW_LINE_BYTES;
+   uint32_t const size_kcache_lines = DIV_ROUND_UP(size_bytes, TERAKAN_KCACHE_HW_LINE_BYTES);
 
    /* One constant buffer of the maximum possible size.
     * Because allocation is linear, there may be a lot of fragmentation if requested push constant
@@ -162,6 +159,7 @@ terakan_command_buffer_allocate_push_constants(struct terakan_command_buffer * c
    uint32_t const buffer_size_kcache_lines = DIV_ROUND_UP(
       MAX2(TERAKAN_KCACHE_HW_MAX_BUFFER_SIZE_BYTES, 8 * TERAKAN_VERTEX_INPUT_FS_MAX_QWORDS),
       TERAKAN_KCACHE_HW_LINE_BYTES);
+   assert(size_kcache_lines <= buffer_size_kcache_lines);
 
    if (!list_is_empty(&command_buffer->push_constant_buffers_with_free_space) &&
        list_first_entry(&command_buffer->push_constant_buffers_with_free_space,
@@ -1069,34 +1067,38 @@ terakan_BeginCommandBuffer(VkCommandBuffer const commandBuffer,
       container_of(command_buffer->vk.pool, struct terakan_command_pool, vk);
 
    assert(command_buffer->command_writer.gfx == NULL);
+   struct terakan_gfx_command_writer * gfx_command_writer;
    if (!list_is_empty(&command_pool->command_writers_free)) {
-      command_buffer->command_writer.gfx = list_first_entry(
-         &command_pool->command_writers_free, struct terakan_gfx_command_writer, base.free_link);
-      list_del(&command_buffer->command_writer.gfx->base.free_link);
+      gfx_command_writer = list_first_entry(&command_pool->command_writers_free,
+                                            struct terakan_gfx_command_writer, base.free_link);
+      list_del(&gfx_command_writer->base.free_link);
    } else {
-      command_buffer->command_writer.gfx =
+      gfx_command_writer =
          vk_alloc(&command_pool->vk.alloc, sizeof(struct terakan_gfx_command_writer),
                   alignof(struct terakan_gfx_command_writer), VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
-      if (command_buffer->command_writer.gfx == NULL) {
+      if (gfx_command_writer == NULL) {
          return vk_command_buffer_set_error(&command_buffer->vk, VK_ERROR_OUT_OF_HOST_MEMORY);
       }
    }
+   command_buffer->command_writer.gfx = gfx_command_writer;
 
-   command_buffer->command_writer.gfx->base.command_buffer = command_buffer;
+   gfx_command_writer->base.command_buffer = command_buffer;
 
    /* The first emission will request the first indirect buffer. */
-   command_buffer->command_writer.gfx->indirect_buffer = NULL;
+   gfx_command_writer->indirect_buffer = NULL;
 
-   command_buffer->command_writer.gfx->indirect_buffer_ever_begun = false;
+   gfx_command_writer->indirect_buffer_ever_begun = false;
 
-   command_buffer->command_writer.gfx->is_beginning_indirect_buffer = false;
+   gfx_command_writer->is_beginning_indirect_buffer = false;
 
-   command_buffer->command_writer.gfx->pending_barrier_actions = 0;
+   gfx_command_writer->pending_barrier_actions = 0;
 
-   terakan_hw_state_draw_reset(&command_buffer->command_writer.gfx->hw_state_draw);
+   terakan_hw_state_draw_reset(&gfx_command_writer->hw_state_draw);
+
+   terakan_push_constants_state_reset(&gfx_command_writer->push_constants_state);
 
    terakan_state_draw_reset(
-      &command_buffer->command_writer.gfx->state_draw,
+      &gfx_command_writer->state_draw,
       container_of(command_buffer->vk.pool->base.device, struct terakan_device const, vk));
 
    return vk_command_buffer_get_record_result(&command_buffer->vk);

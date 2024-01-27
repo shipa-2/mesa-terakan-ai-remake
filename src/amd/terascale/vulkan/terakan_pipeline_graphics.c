@@ -318,6 +318,11 @@ terakan_pipeline_graphics_bind(struct terakan_gfx_command_writer * const command
          command_writer, pipeline, (enum terakan_pipeline_graphics_state_index)state_index);
    }
 
+   command_writer->push_constants_state.graphics_stages_using_push_constants =
+      pipeline->shader_stages_using_push_constants;
+   command_writer->push_constants_state.usage_pre_rasterization =
+      pipeline->pre_rasterization_push_constants_usage;
+
    /* TODO(Triang3l): All vertex pipeline stages. */
 
    /* Vertex shader. */
@@ -361,10 +366,12 @@ terakan_pipeline_graphics_bind(struct terakan_gfx_command_writer * const command
                                     TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_PS, sq_pgm_ps_modified);
       terakan_hw_state_draw_set_sq_constants_needed_by_fs(
          &command_writer->hw_state_draw, 0, fs->resources_needed, fs->samplers_needed);
+      command_writer->push_constants_state.usage_fragment = fs->push_constants_usage;
       color_attachments_written_by_shader = fs->fs.fragment_data_uncompacted_locations;
    } else {
       terakan_hw_state_draw_set_sq_constants_needed_by_fs(&command_writer->hw_state_draw, 0, NULL,
                                                           0);
+      command_writer->push_constants_state.usage_fragment = (struct terakan_push_constants_usage){};
       color_attachments_written_by_shader = 0;
    }
    if (command_writer->state_draw.color_attachment_usage.written_by_shader !=
@@ -725,6 +732,9 @@ terakan_pipeline_graphics_create(struct terakan_device * const device,
 
    terakan_pipeline_init(&pipeline->base, device, false);
 
+   struct terakan_pipeline_layout const * const pipeline_layout =
+      terakan_pipeline_layout_from_handle(create_info->layout);
+
    pipeline->shader_stages = 0;
    for (uint32_t stage_info_index = 0; stage_info_index < create_info->stageCount;
         ++stage_info_index) {
@@ -748,9 +758,12 @@ terakan_pipeline_graphics_create(struct terakan_device * const device,
       struct terakan_shader_impl * const shader = &pipeline->shaders[stage_index];
       memset(shader, 0, sizeof(*shader));
 
-      terakan_shader_lower_and_optimize_post_link(
-         nir, terakan_pipeline_layout_from_handle(create_info->layout), shader->resources_needed,
-         &shader->samplers_needed, &shader->fs.fragment_data_uncompacted_locations);
+      shader->push_constants_usage.app_extent_bytes =
+         pipeline_layout->shader_app_push_constants_extents_bytes[stage_index];
+
+      terakan_shader_lower_and_optimize_post_link(nir, pipeline_layout, shader->resources_needed,
+                                                  &shader->samplers_needed,
+                                                  &shader->fs.fragment_data_uncompacted_locations);
 
       /* TODO(Triang3l): Construct the shader key from the NIR and, when available, the pipeline
        * state.
@@ -768,6 +781,31 @@ terakan_pipeline_graphics_create(struct terakan_device * const device,
 
       /* Fully initialized now, make sure it's fully cleaned up in case of failure. */
       pipeline->shader_stages |= stage_info->stage;
+   }
+
+   pipeline->shader_stages_using_push_constants = 0;
+   pipeline->pre_rasterization_push_constants_usage = (struct terakan_push_constants_usage){};
+   {
+      unsigned remaining_shader_stages =
+         (unsigned)(pipeline->shader_stages &
+                    (VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT |
+                     VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT | VK_SHADER_STAGE_GEOMETRY_BIT));
+      while (remaining_shader_stages) {
+         VkShaderStageFlagBits const stage_flag =
+            (VkShaderStageFlagBits)((VkShaderStageFlags)1 << u_bit_scan(&remaining_shader_stages));
+         struct terakan_push_constants_usage const stage_push_constants_usage =
+            pipeline->shaders[vk_to_mesa_shader_stage(stage_flag)].push_constants_usage;
+         if (!terakan_push_constants_usage_empty(stage_push_constants_usage)) {
+            pipeline->pre_rasterization_push_constants_usage = terakan_push_constants_usage_union(
+               pipeline->pre_rasterization_push_constants_usage, stage_push_constants_usage);
+            pipeline->shader_stages_using_push_constants |= stage_flag;
+         }
+      }
+   }
+   if ((pipeline->shader_stages & VK_SHADER_STAGE_FRAGMENT_BIT) &&
+       !terakan_push_constants_usage_empty(
+          pipeline->shaders[MESA_SHADER_FRAGMENT].push_constants_usage)) {
+      pipeline->shader_stages_using_push_constants |= VK_SHADER_STAGE_FRAGMENT_BIT;
    }
 
    BITSET_ZERO(pipeline->static_state);
@@ -794,7 +832,7 @@ terakan_pipeline_graphics_create(struct terakan_device * const device,
    *pipeline_out = pipeline;
    return VK_SUCCESS;
 
-fail_shaders : {
+fail_shaders: {
    unsigned remaining_shader_stages = (unsigned)pipeline->shader_stages;
    while (remaining_shader_stages) {
       terakan_shader_impl_finish(

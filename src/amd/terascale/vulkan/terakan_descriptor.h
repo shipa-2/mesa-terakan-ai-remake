@@ -54,8 +54,8 @@ extern "C" {
 #define TERAKAN_KCACHE_HW_RELATIVE_INDEXABLE_BUFFERS 14
 
 /* Kcache allocation. */
-/* The buffer with internal and push constants is never accessed with a relative index, place it
- * near the end.
+/* The buffer with driver and application and push constants is never accessed with a relative
+ * index, place it near the end.
  */
 #define TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS (TERAKAN_KCACHE_HW_BUFFERS_PER_STAGE - 1)
 /* Number of kcache buffers starting from 0 allocated for uniform buffers from application pipeline
@@ -96,7 +96,7 @@ extern "C" {
  * invalidated alongside the shader itself.
  */
 #define TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META 0
-/* Dynamically indexable internal and application's push constants. */
+/* Dynamically indexable driver and application push constants. */
 #define TERAKAN_RESOURCE_RANGE_PUSH_CONSTANTS                                                      \
    (TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META + 1)
 /* VS: Base vertex and instance.

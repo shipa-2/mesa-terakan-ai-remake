@@ -213,7 +213,7 @@ terakan_shader_lower_and_optimize_post_link(
 
    nir_load_store_vectorize_options const load_store_vectorize_options = {
       .callback = terakan_nir_should_vectorize_load_store,
-      .modes = nir_var_mem_ubo,
+      .modes = nir_var_mem_ubo | nir_var_mem_push_const,
       /* TODO(Triang3l): Vectorize SSBO loads, but not those done via a RAT. */
       /* TODO(Triang3l): Robust access variable modes. */
    };

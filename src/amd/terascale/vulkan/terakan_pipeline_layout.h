@@ -47,7 +47,7 @@ struct terakan_pipeline_layout {
    uint32_t shader_non_immutable_samplers[MESA_SHADER_STAGES];
    uint32_t shader_immutable_samplers_unnormalized_coordinates[MESA_SHADER_STAGES];
 
-   uint32_t shader_push_constant_extents_bytes[MESA_SHADER_STAGES];
+   uint32_t shader_app_push_constants_extents_bytes[MESA_SHADER_STAGES];
 };
 
 VK_DEFINE_NONDISP_HANDLE_CASTS(terakan_pipeline_layout, vk.base, VkPipelineLayout,
