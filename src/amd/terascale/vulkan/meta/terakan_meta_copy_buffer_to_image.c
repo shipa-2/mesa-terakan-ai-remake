@@ -455,6 +455,7 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
       image_view_create_info.format = region_transfer_format;
 
       image_view_create_info.subresourceRange.aspectMask = region->imageSubresource.aspectMask;
+      image_view_create_info.subresourceRange.baseMipLevel = region->imageSubresource.mipLevel;
 
       if (image->vk.image_type == VK_IMAGE_TYPE_3D) {
          image_view_create_info.subresourceRange.baseArrayLayer = (uint32_t)region->imageOffset.z;
