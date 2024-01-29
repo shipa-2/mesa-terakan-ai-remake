@@ -68,6 +68,8 @@ bool terakan_nir_compact_fragment_data_locations(nir_shader * shader,
 bool terakan_nir_lower_bindings(nir_shader * shader, struct terakan_pipeline_layout const * layout,
                                 BITSET_WORD * resources_needed, uint32_t * samplers_needed);
 
+bool terakan_nir_lower_sin_cos(nir_shader * shader);
+
 #ifdef __cplusplus
 }
 #endif
