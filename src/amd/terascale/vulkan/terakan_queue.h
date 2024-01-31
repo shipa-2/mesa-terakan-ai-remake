@@ -55,8 +55,6 @@ struct terakan_queue_completion_submission {
 
    struct list_head link;
 
-   uint64_t expected_payload;
-
    struct list_head signals;
 };
 
@@ -82,11 +80,6 @@ struct terakan_queue {
     * for instance, the process that is supposed to do the signal is killed.
     */
    thrd_t completion_thread;
-
-   /* Accessed by vkQueueSubmit, the next value to write to a winsys-specific submission completion
-    * fence from the GPU, used for verifying that the submission has been executed successfully.
-    */
-   uint64_t next_completion_payload;
 };
 
 VK_DEFINE_HANDLE_CASTS(terakan_queue, vk.base, VkQueue, VK_OBJECT_TYPE_QUEUE)
@@ -100,7 +93,8 @@ VkResult terakan_queue_create(struct terakan_device * device,
                               struct terakan_queue ** queue_out);
 
 struct terakan_queue_winsys_fn {
-   /* Not exposing queue priorities as the Linux Radeon 2.50.0 kernel driver only provides a
+   /* The indirect buffer must not be empty.
+    * Not exposing queue priorities as the Linux Radeon 2.50.0 kernel driver only provides a
     * high-priority DMA ring on R9xx.
     * On failure, returns VK_ERROR_OUT_OF_HOST_MEMORY, VK_ERROR_OUT_OF_DEVICE_MEMORY or
     * VK_ERROR_UNKNOWN.
@@ -109,18 +103,20 @@ struct terakan_queue_winsys_fn {
                       uint32_t bo_reference_count, void const * bo_references,
                       uint32_t indirect_buffer_size_dwords, uint32_t const * indirect_buffer);
 
-   /* On failure, returns VK_ERROR_OUT_OF_HOST_MEMORY, VK_ERROR_OUT_OF_DEVICE_MEMORY or
+   /* Submits the sync indirect buffer and enqueues the completion signal.
+    * On failure, returns VK_ERROR_OUT_OF_HOST_MEMORY, VK_ERROR_OUT_OF_DEVICE_MEMORY or
     * VK_ERROR_UNKNOWN.
     */
-   VkResult (*completion_submission_submit)(struct terakan_queue_completion_submission * submission);
+   VkResult (*completion_submission_submit)(struct terakan_queue_completion_submission * submission,
+                                            uint32_t signal_indirect_buffer_size_dwords,
+                                            uint32_t const * signal_indirect_buffer);
    /* Returns whether the wait was successful. In case of a GPU hang, must return in finite time. */
    bool (*completion_submission_await)(struct terakan_queue_completion_submission * submission);
    void (*completion_submission_finish_winsys_and_free)(
       struct terakan_queue_completion_submission * submission);
    /* On failure, returns VK_ERROR_OUT_OF_HOST_MEMORY or VK_ERROR_OUT_OF_DEVICE_MEMORY. */
    VkResult (*completion_submission_alloc_and_init_winsys)(
-      struct terakan_queue * queue, uint64_t initial_payload,
-      struct terakan_queue_completion_submission ** submission_out);
+      struct terakan_queue * queue, struct terakan_queue_completion_submission ** submission_out);
 };
 
 #ifdef __cplusplus

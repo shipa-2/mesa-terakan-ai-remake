@@ -197,6 +197,13 @@ struct terakan_gfx_command_writer {
 
    enum terakan_barrier_action_flags pending_barrier_actions;
 
+   /* Actions the next barrier with srcAccessMask & TRANSFER_WRITE, srcStageMask & COPY should
+    * perform, depending on how these transfers were actually performed.
+    */
+   enum terakan_barrier_action_flags post_buffer_copy_write_barrier_actions;
+   enum terakan_barrier_action_flags post_color_image_copy_write_barrier_actions;
+   enum terakan_barrier_action_flags post_depth_stencil_image_copy_write_barrier_actions;
+
    struct terakan_hw_state_draw hw_state_draw;
 
    struct terakan_push_constants_state push_constants_state;
@@ -207,6 +214,7 @@ struct terakan_gfx_command_writer {
 /* Entry point for emitting packets.
  * Allocates space for `packet_dwords`, and if relocations are needed, `relocation_packet_dwords`,
  * and assumes that the application will write them all.
+ * `packet_dwords` must not be 0.
  * Also ensures that `bo_count` calls to `terakan_bo_reference_writer_add_reference` for
  * `terakan_gfx_command_writer::bo_reference_writer` will succeed (regardless of which BOs are
  * specified).

@@ -52,9 +52,10 @@ terakan_cp_dma_sync_cp_me(struct terakan_gfx_command_writer * const command_writ
    *packet++ = PKT3(PKT3_CP_DMA, 5 - 1, 0);
    *packet++ = 0;
    *packet++ = PKT3_CP_DMA_CP_SYNC;
+   *packet++ = TERAKAN_CP_DMA_COPY_OPTIMAL_ALIGNMENT;
    *packet++ = 0;
-   *packet++ = 0;
-   *packet++ = 0;
+   /* The size must not be zero, otherwise nothing would happen (tested on Barts). */
+   *packet++ = TERAKAN_CP_DMA_COPY_OPTIMAL_ALIGNMENT;
    uint32_t const discard_bo_reference = terakan_bo_reference_writer_add_reference(
       &command_writer->base.bo_reference_writer,
       container_of(command_writer->base.command_buffer->vk.pool->base.device,
@@ -183,6 +184,8 @@ terakan_CmdCopyBuffer2(VkCommandBuffer const commandBuffer,
       if (unlikely(region->size == 0)) {
          continue;
       }
+      command_writer->post_buffer_copy_write_barrier_actions |=
+         TERAKAN_BARRIER_ACTION_SYNC_ME_TO_CP_DMA;
       terakan_cp_dma_copy(command_writer, src_bo, TERAKAN_BO_PRIORITY_CP_DMA, region->srcOffset,
                           dst_bo, TERAKAN_BO_PRIORITY_CP_DMA, region->dstOffset, region->size);
    }

@@ -25,8 +25,6 @@
 #include "terakan_device_drm_radeon.h"
 #include "terakan_queue.h"
 
-#include "gallium/drivers/r600/evergreend.h"
-#include "gallium/drivers/r600/r600d_common.h"
 #include "util/macros.h"
 #include "util/u_debug.h"
 #include "c99_alloca.h"
@@ -50,10 +48,10 @@ terakan_queue_drm_radeon_submit(struct terakan_device * const device_base,
                                 uint32_t const indirect_buffer_size_dwords,
                                 uint32_t const * const indirect_buffer)
 {
-   if (indirect_buffer_size_dwords == 0) {
-      /* The kernel driver returns -EINVAL for zero-length indirect buffers. */
-      return VK_SUCCESS;
-   }
+   /* The kernel driver returns -EINVAL for zero-length indirect buffers, so even if a submission is
+    * needed only for BO fence purposes, it still must not be empty.
+    */
+   assert(indirect_buffer_size_dwords != 0);
 
    /* Flags, ring, priority. */
    __u32 flags[3] = {};
@@ -141,7 +139,8 @@ struct terakan_queue_completion_submission_drm_radeon {
 
 static VkResult
 terakan_queue_completion_submission_drm_radeon_submit(
-   struct terakan_queue_completion_submission * const submission_base)
+   struct terakan_queue_completion_submission * const submission_base,
+   uint32_t const signal_indirect_buffer_size_dwords, uint32_t const * const signal_indirect_buffer)
 {
    struct terakan_queue_completion_submission_drm_radeon const * const submission = container_of(
       submission_base, struct terakan_queue_completion_submission_drm_radeon const, base);
@@ -152,27 +151,8 @@ terakan_queue_completion_submission_drm_radeon_submit(
    void * const signal_bo_reference = alloca(device->bo_reference_size);
    device->winsys_fn->bo->create_reference(signal_bo_reference, &submission->bo->base, false, true,
                                            TERAKAN_BO_PRIORITY_FENCE_TRACE);
-   uint32_t signal_indirect_buffer[8] = {
-      [0] = PKT3(PKT3_EVENT_WRITE_EOP, 5 - 1, 0),
-      /* TODO(Triang3l): Correct event type. */
-      [1] = EVENT_INDEX(5) | EVENT_TYPE(EVENT_TYPE_CACHE_FLUSH_AND_INV_TS_EVENT),
-      /* Lower address bits. */
-      [2] = 0,
-      /* Data selection, interrupt selection, and higher address bits. */
-      [3] = EOP_DATA_SEL(EOP_DATA_SEL_VALUE_64BIT),
-      /* [4], [5] - data (will be written with memcpy for correct endianness, the GPU write is
-       * little-endian).
-       */
-      /* Relocation. */
-      [6] = PKT3(PKT3_NOP, 1 - 1, 0),
-      [7] = 0,
-      /* GFX command buffers must be padded to a multiple of 8 dwords with NOPs, but this indirect
-       * buffer is exactly 8 dwords long.
-       */
-   };
-   memcpy(&signal_indirect_buffer[4], &submission->base.expected_payload, sizeof(uint64_t));
    return device->winsys_fn->queue->submit(device, submission->base.queue->ip_type, 1,
-                                           signal_bo_reference, ARRAY_SIZE(signal_indirect_buffer),
+                                           signal_bo_reference, signal_indirect_buffer_size_dwords,
                                            signal_indirect_buffer);
 }
 
@@ -190,12 +170,8 @@ terakan_queue_completion_submission_drm_radeon_await(
       .handle = bo->handle,
    };
    /* Returns -EBUSY in finite time in case of a hang (30-second timeout in Linux Radeon 2.50.0). */
-   if (drmCommandWrite(device->render_node_fd, DRM_RADEON_GEM_WAIT_IDLE, &gem_wait_idle_arguments,
-                       sizeof(gem_wait_idle_arguments)) != 0) {
-      return false;
-   }
-
-   return *(uint64_t const volatile *)bo->base.mapping == submission->base.expected_payload;
+   return drmCommandWrite(device->render_node_fd, DRM_RADEON_GEM_WAIT_IDLE,
+                          &gem_wait_idle_arguments, sizeof(gem_wait_idle_arguments)) == 0;
 }
 
 static void
@@ -212,7 +188,7 @@ terakan_queue_completion_submission_drm_radeon_finish_winsys_and_free(
 
 static VkResult
 terakan_queue_completion_submission_drm_radeon_alloc_and_init_winsys(
-   struct terakan_queue * const queue, uint64_t const initial_payload,
+   struct terakan_queue * const queue,
    struct terakan_queue_completion_submission ** const submission_out)
 {
    VkResult result;
@@ -230,22 +206,13 @@ terakan_queue_completion_submission_drm_radeon_alloc_and_init_winsys(
 
    struct terakan_bo * bo_base;
    result = device->winsys_fn->bo->allocate_device_memory(
-      device, sizeof(uint64_t), alignof(uint64_t),
-      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 0, NULL,
-      VK_SYSTEM_ALLOCATION_SCOPE_DEVICE, &bo_base);
+      device, 1, 1, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0, NULL, VK_SYSTEM_ALLOCATION_SCOPE_DEVICE,
+      &bo_base);
    if (result != VK_SUCCESS) {
       vk_free(&device->vk.alloc, submission);
       return result;
    }
    submission->bo = container_of(bo_base, struct terakan_bo_drm_radeon, base);
-
-   if (terakan_bo_map(bo_base) == NULL) {
-      terakan_bo_free(bo_base, NULL);
-      vk_free(&device->vk.alloc, submission);
-      return VK_ERROR_OUT_OF_HOST_MEMORY;
-   }
-
-   *(uint64_t volatile *)bo_base->mapping = initial_payload;
 
    *submission_out = &submission->base;
    return VK_SUCCESS;

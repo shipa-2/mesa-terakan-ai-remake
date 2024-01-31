@@ -32,6 +32,7 @@
 #include "terakan_shader.h"
 #include "terakan_vertex_input.h"
 
+#include "gallium/drivers/r600/evergreend.h"
 #include "gallium/drivers/r600/r600d_common.h"
 #include "util/macros.h"
 #include "vk_alloc.h"
@@ -966,6 +967,11 @@ terakan_gfx_command_writer_emit(struct terakan_gfx_command_writer * const comman
                                 uint32_t const relocation_packet_dwords,
                                 bool abort_if_all_state_emitted)
 {
+   /* Empty indirect buffer submissions may not be supported by the queue, make sure indirect
+    * buffers can't be allocated only to end up being empty.
+    */
+   assert(packet_dwords != 0);
+
    if (unlikely(vk_command_buffer_has_error(&command_writer->base.command_buffer->vk))) {
       return NULL;
    }
@@ -1047,9 +1053,23 @@ terakan_EndCommandBuffer(VkCommandBuffer const commandBuffer)
    struct terakan_command_buffer * const command_buffer =
       terakan_command_buffer_from_handle(commandBuffer);
 
-   terakan_barrier_emit_pending_actions(command_buffer->command_writer.gfx);
+   struct terakan_gfx_command_writer * const gfx_command_writer =
+      command_buffer->command_writer.gfx;
 
-   terakan_gfx_command_writer_end_indirect_buffer(command_buffer->command_writer.gfx);
+   /* Insert a barrier for outstanding transfer writes because command buffers track the needed
+    * barriers for this purpose locally, and subsequently submitted command buffers won't be aware
+    * of how transfers were actually done in the current command buffer.
+    */
+   gfx_command_writer->pending_barrier_actions |=
+      gfx_command_writer->post_buffer_copy_write_barrier_actions |
+      gfx_command_writer->post_color_image_copy_write_barrier_actions |
+      gfx_command_writer->post_depth_stencil_image_copy_write_barrier_actions;
+
+   /* As barriers are deferred rather than emitted immediately in vkCmdPipelineBarrier, flush them.
+    */
+   terakan_barrier_emit_pending_actions(gfx_command_writer);
+
+   terakan_gfx_command_writer_end_indirect_buffer(gfx_command_writer);
 
    return vk_command_buffer_end(&command_buffer->vk);
 }
@@ -1093,6 +1113,10 @@ terakan_BeginCommandBuffer(VkCommandBuffer const commandBuffer,
 
    gfx_command_writer->pending_barrier_actions = 0;
 
+   gfx_command_writer->post_buffer_copy_write_barrier_actions = 0;
+   gfx_command_writer->post_color_image_copy_write_barrier_actions = 0;
+   gfx_command_writer->post_depth_stencil_image_copy_write_barrier_actions = 0;
+
    terakan_hw_state_draw_reset(&gfx_command_writer->hw_state_draw);
 
    terakan_push_constants_state_reset(&gfx_command_writer->push_constants_state);
@@ -1100,6 +1124,60 @@ terakan_BeginCommandBuffer(VkCommandBuffer const commandBuffer,
    terakan_state_draw_reset(
       &gfx_command_writer->state_draw,
       container_of(command_buffer->vk.pool->base.device, struct terakan_device const, vk));
+
+   /* Section Appendix B: Memory Model "Availability, Visibility, and Domain Operations" of the
+    * Vulkan 1.3.277 specification says:
+    *
+    *     "vkQueueSubmit performs a memory domain operation from host to device, and a visibility
+    *     operation with source scope of the device domain and destination scope of all agents and
+    *     references on the device."
+    *
+    * Make device memory visible to all agents on the device by invalidating all caches.
+    * That's done via the command writer's emission logic, after setting up the initial state
+    * registers, so the setup is not blocked by the waits involved.
+    * This is only necessary for the first command buffer in a submission, but doing that here for
+    * simplicity of submitting.
+    */
+   uint32_t const invalidate_caches_packets[] = {
+      PKT3(PKT3_EVENT_WRITE, 1 - 1, 0),
+      EVENT_TYPE(EVENT_TYPE_CACHE_FLUSH_AND_INV_EVENT) | EVENT_INDEX(0),
+
+      PKT3(PKT3_SURFACE_SYNC, 4 - 1, 0),
+      /* CP_COHER_CNTL and engine (ME). */
+      S_0085F0_CB0_DEST_BASE_ENA(1) | S_0085F0_CB1_DEST_BASE_ENA(1) |
+         S_0085F0_CB2_DEST_BASE_ENA(1) | S_0085F0_CB3_DEST_BASE_ENA(1) |
+         S_0085F0_CB4_DEST_BASE_ENA(1) | S_0085F0_CB5_DEST_BASE_ENA(1) |
+         S_0085F0_CB6_DEST_BASE_ENA(1) | S_0085F0_CB7_DEST_BASE_ENA(1) |
+         S_0085F0_CB8_DEST_BASE_ENA(1) | S_0085F0_CB9_DEST_BASE_ENA(1) |
+         S_0085F0_CB10_DEST_BASE_ENA(1) | S_0085F0_CB11_DEST_BASE_ENA(1) |
+         S_0085F0_DB_DEST_BASE_ENA(1) | S_0085F0_TC_ACTION_ENA(1) |
+         S_0085F0_VC_ACTION_ENA(
+            container_of(gfx_command_writer->base.command_buffer->vk.pool->base.device->physical,
+                         struct terakan_physical_device const, vk)
+               ->chip_family_info.has_vertex_cache) |
+         S_0085F0_CB_ACTION_ENA(1) | S_0085F0_DB_ACTION_ENA(1) | S_0085F0_SH_ACTION_ENA(1) |
+         S_0085F0_SMX_ACTION_ENA(1) | ((uint32_t)1 << 31),
+      /* CP_COHER_SIZE */
+      UINT32_MAX,
+      /* CP_COHER_BASE */
+      0,
+      /* POLL_INTERVAL */
+      10,
+
+      /* Make all prior writes made available by various packets in ME visible to PFP (indirect
+       * arguments, index buffers).
+       */
+      PKT3(PKT3_PFP_SYNC_ME, 0, 0),
+      0,
+   };
+   {
+      uint32_t * const invalidate_cache_packets_ptr = terakan_gfx_command_writer_emit(
+         gfx_command_writer, ARRAY_SIZE(invalidate_caches_packets), 0, 0, false);
+      if (likely(invalidate_cache_packets_ptr != NULL)) {
+         memcpy(invalidate_cache_packets_ptr, invalidate_caches_packets,
+                sizeof(invalidate_caches_packets));
+      }
+   }
 
    return vk_command_buffer_get_record_result(&command_buffer->vk);
 }

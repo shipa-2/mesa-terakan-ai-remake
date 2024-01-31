@@ -68,7 +68,7 @@ struct terakan_device {
 
    /* BO for data that needs to be discarded on the graphics queue:
     * - EVENT_WRITE_EOP fence (4 bytes).
-    * - CP DMA size misalignment (TERAKAN_CP_DMA_COPY_OPTIMAL_ALIGNMENT * 2).
+    * - CP DMA size misalignment and sync (TERAKAN_CP_DMA_COPY_OPTIMAL_ALIGNMENT * 2).
     */
    struct terakan_bo * gfx_discard_bo;
 
