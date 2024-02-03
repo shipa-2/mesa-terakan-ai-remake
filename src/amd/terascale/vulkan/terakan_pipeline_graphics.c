@@ -23,6 +23,7 @@
 
 #include "terakan_pipeline_graphics.h"
 
+#include "meta/terakan_meta.h"
 #include "terakan_bo.h"
 #include "terakan_command_buffer.h"
 #include "terakan_device.h"
@@ -333,6 +334,7 @@ terakan_pipeline_graphics_bind(struct terakan_gfx_command_writer * const command
    command_writer->hw_state_draw.sq_pgm_vs = &vs->static_state;
    terakan_hw_state_draw_written(&command_writer->hw_state_draw,
                                  TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_VS, sq_pgm_vs_modified);
+
    terakan_hw_state_draw_set_sq_constants_needed_by_vs(&command_writer->hw_state_draw, 0,
                                                        vs->resources_needed, vs->samplers_needed,
                                                        VK_SHADER_STAGE_FRAGMENT_BIT);
@@ -357,23 +359,29 @@ terakan_pipeline_graphics_bind(struct terakan_gfx_command_writer * const command
 
    /* Fragment shader. */
 
-   uint8_t color_attachments_written_by_shader;
-   if (pipeline->shader_stages & VK_SHADER_STAGE_FRAGMENT_BIT) {
-      struct terakan_shader_impl const * const fs = &pipeline->shaders[MESA_SHADER_FRAGMENT];
-      bool const sq_pgm_ps_modified = command_writer->hw_state_draw.sq_pgm_ps != &fs->static_state;
-      command_writer->hw_state_draw.sq_pgm_ps = &fs->static_state;
-      terakan_hw_state_draw_written(&command_writer->hw_state_draw,
-                                    TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_PS, sq_pgm_ps_modified);
-      terakan_hw_state_draw_set_sq_constants_needed_by_fs(
-         &command_writer->hw_state_draw, 0, fs->resources_needed, fs->samplers_needed);
-      command_writer->push_constants_state.usage_fragment = fs->push_constants_usage;
-      color_attachments_written_by_shader = fs->fs.fragment_data_uncompacted_locations;
-   } else {
-      terakan_hw_state_draw_set_sq_constants_needed_by_fs(&command_writer->hw_state_draw, 0, NULL,
-                                                          0);
-      command_writer->push_constants_state.usage_fragment = (struct terakan_push_constants_usage){};
-      color_attachments_written_by_shader = 0;
-   }
+   struct terakan_shader_impl const * const fs =
+      pipeline->shader_stages & VK_SHADER_STAGE_FRAGMENT_BIT
+         ? &pipeline->shaders[MESA_SHADER_FRAGMENT]
+         : NULL;
+
+   struct terakan_shader_static const * const sq_pgm_ps =
+      fs != NULL ? &fs->static_state
+                 : &terakan_gfx_command_writer_device(command_writer)
+                       ->meta_shaders[TERAKAN_META_SHADER_EMPTY_OPAQUE_PS];
+   bool const sq_pgm_ps_modified = command_writer->hw_state_draw.sq_pgm_ps != sq_pgm_ps;
+   command_writer->hw_state_draw.sq_pgm_ps = sq_pgm_ps;
+   terakan_hw_state_draw_written(&command_writer->hw_state_draw,
+                                 TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_PS, sq_pgm_ps_modified);
+
+   terakan_hw_state_draw_set_sq_constants_needed_by_fs(&command_writer->hw_state_draw, 0,
+                                                       fs != NULL ? fs->resources_needed : NULL,
+                                                       fs != NULL ? fs->samplers_needed : 0b0);
+
+   command_writer->push_constants_state.usage_fragment =
+      fs != NULL ? fs->push_constants_usage : (struct terakan_push_constants_usage){};
+
+   uint8_t const color_attachments_written_by_shader =
+      fs != NULL ? fs->fs.fragment_data_uncompacted_locations : 0b0;
    if (command_writer->state_draw.color_attachment_usage.written_by_shader !=
        color_attachments_written_by_shader) {
       command_writer->state_draw.color_attachment_usage.written_by_shader =

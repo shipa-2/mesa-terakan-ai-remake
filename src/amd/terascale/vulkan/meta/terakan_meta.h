@@ -63,6 +63,11 @@ struct terakan_meta_shader {
 };
 
 enum terakan_meta_shader_index {
+   /* Exports (0, 0, 0, 1) to MRT 0 (all pixel shaders must perform at least one export).
+    * Can be used as a null shader compatible with alpha to coverage.
+    */
+   TERAKAN_META_SHADER_EMPTY_OPAQUE_PS,
+
    /* Vertex index unpacked as X16Y16 into the position, instance ID into the array layer.
     * Exports the instance ID as an integer in all components of the first parameter.
     */

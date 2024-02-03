@@ -26,10 +26,103 @@
 #include "terakan_command_buffer.h"
 #include "terakan_device.h"
 
+#include "gallium/drivers/r600/eg_sq.h"
+#include "gallium/drivers/r600/evergreend.h"
+#include "gallium/drivers/r600/r600_opcodes.h"
+
 #include <assert.h>
 #include <stdbool.h>
+#include <stdint.h>
+
+static uint32_t terakan_meta_empty_opaque_ps_r8xx[] = {
+   /* 0: Export the color with an alpha of 1 and end the program. */
+
+   S_SQ_CF_ALLOC_EXPORT_WORD0_TYPE(V_SQ_CF_ALLOC_EXPORT_WORD0_SQ_EXPORT_PIXEL) |
+      S_SQ_CF_ALLOC_EXPORT_WORD0_ARRAY_BASE(0),
+   S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_X(V_03000C_SQ_SEL_0) |
+      S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Y(V_03000C_SQ_SEL_0) |
+      S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Z(V_03000C_SQ_SEL_0) |
+      S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_W(V_03000C_SQ_SEL_1) |
+      S_SQ_CF_ALLOC_EXPORT_WORD1_BARRIER(1) | S_SQ_CF_ALLOC_EXPORT_WORD1_END_OF_PROGRAM(1) |
+      EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_EXPORT_DONE,
+};
+
+static uint32_t terakan_meta_empty_opaque_ps_r9xx[] = {
+   /* 0: Export the color with an alpha of 1. */
+
+   S_SQ_CF_ALLOC_EXPORT_WORD0_TYPE(V_SQ_CF_ALLOC_EXPORT_WORD0_SQ_EXPORT_PIXEL) |
+      S_SQ_CF_ALLOC_EXPORT_WORD0_ARRAY_BASE(0),
+   S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_X(V_03000C_SQ_SEL_0) |
+      S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Y(V_03000C_SQ_SEL_0) |
+      S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Z(V_03000C_SQ_SEL_0) |
+      S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_W(V_03000C_SQ_SEL_1) |
+      S_SQ_CF_ALLOC_EXPORT_WORD1_BARRIER(1) | EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_EXPORT_DONE,
+
+   /* 1: End the program. */
+
+   0,
+   S_SQ_CF_ALLOC_EXPORT_WORD1_BARRIER(1) | CM_V_SQ_CF_WORD1_SQ_CF_INST_END,
+};
+
+static struct terakan_meta_shader const terakan_meta_empty_opaque_ps = {
+   .r8xx =
+      {
+         .program = terakan_meta_empty_opaque_ps_r8xx,
+         .program_size_bytes = sizeof(terakan_meta_empty_opaque_ps_r8xx),
+         .static_registers =
+            {
+               .sq_pgm_resources =
+                  {
+                     TERAKAN_META_SQ_PGM_RESOURCES_COMMON,
+                     TERAKAN_META_SQ_PGM_RESOURCES_2_COMMON,
+                  },
+               .stage =
+                  {
+                     .ps =
+                        {
+                           .sq_pgm_exports_ps = S_02884C_EXPORT_COLORS(1),
+                           .spi_ps_in_control =
+                              {
+                                 S_0286CC_NUM_INTERP(1) | S_0286CC_LINEAR_GRADIENT_ENA(1),
+                                 0,
+                              },
+                           .spi_baryc_cntl = S_0286E0_LINEAR_CENTER_ENA(1),
+                           .cb_shader_mask = 0xF,
+                        },
+                  },
+            },
+      },
+   .r9xx =
+      {
+         .program = terakan_meta_empty_opaque_ps_r9xx,
+         .program_size_bytes = sizeof(terakan_meta_empty_opaque_ps_r9xx),
+         .static_registers =
+            {
+               .sq_pgm_resources =
+                  {
+                     TERAKAN_META_SQ_PGM_RESOURCES_COMMON,
+                     TERAKAN_META_SQ_PGM_RESOURCES_2_COMMON,
+                  },
+               .stage =
+                  {
+                     .ps =
+                        {
+                           .sq_pgm_exports_ps = S_02884C_EXPORT_COLORS(1),
+                           .spi_ps_in_control =
+                              {
+                                 S_0286CC_NUM_INTERP(1) | S_0286CC_LINEAR_GRADIENT_ENA(1),
+                                 0,
+                              },
+                           .spi_baryc_cntl = S_0286E0_LINEAR_CENTER_ENA(1),
+                           .cb_shader_mask = 0xF,
+                        },
+                  },
+            },
+      },
+};
 
 struct terakan_meta_shader const * const terakan_meta_shaders[TERAKAN_META_SHADER_COUNT] = {
+   [TERAKAN_META_SHADER_EMPTY_OPAQUE_PS] = &terakan_meta_empty_opaque_ps,
    [TERAKAN_META_SHADER_POSITION_FROM_INDEX_VS] = &terakan_meta_position_from_index_vs,
    [TERAKAN_META_SHADER_CLEAR_COLOR_PS] = &terakan_meta_clear_color_ps,
    [TERAKAN_META_SHADER_COPY_BUFFER_TO_IMAGE_PS] = &terakan_meta_copy_buffer_to_image_ps,
