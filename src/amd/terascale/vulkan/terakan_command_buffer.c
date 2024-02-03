@@ -206,8 +206,7 @@ terakan_command_buffer_allocate_push_constants(struct terakan_command_buffer * c
          return NULL;
       }
 
-      struct terakan_device * const device =
-         container_of(command_buffer->vk.pool->base.device, struct terakan_device, vk);
+      struct terakan_device * const device = terakan_command_buffer_device(command_buffer);
 
       VkResult const bo_allocate_result = device->winsys_fn->bo->allocate_device_memory(
          device, TERAKAN_KCACHE_HW_LINE_BYTES * buffer_size_kcache_lines,
@@ -269,8 +268,7 @@ terakan_command_buffer_new_indirect_buffer(struct terakan_command_buffer * const
 
       indirect_buffer->base.is_secondary_execution = false;
 
-      struct terakan_device const * const device =
-         container_of(command_buffer->vk.pool->base.device, struct terakan_device const, vk);
+      struct terakan_device const * const device = terakan_command_buffer_device(command_buffer);
 
       indirect_buffer->bo_references =
          vk_alloc(&command_pool->vk.alloc,
@@ -436,10 +434,9 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
     * - fglrx indirect buffers
     */
 
-   struct terakan_physical_device const * const physical_device =
-      container_of(command_writer->base.command_buffer->vk.pool->base.device->physical,
-                   struct terakan_physical_device const, vk);
-   bool const is_r9xx = physical_device->chip_family_info.is_r9xx;
+   struct terakan_physical_device_chip_family_info const * const chip_family_info =
+      &terakan_gfx_command_writer_physical_device(command_writer)->chip_family_info;
+   bool const is_r9xx = chip_family_info->is_r9xx;
 
    uint32_t * packet;
 
@@ -779,8 +776,8 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
     * Setup configuration registers common between graphics and compute.
     */
 
-   uint32_t sq_config = S_008C00_VC_ENABLE(physical_device->chip_family_info.has_vertex_cache) |
-                        S_008C00_EXPORT_SRC_C(1);
+   uint32_t sq_config =
+      S_008C00_VC_ENABLE(chip_family_info->has_vertex_cache) | S_008C00_EXPORT_SRC_C(1);
    /* Not raising CS2 priority in SQ_CONFIG on R9xx unlike in Linux Radeon 2.50.0 because it doesn't
     * expose the compute rings at all.
     */
@@ -870,12 +867,10 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
        * Linux Radeon 2.50.0 spreads the non-pixel-shader threads evenly between 6 stages, but aside
        * from the pixel shader there are 5 stages - allocate more.
        */
-      uint32_t const sq_vertex_threads = (physical_device->chip_family_info.sq_max_threads -
-                                          physical_device->chip_family_info.sq_ps_threads_r8xx) /
-                                         5 / 8 * 8;
+      uint32_t const sq_vertex_threads =
+         (chip_family_info->sq_max_threads - chip_family_info->sq_ps_threads_r8xx) / 5 / 8 * 8;
 
-      uint32_t const sq_stage_stack_entries =
-         physical_device->chip_family_info.sq_max_stack_entries / 6;
+      uint32_t const sq_stage_stack_entries = chip_family_info->sq_max_stack_entries / 6;
 
       uint32_t const sq_thread_stack_register_count =
          (R_008C28_SQ_STACK_RESOURCE_MGMT_3 - R_008C18_SQ_THREAD_RESOURCE_MGMT_1) /
@@ -889,7 +884,7 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
       *packet++ = PKT3(PKT3_SET_CONFIG_REG, sq_thread_stack_register_count, 0);
       *packet++ = TERAKAN_CONFIG_REG_OFFSET(R_008C18_SQ_THREAD_RESOURCE_MGMT_1);
       /* R_008C18_SQ_THREAD_RESOURCE_MGMT_1 */
-      *packet++ = S_008C18_NUM_PS_THREADS(physical_device->chip_family_info.sq_ps_threads_r8xx) |
+      *packet++ = S_008C18_NUM_PS_THREADS(chip_family_info->sq_ps_threads_r8xx) |
                   S_008C18_NUM_VS_THREADS(sq_vertex_threads) |
                   S_008C18_NUM_GS_THREADS(sq_vertex_threads) |
                   S_008C18_NUM_ES_THREADS(sq_vertex_threads);
@@ -1041,10 +1036,8 @@ terakan_gfx_command_writer_emit_event_write_eop_discarding_data(
    *packet++ = PKT3(PKT3_NOP, 0, 0);
    *packet++ = terakan_bo_reference_writer_add_reference(
       &command_writer->base.bo_reference_writer,
-      container_of(command_writer->base.command_buffer->vk.pool->base.device,
-                   struct terakan_device const, vk)
-         ->gfx_discard_bo,
-      false, true, TERAKAN_BO_PRIORITY_FENCE_TRACE);
+      terakan_gfx_command_writer_device(command_writer)->gfx_discard_bo, false, true,
+      TERAKAN_BO_PRIORITY_FENCE_TRACE);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
@@ -1121,9 +1114,9 @@ terakan_BeginCommandBuffer(VkCommandBuffer const commandBuffer,
 
    terakan_push_constants_state_reset(&gfx_command_writer->push_constants_state);
 
-   terakan_state_draw_reset(
-      &gfx_command_writer->state_draw,
-      container_of(command_buffer->vk.pool->base.device, struct terakan_device const, vk));
+   struct terakan_device const * const device = terakan_command_buffer_device(command_buffer);
+
+   terakan_state_draw_reset(&gfx_command_writer->state_draw, device);
 
    /* Section Appendix B: Memory Model "Availability, Visibility, and Domain Operations" of the
     * Vulkan 1.3.277 specification says:
@@ -1152,9 +1145,7 @@ terakan_BeginCommandBuffer(VkCommandBuffer const commandBuffer,
          S_0085F0_CB10_DEST_BASE_ENA(1) | S_0085F0_CB11_DEST_BASE_ENA(1) |
          S_0085F0_DB_DEST_BASE_ENA(1) | S_0085F0_TC_ACTION_ENA(1) |
          S_0085F0_VC_ACTION_ENA(
-            container_of(gfx_command_writer->base.command_buffer->vk.pool->base.device->physical,
-                         struct terakan_physical_device const, vk)
-               ->chip_family_info.has_vertex_cache) |
+            terakan_device_physical_device(device)->chip_family_info.has_vertex_cache) |
          S_0085F0_CB_ACTION_ENA(1) | S_0085F0_DB_ACTION_ENA(1) | S_0085F0_SH_ACTION_ENA(1) |
          S_0085F0_SMX_ACTION_ENA(1) | ((uint32_t)1 << 31),
       /* CP_COHER_SIZE */

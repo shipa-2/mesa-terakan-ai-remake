@@ -1295,10 +1295,8 @@ terakan_CmdSetVertexInputEXT(
    uint32_t const bindings_needed_by_attributes_and_provided =
       bindings_needed_by_attributes & bindings_provided;
 
-   struct terakan_device const * const device = container_of(
-      command_writer->base.command_buffer->vk.base.device, struct terakan_device const, vk);
-   bool const is_r9xx = container_of(device->vk.physical, struct terakan_physical_device const, vk)
-                           ->chip_family_info.is_r9xx;
+   struct terakan_device const * const device = terakan_gfx_command_writer_device(command_writer);
+   bool const is_r9xx = terakan_device_physical_device(device)->chip_family_info.is_r9xx;
 
    if (!bindings_needed_by_attributes_and_provided) {
       /* Don't create an empty fetch shader, use the static one instead. */
@@ -1429,9 +1427,7 @@ terakan_CmdBindVertexBuffers2(VkCommandBuffer const commandBuffer, uint32_t cons
             bindings_with_2048_stride_workaround &= ~binding_bit;
          }
       }
-      if (!container_of(command_writer->base.command_buffer->vk.base.device->physical,
-                        struct terakan_physical_device const, vk)
-              ->chip_family_info.is_r9xx) {
+      if (!terakan_gfx_command_writer_physical_device(command_writer)->chip_family_info.is_r9xx) {
          /* If whether the workaround needs to be applied to any currently needed bindings is
           * changed, update the fetch shader.
           */

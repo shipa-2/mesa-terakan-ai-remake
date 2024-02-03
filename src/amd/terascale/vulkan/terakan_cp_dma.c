@@ -58,10 +58,8 @@ terakan_cp_dma_sync_cp_me(struct terakan_gfx_command_writer * const command_writ
    *packet++ = TERAKAN_CP_DMA_COPY_OPTIMAL_ALIGNMENT;
    uint32_t const discard_bo_reference = terakan_bo_reference_writer_add_reference(
       &command_writer->base.bo_reference_writer,
-      container_of(command_writer->base.command_buffer->vk.pool->base.device,
-                   struct terakan_device const, vk)
-         ->gfx_discard_bo,
-      true, true, TERAKAN_BO_PRIORITY_DISCARD);
+      terakan_gfx_command_writer_device(command_writer)->gfx_discard_bo, true, true,
+      TERAKAN_BO_PRIORITY_DISCARD);
    *packet++ = PKT3(PKT3_NOP, 0, 0);
    *packet++ = discard_bo_reference;
    *packet++ = PKT3(PKT3_NOP, 0, 0);
@@ -158,10 +156,8 @@ terakan_cp_dma_copy(struct terakan_gfx_command_writer * const command_writer,
       *packet++ = (uint32_t)(TERAKAN_CP_DMA_COPY_OPTIMAL_ALIGNMENT - size_misalignment);
       uint32_t const discard_bo_reference = terakan_bo_reference_writer_add_reference(
          &command_writer->base.bo_reference_writer,
-         container_of(command_writer->base.command_buffer->vk.pool->base.device,
-                      struct terakan_device const, vk)
-            ->gfx_discard_bo,
-         true, true, TERAKAN_BO_PRIORITY_DISCARD);
+         terakan_gfx_command_writer_device(command_writer)->gfx_discard_bo, true, true,
+         TERAKAN_BO_PRIORITY_DISCARD);
       *packet++ = PKT3(PKT3_NOP, 0, 0);
       *packet++ = discard_bo_reference;
       *packet++ = PKT3(PKT3_NOP, 0, 0);

@@ -48,7 +48,7 @@ terakan_GetMemoryFdPropertiesKHR(VkDevice const deviceHandle,
 {
    struct terakan_device * const device = terakan_device_from_handle(deviceHandle);
    struct terakan_physical_device const * const physical_device =
-      container_of(device->vk.physical, struct terakan_physical_device const, vk);
+      terakan_device_physical_device(device);
 
    if (!(terakan_physical_device_supported_external_memory_types(physical_device) & handleType)) {
       return vk_error(device, VK_ERROR_INVALID_EXTERNAL_HANDLE);
@@ -180,7 +180,7 @@ terakan_AllocateMemory(VkDevice const deviceHandle,
    }
 
    struct terakan_physical_device const * const physical_device =
-      container_of(device->vk.physical, struct terakan_physical_device const, vk);
+      terakan_device_physical_device(device);
 
    /* Storage and uniform buffers in Vulkan require only the offset to be aligned, not the range,
     * but the entire range must be visible to the shader anyway. For the purpose of bounds checking,

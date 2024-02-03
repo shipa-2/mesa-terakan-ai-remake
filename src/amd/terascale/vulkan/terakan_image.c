@@ -105,7 +105,7 @@ terakan_GetDeviceImageMemoryRequirements(VkDevice const deviceHandle,
    }
 
    struct terakan_physical_device const * const physical_device =
-      container_of(device->vk.physical, struct terakan_physical_device const, vk);
+      terakan_device_physical_device(device);
    pMemoryRequirements->memoryRequirements.memoryTypeBits =
       ((uint32_t)1 << physical_device->memory_properties.memoryTypeCount) - 1;
 
@@ -145,9 +145,8 @@ terakan_GetImageMemoryRequirements2(VkDevice const deviceHandle,
    pMemoryRequirements->memoryRequirements.alignment =
       MAX2((VkDeviceSize)1 << image->surface.alignment_log2, sizeof(uint32_t));
 
-   struct terakan_device const * const device = terakan_device_from_handle(deviceHandle);
    struct terakan_physical_device const * const physical_device =
-      container_of(device->vk.physical, struct terakan_physical_device const, vk);
+      terakan_device_physical_device(terakan_device_from_handle(deviceHandle));
    pMemoryRequirements->memoryRequirements.memoryTypeBits =
       ((uint32_t)1 << physical_device->memory_properties.memoryTypeCount) - 1;
 

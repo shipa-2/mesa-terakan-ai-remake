@@ -151,8 +151,8 @@ terakan_barrier_get_src_actions(struct terakan_gfx_command_writer const * const 
    }
 
    if (src_access & (VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT)) {
-      struct terakan_device const * const device = container_of(
-         command_writer->base.command_buffer->vk.base.device, struct terakan_device const, vk);
+      struct terakan_device const * const device =
+         terakan_gfx_command_writer_device(command_writer);
       VkPipelineStageFlags2 const src_rat_stages =
          src_stages & ((device->vk.enabled_features.fragmentStoresAndAtomics
                            ? VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT
@@ -177,8 +177,7 @@ terakan_barrier_get_dst_actions(struct terakan_gfx_command_writer const * const 
                                 VkPipelineStageFlags2 dst_stages, VkAccessFlags2 dst_access,
                                 bool const for_buffer, VkImageAspectFlags const image_aspects)
 {
-   struct terakan_device const * const device = container_of(
-      command_writer->base.command_buffer->vk.base.device, struct terakan_device const, vk);
+   struct terakan_device const * const device = terakan_gfx_command_writer_device(command_writer);
 
    enum terakan_barrier_action_flags actions = 0;
 
@@ -200,8 +199,7 @@ terakan_barrier_get_dst_actions(struct terakan_gfx_command_writer const * const 
    }
 
    if (dst_access & VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT) {
-      actions |= container_of(device->vk.physical, struct terakan_physical_device const, vk)
-                       ->chip_family_info.has_vertex_cache
+      actions |= terakan_device_physical_device(device)->chip_family_info.has_vertex_cache
                     ? TERAKAN_BARRIER_ACTION_INV_VC
                     : TERAKAN_BARRIER_ACTION_INV_TC;
    }

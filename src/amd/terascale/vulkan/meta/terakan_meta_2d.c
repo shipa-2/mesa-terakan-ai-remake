@@ -23,6 +23,7 @@
 
 #include "terakan_meta.h"
 
+#include "terakan_command_buffer.h"
 #include "terakan_device.h"
 #include "terakan_draw.h"
 

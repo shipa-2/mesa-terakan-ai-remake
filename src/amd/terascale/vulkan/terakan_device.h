@@ -33,6 +33,7 @@
 #include "terakan_vertex_input.h"
 
 #include "c11/threads.h"
+#include "util/macros.h"
 #include "ac_surface.h"
 #include "amd_family.h"
 #include "vk_device.h"
@@ -95,6 +96,25 @@ struct terakan_device {
 };
 
 VK_DEFINE_HANDLE_CASTS(terakan_device, vk.base, VkDevice, VK_OBJECT_TYPE_DEVICE)
+
+static inline struct terakan_physical_device *
+terakan_device_physical_device(struct terakan_device const * const device)
+{
+   return container_of(device->vk.physical, struct terakan_physical_device, vk);
+}
+
+#define TERAKAN_DEVICE_DEFINE_OBJECT_SHORTCUTS(object, get_device)                                 \
+   static inline struct terakan_device * terakan_##object##_device(                                \
+      struct terakan_##object const * const object)                                                \
+   {                                                                                               \
+      return (get_device);                                                                         \
+   }                                                                                               \
+                                                                                                   \
+   static inline struct terakan_physical_device * terakan_##object##_physical_device(              \
+      struct terakan_##object const * const object)                                                \
+   {                                                                                               \
+      return terakan_device_physical_device(terakan_##object##_device(object));                    \
+   }
 
 void terakan_device_finish(struct terakan_device * device);
 

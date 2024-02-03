@@ -26,6 +26,7 @@
 
 #include "terakan_barrier.h"
 #include "terakan_bo.h"
+#include "terakan_device.h"
 #include "terakan_hw_state.h"
 #include "terakan_push_constants.h"
 #include "terakan_state.h"
@@ -33,6 +34,7 @@
 #include "gallium/drivers/r600/evergreend.h"
 #include "util/bitset.h"
 #include "util/list.h"
+#include "util/macros.h"
 #include "vk_command_buffer.h"
 #include "vk_command_pool.h"
 
@@ -168,6 +170,9 @@ struct terakan_command_buffer {
 VK_DEFINE_HANDLE_CASTS(terakan_command_buffer, vk.base, VkCommandBuffer,
                        VK_OBJECT_TYPE_COMMAND_BUFFER)
 
+TERAKAN_DEVICE_DEFINE_OBJECT_SHORTCUTS(command_buffer, container_of(command_buffer->vk.base.device,
+                                                                    struct terakan_device, vk))
+
 /* Returns the mapping, or NULL if failed.
  * Can be used not only for push constants, but also for dynamic fetch shaders.
  */
@@ -185,6 +190,9 @@ struct terakan_command_writer {
 
    struct terakan_bo_reference_writer bo_reference_writer;
 };
+
+TERAKAN_DEVICE_DEFINE_OBJECT_SHORTCUTS(
+   command_writer, terakan_command_buffer_device(command_writer->command_buffer))
 
 struct terakan_gfx_command_writer {
    struct terakan_command_writer base;
@@ -210,6 +218,9 @@ struct terakan_gfx_command_writer {
 
    struct terakan_state_draw state_draw;
 };
+
+TERAKAN_DEVICE_DEFINE_OBJECT_SHORTCUTS(gfx_command_writer,
+                                       terakan_command_writer_device(&gfx_command_writer->base))
 
 /* Entry point for emitting packets.
  * Allocates space for `packet_dwords`, and if relocations are needed, `relocation_packet_dwords`,

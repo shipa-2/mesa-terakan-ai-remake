@@ -124,11 +124,9 @@ terakan_state_draw_apply_sq_pgm_fs(struct terakan_gfx_command_writer * const com
       program_start = static_vi->program_start;
    } else {
       /* Dynamically create the fetch shader, allocated alongside push constants. */
-      struct terakan_device const * const device = container_of(
-         command_writer->base.command_buffer->vk.base.device, struct terakan_device const, vk);
-      bool const is_r9xx =
-         container_of(device->vk.physical, struct terakan_physical_device const, vk)
-            ->chip_family_info.is_r9xx;
+      struct terakan_device const * const device =
+         terakan_gfx_command_writer_device(command_writer);
+      bool const is_r9xx = terakan_device_physical_device(device)->chip_family_info.is_r9xx;
       uint32_t fs_alu_qword_count, fs_alu_clause_count, fs_fetch_count;
       uint32_t fs_alu[2 * TERAKAN_VERTEX_INPUT_FS_MAX_ALU_QWORDS];
       uint8_t fs_alu_clause_qwords[TERAKAN_VERTEX_INPUT_FS_MAX_ALU_CLAUSES];
@@ -181,9 +179,8 @@ terakan_state_draw_apply_sq_pgm_fs(struct terakan_gfx_command_writer * const com
 static void
 terakan_state_draw_apply_sq_resources_fs(struct terakan_gfx_command_writer * const command_writer)
 {
-   bool const is_r9xx = container_of(command_writer->base.command_buffer->vk.base.device->physical,
-                                     struct terakan_physical_device const, vk)
-                           ->chip_family_info.is_r9xx;
+   bool const is_r9xx =
+      terakan_gfx_command_writer_physical_device(command_writer)->chip_family_info.is_r9xx;
    uint32_t resource[8] = {
       [3] = S_03000C_DST_SEL_X(V_03000C_SQ_SEL_X) | S_03000C_DST_SEL_Y(V_03000C_SQ_SEL_Y) |
             S_03000C_DST_SEL_Z(V_03000C_SQ_SEL_Z) | S_03000C_DST_SEL_W(V_03000C_SQ_SEL_W),

@@ -60,7 +60,7 @@ terakan_shader_spirv_to_nir(struct terakan_device * const device, size_t const s
                             VkSpecializationInfo const * const specialization_info)
 {
    struct terakan_physical_device const * const physical_device =
-      container_of(device->vk.physical, struct terakan_physical_device const, vk);
+      terakan_device_physical_device(device);
 
    static struct spirv_to_nir_options const spirv_options = {
       .environment = NIR_SPIRV_VULKAN,

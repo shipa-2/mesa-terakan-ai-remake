@@ -25,6 +25,7 @@
 
 #include "terakan_bo.h"
 #include "terakan_buffer.h"
+#include "terakan_command_buffer.h"
 #include "terakan_descriptor.h"
 #include "terakan_entrypoints.h"
 #include "terakan_format.h"

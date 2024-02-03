@@ -331,9 +331,7 @@ terakan_hw_state_draw_emit_pa_cl_gb(struct terakan_gfx_command_writer * const co
     */
    *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 4, 0);
    *packet++ = TERAKAN_CONTEXT_REG_OFFSET(
-      container_of(command_writer->base.command_buffer->vk.base.device->physical,
-                   struct terakan_physical_device const, vk)
-            ->chip_family_info.is_r9xx
+      terakan_gfx_command_writer_physical_device(command_writer)->chip_family_info.is_r9xx
          ? CM_R_028BE8_PA_CL_GB_VERT_CLIP_ADJ
          : R_028C0C_PA_CL_GB_VERT_CLIP_ADJ);
    memcpy(packet, command_writer->hw_state_draw.pa_cl_gb_vert_horz_clip_disc_adj,
@@ -343,9 +341,8 @@ terakan_hw_state_draw_emit_pa_cl_gb(struct terakan_gfx_command_writer * const co
 static void
 terakan_hw_state_draw_emit_pa_sc_aa_samples(struct terakan_gfx_command_writer * const command_writer)
 {
-   bool const is_r9xx = container_of(command_writer->base.command_buffer->vk.base.device->physical,
-                                     struct terakan_physical_device const, vk)
-                           ->chip_family_info.is_r9xx;
+   bool const is_r9xx =
+      terakan_gfx_command_writer_physical_device(command_writer)->chip_family_info.is_r9xx;
 
    uint32_t const num_samples_log2 =
       command_writer->hw_state_draw.pa_sc_aa_samples.num_samples_log2;
@@ -416,9 +413,7 @@ terakan_hw_state_draw_emit_pa_sc_aa_mask(struct terakan_gfx_command_writer * con
    uint32_t aa_mask = command_writer->hw_state_draw.pa_sc_aa_mask;
    aa_mask |= aa_mask << 16;
 
-   if (container_of(command_writer->base.command_buffer->vk.base.device->physical,
-                    struct terakan_physical_device const, vk)
-          ->chip_family_info.is_r9xx) {
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_family_info.is_r9xx) {
       uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 2, 0, 0, true);
       if (unlikely(packet == NULL)) {
          return;

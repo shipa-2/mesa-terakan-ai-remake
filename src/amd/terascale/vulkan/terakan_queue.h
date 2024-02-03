@@ -24,7 +24,6 @@
 #ifndef TERAKAN_QUEUE_H
 #define TERAKAN_QUEUE_H
 
-#include "terakan_command_buffer.h"
 #include "terakan_sync_completion.h"
 
 #include "c11/threads.h"

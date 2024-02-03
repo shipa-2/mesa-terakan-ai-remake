@@ -24,9 +24,10 @@
 #ifndef TERAKAN_META_H
 #define TERAKAN_META_H
 
-#include "terakan_command_buffer.h"
 #include "terakan_descriptor.h"
+#include "terakan_hw_state.h"
 #include "terakan_shader.h"
+#include "terakan_state.h"
 
 #include "gallium/drivers/r600/evergreend.h"
 #include "util/bitset.h"
@@ -80,20 +81,15 @@ extern struct terakan_meta_shader const terakan_meta_copy_buffer_to_image_ps;
 
 extern struct terakan_meta_shader const * const terakan_meta_shaders[TERAKAN_META_SHADER_COUNT];
 
+struct terakan_gfx_command_writer;
+
 void terakan_meta_modify_state_draw_dword(struct terakan_gfx_command_writer * command_writer,
                                           enum terakan_state_draw_index invalidate_state_index,
                                           enum terakan_hw_state_draw_index hw_state_index,
                                           uint32_t * hw_state_item, uint32_t value);
 
-static inline void
-terakan_meta_set_db_render_override(struct terakan_gfx_command_writer * const command_writer,
-                                    uint32_t const db_render_override)
-{
-   terakan_meta_modify_state_draw_dword(command_writer, TERAKAN_STATE_DRAW_INDEX_DB_RENDER_OVERRIDE,
-                                        TERAKAN_HW_STATE_DRAW_INDEX_DB_RENDER_OVERRIDE,
-                                        &command_writer->hw_state_draw.db_render_override,
-                                        db_render_override);
-}
+void terakan_meta_set_db_render_override(struct terakan_gfx_command_writer * command_writer,
+                                         uint32_t db_render_override);
 
 void terakan_meta_set_vs(struct terakan_gfx_command_writer * command_writer,
                          enum terakan_meta_shader_index shader_index);

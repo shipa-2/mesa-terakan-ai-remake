@@ -151,9 +151,8 @@ terakan_GetDeviceBufferMemoryRequirements(VkDevice const deviceHandle,
    }
    pMemoryRequirements->memoryRequirements.alignment = alignment;
 
-   struct terakan_device const * const device = terakan_device_from_handle(deviceHandle);
    struct terakan_physical_device const * const physical_device =
-      container_of(device->vk.physical, struct terakan_physical_device const, vk);
+      terakan_device_physical_device(terakan_device_from_handle(deviceHandle));
    pMemoryRequirements->memoryRequirements.memoryTypeBits =
       ((uint32_t)1 << physical_device->memory_properties.memoryTypeCount) - 1;
 
@@ -311,8 +310,7 @@ terakan_CreateBufferView(VkDevice const deviceHandle,
                 rat_swap != UINT32_MAX) {
                terakan_color_descriptor_calculate_buffer_base_pitch_view_dim(
                   &buffer_view->color, bo_offset, buffer_view->vk.elements, bpe,
-                  container_of(device->vk.physical, struct terakan_physical_device const, vk)
-                     ->tiling_info.pipe_interleave_bytes_log2);
+                  terakan_device_physical_device(device)->tiling_info.pipe_interleave_bytes_log2);
                buffer_view->color.info =
                   S_028C70_FORMAT(rat_format) | S_028C70_ARRAY_MODE(V_028C70_ARRAY_LINEAR_ALIGNED) |
                   S_028C70_NUMBER_TYPE(rat_number_type) | S_028C70_COMP_SWAP(rat_swap) |

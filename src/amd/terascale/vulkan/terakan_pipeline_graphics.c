@@ -436,9 +436,7 @@ terakan_pipeline_graphics_vertex_input_init(struct terakan_pipeline_graphics * c
    if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_VI)) {
       struct terakan_vertex_input_static_state * const fs_state = &pipeline->vertex_input.sq_pgm_fs;
 
-      bool const is_r9xx =
-         container_of(device->vk.physical, struct terakan_physical_device const, vk)
-            ->chip_family_info.is_r9xx;
+      bool const is_r9xx = terakan_device_physical_device(device)->chip_family_info.is_r9xx;
 
       uint32_t const bindings_provided = (uint32_t)state->vi->bindings_valid;
 

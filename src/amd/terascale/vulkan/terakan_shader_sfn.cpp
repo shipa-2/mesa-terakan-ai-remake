@@ -56,8 +56,7 @@ terakan_shader_impl_compile(terakan_shader_impl * const shader, terakan_device *
 {
    VkResult result;
 
-   terakan_physical_device const & physical_device =
-      *container_of(device->vk.physical, terakan_physical_device const, vk);
+   terakan_physical_device const & physical_device = *terakan_device_physical_device(device);
    terakan_physical_device_chip_family_info const & chip_family_info =
       physical_device.chip_family_info;
    amd_gfx_level const gfx_level = chip_family_info.is_r9xx ? CAYMAN : EVERGREEN;

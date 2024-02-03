@@ -23,9 +23,8 @@
 
 #include "terakan_meta.h"
 
+#include "terakan_command_buffer.h"
 #include "terakan_device.h"
-
-#include "util/macros.h"
 
 #include <assert.h>
 #include <stdbool.h>
@@ -49,11 +48,20 @@ terakan_meta_modify_state_draw_dword(struct terakan_gfx_command_writer * const c
 }
 
 void
+terakan_meta_set_db_render_override(struct terakan_gfx_command_writer * const command_writer,
+                                    uint32_t const db_render_override)
+{
+   terakan_meta_modify_state_draw_dword(command_writer, TERAKAN_STATE_DRAW_INDEX_DB_RENDER_OVERRIDE,
+                                        TERAKAN_HW_STATE_DRAW_INDEX_DB_RENDER_OVERRIDE,
+                                        &command_writer->hw_state_draw.db_render_override,
+                                        db_render_override);
+}
+
+void
 terakan_meta_set_vs(struct terakan_gfx_command_writer * const command_writer,
                     enum terakan_meta_shader_index const shader_index)
 {
-   struct terakan_device const * const device = container_of(
-      command_writer->base.command_buffer->vk.base.device, struct terakan_device const, vk);
+   struct terakan_device const * const device = terakan_gfx_command_writer_device(command_writer);
 
    struct terakan_shader_static const * const shader_static = &device->meta_shaders[shader_index];
 
@@ -81,8 +89,7 @@ void
 terakan_meta_set_ps(struct terakan_gfx_command_writer * const command_writer,
                     enum terakan_meta_shader_index const shader_index)
 {
-   struct terakan_device const * const device = container_of(
-      command_writer->base.command_buffer->vk.base.device, struct terakan_device const, vk);
+   struct terakan_device const * const device = terakan_gfx_command_writer_device(command_writer);
 
    struct terakan_shader_static const * const shader_static = &device->meta_shaders[shader_index];
 
