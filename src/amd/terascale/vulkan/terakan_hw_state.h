@@ -153,6 +153,8 @@ enum terakan_hw_state_draw_index {
    /* Set as modified if any state of any viewport is modified. */
    TERAKAN_HW_STATE_DRAW_INDEX_VIEWPORT = TERAKAN_HW_STATE_DRAW_INDEX_SPECIAL_FIRST,
 
+   TERAKAN_HW_STATE_DRAW_INDEX_CB_BLEND_CONTROL,
+
    TERAKAN_HW_STATE_DRAW_INDEX_CB_COLOR,
 
    /* Matching the sequence in terakan_hw_state_draw_sq_constants_needed_stage. */
@@ -273,6 +275,13 @@ struct terakan_hw_state_draw {
    uint32_t viewport_count_ever_written;
    uint16_t viewports_modified;
    struct terakan_hw_state_draw_viewport viewports[TERAKAN_HW_STATE_DRAW_MAX_VIEWPORTS];
+
+   /* TERAKAN_HW_STATE_DRAW_INDEX_CB_BLEND_CONTROL */
+   struct {
+      uint8_t ever_written;
+      uint8_t modified;
+      uint32_t cb_blend_control[TERAKAN_COLOR_HW_MRT_COUNT];
+   } cb_blend_control;
 
    /* TERAKAN_HW_STATE_DRAW_INDEX_CB_COLOR */
    struct {
@@ -430,6 +439,23 @@ terakan_hw_state_draw_viewport_modified(
    BITSET_SET(state->viewports[viewport_index].state_modified, state_index);
    state->viewports_modified |= (uint16_t)1 << viewport_index;
    BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_VIEWPORT);
+}
+
+static inline void
+terakan_hw_state_draw_set_cb_blend_control(struct terakan_hw_state_draw * const state,
+                                           uint32_t const color_index, uint32_t cb_blend_control)
+{
+   bool modified = state->cb_blend_control.cb_blend_control[color_index] != cb_blend_control;
+   state->cb_blend_control.cb_blend_control[color_index] = cb_blend_control;
+   uint8_t const color_bit = (uint8_t)1 << color_index;
+   if (!(state->cb_blend_control.ever_written & color_bit)) {
+      state->cb_blend_control.ever_written |= color_bit;
+      modified = true;
+   }
+   if (modified) {
+      state->cb_blend_control.modified |= color_bit;
+      BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_CB_BLEND_CONTROL);
+   }
 }
 
 static inline void

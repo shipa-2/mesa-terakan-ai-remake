@@ -519,6 +519,9 @@ terakan_state_draw_apply_color_attachment_usage(
    TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_COLOR_MRT, COLOR_ATTACHMENT_USAGE);
    terakan_state_draw_set_pending(&command_writer->state_draw,
                                   TERAKAN_STATE_DRAW_INDEX_CB_COLOR_MRT);
+   TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_BLEND_CONTROL, COLOR_ATTACHMENT_USAGE);
+   terakan_state_draw_set_pending(&command_writer->state_draw,
+                                  TERAKAN_STATE_DRAW_INDEX_CB_BLEND_CONTROL);
 }
 
 static void
@@ -610,6 +613,31 @@ terakan_state_draw_apply_cb_color_mrt(struct terakan_gfx_command_writer * const 
    }
 }
 
+static void
+terakan_state_draw_apply_cb_blend_control(struct terakan_gfx_command_writer * const command_writer)
+{
+   TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_BLEND_CONTROL, COLOR_ATTACHMENT_USAGE);
+   uint8_t const attachments_written_by_shader =
+      command_writer->state_draw.color_attachment_usage.from_apply_sq_pgm_ps.written_by_shader;
+   unsigned attachments_remaining =
+      command_writer->state_draw.color_attachment_usage.bound & attachments_written_by_shader;
+   while (attachments_remaining) {
+      unsigned const attachment_index = (unsigned)u_bit_scan(&attachments_remaining);
+
+      uint32_t cb_blend_control =
+         command_writer->state_draw.attachment_cb_blend_control[attachment_index];
+      if (!G_028780_BLEND_CONTROL_ENABLE(cb_blend_control)) {
+         /* Don't emit setting packets if the bits that have been changed don't matter anyway. */
+         cb_blend_control = 0;
+      }
+
+      terakan_hw_state_draw_set_cb_blend_control(
+         &command_writer->hw_state_draw,
+         util_bitcount(attachments_written_by_shader & ((1u << attachment_index) - 1)),
+         cb_blend_control);
+   }
+}
+
 static terakan_state_draw_apply_function const
    terakan_state_draw_apply_functions[TERAKAN_STATE_DRAW_INDEX_COUNT] = {
       [TERAKAN_STATE_DRAW_INDEX_VGT_INDEX_TYPE] = terakan_state_draw_apply_vgt_index_type,
@@ -638,6 +666,7 @@ static terakan_state_draw_apply_function const
       [TERAKAN_STATE_DRAW_INDEX_CB_TARGET_MASK] = terakan_state_draw_apply_cb_target_mask,
       [TERAKAN_STATE_DRAW_INDEX_CB_COLOR_CONTROL] = terakan_state_draw_apply_cb_color_control,
       [TERAKAN_STATE_DRAW_INDEX_CB_COLOR_MRT] = terakan_state_draw_apply_cb_color_mrt,
+      [TERAKAN_STATE_DRAW_INDEX_CB_BLEND_CONTROL] = terakan_state_draw_apply_cb_blend_control,
 };
 
 void
@@ -775,4 +804,10 @@ terakan_state_draw_reset(struct terakan_state_draw * const state,
     * unsupported features.
     */
    BITSET_ONES(state->state_pending);
+
+   /* blendEnable = VK_FALSE
+    * src/dstColor/AlphaBlendFactor = VK_BLEND_FACTOR_ZERO
+    * color/alphaBlendOp = VK_BLEND_OP_ADD
+    */
+   memset(state->attachment_cb_blend_control, 0, sizeof(state->attachment_cb_blend_control));
 }

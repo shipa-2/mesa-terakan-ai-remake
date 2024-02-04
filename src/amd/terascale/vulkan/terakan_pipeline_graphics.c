@@ -31,9 +31,11 @@
 #include "terakan_pipeline_layout.h"
 #include "terakan_shader.h"
 #include "terakan_state.h"
+#include "terakan_state_color.h"
 #include "terakan_state_input_assembly.h"
 #include "terakan_state_rasterization.h"
 
+#include "gallium/drivers/r600/evergreend.h"
 #include "gallium/drivers/r600/r600_shader_common.h"
 #include "util/bitscan.h"
 #include "util/macros.h"
@@ -279,6 +281,69 @@ terakan_pipeline_graphics_apply_pa_sc_aa_mask(
                                   TERAKAN_STATE_DRAW_INDEX_PA_SC_AA_MASK);
 }
 
+static void
+terakan_pipeline_graphics_apply_cb_blend_rgba(
+   struct terakan_gfx_command_writer * const command_writer,
+   struct terakan_pipeline_graphics const * const pipeline,
+   UNUSED enum terakan_pipeline_graphics_state_index const state_index)
+{
+   /* The blend constant is not needed by internal draws, modify hw_state_draw directly. */
+   bool const modified = memcmp(command_writer->hw_state_draw.cb_blend_rgba,
+                                pipeline->fragment_output.cb_blend_rgba, sizeof(float) * 4) != 0;
+   memcpy(command_writer->hw_state_draw.cb_blend_rgba, pipeline->fragment_output.cb_blend_rgba,
+          sizeof(float) * 4);
+   terakan_hw_state_draw_written(&command_writer->hw_state_draw,
+                                 TERAKAN_HW_STATE_DRAW_INDEX_CB_BLEND_RGBA, modified);
+}
+
+static void
+terakan_pipeline_graphics_apply_cb_blend_control_enable(
+   struct terakan_gfx_command_writer * const command_writer,
+   struct terakan_pipeline_graphics const * const pipeline,
+   UNUSED enum terakan_pipeline_graphics_state_index const state_index)
+{
+   for (uint32_t attachment_index = 0;
+        attachment_index < pipeline->fragment_output.color_blend_attachment_count;
+        ++attachment_index) {
+      uint32_t * const cb_blend_control_ptr =
+         &command_writer->state_draw.attachment_cb_blend_control[attachment_index];
+      bool const attachment_enable = G_028780_BLEND_CONTROL_ENABLE(
+         pipeline->fragment_output.cb_blend_control[attachment_index]);
+      if (G_028780_BLEND_CONTROL_ENABLE(*cb_blend_control_ptr) != attachment_enable) {
+         *cb_blend_control_ptr = (*cb_blend_control_ptr & C_028780_BLEND_CONTROL_ENABLE) |
+                                 S_028780_BLEND_CONTROL_ENABLE(attachment_enable);
+         terakan_state_draw_set_pending(&command_writer->state_draw,
+                                        TERAKAN_STATE_DRAW_INDEX_CB_BLEND_CONTROL);
+      }
+   }
+}
+
+static void
+terakan_pipeline_graphics_apply_cb_blend_control_equation(
+   struct terakan_gfx_command_writer * const command_writer,
+   struct terakan_pipeline_graphics const * const pipeline,
+   UNUSED enum terakan_pipeline_graphics_state_index const state_index)
+{
+   for (uint32_t attachment_index = 0;
+        attachment_index < pipeline->fragment_output.color_blend_attachment_count;
+        ++attachment_index) {
+      uint32_t * const cb_blend_control_ptr =
+         &command_writer->state_draw.attachment_cb_blend_control[attachment_index];
+      bool const attachment_enable = G_028780_BLEND_CONTROL_ENABLE(*cb_blend_control_ptr);
+      uint32_t const cb_blend_control =
+         S_028780_BLEND_CONTROL_ENABLE(attachment_enable) |
+         (pipeline->fragment_output.cb_blend_control[attachment_index] &
+          C_028780_BLEND_CONTROL_ENABLE);
+      if (*cb_blend_control_ptr != cb_blend_control) {
+         *cb_blend_control_ptr = cb_blend_control;
+         if (attachment_enable) {
+            terakan_state_draw_set_pending(&command_writer->state_draw,
+                                           TERAKAN_STATE_DRAW_INDEX_CB_BLEND_CONTROL);
+         }
+      }
+   }
+}
+
 static terakan_pipeline_graphics_apply_state_function const
    terakan_pipeline_graphics_apply_state_functions[TERAKAN_PIPELINE_GRAPHICS_STATE_COUNT] = {
       [TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SC_VPORT_Z_MIN_0_MAX_1] =
@@ -303,6 +368,12 @@ static terakan_pipeline_graphics_apply_state_function const
          terakan_pipeline_graphics_apply_db_render_override_pre_rasterization,
       [TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SC_AA_MASK] =
          terakan_pipeline_graphics_apply_pa_sc_aa_mask,
+      [TERAKAN_PIPELINE_GRAPHICS_STATE_CB_BLEND_RGBA] =
+         terakan_pipeline_graphics_apply_cb_blend_rgba,
+      [TERAKAN_PIPELINE_GRAPHICS_STATE_CB_BLEND_CONTROL_ENABLE] =
+         terakan_pipeline_graphics_apply_cb_blend_control_enable,
+      [TERAKAN_PIPELINE_GRAPHICS_STATE_CB_BLEND_CONTROL_EQUATION] =
+         terakan_pipeline_graphics_apply_cb_blend_control_equation,
 };
 
 void
@@ -672,6 +743,72 @@ terakan_pipeline_graphics_multisample_init(struct terakan_pipeline_graphics * co
    }
 }
 
+static void
+terakan_pipeline_graphics_fragment_output_init(struct terakan_pipeline_graphics * const pipeline,
+                                               struct vk_graphics_pipeline_state const * const state)
+{
+   /* TERAKAN_PIPELINE_GRAPHICS_STATE_CB_BLEND_RGBA */
+   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_BLEND_CONSTANTS)) {
+      memcpy(pipeline->fragment_output.cb_blend_rgba, state->cb->blend_constants,
+             sizeof(float) * 4);
+      BITSET_SET(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_CB_BLEND_RGBA);
+   }
+
+   /* Must be ignored if all states using it are dynamic, don't insert assertions unless it's
+    * actually used.
+    */
+   pipeline->fragment_output.color_blend_attachment_count = state->cb->attachment_count;
+
+   memset(pipeline->fragment_output.cb_blend_control, 0,
+          sizeof(pipeline->fragment_output.cb_blend_control));
+
+   /* TERAKAN_PIPELINE_GRAPHICS_STATE_CB_BLEND_CONTROL_ENABLE */
+   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_BLEND_ENABLES)) {
+      for (uint32_t attachment_index = 0;
+           attachment_index < pipeline->fragment_output.color_blend_attachment_count;
+           ++attachment_index) {
+         pipeline->fragment_output.cb_blend_control[attachment_index] |=
+            S_028780_BLEND_CONTROL_ENABLE(state->cb->attachments[attachment_index].blend_enable);
+      }
+      BITSET_SET(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_CB_BLEND_CONTROL_ENABLE);
+   }
+
+   /* TERAKAN_PIPELINE_GRAPHICS_STATE_CB_BLEND_CONTROL_EQUATION */
+   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_BLEND_EQUATIONS)) {
+      for (uint32_t attachment_index = 0;
+           attachment_index < pipeline->fragment_output.color_blend_attachment_count;
+           ++attachment_index) {
+         struct vk_color_blend_attachment_state const * const attachment =
+            &state->cb->attachments[attachment_index];
+         bool const allow_dual_source = attachment_index == 0;
+         /* According to VkPipelineColorBlendAttachmentState VUIDs, all factors and operations must
+          * be valid values regardless of blendEnable, so there's no need to handle blendEnable
+          * being static here.
+          */
+         pipeline->fragment_output.cb_blend_control[attachment_index] |=
+            S_028780_COLOR_SRCBLEND(terakan_state_draw_blend_factor_translate(
+               attachment->src_color_blend_factor, allow_dual_source)) |
+            S_028780_COLOR_DESTBLEND(terakan_state_draw_blend_factor_translate(
+               attachment->dst_color_blend_factor, allow_dual_source)) |
+            S_028780_COLOR_COMB_FCN(
+               terakan_state_draw_blend_op_translate(attachment->color_blend_op));
+         if (attachment->src_alpha_blend_factor != attachment->src_color_blend_factor ||
+             attachment->dst_alpha_blend_factor != attachment->dst_color_blend_factor ||
+             attachment->alpha_blend_op != attachment->color_blend_op) {
+            pipeline->fragment_output.cb_blend_control[attachment_index] |=
+               S_028780_SEPARATE_ALPHA_BLEND(1) |
+               S_028780_ALPHA_SRCBLEND(terakan_state_draw_blend_factor_translate(
+                  attachment->src_alpha_blend_factor, allow_dual_source)) |
+               S_028780_ALPHA_DESTBLEND(terakan_state_draw_blend_factor_translate(
+                  attachment->dst_alpha_blend_factor, allow_dual_source)) |
+               S_028780_ALPHA_COMB_FCN(
+                  terakan_state_draw_blend_op_translate(attachment->alpha_blend_op));
+         }
+      }
+      BITSET_SET(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_CB_BLEND_CONTROL_EQUATION);
+   }
+}
+
 static VkResult
 terakan_pipeline_graphics_create(struct terakan_device * const device,
                                  VkGraphicsPipelineCreateInfo const * const create_info,
@@ -773,6 +910,7 @@ terakan_pipeline_graphics_create(struct terakan_device * const device,
    terakan_pipeline_graphics_pre_rasterization_init(
       pipeline, &state, device->vk.enabled_extensions.EXT_depth_range_unrestricted);
    terakan_pipeline_graphics_multisample_init(pipeline, &state);
+   terakan_pipeline_graphics_fragment_output_init(pipeline, &state);
 
    *pipeline_out = pipeline;
    return VK_SUCCESS;

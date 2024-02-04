@@ -399,7 +399,7 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
    terakan_meta_set_vs(command_writer, TERAKAN_META_SHADER_POSITION_FROM_INDEX_VS);
    terakan_meta_set_ps(command_writer, TERAKAN_META_SHADER_COPY_BUFFER_TO_IMAGE_PS);
 
-   terakan_meta_begin_cb(command_writer, 0b1111, V_028808_CB_NORMAL);
+   terakan_meta_begin_cb_no_blend(command_writer, 0b1111, V_028808_CB_NORMAL);
 
    command_writer->push_constants_state.up_to_date_push_constants_bound_to_stages &=
       ~VK_SHADER_STAGE_FRAGMENT_BIT;

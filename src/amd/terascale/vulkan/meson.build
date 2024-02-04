@@ -97,6 +97,7 @@ libterakan_files = files(
   'terakan_state.c',
   'terakan_state.h',
   'terakan_state_color.c',
+  'terakan_state_color.h',
   'terakan_state_input_assembly.c',
   'terakan_state_input_assembly.h',
   'terakan_state_multisample.c',

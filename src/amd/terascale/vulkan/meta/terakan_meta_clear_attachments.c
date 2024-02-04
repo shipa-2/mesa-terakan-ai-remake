@@ -269,7 +269,7 @@ terakan_CmdClearAttachments(VkCommandBuffer const commandBuffer, uint32_t const 
             push_constants_bo, push_constants_base);
       }
 
-      terakan_meta_begin_cb(command_writer, 0b1111, V_028808_CB_NORMAL);
+      terakan_meta_begin_cb_no_blend(command_writer, 0b1111, V_028808_CB_NORMAL);
 
       struct terakan_state_draw_cb_color const * const attachment_cb_color =
          &command_writer->state_draw.attachment_cb_color[attachment->colorAttachment];

@@ -559,6 +559,34 @@ terakan_hw_state_draw_emit_viewport(struct terakan_gfx_command_writer * const co
 }
 
 static void
+terakan_hw_state_draw_emit_cb_blend_control(struct terakan_gfx_command_writer * const command_writer)
+{
+   struct terakan_hw_state_draw * const state = &command_writer->hw_state_draw;
+
+   assert(!(state->cb_blend_control.modified & ~state->cb_blend_control.ever_written));
+   while (state->cb_blend_control.modified) {
+      uint32_t const range_start = (uint32_t)ffs((int)state->cb_blend_control.modified) - 1;
+      uint32_t const range_end =
+         (uint32_t)ffs((int)(~state->cb_blend_control.modified & BITFIELD_MASK(range_start)) |
+                       (1 << TERAKAN_COLOR_HW_MRT_COUNT)) -
+         1;
+      uint32_t const range_length = range_end - range_start;
+
+      uint32_t * packet =
+         terakan_gfx_command_writer_emit(command_writer, 2 + range_length, 0, 0, true);
+      if (unlikely(packet == NULL)) {
+         return;
+      }
+      *packet++ = PKT3(PKT3_SET_CONTEXT_REG, range_length, 0);
+      *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028780_CB_BLEND0_CONTROL) + range_start;
+      memcpy(packet, &state->cb_blend_control.cb_blend_control[range_start],
+             sizeof(uint32_t) * range_length);
+
+      state->cb_blend_control.modified &= (uint8_t)~BITFIELD_RANGE(range_start, range_length);
+   }
+}
+
+static void
 terakan_hw_state_draw_emit_cb_color(struct terakan_gfx_command_writer * const command_writer)
 {
    struct terakan_hw_state_draw * const state = &command_writer->hw_state_draw;
@@ -1598,6 +1626,7 @@ static terakan_hw_state_draw_emit_function const
       [TERAKAN_HW_STATE_DRAW_INDEX_CB_BLEND_RGBA] = terakan_hw_state_draw_emit_cb_blend_rgba,
       [TERAKAN_HW_STATE_DRAW_INDEX_CB_COLOR_CONTROL] = terakan_hw_state_draw_emit_cb_color_control,
       [TERAKAN_HW_STATE_DRAW_INDEX_VIEWPORT] = terakan_hw_state_draw_emit_viewport,
+      [TERAKAN_HW_STATE_DRAW_INDEX_CB_BLEND_CONTROL] = terakan_hw_state_draw_emit_cb_blend_control,
       [TERAKAN_HW_STATE_DRAW_INDEX_CB_COLOR] = terakan_hw_state_draw_emit_cb_color,
       [TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_VS] = terakan_hw_state_draw_emit_sq_kcache_vs,
       [TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_TCS] = terakan_hw_state_draw_emit_sq_kcache_tcs,
@@ -2293,6 +2322,13 @@ terakan_hw_state_draw_reset(struct terakan_hw_state_draw * const state)
    state->viewports_modified = 0;
    /* For simplicity, consider the viewport state always valid (starting from 0 viewports). */
    BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_INDEX_VIEWPORT);
+
+   state->cb_blend_control.ever_written = 0;
+   state->cb_blend_control.modified = 0;
+   /* For simplicity, consider the blend control state always valid (starting from no color targets
+    * ever having configured blending).
+    */
+   BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_INDEX_CB_BLEND_CONTROL);
 
    state->cb_color.ever_written = 0;
    state->cb_color.modified = 0;

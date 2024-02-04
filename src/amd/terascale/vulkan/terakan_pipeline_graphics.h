@@ -87,7 +87,19 @@ enum terakan_pipeline_graphics_state_index {
 
    TERAKAN_PIPELINE_GRAPHICS_STATE_MULTISAMPLE_END,
 
-   TERAKAN_PIPELINE_GRAPHICS_STATE_COUNT = TERAKAN_PIPELINE_GRAPHICS_STATE_MULTISAMPLE_END,
+   /* Fragment output. */
+
+   TERAKAN_PIPELINE_GRAPHICS_STATE_FRAGMENT_OUTPUT_START =
+      TERAKAN_PIPELINE_GRAPHICS_STATE_MULTISAMPLE_END,
+
+   TERAKAN_PIPELINE_GRAPHICS_STATE_CB_BLEND_RGBA,
+
+   TERAKAN_PIPELINE_GRAPHICS_STATE_CB_BLEND_CONTROL_ENABLE,
+   TERAKAN_PIPELINE_GRAPHICS_STATE_CB_BLEND_CONTROL_EQUATION,
+
+   TERAKAN_PIPELINE_GRAPHICS_STATE_FRAGMENT_OUTPUT_END,
+
+   TERAKAN_PIPELINE_GRAPHICS_STATE_COUNT = TERAKAN_PIPELINE_GRAPHICS_STATE_FRAGMENT_OUTPUT_END,
 };
 
 struct terakan_pipeline_graphics_vertex_input {
@@ -144,6 +156,21 @@ struct terakan_pipeline_graphics_multisample {
    uint16_t pa_sc_aa_mask;
 };
 
+struct terakan_pipeline_graphics_fragment_output {
+   /* TERAKAN_PIPELINE_GRAPHICS_STATE_CB_BLEND_RGBA */
+   float cb_blend_rgba[4];
+
+   /* TERAKAN_PIPELINE_GRAPHICS_STATE_CB_BLEND_CONTROL_ENABLE,
+    * TERAKAN_PIPELINE_GRAPHICS_STATE_CB_BLEND_CONTROL_EQUATION
+    */
+   uint32_t color_blend_attachment_count;
+
+   /* TERAKAN_PIPELINE_GRAPHICS_STATE_CB_BLEND_CONTROL_ENABLE: BLEND_CONTROL_ENABLE
+    * TERAKAN_PIPELINE_GRAPHICS_STATE_CB_BLEND_CONTROL_EQUATION: all other fields
+    */
+   uint32_t cb_blend_control[TERAKAN_COLOR_HW_MRT_COUNT];
+};
+
 struct terakan_pipeline_graphics {
    struct terakan_pipeline base;
 
@@ -166,6 +193,8 @@ struct terakan_pipeline_graphics {
     * and of the fragment output state.
     */
    struct terakan_pipeline_graphics_multisample multisample;
+
+   struct terakan_pipeline_graphics_fragment_output fragment_output;
 };
 
 void terakan_pipeline_graphics_bind(struct terakan_gfx_command_writer * command_writer,

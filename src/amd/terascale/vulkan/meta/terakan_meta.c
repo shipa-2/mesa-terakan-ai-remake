@@ -212,8 +212,8 @@ terakan_meta_set_ps(struct terakan_gfx_command_writer * const command_writer,
 }
 
 void
-terakan_meta_begin_cb(struct terakan_gfx_command_writer * const command_writer,
-                      uint32_t const cb_target_mask, uint32_t const cb_color_control_mode)
+terakan_meta_begin_cb_no_blend(struct terakan_gfx_command_writer * const command_writer,
+                               uint32_t const cb_target_mask, uint32_t const cb_color_control_mode)
 {
    terakan_meta_modify_state_draw_dword(command_writer, TERAKAN_STATE_DRAW_INDEX_CB_TARGET_MASK,
                                         TERAKAN_HW_STATE_DRAW_INDEX_CB_TARGET_MASK,
@@ -223,6 +223,19 @@ terakan_meta_begin_cb(struct terakan_gfx_command_writer * const command_writer,
       /* Going to bind color targets for this meta draw. */
       terakan_state_draw_set_pending(&command_writer->state_draw,
                                      TERAKAN_STATE_DRAW_INDEX_CB_COLOR_MRT);
+
+      /* Disable blending. */
+      terakan_state_draw_set_pending(&command_writer->state_draw,
+                                     TERAKAN_STATE_DRAW_INDEX_CB_BLEND_CONTROL);
+      {
+         unsigned remaining_target_mask = (unsigned)cb_target_mask;
+         while (remaining_target_mask) {
+            int const target_index = (ffs((int)remaining_target_mask) - 1) / 4;
+            remaining_target_mask &= ~(0b1111u << (4 * target_index));
+            terakan_hw_state_draw_set_cb_blend_control(&command_writer->hw_state_draw, target_index,
+                                                       0);
+         }
+      }
    }
    terakan_meta_modify_state_draw_dword(
       command_writer, TERAKAN_STATE_DRAW_INDEX_CB_COLOR_CONTROL,

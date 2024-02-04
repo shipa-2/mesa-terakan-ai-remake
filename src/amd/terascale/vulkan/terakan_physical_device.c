@@ -210,7 +210,7 @@ terakan_physical_device_get_capabilities(
    features_out->robustBufferAccess = true;
    features_out->fullDrawIndexUint32 = true;
    features_out->imageCubeArray = true;
-   /* TODO(Triang3l): independentBlend. */
+   features_out->independentBlend = true;
    /* TODO(Triang3l): geometryShader. */
    /* TODO(Triang3l): tessellationShader. */
    /* TODO(Triang3l): sampleRateShading. */
@@ -550,6 +550,8 @@ terakan_physical_device_get_capabilities(
    features_out->extendedDynamicState3DepthClampEnable = true;
    features_out->extendedDynamicState3PolygonMode = true;
    features_out->extendedDynamicState3SampleMask = true;
+   features_out->extendedDynamicState3ColorBlendEnable = true;
+   features_out->extendedDynamicState3ColorBlendEquation = true;
    features_out->extendedDynamicState3ProvokingVertexMode = true;
    features_out->extendedDynamicState3DepthClipEnable = true;
    features_out->extendedDynamicState3DepthClipNegativeOneToOne = true;

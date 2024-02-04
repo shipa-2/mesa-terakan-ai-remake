@@ -21,14 +21,130 @@
  * IN THE SOFTWARE.
  */
 
+#include "terakan_state_color.h"
+
 #include "terakan_command_buffer.h"
 #include "terakan_entrypoints.h"
-#include "terakan_hw_state.h"
 
+#include "gallium/drivers/r600/evergreend.h"
 #include "util/macros.h"
 
+#include <assert.h>
 #include <stdbool.h>
 #include <string.h>
+
+VKAPI_ATTR void VKAPI_CALL
+terakan_CmdSetColorBlendEnableEXT(VkCommandBuffer const commandBuffer,
+                                  uint32_t const firstAttachment, uint32_t const attachmentCount,
+                                  VkBool32 const * const pColorBlendEnables)
+{
+   struct terakan_state_draw * const state =
+      &terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx->state_draw;
+   for (uint32_t attachment_relative_index = 0; attachment_relative_index < attachmentCount;
+        ++attachment_relative_index) {
+      uint32_t const attachment_index = firstAttachment + attachment_relative_index;
+      assert(attachment_index < ARRAY_SIZE(state->attachment_cb_blend_control));
+      uint32_t * const cb_blend_control_ptr = &state->attachment_cb_blend_control[attachment_index];
+      bool const attachment_enable = pColorBlendEnables[attachment_relative_index] != VK_FALSE;
+      if (G_028780_BLEND_CONTROL_ENABLE(*cb_blend_control_ptr) != attachment_enable) {
+         *cb_blend_control_ptr = (*cb_blend_control_ptr & C_028780_BLEND_CONTROL_ENABLE) |
+                                 S_028780_BLEND_CONTROL_ENABLE(attachment_enable);
+         terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_INDEX_CB_BLEND_CONTROL);
+      }
+   }
+}
+
+uint32_t
+terakan_state_draw_blend_factor_translate(VkBlendFactor const blend_factor,
+                                          bool const allow_dual_source)
+{
+   switch (blend_factor) {
+   case VK_BLEND_FACTOR_ZERO:
+      return V_028780_BLEND_ZERO;
+   case VK_BLEND_FACTOR_ONE:
+      return V_028780_BLEND_ONE;
+   case VK_BLEND_FACTOR_SRC_COLOR:
+      return V_028780_BLEND_SRC_COLOR;
+   case VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR:
+      return V_028780_BLEND_ONE_MINUS_SRC_COLOR;
+   case VK_BLEND_FACTOR_DST_COLOR:
+      return V_028780_BLEND_DST_COLOR;
+   case VK_BLEND_FACTOR_ONE_MINUS_DST_COLOR:
+      return V_028780_BLEND_ONE_MINUS_DST_COLOR;
+   case VK_BLEND_FACTOR_SRC_ALPHA:
+      return V_028780_BLEND_SRC_ALPHA;
+   case VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA:
+      return V_028780_BLEND_ONE_MINUS_SRC_ALPHA;
+   case VK_BLEND_FACTOR_DST_ALPHA:
+      return V_028780_BLEND_DST_ALPHA;
+   case VK_BLEND_FACTOR_ONE_MINUS_DST_ALPHA:
+      return V_028780_BLEND_ONE_MINUS_DST_ALPHA;
+   case VK_BLEND_FACTOR_CONSTANT_COLOR:
+      return V_028780_BLEND_CONST_COLOR;
+   case VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR:
+      return V_028780_BLEND_ONE_MINUS_CONST_COLOR;
+   case VK_BLEND_FACTOR_CONSTANT_ALPHA:
+      return V_028780_BLEND_CONST_ALPHA;
+   case VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA:
+      return V_028780_BLEND_ONE_MINUS_CONST_ALPHA;
+   case VK_BLEND_FACTOR_SRC_ALPHA_SATURATE:
+      return V_028780_BLEND_SRC_ALPHA_SATURATE;
+   case VK_BLEND_FACTOR_SRC1_COLOR:
+      return allow_dual_source ? V_028780_BLEND_SRC1_COLOR : V_028780_BLEND_ZERO;
+   case VK_BLEND_FACTOR_ONE_MINUS_SRC1_COLOR:
+      return allow_dual_source ? V_028780_BLEND_INV_SRC1_COLOR : V_028780_BLEND_ZERO;
+   case VK_BLEND_FACTOR_SRC1_ALPHA:
+      return allow_dual_source ? V_028780_BLEND_SRC1_ALPHA : V_028780_BLEND_ZERO;
+   case VK_BLEND_FACTOR_ONE_MINUS_SRC1_ALPHA:
+      return allow_dual_source ? V_028780_BLEND_INV_SRC1_ALPHA : V_028780_BLEND_ZERO;
+   default:
+      assert(!"Unsupported blend factor");
+      return V_028780_BLEND_ZERO;
+   }
+}
+
+VKAPI_ATTR void VKAPI_CALL
+terakan_CmdSetColorBlendEquationEXT(VkCommandBuffer const commandBuffer,
+                                    uint32_t const firstAttachment, uint32_t const attachmentCount,
+                                    VkColorBlendEquationEXT const * const pColorBlendEquations)
+{
+   struct terakan_state_draw * const state =
+      &terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx->state_draw;
+   for (uint32_t attachment_relative_index = 0; attachment_relative_index < attachmentCount;
+        ++attachment_relative_index) {
+      uint32_t const attachment_index = firstAttachment + attachment_relative_index;
+      assert(attachment_index < ARRAY_SIZE(state->attachment_cb_blend_control));
+      uint32_t * const cb_blend_control_ptr = &state->attachment_cb_blend_control[attachment_index];
+      bool const attachment_enable = G_028780_BLEND_CONTROL_ENABLE(*cb_blend_control_ptr);
+      VkColorBlendEquationEXT const * const equation =
+         &pColorBlendEquations[attachment_relative_index];
+      bool const allow_dual_source = attachment_index == 0;
+      uint32_t cb_blend_control =
+         S_028780_BLEND_CONTROL_ENABLE(attachment_enable) |
+         S_028780_COLOR_SRCBLEND(terakan_state_draw_blend_factor_translate(
+            equation->srcColorBlendFactor, allow_dual_source)) |
+         S_028780_COLOR_DESTBLEND(terakan_state_draw_blend_factor_translate(
+            equation->dstColorBlendFactor, allow_dual_source)) |
+         S_028780_COLOR_COMB_FCN(terakan_state_draw_blend_op_translate(equation->colorBlendOp));
+      if (equation->srcAlphaBlendFactor != equation->srcColorBlendFactor ||
+          equation->dstAlphaBlendFactor != equation->dstColorBlendFactor ||
+          equation->alphaBlendOp != equation->colorBlendOp) {
+         cb_blend_control |=
+            S_028780_SEPARATE_ALPHA_BLEND(1) |
+            S_028780_ALPHA_SRCBLEND(terakan_state_draw_blend_factor_translate(
+               equation->srcAlphaBlendFactor, allow_dual_source)) |
+            S_028780_ALPHA_DESTBLEND(terakan_state_draw_blend_factor_translate(
+               equation->dstAlphaBlendFactor, allow_dual_source)) |
+            S_028780_ALPHA_COMB_FCN(terakan_state_draw_blend_op_translate(equation->alphaBlendOp));
+      }
+      if (*cb_blend_control_ptr != cb_blend_control) {
+         *cb_blend_control_ptr = cb_blend_control;
+         if (attachment_enable) {
+            terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_INDEX_CB_BLEND_CONTROL);
+         }
+      }
+   }
+}
 
 VKAPI_ATTR void VKAPI_CALL
 terakan_CmdSetBlendConstants(VkCommandBuffer const commandBuffer, float const blendConstants[4])

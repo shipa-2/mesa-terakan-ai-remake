@@ -92,6 +92,8 @@ enum terakan_state_draw_index {
    TERAKAN_STATE_DRAW_INDEX_CB_COLOR_CONTROL,
    /* Depends on TERAKAN_STATE_DRAW_INDEX_COLOR_ATTACHMENT_USAGE. */
    TERAKAN_STATE_DRAW_INDEX_CB_COLOR_MRT,
+   /* Depends on TERAKAN_STATE_DRAW_INDEX_COLOR_ATTACHMENT_USAGE. */
+   TERAKAN_STATE_DRAW_INDEX_CB_BLEND_CONTROL,
 
    TERAKAN_STATE_DRAW_INDEX_COUNT,
 };
@@ -273,6 +275,14 @@ struct terakan_state_draw {
     * view must be excluded from color_attachments_bound, and various invalid bindings also may be.
     */
    struct terakan_state_draw_cb_color attachment_cb_color[TERAKAN_COLOR_HW_MRT_COUNT];
+
+   /* TERAKAN_STATE_DRAW_INDEX_CB_BLEND_CONTROL
+    * The CB_BLEND#_CONTROL register values stored here are directly the application's values for
+    * VK_DYNAMIC_STATE_COLOR_BLEND_ENABLE_EXT (BLEND_CONTROL_ENABLE) and
+    * VK_DYNAMIC_STATE_COLOR_BLEND_EQUATION_EXT (all other fields). Any needed overrides are
+    * resolved when applying, without modifying the stored values.
+    */
+   uint32_t attachment_cb_blend_control[TERAKAN_COLOR_HW_MRT_COUNT];
 };
 
 static inline void
