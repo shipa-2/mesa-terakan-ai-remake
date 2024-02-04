@@ -98,6 +98,60 @@ terakan_state_draw_apply_vgt_index_offset(struct terakan_gfx_command_writer * co
 }
 
 static void
+terakan_state_draw_apply_sq_pgm_ls_es_gs_vs(struct terakan_gfx_command_writer * const command_writer)
+{
+   struct terakan_state_draw * const state = &command_writer->state_draw;
+
+   command_writer->push_constants_state.graphics_stages_using_push_constants &=
+      ~(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT |
+        VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT | VK_SHADER_STAGE_GEOMETRY_BIT);
+   command_writer->push_constants_state.usage_pre_rasterization =
+      (struct terakan_push_constants_usage){};
+
+   /* Vertex shader. */
+
+   struct terakan_shader_impl const * const vs = state->sq_pgm_ls_es_gs_vs.vs_as_vs;
+   assert(vs != NULL);
+   if (likely(vs != NULL)) {
+      bool const vs_static_modified = command_writer->hw_state_draw.sq_pgm_vs != &vs->static_state;
+      command_writer->hw_state_draw.sq_pgm_vs = &vs->static_state;
+      terakan_hw_state_draw_written(&command_writer->hw_state_draw,
+                                    TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_VS, vs_static_modified);
+
+      terakan_hw_state_draw_set_sq_constants_needed_by_vs(&command_writer->hw_state_draw, 0,
+                                                          vs->resources_needed, vs->samplers_needed,
+                                                          VK_SHADER_STAGE_FRAGMENT_BIT);
+
+      if (!terakan_push_constants_usage_empty(vs->push_constants_usage)) {
+         command_writer->push_constants_state.usage_pre_rasterization =
+            terakan_push_constants_usage_union(
+               command_writer->push_constants_state.usage_pre_rasterization,
+               vs->push_constants_usage);
+         command_writer->push_constants_state.graphics_stages_using_push_constants |=
+            VK_SHADER_STAGE_VERTEX_BIT;
+      }
+
+      TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(SQ_PGM_FS, SQ_PGM_LS_ES_GS_VS);
+      if (state->sq_pgm_fs.static_state == NULL) {
+         for (unsigned attribute_word_index = 0;
+              attribute_word_index < BITSET_WORDS(TERAKAN_VERTEX_INPUT_MAX_ATTRIBUTES);
+              ++attribute_word_index) {
+            if ((state->sq_pgm_fs.dynamic_state.from_apply_sq_pgm_ls_es_gs_vs
+                    .attributes_needed_by_vs[attribute_word_index] ^
+                 vs->vs.vertex_attributes_needed[attribute_word_index]) &
+                state->sq_pgm_fs.dynamic_state.attributes_provided[attribute_word_index]) {
+               terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_INDEX_SQ_PGM_FS);
+               break;
+            }
+         }
+      }
+      BITSET_COPY(
+         state->sq_pgm_fs.dynamic_state.from_apply_sq_pgm_ls_es_gs_vs.attributes_needed_by_vs,
+         vs->vs.vertex_attributes_needed);
+   }
+}
+
+static void
 terakan_state_draw_apply_sq_pgm_fs(struct terakan_gfx_command_writer * const command_writer)
 {
    struct terakan_state_draw const * const state = &command_writer->state_draw;
@@ -561,6 +615,7 @@ static terakan_state_draw_apply_function const
       [TERAKAN_STATE_DRAW_INDEX_VGT_INDEX_TYPE] = terakan_state_draw_apply_vgt_index_type,
       [TERAKAN_STATE_DRAW_INDEX_VGT_PRIMITIVE_TYPE] = terakan_state_draw_apply_vgt_primitive_type,
       [TERAKAN_STATE_DRAW_INDEX_VGT_INDEX_OFFSET] = terakan_state_draw_apply_vgt_index_offset,
+      [TERAKAN_STATE_DRAW_INDEX_SQ_PGM_LS_ES_GS_VS] = terakan_state_draw_apply_sq_pgm_ls_es_gs_vs,
       [TERAKAN_STATE_DRAW_INDEX_SQ_PGM_FS] = terakan_state_draw_apply_sq_pgm_fs,
       [TERAKAN_STATE_DRAW_INDEX_SQ_RESOURCES_FS] = terakan_state_draw_apply_sq_resources_fs,
       [TERAKAN_STATE_DRAW_INDEX_SQ_PGM_PS] = terakan_state_draw_apply_sq_pgm_ps,
@@ -654,6 +709,8 @@ terakan_state_draw_reset(struct terakan_state_draw * const state,
 
    /* firstVertex or vertexOffset = 0 */
    state->vgt_index_offset = 0;
+
+   state->sq_pgm_ls_es_gs_vs.vs_as_vs = NULL;
 
    /* vertexBindingDescriptionCount = 0, vertexAttributeDescriptionCount = 0 */
    memset(&state->sq_pgm_fs, 0, sizeof(state->sq_pgm_fs));

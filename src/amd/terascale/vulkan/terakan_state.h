@@ -57,6 +57,9 @@ enum terakan_state_draw_index {
 
    TERAKAN_STATE_DRAW_INDEX_VGT_INDEX_OFFSET,
 
+   TERAKAN_STATE_DRAW_INDEX_SQ_PGM_LS_ES_GS_VS,
+
+   /* Depends on TERAKAN_STATE_DRAW_INDEX_SQ_PGM_LS_ES_GS_VS. */
    TERAKAN_STATE_DRAW_INDEX_SQ_PGM_FS,
 
    TERAKAN_STATE_DRAW_INDEX_SQ_RESOURCES_FS,
@@ -135,6 +138,11 @@ struct terakan_state_draw {
    /* TERAKAN_STATE_DRAW_INDEX_VGT_INDEX_OFFSET */
    uint32_t vgt_index_offset;
 
+   /* TERAKAN_STATE_DRAW_INDEX_SQ_PGM_LS_ES_GS_VS */
+   struct {
+      struct terakan_shader_impl const * vs_as_vs;
+   } sq_pgm_ls_es_gs_vs;
+
    /* TERAKAN_STATE_DRAW_INDEX_SQ_PGM_FS */
    struct {
       /* Vertex input state can be either static (from a pipeline with non-dynamic vertex input
@@ -152,8 +160,6 @@ struct terakan_state_draw {
       struct terakan_vertex_input_static_state const * static_state;
 
       struct {
-         /* Updated by vkCmdSetVertexInputEXT. */
-
          BITSET_DECLARE(attributes_provided, TERAKAN_VERTEX_INPUT_MAX_ATTRIBUTES);
          /* The values are undefined for attributes not in attributes_provided. */
          struct terakan_vertex_input_attribute attributes[TERAKAN_VERTEX_INPUT_MAX_ATTRIBUTES];
@@ -166,9 +172,9 @@ struct terakan_state_draw {
           */
          uint32_t instance_binding_divisors[TERAKAN_RESOURCE_HW_COUNT_FETCH];
 
-         /* Updated by vertex shader binding. */
-
-         BITSET_DECLARE(attributes_needed_by_vs, TERAKAN_VERTEX_INPUT_MAX_ATTRIBUTES);
+         struct {
+            BITSET_DECLARE(attributes_needed_by_vs, TERAKAN_VERTEX_INPUT_MAX_ATTRIBUTES);
+         } from_apply_sq_pgm_ls_es_gs_vs;
       } dynamic_state;
 
       /* When using static vertex input state, if this value doesn't match which bindings have the

@@ -1279,8 +1279,9 @@ terakan_CmdSetVertexInputEXT(
          &state->sq_pgm_fs.dynamic_state.attributes[attribute_description->location];
 
       if (!fetch_shader_creation_needed &&
-          BITSET_TEST(state->sq_pgm_fs.dynamic_state.attributes_needed_by_vs,
-                      attribute_description->location)) {
+          BITSET_TEST(
+             state->sq_pgm_fs.dynamic_state.from_apply_sq_pgm_ls_es_gs_vs.attributes_needed_by_vs,
+             attribute_description->location)) {
          fetch_shader_creation_needed |=
             state_attribute->word1_dst_gpr_and_format != attribute.word1_dst_gpr_and_format ||
             state_attribute->offset != attribute.offset ||
@@ -1321,7 +1322,8 @@ terakan_CmdSetVertexInputEXT(
          fetch_shader_creation_needed |=
             ((state->sq_pgm_fs.dynamic_state.attributes_provided[attribute_word_index] ^
               attributes_provided[attribute_word_index]) &
-             state->sq_pgm_fs.dynamic_state.attributes_needed_by_vs[attribute_word_index]) != 0;
+             state->sq_pgm_fs.dynamic_state.from_apply_sq_pgm_ls_es_gs_vs
+                .attributes_needed_by_vs[attribute_word_index]) != 0;
       }
    }
    BITSET_COPY(state->sq_pgm_fs.dynamic_state.attributes_provided, attributes_provided);

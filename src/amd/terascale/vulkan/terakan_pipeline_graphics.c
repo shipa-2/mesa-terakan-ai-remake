@@ -309,52 +309,14 @@ void
 terakan_pipeline_graphics_bind(struct terakan_gfx_command_writer * const command_writer,
                                struct terakan_pipeline_graphics const * const pipeline)
 {
-   command_writer->state_draw.cmd_set_depth_clamp_enable_sets_depth_clip_enable =
-      pipeline->pre_rasterization.cmd_set_depth_clamp_enable_sets_depth_clip_enable;
-
-   unsigned state_index;
-   BITSET_FOREACH_SET (state_index, pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_COUNT) {
-      terakan_pipeline_graphics_apply_state_functions[state_index](
-         command_writer, pipeline, (enum terakan_pipeline_graphics_state_index)state_index);
-   }
-
-   command_writer->push_constants_state.graphics_stages_using_push_constants =
-      pipeline->shader_stages_using_push_constants;
-   command_writer->push_constants_state.usage_pre_rasterization =
-      pipeline->pre_rasterization_push_constants_usage;
-
-   /* TODO(Triang3l): All vertex pipeline stages. */
-
    /* Vertex shader. */
 
    struct terakan_shader_impl const * const vs = &pipeline->shaders[MESA_SHADER_VERTEX];
-
-   bool const sq_pgm_vs_modified = command_writer->hw_state_draw.sq_pgm_vs != &vs->static_state;
-   command_writer->hw_state_draw.sq_pgm_vs = &vs->static_state;
-   terakan_hw_state_draw_written(&command_writer->hw_state_draw,
-                                 TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_VS, sq_pgm_vs_modified);
-
-   terakan_hw_state_draw_set_sq_constants_needed_by_vs(&command_writer->hw_state_draw, 0,
-                                                       vs->resources_needed, vs->samplers_needed,
-                                                       VK_SHADER_STAGE_FRAGMENT_BIT);
-
-   if (command_writer->state_draw.sq_pgm_fs.static_state == NULL) {
-      for (unsigned attribute_word_index = 0;
-           attribute_word_index < BITSET_WORDS(TERAKAN_VERTEX_INPUT_MAX_ATTRIBUTES);
-           ++attribute_word_index) {
-         if ((command_writer->state_draw.sq_pgm_fs.dynamic_state
-                 .attributes_needed_by_vs[attribute_word_index] ^
-              vs->vs.vertex_attributes_needed[attribute_word_index]) &
-             command_writer->state_draw.sq_pgm_fs.dynamic_state
-                .attributes_provided[attribute_word_index]) {
-            terakan_state_draw_set_pending(&command_writer->state_draw,
-                                           TERAKAN_STATE_DRAW_INDEX_SQ_PGM_FS);
-            break;
-         }
-      }
+   if (command_writer->state_draw.sq_pgm_ls_es_gs_vs.vs_as_vs != vs) {
+      command_writer->state_draw.sq_pgm_ls_es_gs_vs.vs_as_vs = vs;
+      terakan_state_draw_set_pending(&command_writer->state_draw,
+                                     TERAKAN_STATE_DRAW_INDEX_SQ_PGM_LS_ES_GS_VS);
    }
-   BITSET_COPY(command_writer->state_draw.sq_pgm_fs.dynamic_state.attributes_needed_by_vs,
-               vs->vs.vertex_attributes_needed);
 
    /* Fragment shader. */
 
@@ -366,6 +328,17 @@ terakan_pipeline_graphics_bind(struct terakan_gfx_command_writer * const command
       command_writer->state_draw.sq_pgm_ps.fs = fs;
       terakan_state_draw_set_pending(&command_writer->state_draw,
                                      TERAKAN_STATE_DRAW_INDEX_SQ_PGM_PS);
+   }
+
+   /* Static state. */
+
+   command_writer->state_draw.cmd_set_depth_clamp_enable_sets_depth_clip_enable =
+      pipeline->pre_rasterization.cmd_set_depth_clamp_enable_sets_depth_clip_enable;
+
+   unsigned state_index;
+   BITSET_FOREACH_SET (state_index, pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_COUNT) {
+      terakan_pipeline_graphics_apply_state_functions[state_index](
+         command_writer, pipeline, (enum terakan_pipeline_graphics_state_index)state_index);
    }
 }
 
@@ -767,29 +740,17 @@ terakan_pipeline_graphics_create(struct terakan_device * const device,
       pipeline->shader_stages |= stage_info->stage;
    }
 
-   pipeline->shader_stages_using_push_constants = 0;
-   pipeline->pre_rasterization_push_constants_usage = (struct terakan_push_constants_usage){};
-   {
-      unsigned remaining_shader_stages =
-         (unsigned)(pipeline->shader_stages &
-                    (VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT |
-                     VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT | VK_SHADER_STAGE_GEOMETRY_BIT));
-      while (remaining_shader_stages) {
-         VkShaderStageFlagBits const stage_flag =
-            (VkShaderStageFlagBits)((VkShaderStageFlags)1 << u_bit_scan(&remaining_shader_stages));
-         struct terakan_push_constants_usage const stage_push_constants_usage =
-            pipeline->shaders[vk_to_mesa_shader_stage(stage_flag)].push_constants_usage;
-         if (!terakan_push_constants_usage_empty(stage_push_constants_usage)) {
-            pipeline->pre_rasterization_push_constants_usage = terakan_push_constants_usage_union(
-               pipeline->pre_rasterization_push_constants_usage, stage_push_constants_usage);
-            pipeline->shader_stages_using_push_constants |= stage_flag;
-         }
-      }
-   }
-   if ((pipeline->shader_stages & VK_SHADER_STAGE_FRAGMENT_BIT) &&
-       !terakan_push_constants_usage_empty(
-          pipeline->shaders[MESA_SHADER_FRAGMENT].push_constants_usage)) {
-      pipeline->shader_stages_using_push_constants |= VK_SHADER_STAGE_FRAGMENT_BIT;
+   /* Vertex shader is mandatory if the pre-rasterization part is present. Fail to create the
+    * pipeline to let other places in the pipeline code assume this more consistently.
+    */
+   /* TODO(Triang3l): Don't do this for graphics pipeline libraries without the pre-rasterization
+    * part.
+    */
+   assert(pipeline->shader_stages & VK_SHADER_STAGE_VERTEX_BIT);
+   if (unlikely(!(pipeline->shader_stages & VK_SHADER_STAGE_VERTEX_BIT))) {
+      result = vk_errorf(device, VK_ERROR_VALIDATION_FAILED_EXT,
+                         "No vertex shader in the graphics pipeline");
+      goto fail_shaders;
    }
 
    BITSET_ZERO(pipeline->static_state);
