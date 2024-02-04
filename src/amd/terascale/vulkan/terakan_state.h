@@ -238,12 +238,12 @@ struct terakan_state_draw {
       uint8_t bound;
    } color_attachment_usage;
 
-   /* TERAKAN_STATE_DRAW_INDEX_CB_TARGET_MASK application feedback for dependent state. */
+   /* TERAKAN_STATE_DRAW_INDEX_CB_COLOR_CONTROL */
    struct {
       struct {
          bool any_target_enabled;
-      } apply_result;
-   } cb_target_mask;
+      } from_apply_cb_target_mask;
+   } cb_color_control;
 
    /* TERAKAN_STATE_DRAW_INDEX_CB_COLOR_MRT
     * The values are undefined if the color_attachments_bound bit for the color attachment index is

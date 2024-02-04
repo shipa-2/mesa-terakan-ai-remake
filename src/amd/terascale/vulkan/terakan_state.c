@@ -459,11 +459,11 @@ terakan_state_draw_apply_cb_target_mask(struct terakan_gfx_command_writer * cons
                                  TERAKAN_HW_STATE_DRAW_INDEX_CB_TARGET_MASK, modified);
 
    bool const any_target_enabled = cb_target_mask != 0;
-   if (command_writer->state_draw.cb_target_mask.apply_result.any_target_enabled !=
+   TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_COLOR_CONTROL, CB_TARGET_MASK);
+   if (command_writer->state_draw.cb_color_control.from_apply_cb_target_mask.any_target_enabled !=
        any_target_enabled) {
-      command_writer->state_draw.cb_target_mask.apply_result.any_target_enabled =
+      command_writer->state_draw.cb_color_control.from_apply_cb_target_mask.any_target_enabled =
          any_target_enabled;
-      TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_COLOR_CONTROL, CB_TARGET_MASK);
       terakan_state_draw_set_pending(&command_writer->state_draw,
                                      TERAKAN_STATE_DRAW_INDEX_CB_COLOR_CONTROL);
    }
@@ -474,9 +474,10 @@ terakan_state_draw_apply_cb_color_control(struct terakan_gfx_command_writer * co
 {
    TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_COLOR_CONTROL, CB_TARGET_MASK);
    uint32_t const cb_color_control =
-      S_028808_MODE(command_writer->state_draw.cb_target_mask.apply_result.any_target_enabled
-                       ? V_028808_CB_NORMAL
-                       : V_028808_CB_DISABLE) |
+      S_028808_MODE(
+         command_writer->state_draw.cb_color_control.from_apply_cb_target_mask.any_target_enabled
+            ? V_028808_CB_NORMAL
+            : V_028808_CB_DISABLE) |
       S_028808_ROP3(0xCC);
    bool const modified = command_writer->hw_state_draw.cb_color_control != cb_color_control;
    command_writer->hw_state_draw.cb_color_control = cb_color_control;
@@ -667,7 +668,7 @@ terakan_state_draw_reset(struct terakan_state_draw * const state,
    state->color_attachment_usage.written_by_shader = 0b0;
    state->color_attachment_usage.bound = 0b0;
 
-   state->cb_target_mask.apply_result.any_target_enabled = false;
+   state->cb_color_control.from_apply_cb_target_mask.any_target_enabled = false;
 
    /* Make all state items pending so the defaults are applied before the first draw, even for
     * unsupported features.
