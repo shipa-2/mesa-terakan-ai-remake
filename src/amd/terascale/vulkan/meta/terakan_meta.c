@@ -182,6 +182,8 @@ void
 terakan_meta_set_ps(struct terakan_gfx_command_writer * const command_writer,
                     enum terakan_meta_shader_index const shader_index)
 {
+   terakan_state_draw_set_pending(&command_writer->state_draw, TERAKAN_STATE_DRAW_INDEX_SQ_PGM_PS);
+
    struct terakan_device const * const device = terakan_gfx_command_writer_device(command_writer);
 
    struct terakan_shader_static const * const shader_static = &device->meta_shaders[shader_index];

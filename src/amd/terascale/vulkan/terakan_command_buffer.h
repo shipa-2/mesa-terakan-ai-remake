@@ -214,8 +214,10 @@ struct terakan_gfx_command_writer {
 
    struct terakan_hw_state_draw hw_state_draw;
 
+   /* Modifies hw_state_draw. */
    struct terakan_push_constants_state push_constants_state;
 
+   /* Modifies hw_state_draw and push_constants_state. */
    struct terakan_state_draw state_draw;
 };
 

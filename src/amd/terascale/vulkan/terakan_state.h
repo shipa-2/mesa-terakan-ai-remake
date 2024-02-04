@@ -27,6 +27,7 @@
 #include "terakan_bo.h"
 #include "terakan_descriptor.h"
 #include "terakan_hw_state.h"
+#include "terakan_shader.h"
 #include "terakan_state_rasterization.h"
 #include "terakan_vertex_input.h"
 
@@ -44,6 +45,7 @@ extern "C" {
  * the application. It's not reapplied when switching to a new indirect buffer - terakan_hw_state is
  * instead, for both application's work and internal draws / dispatches. Thus, no register writes
  * must be done directly from terakan_state application - it must first go to terakan_hw_state.
+ * It can also modify terakan_push_constants_state.
  */
 
 void terakan_state_translate_window_rect_unpacked(VkRect2D const * rect, uint16_t tl_br_xy_out[4]);
@@ -58,6 +60,8 @@ enum terakan_state_draw_index {
    TERAKAN_STATE_DRAW_INDEX_SQ_PGM_FS,
 
    TERAKAN_STATE_DRAW_INDEX_SQ_RESOURCES_FS,
+
+   TERAKAN_STATE_DRAW_INDEX_SQ_PGM_PS,
 
    TERAKAN_STATE_DRAW_INDEX_PA_CL_VPORT_XY_SCALE_OFFSET,
    TERAKAN_STATE_DRAW_INDEX_PA_CL_VPORT_Z_SCALE_OFFSET,
@@ -77,6 +81,7 @@ enum terakan_state_draw_index {
 
    TERAKAN_STATE_DRAW_INDEX_DB_RENDER_OVERRIDE,
 
+   /* Depends on TERAKAN_STATE_DRAW_INDEX_SQ_PGM_PS. */
    TERAKAN_STATE_DRAW_INDEX_COLOR_ATTACHMENT_USAGE,
    /* Depends on TERAKAN_STATE_DRAW_INDEX_COLOR_ATTACHMENT_USAGE. */
    TERAKAN_STATE_DRAW_INDEX_CB_TARGET_MASK,
@@ -178,6 +183,14 @@ struct terakan_state_draw {
    uint32_t sq_resources_fs_pending;
    struct terakan_state_draw_sq_resource_fs sq_resources_fs[TERAKAN_RESOURCE_HW_COUNT_FETCH];
 
+   /* TERAKAN_STATE_DRAW_INDEX_SQ_PGM_PS */
+   struct {
+      /* Can be NULL, in which case an empty pixel shader exporting a color with an alpha of 1 will
+       * be used.
+       */
+      struct terakan_shader_impl const * fs;
+   } sq_pgm_ps;
+
    /* Set via terakan_state_draw_set_viewport_count. */
    uint32_t viewport_count;
 
@@ -230,11 +243,12 @@ struct terakan_state_draw {
 
    /* TERAKAN_STATE_DRAW_INDEX_COLOR_ATTACHMENT_USAGE */
    struct {
-      /* The mask used for compaction of render pass color attachment indices in this state
-       * structure into hardware state color attachment indices.
-       * Set via terakan_state_draw_set_color_attachments_written_by_shader.
-       */
-      uint8_t written_by_shader;
+      struct {
+         /* The mask used for compaction of render pass color attachment indices in this state
+          * structure into hardware state color attachment indices.
+          */
+         uint8_t written_by_shader;
+      } from_apply_sq_pgm_ps;
       uint8_t bound;
    } color_attachment_usage;
 

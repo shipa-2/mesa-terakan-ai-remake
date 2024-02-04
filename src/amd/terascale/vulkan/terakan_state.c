@@ -23,6 +23,7 @@
 
 #include "terakan_state.h"
 
+#include "meta/terakan_meta.h"
 #include "terakan_bo.h"
 #include "terakan_command_buffer.h"
 #include "terakan_descriptor.h"
@@ -206,6 +207,46 @@ terakan_state_draw_apply_sq_resources_fs(struct terakan_gfx_command_writer * con
                                                buffer->bo, resource);
    }
    command_writer->state_draw.sq_resources_fs_pending = 0;
+}
+
+static void
+terakan_state_draw_apply_sq_pgm_ps(struct terakan_gfx_command_writer * const command_writer)
+{
+   struct terakan_shader_impl const * const fs = command_writer->state_draw.sq_pgm_ps.fs;
+
+   struct terakan_shader_static const * const fs_static =
+      fs != NULL ? &fs->static_state
+                 : &terakan_gfx_command_writer_device(command_writer)
+                       ->meta_shaders[TERAKAN_META_SHADER_EMPTY_OPAQUE_PS];
+   bool const fs_static_modified = command_writer->hw_state_draw.sq_pgm_ps != fs_static;
+   command_writer->hw_state_draw.sq_pgm_ps = fs_static;
+   terakan_hw_state_draw_written(&command_writer->hw_state_draw,
+                                 TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_PS, fs_static_modified);
+
+   terakan_hw_state_draw_set_sq_constants_needed_by_fs(&command_writer->hw_state_draw, 0,
+                                                       fs != NULL ? fs->resources_needed : NULL,
+                                                       fs != NULL ? fs->samplers_needed : 0b0);
+
+   command_writer->push_constants_state.usage_fragment =
+      fs != NULL ? fs->push_constants_usage : (struct terakan_push_constants_usage){};
+   if (terakan_push_constants_usage_empty(command_writer->push_constants_state.usage_fragment)) {
+      command_writer->push_constants_state.graphics_stages_using_push_constants &=
+         ~VK_SHADER_STAGE_FRAGMENT_BIT;
+   } else {
+      command_writer->push_constants_state.graphics_stages_using_push_constants |=
+         VK_SHADER_STAGE_FRAGMENT_BIT;
+   }
+
+   uint8_t const color_attachments_written_by_shader =
+      fs != NULL ? fs->fs.fragment_data_uncompacted_locations : 0b0;
+   TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(COLOR_ATTACHMENT_USAGE, SQ_PGM_PS);
+   if (command_writer->state_draw.color_attachment_usage.from_apply_sq_pgm_ps.written_by_shader !=
+       color_attachments_written_by_shader) {
+      command_writer->state_draw.color_attachment_usage.from_apply_sq_pgm_ps.written_by_shader =
+         color_attachments_written_by_shader;
+      terakan_state_draw_set_pending(&command_writer->state_draw,
+                                     TERAKAN_STATE_DRAW_INDEX_COLOR_ATTACHMENT_USAGE);
+   }
 }
 
 static void
@@ -434,7 +475,7 @@ terakan_state_draw_apply_cb_target_mask(struct terakan_gfx_command_writer * cons
    {
       TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_TARGET_MASK, COLOR_ATTACHMENT_USAGE);
       unsigned attachments_remaining =
-         command_writer->state_draw.color_attachment_usage.written_by_shader;
+         command_writer->state_draw.color_attachment_usage.from_apply_sq_pgm_ps.written_by_shader;
       uint32_t hw_color_index = 0;
       for (; attachments_remaining; ++hw_color_index) {
          unsigned const attachment_index = (unsigned)u_bit_scan(&attachments_remaining);
@@ -489,16 +530,16 @@ static void
 terakan_state_draw_apply_cb_color_mrt(struct terakan_gfx_command_writer * const command_writer)
 {
    TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_COLOR_MRT, COLOR_ATTACHMENT_USAGE);
+   uint8_t const attachments_written_by_shader =
+      command_writer->state_draw.color_attachment_usage.from_apply_sq_pgm_ps.written_by_shader;
    unsigned attachments_remaining =
-      command_writer->state_draw.color_attachment_usage.bound &
-      command_writer->state_draw.color_attachment_usage.written_by_shader;
+      command_writer->state_draw.color_attachment_usage.bound & attachments_written_by_shader;
    while (attachments_remaining) {
       unsigned const attachment_index = (unsigned)u_bit_scan(&attachments_remaining);
       struct terakan_state_draw_cb_color const * const attachment =
          &command_writer->state_draw.attachment_cb_color[attachment_index];
       unsigned const hw_color_index =
-         util_bitcount(command_writer->state_draw.color_attachment_usage.written_by_shader &
-                       ((1u << attachment_index) - 1));
+         util_bitcount(attachments_written_by_shader & ((1u << attachment_index) - 1));
       bool const modified =
          command_writer->hw_state_draw.cb_color.bo[hw_color_index] != attachment->bo ||
          memcmp(&command_writer->hw_state_draw.cb_color.color[hw_color_index], &attachment->color,
@@ -522,6 +563,7 @@ static terakan_state_draw_apply_function const
       [TERAKAN_STATE_DRAW_INDEX_VGT_INDEX_OFFSET] = terakan_state_draw_apply_vgt_index_offset,
       [TERAKAN_STATE_DRAW_INDEX_SQ_PGM_FS] = terakan_state_draw_apply_sq_pgm_fs,
       [TERAKAN_STATE_DRAW_INDEX_SQ_RESOURCES_FS] = terakan_state_draw_apply_sq_resources_fs,
+      [TERAKAN_STATE_DRAW_INDEX_SQ_PGM_PS] = terakan_state_draw_apply_sq_pgm_ps,
       [TERAKAN_STATE_DRAW_INDEX_PA_CL_VPORT_XY_SCALE_OFFSET] =
          terakan_state_draw_apply_pa_cl_vport_xy_scale_offset,
       [TERAKAN_STATE_DRAW_INDEX_PA_CL_VPORT_Z_SCALE_OFFSET] =
@@ -624,6 +666,8 @@ terakan_state_draw_reset(struct terakan_state_draw * const state,
    memset(state->sq_resources_fs, 0, sizeof(state->sq_resources_fs));
    state->sq_resources_fs_pending = BITFIELD_MASK(TERAKAN_RESOURCE_HW_COUNT_FETCH);
 
+   state->sq_pgm_ps.fs = NULL;
+
    state->viewport_count = 0;
    memset(state->viewports, 0, sizeof(state->viewports));
    memset(state->pa_sc_vport_generic_scissor_tl_br_xy, 0,
@@ -665,7 +709,7 @@ terakan_state_draw_reset(struct terakan_state_draw * const state,
    /* pSampleMask = NULL */
    state->pa_sc_aa_mask = UINT16_MAX;
 
-   state->color_attachment_usage.written_by_shader = 0b0;
+   state->color_attachment_usage.from_apply_sq_pgm_ps.written_by_shader = 0b0;
    state->color_attachment_usage.bound = 0b0;
 
    state->cb_color_control.from_apply_cb_target_mask.any_target_enabled = false;
