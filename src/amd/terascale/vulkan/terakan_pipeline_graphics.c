@@ -805,7 +805,7 @@ terakan_CreateGraphicsPipelines(VkDevice const deviceHandle, VkPipelineCache con
    uint32_t pipeline_index;
 
    for (pipeline_index = 0; pipeline_index < createInfoCount; ++pipeline_index) {
-      struct terakan_pipeline_graphics * pipeline;
+      struct terakan_pipeline_graphics * pipeline = NULL;
       VkGraphicsPipelineCreateInfo const * const create_info = &pCreateInfos[pipeline_index];
       VkResult const pipeline_result =
          terakan_pipeline_graphics_create(device, create_info, pAllocator, &pipeline);
