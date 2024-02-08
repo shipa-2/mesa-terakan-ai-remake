@@ -93,7 +93,7 @@ VkResult terakan_queue_create(struct terakan_device * device,
 
 struct terakan_queue_winsys_fn {
    /* The indirect buffer must not be empty.
-    * Not exposing queue priorities as the Linux Radeon 2.50.0 kernel driver only provides a
+    * Not exposing queue priorities as the DRM Radeon 2.50.0 kernel driver only provides a
     * high-priority DMA ring on R9xx.
     * On failure, returns VK_ERROR_OUT_OF_HOST_MEMORY, VK_ERROR_OUT_OF_DEVICE_MEMORY or
     * VK_ERROR_UNKNOWN.

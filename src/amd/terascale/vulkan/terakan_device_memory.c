@@ -188,7 +188,7 @@ terakan_AllocateMemory(VkDevice const deviceHandle,
     * VkPhysicalDeviceRobustness2PropertiesEXT, so make sure the BO is never smaller than the size
     * rounded up, and the validation in the kernel driver doesn't consider the binding out of
     * bounds.
-    * Linux Radeon 2.50.0 also validates the size of buffer RATs as LINEAR_ALIGNED image size, but
+    * DRM Radeon 2.50.0 also validates the size of buffer RATs as LINEAR_ALIGNED image size, but
     * with the smallest SLICE_TILE_MAX it considers them zero-size, so the RAT pitch alignment is
     * not important here.
     */

@@ -432,7 +432,7 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
     * Useful references:
     * - Gallium R600 driver
     * - xf86-video-ati
-    * - Linux kernel Radeon driver
+    * - Radeon DRM kernel driver
     * - fglrx indirect buffers
     */
 
@@ -589,8 +589,8 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
 
       PKT3(PKT3_SET_CONTEXT_REG, 1, 0),
       TERAKAN_CONTEXT_REG_OFFSET(R_0286C8_SPI_THREAD_GROUPING),
-      /* TODO(Triang3l): Gallium R600 has 0 for SPI_THREAD_GROUPING, but Linux Radeon 2.50.0 has 1
-       * in cleanstate_evergreen/cayman.h. Research which is more correct.
+      /* TODO(Triang3l): Gallium R600 has 0 for SPI_THREAD_GROUPING, but DRM Radeon 2.50.0 has 1 in
+       * cleanstate_evergreen/cayman.h. Research which is more correct.
        */
       0,
 
@@ -764,7 +764,7 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
 
    uint32_t sq_config =
       S_008C00_VC_ENABLE(chip_family_info->has_vertex_cache) | S_008C00_EXPORT_SRC_C(1);
-   /* Not raising CS2 priority in SQ_CONFIG on R9xx unlike in Linux Radeon 2.50.0 because it doesn't
+   /* Not raising CS2 priority in SQ_CONFIG on R9xx unlike in DRM Radeon 2.50.0 because it doesn't
     * expose the compute rings at all.
     */
    if (!is_r9xx) {
@@ -850,7 +850,7 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
    if (!is_r9xx) {
       /* The thread counts should be a multiple of 8 as space is allocated in blocks of 8 according
        * to the register reference.
-       * Linux Radeon 2.50.0 spreads the non-pixel-shader threads evenly between 6 stages, but aside
+       * DRM Radeon 2.50.0 spreads the non-pixel-shader threads evenly between 6 stages, but aside
        * from the pixel shader there are 5 stages - allocate more.
        */
       uint32_t const sq_vertex_threads =

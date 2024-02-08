@@ -169,7 +169,7 @@ terakan_queue_completion_submission_drm_radeon_await(
    struct drm_radeon_gem_wait_idle gem_wait_idle_arguments = {
       .handle = bo->handle,
    };
-   /* Returns -EBUSY in finite time in case of a hang (30-second timeout in Linux Radeon 2.50.0). */
+   /* Returns -EBUSY in finite time in case of a hang (30-second timeout in DRM Radeon 2.50.0). */
    return drmCommandWrite(device->render_node_fd, DRM_RADEON_GEM_WAIT_IDLE,
                           &gem_wait_idle_arguments, sizeof(gem_wait_idle_arguments)) == 0;
 }

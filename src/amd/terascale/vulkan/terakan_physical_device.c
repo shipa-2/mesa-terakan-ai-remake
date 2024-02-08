@@ -142,7 +142,7 @@ terakan_physical_device_chip_family_info_init(
       chip_family_info_out->has_vertex_cache = false;
       break;
    default:
-      /* R9xx vertex fetch always goes through the texture cache, but Linux Radeon 2.50.0 and the
+      /* R9xx vertex fetch always goes through the texture cache, but DRM Radeon 2.50.0 and the
        * Gallium R600 driver set SQ_CONFIG.VC_ENABLE to 1 on it.
        */
       chip_family_info_out->has_vertex_cache = true;
@@ -536,8 +536,9 @@ terakan_physical_device_get_capabilities(
    /* Addresses within buffers are limited to 32 bits in several places:
     * - Index buffer binding via INDEX_BASE.
     * - Wraparound in copying (most importantly image copying) not handled.
-    * The Linux Radeon driver, however, limits addresses within device memory to 32 bits in various
-    * areas, so there's no sufficient justification for making workarounds to support more.
+    * The DRM Radeon driver, however, limits addresses within device memory to 32 bits in various
+    * areas as of 2.50.0, so there's no sufficient justification for making workarounds to support
+    * more.
     */
 
    /* VK_EXT_non_seamless_cube_map (#423). */

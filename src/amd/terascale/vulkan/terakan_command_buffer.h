@@ -60,8 +60,8 @@ extern "C" {
 /* Must be large enough to hold all the necessary setup, including up to 1024 resources (up to 14
  * dwords per resource - 2 for the SET_RESOURCE header, 8 for the constant, and 4 dwords for 2
  * relocations for textures), for at least one draw / dispatch command.
- * Command buffers using virtual memory on Linux must not be larger than RADEON_INFO_IB_VM_MAX_SIZE
- * dwords reported by the kernel driver, however.
+ * Command buffers using virtual memory on the DRM Radeon kernel driver must not be larger than
+ * RADEON_INFO_IB_VM_MAX_SIZE dwords reported by the kernel driver, however.
  * Twice the size in the Gallium R600 driver as of May 2023.
  */
 #define TERAKAN_MAX_INDIRECT_BUFFER_SIZE_DWORDS ((uint32_t)1 << 15)

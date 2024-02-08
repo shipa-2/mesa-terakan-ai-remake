@@ -57,7 +57,9 @@ terakan_cp_dma_sync_cp_me(struct terakan_gfx_command_writer * const command_writ
    *packet++ = ((gfx_discard_bo->va >> 32) & 0xFF) | PKT3_CP_DMA_CP_SYNC;
    *packet++ = (uint32_t)discard_dest_va;
    *packet++ = (discard_dest_va >> 32) & 0xFF;
-   /* The size must not be zero, otherwise nothing would happen (tested on Barts). */
+   /* The size must not be zero, otherwise nothing would happen (tested on Barts with the firmware
+    * used by DRM Radeon 2.50.0).
+    */
    *packet++ = TERAKAN_CP_DMA_COPY_OPTIMAL_ALIGNMENT;
    uint32_t const discard_bo_reference = terakan_bo_reference_writer_add_reference(
       &command_writer->base.bo_reference_writer, gfx_discard_bo, true, true,

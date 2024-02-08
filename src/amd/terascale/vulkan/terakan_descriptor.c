@@ -44,9 +44,9 @@ terakan_color_descriptor_calculate_buffer_base_pitch_view_dim(
    descriptor->base = (uint32_t)(va_aligned >> 8);
 
    /* The pitch field is ignored by the hardware for buffers and can't store large buffer sizes, but
-    * Linux Radeon 2.50.0 validates the pitch alignment regardless of whether the color surface is a
+    * DRM Radeon 2.50.0 validates the pitch alignment regardless of whether the color surface is a
     * buffer RAT. Provide the smallest valid pitch. SLICE_MAX is not needed, with the smallest
-    * possible value, after the division by the pitch, Linux Radeon 2.50.0 will consider the whole
+    * possible value, after the division by the pitch, DRM Radeon 2.50.0 will consider the whole
     * surface zero-size.
     */
    descriptor->pitch = S_028C64_PITCH_TILE_MAX(

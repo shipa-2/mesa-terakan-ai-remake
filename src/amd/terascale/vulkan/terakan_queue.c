@@ -256,7 +256,7 @@ terakan_queue_submit(struct vk_queue * const queue_base, struct vk_queue_submit 
     *   targets, it may be different from the CB_COLOR# index due to MRT and RAT indices being
     *   compacted skipping those not used in the fragment shader).
     * - Offset to the next substitution token. It can be stored in 16 bits since 2^16 dwords is
-    *   essentially the maximum indirect buffer size on Linux Radeon 2.50.0 (when using virtual
+    *   essentially the maximum indirect buffer size on DRM Radeon 2.50.0 (when using virtual
     *   memory), and in this case to make sure the dword 0xFFFF can be addressed too, an offset
     *   relative to the current dword can be stored, so that 0 will be the terminator.
     *
