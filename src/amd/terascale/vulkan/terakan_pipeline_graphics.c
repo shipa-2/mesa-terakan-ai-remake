@@ -55,14 +55,12 @@
 
 typedef void (*terakan_pipeline_graphics_apply_state_function)(
    struct terakan_gfx_command_writer * command_writer,
-   struct terakan_pipeline_graphics const * pipeline,
-   enum terakan_pipeline_graphics_state_index state_index);
+   struct terakan_pipeline_graphics const * pipeline);
 
 static void
 terakan_pipeline_graphics_apply_vgt_primitive_type(
    struct terakan_gfx_command_writer * const command_writer,
-   struct terakan_pipeline_graphics const * const pipeline,
-   UNUSED enum terakan_pipeline_graphics_state_index const state_index)
+   struct terakan_pipeline_graphics const * const pipeline)
 {
    command_writer->state_draw.vgt_primitive_type = pipeline->vertex_input.vgt_primitive_type;
    terakan_state_draw_set_pending(&command_writer->state_draw,
@@ -70,10 +68,8 @@ terakan_pipeline_graphics_apply_vgt_primitive_type(
 }
 
 static void
-terakan_pipeline_graphics_apply_sq_pgm_fs(
-   struct terakan_gfx_command_writer * const command_writer,
-   struct terakan_pipeline_graphics const * const pipeline,
-   UNUSED enum terakan_pipeline_graphics_state_index const state_index)
+terakan_pipeline_graphics_apply_sq_pgm_fs(struct terakan_gfx_command_writer * const command_writer,
+                                          struct terakan_pipeline_graphics const * const pipeline)
 {
    struct terakan_vertex_input_static_state const * const sq_pgm_fs =
       pipeline->vertex_input.sq_pgm_fs.program_bo != NULL
@@ -90,8 +86,7 @@ terakan_pipeline_graphics_apply_sq_pgm_fs(
 static void
 terakan_pipeline_graphics_apply_sq_resources_fs_stride(
    struct terakan_gfx_command_writer * const command_writer,
-   struct terakan_pipeline_graphics const * const pipeline,
-   UNUSED enum terakan_pipeline_graphics_state_index const state_index)
+   struct terakan_pipeline_graphics const * const pipeline)
 {
    {
       unsigned bindings_remaining =
@@ -111,8 +106,7 @@ terakan_pipeline_graphics_apply_sq_resources_fs_stride(
 static void
 terakan_pipeline_graphics_apply_sq_pgm_fs_2048_stride_workaround(
    struct terakan_gfx_command_writer * const command_writer,
-   struct terakan_pipeline_graphics const * const pipeline,
-   UNUSED enum terakan_pipeline_graphics_state_index const state_index)
+   struct terakan_pipeline_graphics const * const pipeline)
 {
    assert(BITSET_TEST(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_SQ_PGM_FS));
    assert(
@@ -139,8 +133,7 @@ terakan_pipeline_graphics_apply_sq_pgm_fs_2048_stride_workaround(
 static void
 terakan_pipeline_graphics_apply_pa_sc_vport_z_min_0_max_1(
    struct terakan_gfx_command_writer * const command_writer,
-   struct terakan_pipeline_graphics const * const pipeline,
-   UNUSED enum terakan_pipeline_graphics_state_index const state_index)
+   struct terakan_pipeline_graphics const * const pipeline)
 {
    if (command_writer->state_draw.pa_sc_vport_z_min_0_max_1 !=
        pipeline->pre_rasterization.pa_sc_vport_z_min_0_max_1) {
@@ -154,18 +147,15 @@ terakan_pipeline_graphics_apply_pa_sc_vport_z_min_0_max_1(
 static void
 terakan_pipeline_graphics_apply_viewport_count(
    struct terakan_gfx_command_writer * const command_writer,
-   struct terakan_pipeline_graphics const * const pipeline,
-   UNUSED enum terakan_pipeline_graphics_state_index const state_index)
+   struct terakan_pipeline_graphics const * const pipeline)
 {
    terakan_state_draw_set_viewport_count(&command_writer->state_draw,
                                          pipeline->pre_rasterization.viewport_count);
 }
 
 static void
-terakan_pipeline_graphics_apply_viewport(
-   struct terakan_gfx_command_writer * const command_writer,
-   struct terakan_pipeline_graphics const * const pipeline,
-   UNUSED enum terakan_pipeline_graphics_state_index const state_index)
+terakan_pipeline_graphics_apply_viewport(struct terakan_gfx_command_writer * const command_writer,
+                                         struct terakan_pipeline_graphics const * const pipeline)
 {
    struct terakan_state_draw * const state = &command_writer->state_draw;
    for (uint32_t viewport_index = 0; viewport_index < pipeline->pre_rasterization.viewport_count;
@@ -206,8 +196,7 @@ terakan_pipeline_graphics_apply_viewport(
 static void
 terakan_pipeline_graphics_apply_pa_sc_vport_generic_scissor(
    struct terakan_gfx_command_writer * const command_writer,
-   struct terakan_pipeline_graphics const * const pipeline,
-   UNUSED enum terakan_pipeline_graphics_state_index const state_index)
+   struct terakan_pipeline_graphics const * const pipeline)
 {
    if (!terakan_state_draw_is_pending(&command_writer->state_draw,
                                       TERAKAN_STATE_DRAW_INDEX_PA_SC_VPORT_SCISSOR) &&
@@ -227,8 +216,7 @@ terakan_pipeline_graphics_apply_pa_sc_vport_generic_scissor(
 static void
 terakan_pipeline_graphics_apply_pa_cl_clip_cntl(
    struct terakan_gfx_command_writer * const command_writer,
-   struct terakan_pipeline_graphics const * const pipeline,
-   UNUSED enum terakan_pipeline_graphics_state_index const state_index)
+   struct terakan_pipeline_graphics const * const pipeline)
 {
    uint32_t const old_pa_cl_clip_cntl = command_writer->state_draw.pa_cl_clip_cntl;
    terakan_state_draw_replace_fields(&command_writer->state_draw,
@@ -247,8 +235,7 @@ terakan_pipeline_graphics_apply_pa_cl_clip_cntl(
 static void
 terakan_pipeline_graphics_apply_pa_su_sc_mode_cntl(
    struct terakan_gfx_command_writer * const command_writer,
-   struct terakan_pipeline_graphics const * const pipeline,
-   UNUSED enum terakan_pipeline_graphics_state_index const state_index)
+   struct terakan_pipeline_graphics const * const pipeline)
 {
    terakan_state_draw_replace_fields(&command_writer->state_draw,
                                      TERAKAN_STATE_DRAW_INDEX_PA_SU_SC_MODE_CNTL,
@@ -260,8 +247,7 @@ terakan_pipeline_graphics_apply_pa_su_sc_mode_cntl(
 static void
 terakan_pipeline_graphics_apply_db_render_override_pre_rasterization(
    struct terakan_gfx_command_writer * const command_writer,
-   struct terakan_pipeline_graphics const * const pipeline,
-   UNUSED enum terakan_pipeline_graphics_state_index const state_index)
+   struct terakan_pipeline_graphics const * const pipeline)
 {
    terakan_state_draw_replace_fields(&command_writer->state_draw,
                                      TERAKAN_STATE_DRAW_INDEX_DB_RENDER_OVERRIDE,
@@ -273,8 +259,7 @@ terakan_pipeline_graphics_apply_db_render_override_pre_rasterization(
 static void
 terakan_pipeline_graphics_apply_pa_sc_aa_mask(
    struct terakan_gfx_command_writer * const command_writer,
-   struct terakan_pipeline_graphics const * const pipeline,
-   UNUSED enum terakan_pipeline_graphics_state_index const state_index)
+   struct terakan_pipeline_graphics const * const pipeline)
 {
    command_writer->state_draw.pa_sc_aa_mask = pipeline->multisample.pa_sc_aa_mask;
    terakan_state_draw_set_pending(&command_writer->state_draw,
@@ -284,8 +269,7 @@ terakan_pipeline_graphics_apply_pa_sc_aa_mask(
 static void
 terakan_pipeline_graphics_apply_cb_blend_rgba(
    struct terakan_gfx_command_writer * const command_writer,
-   struct terakan_pipeline_graphics const * const pipeline,
-   UNUSED enum terakan_pipeline_graphics_state_index const state_index)
+   struct terakan_pipeline_graphics const * const pipeline)
 {
    /* The blend constant is not needed by internal draws, modify hw_state_draw directly. */
    bool const modified = memcmp(command_writer->hw_state_draw.cb_blend_rgba,
@@ -299,8 +283,7 @@ terakan_pipeline_graphics_apply_cb_blend_rgba(
 static void
 terakan_pipeline_graphics_apply_cb_blend_control_enable(
    struct terakan_gfx_command_writer * const command_writer,
-   struct terakan_pipeline_graphics const * const pipeline,
-   UNUSED enum terakan_pipeline_graphics_state_index const state_index)
+   struct terakan_pipeline_graphics const * const pipeline)
 {
    for (uint32_t attachment_index = 0;
         attachment_index < pipeline->fragment_output.color_blend_attachment_count;
@@ -321,8 +304,7 @@ terakan_pipeline_graphics_apply_cb_blend_control_enable(
 static void
 terakan_pipeline_graphics_apply_cb_blend_control_equation(
    struct terakan_gfx_command_writer * const command_writer,
-   struct terakan_pipeline_graphics const * const pipeline,
-   UNUSED enum terakan_pipeline_graphics_state_index const state_index)
+   struct terakan_pipeline_graphics const * const pipeline)
 {
    for (uint32_t attachment_index = 0;
         attachment_index < pipeline->fragment_output.color_blend_attachment_count;
@@ -408,8 +390,7 @@ terakan_pipeline_graphics_bind(struct terakan_gfx_command_writer * const command
 
    unsigned state_index;
    BITSET_FOREACH_SET (state_index, pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_COUNT) {
-      terakan_pipeline_graphics_apply_state_functions[state_index](
-         command_writer, pipeline, (enum terakan_pipeline_graphics_state_index)state_index);
+      terakan_pipeline_graphics_apply_state_functions[state_index](command_writer, pipeline);
    }
 }
 
