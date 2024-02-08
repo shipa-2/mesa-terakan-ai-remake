@@ -141,7 +141,7 @@ void *
 terakan_command_buffer_allocate_push_constants(struct terakan_command_buffer * const command_buffer,
                                                uint32_t const size_bytes,
                                                struct terakan_bo const ** const bo_out,
-                                               uint32_t * base_kcache_lines_out)
+                                               uint32_t * const va_kcache_lines_out)
 {
    uint32_t const size_kcache_lines = DIV_ROUND_UP(size_bytes, TERAKAN_KCACHE_HW_LINE_BYTES);
 
@@ -184,7 +184,9 @@ terakan_command_buffer_allocate_push_constants(struct terakan_command_buffer * c
       }
 
       *bo_out = existing_buffer->bo;
-      *base_kcache_lines_out = existing_buffer_offset_kcache_lines;
+      *va_kcache_lines_out =
+         (uint32_t)(existing_buffer->bo->va >> TERAKAN_KCACHE_HW_LINE_BYTES_LOG2) +
+         existing_buffer_offset_kcache_lines;
       return (char *)existing_buffer->bo->mapping +
              TERAKAN_KCACHE_HW_LINE_BYTES * existing_buffer_offset_kcache_lines;
    }
@@ -236,7 +238,7 @@ terakan_command_buffer_allocate_push_constants(struct terakan_command_buffer * c
    }
 
    *bo_out = new_buffer->bo;
-   *base_kcache_lines_out = 0;
+   *va_kcache_lines_out = 0;
    return new_buffer->bo->mapping;
 }
 
@@ -943,8 +945,7 @@ terakan_gfx_command_writer_new_indirect_buffer(
 uint32_t *
 terakan_gfx_command_writer_emit(struct terakan_gfx_command_writer * const command_writer,
                                 uint32_t const packet_dwords, uint32_t const bo_count,
-                                uint32_t const relocation_packet_dwords,
-                                bool abort_if_all_state_emitted)
+                                uint32_t const relocation_count, bool abort_if_all_state_emitted)
 {
    /* Empty indirect buffer submissions may not be supported by the queue, make sure indirect
     * buffers can't be allocated only to end up being empty.
@@ -955,7 +956,11 @@ terakan_gfx_command_writer_emit(struct terakan_gfx_command_writer * const comman
       return NULL;
    }
 
-   uint32_t const total_packet_dwords = packet_dwords + relocation_packet_dwords;
+   uint32_t total_packet_dwords = packet_dwords;
+   if (terakan_gfx_command_writer_physical_device(command_writer)->gfx_bo_relocation_type ==
+       TERAKAN_BO_RELOCATION_TYPE_DRM_NOP) {
+      total_packet_dwords += 2 * relocation_count;
+   }
 
    uint32_t const indirect_buffer_max_dwords =
       TERAKAN_MAX_INDIRECT_BUFFER_SIZE_DWORDS & ~((uint32_t)7);
@@ -1007,21 +1012,23 @@ void
 terakan_gfx_command_writer_emit_event_write_eop_discarding_data(
    struct terakan_gfx_command_writer * const command_writer, uint32_t const event)
 {
-   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 6, 1, 2, false);
+   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 6, 1, 1, false);
    if (unlikely(packet == NULL)) {
       return;
    }
+   struct terakan_bo const * const gfx_discard_bo =
+      terakan_gfx_command_writer_device(command_writer)->gfx_discard_bo;
    *packet++ = PKT3(PKT3_EVENT_WRITE_EOP, 5 - 1, 0);
    *packet++ = event;
-   *packet++ = 0; /* ADDRESS_LO */
-   *packet++ = 0; /* ADDRESS_HI, INT_SEL, DATA_SEL */
+   *packet++ = (uint32_t)gfx_discard_bo->va;      /* ADDRESS_LO */
+   *packet++ = (gfx_discard_bo->va >> 32) & 0xFF; /* ADDRESS_HI, INT_SEL, DATA_SEL */
    *packet++ = 0; /* DATA_LO */
    *packet++ = 0; /* DATA_HI */
-   *packet++ = PKT3(PKT3_NOP, 0, 0);
-   *packet++ = terakan_bo_reference_writer_add_reference(
-      &command_writer->base.bo_reference_writer,
-      terakan_gfx_command_writer_device(command_writer)->gfx_discard_bo, false, true,
-      TERAKAN_BO_PRIORITY_FENCE_TRACE);
+   terakan_gfx_command_writer_add_bo_relocation(
+      command_writer, &packet,
+      terakan_bo_reference_writer_add_reference(&command_writer->base.bo_reference_writer,
+                                                gfx_discard_bo, false, true,
+                                                TERAKAN_BO_PRIORITY_FENCE_TRACE));
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL

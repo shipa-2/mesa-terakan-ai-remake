@@ -36,12 +36,12 @@
 
 void
 terakan_color_descriptor_calculate_buffer_base_pitch_view_dim(
-   struct terakan_color_descriptor * const descriptor, VkDeviceSize const bo_address,
+   struct terakan_color_descriptor * const descriptor, uint64_t const va,
    VkDeviceSize const elements, unsigned const bpe, unsigned const tile_pipe_interleave_bytes_log2)
 {
-   VkDeviceSize const bo_address_aligned = bo_address >> tile_pipe_interleave_bytes_log2
-                                                            << tile_pipe_interleave_bytes_log2;
-   descriptor->base = (uint32_t)(bo_address_aligned >> 8);
+   uint64_t const va_aligned = va >> tile_pipe_interleave_bytes_log2
+                                        << tile_pipe_interleave_bytes_log2;
+   descriptor->base = (uint32_t)(va_aligned >> 8);
 
    /* The pitch field is ignored by the hardware for buffers and can't store large buffer sizes, but
     * Linux Radeon 2.50.0 validates the pitch alignment regardless of whether the color surface is a
@@ -53,7 +53,7 @@ terakan_color_descriptor_calculate_buffer_base_pitch_view_dim(
       terakan_format_pitch_alignment_linear_bytes(bpe, tile_pipe_interleave_bytes_log2) / bpe / 8 -
       1);
 
-   VkDeviceSize const alignment_elements = (bo_address - bo_address_aligned) / bpe;
+   uint32_t const alignment_elements = (va - va_aligned) / bpe;
    /* Used by the driver, must be zeroed before being passed to the hardware. */
    descriptor->view = S_028C6C_SLICE_START(alignment_elements);
 
@@ -62,11 +62,10 @@ terakan_color_descriptor_calculate_buffer_base_pitch_view_dim(
 }
 
 bool
-terakan_descriptor_create_for_uniform_buffer(struct terakan_bo const * const bo,
-                                             VkDeviceSize const bo_offset, VkDeviceSize const range,
-                                             uint32_t resource_out[8])
+terakan_descriptor_create_for_uniform_buffer(struct terakan_bo const * const bo, uint64_t const va,
+                                             VkDeviceSize const range, uint32_t resource_out[8])
 {
-   assert((bo_offset & (TERAKAN_KCACHE_HW_LINE_BYTES - 1)) == 0);
+   assert((va & (TERAKAN_KCACHE_HW_LINE_BYTES - 1)) == 0);
    assert(range != VK_WHOLE_SIZE);
    if (bo == NULL || range == 0) {
       return false;
@@ -77,9 +76,9 @@ terakan_descriptor_create_for_uniform_buffer(struct terakan_bo const * const bo,
     */
    VkDeviceSize const range_aligned = ALIGN_POT(range, (VkDeviceSize)TERAKAN_KCACHE_HW_LINE_BYTES);
 
-   resource_out[0] = (uint32_t)bo_offset;
+   resource_out[0] = (uint32_t)va;
    resource_out[1] = (uint32_t)(range_aligned - 1);
-   resource_out[2] = S_030008_BASE_ADDRESS_HI(bo_offset >> 32) | S_030008_STRIDE(1);
+   resource_out[2] = S_030008_BASE_ADDRESS_HI(va >> 32) | S_030008_STRIDE(1);
    resource_out[3] = S_03000C_DST_SEL_X(V_03000C_SQ_SEL_X) | S_03000C_DST_SEL_Y(V_03000C_SQ_SEL_Y) |
                      S_03000C_DST_SEL_Z(V_03000C_SQ_SEL_Z) | S_03000C_DST_SEL_W(V_03000C_SQ_SEL_W);
    resource_out[4] = (uint32_t)(range_aligned / (sizeof(uint32_t) * 4));
@@ -90,13 +89,13 @@ terakan_descriptor_create_for_uniform_buffer(struct terakan_bo const * const bo,
 }
 
 bool
-terakan_descriptor_create_for_storage_buffer(struct terakan_bo const * const bo,
-                                             VkDeviceSize const bo_offset, VkDeviceSize const range,
+terakan_descriptor_create_for_storage_buffer(struct terakan_bo const * const bo, uint64_t const va,
+                                             VkDeviceSize const range,
                                              unsigned const tile_pipe_interleave_bytes_log2,
                                              uint32_t resource_out[8],
                                              struct terakan_color_descriptor * const color_out)
 {
-   assert((bo_offset & (sizeof(uint32_t) - 1)) == 0);
+   assert((va & (sizeof(uint32_t) - 1)) == 0);
    assert(range != VK_WHOLE_SIZE);
    if (bo == NULL || range == 0) {
       return false;
@@ -105,9 +104,9 @@ terakan_descriptor_create_for_storage_buffer(struct terakan_bo const * const bo,
    /* VK_EXT_robustness2 behavior: rounding up. */
    VkDeviceSize const range_aligned = ALIGN_POT(range, (VkDeviceSize)sizeof(uint32_t));
 
-   resource_out[0] = (uint32_t)bo_offset;
+   resource_out[0] = (uint32_t)va;
    resource_out[1] = (uint32_t)(range_aligned - 1);
-   resource_out[2] = S_030008_BASE_ADDRESS_HI(bo_offset >> 32) | S_030008_STRIDE(sizeof(uint32_t)) |
+   resource_out[2] = S_030008_BASE_ADDRESS_HI(va >> 32) | S_030008_STRIDE(sizeof(uint32_t)) |
                      S_030008_DATA_FORMAT(FMT_32) |
                      S_030008_NUM_FORMAT_ALL(V_030008_SQ_NUM_FORMAT_INT) |
                      S_030008_ENDIAN_SWAP(UTIL_ARCH_BIG_ENDIAN ? ENDIAN_8IN32 : 0);
@@ -121,7 +120,7 @@ terakan_descriptor_create_for_storage_buffer(struct terakan_bo const * const bo,
    resource_out[TERAKAN_RESOURCE_BUFFER_PRIORITY_WORD] = TERAKAN_BO_PRIORITY_SHADER_READ_BUFFER;
 
    terakan_color_descriptor_calculate_buffer_base_pitch_view_dim(
-      color_out, bo_offset, range_aligned / sizeof(uint32_t), sizeof(uint32_t),
+      color_out, va, range_aligned / sizeof(uint32_t), sizeof(uint32_t),
       tile_pipe_interleave_bytes_log2);
    color_out->info =
       S_028C70_FORMAT(V_028C70_COLOR_32) | S_028C70_ARRAY_MODE(V_028C70_ARRAY_LINEAR_ALIGNED) |

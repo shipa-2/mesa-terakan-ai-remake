@@ -554,7 +554,7 @@ terakan_pipeline_graphics_vertex_input_init(struct terakan_pipeline_graphics * c
       if (attributes_needed_by_vs == NULL ||
           !fs_state->bindings_needed_by_attributes_and_provided) {
          fs_state->program_bo = NULL;
-         fs_state->program_start = 0;
+         fs_state->program_va_shr8 = 0;
       } else {
          uint32_t fs_alu_qword_count, fs_alu_clause_count, fs_fetch_count;
          uint32_t fs_alu[2 * TERAKAN_VERTEX_INPUT_FS_MAX_ALU_QWORDS];
@@ -577,7 +577,7 @@ terakan_pipeline_graphics_vertex_input_init(struct terakan_pipeline_graphics * c
          if (result != VK_SUCCESS) {
             return vk_error(device, result);
          }
-         fs_state->program_start = 0;
+         fs_state->program_va_shr8 = 0;
          void * const fs_mapping = terakan_bo_map(fs_state->program_bo);
          if (fs_mapping == NULL) {
             terakan_bo_free(fs_state->program_bo, allocator);

@@ -131,7 +131,10 @@ terakan_device_init(struct terakan_device * const device,
       *device_meta_shader = meta_shader_description->static_registers;
       VkDeviceSize const meta_shader_offset =
          ALIGN_POT(meta_shaders_bo_size, (VkDeviceSize)TERAKAN_SHADER_PROGRAM_ALIGNMENT);
-      device_meta_shader->program_start =
+      /* Relative for initialization purposes.
+       * Will be translated into virtual addresses when the device shaders are bound to the BO.
+       */
+      device_meta_shader->program_va_shr8 =
          meta_shader_offset >> TERAKAN_SHADER_PROGRAM_ALIGNMENT_LOG2;
       meta_shaders_bo_size = meta_shader_offset + meta_shader_description->program_size_bytes;
    }
@@ -145,6 +148,7 @@ terakan_device_init(struct terakan_device * const device,
                          "Failed to allocate memory for internal shaders");
       goto fail_gfx_discard_bo;
    }
+   uint32_t const meta_shaders_va_shr8 = (uint32_t)(device->meta_shaders_bo->va >> 8);
    {
       char * const meta_shaders_bo_mapping = terakan_bo_map(device->meta_shaders_bo);
       if (meta_shaders_bo_mapping == NULL) {
@@ -172,9 +176,10 @@ terakan_device_init(struct terakan_device * const device,
          struct terakan_meta_shader_description const * const meta_shader_description =
             is_r9xx ? &meta_shader->r9xx : &meta_shader->r8xx;
          util_memcpy_cpu_to_le32(
-            meta_shaders_bo_mapping + ((VkDeviceSize)device_meta_shader->program_start
+            meta_shaders_bo_mapping + ((VkDeviceSize)device_meta_shader->program_va_shr8
                                        << TERAKAN_SHADER_PROGRAM_ALIGNMENT_LOG2),
             meta_shader_description->program, meta_shader_description->program_size_bytes);
+         device_meta_shader->program_va_shr8 += meta_shaders_va_shr8;
       }
       terakan_bo_unmap(device->meta_shaders_bo);
    }

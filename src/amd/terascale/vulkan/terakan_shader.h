@@ -48,7 +48,7 @@ extern "C" {
 /* Fields that don't depend on any other state. */
 struct terakan_shader_static {
    struct terakan_bo * program_bo;
-   uint32_t program_start;
+   uint32_t program_va_shr8;
 
    uint32_t sq_pgm_resources[2];
 

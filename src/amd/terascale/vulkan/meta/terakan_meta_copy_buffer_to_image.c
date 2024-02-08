@@ -406,7 +406,7 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
 
    struct terakan_meta_copy_buffer_to_image_push_constants push_constants = {};
    struct terakan_bo const * push_constants_bo = NULL;
-   uint32_t push_constants_base;
+   uint32_t push_constants_va_lines;
 
    for (uint32_t region_index = 0; region_index < pCopyBufferToImageInfo->regionCount;
         ++region_index) {
@@ -445,7 +445,7 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
       if (push_constants_bo == NULL) {
          void * const push_constants_mapping = terakan_command_buffer_allocate_push_constants(
             command_writer->base.command_buffer, sizeof(push_constants), &push_constants_bo,
-            &push_constants_base);
+            &push_constants_va_lines);
          if (unlikely(push_constants_mapping == NULL)) {
             return;
          }
@@ -454,7 +454,7 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
             &command_writer->hw_state_draw, TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS,
             (sizeof(push_constants) + (TERAKAN_KCACHE_HW_LINE_BYTES - 1)) /
                TERAKAN_KCACHE_HW_LINE_BYTES,
-            push_constants_bo, push_constants_base);
+            push_constants_bo, push_constants_va_lines);
       }
 
       bool const is_stencil = region->imageSubresource.aspectMask == VK_IMAGE_ASPECT_STENCIL_BIT;
@@ -477,7 +477,7 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
                : region->imageSubresource.layerCount;
       }
 
-      VkDeviceSize buffer_offset = buffer->bo_offset + region->bufferOffset;
+      uint64_t buffer_va = buffer->va + region->bufferOffset;
 
       uint32_t const bpe = is_stencil ? 1 : image->surface.bpe;
 
@@ -511,10 +511,10 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
          VkDeviceSize const buffer_size_elements =
             (image_view_create_info.subresourceRange.layerCount - 1) * buffer_z_pitch +
             (rect.extent.height - 1) * buffer_y_pitch + rect.extent.width;
-         buffer_resource[0] = (uint32_t)buffer_offset;
+         buffer_resource[0] = (uint32_t)buffer_va;
          buffer_resource[1] = (uint32_t)(bpe * buffer_size_elements - 1);
          buffer_resource[2] =
-            S_030008_BASE_ADDRESS_HI(buffer_offset >> 32) | S_030008_STRIDE(bpe) |
+            S_030008_BASE_ADDRESS_HI(buffer_va >> 32) | S_030008_STRIDE(bpe) |
             S_030008_DATA_FORMAT(terakan_format_vertex_get_format(region_transfer_format)) |
             S_030008_NUM_FORMAT_ALL(terakan_format_data_get_number_format(region_transfer_format));
          buffer_resource[4] = (uint32_t)buffer_size_elements;
@@ -527,7 +527,7 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
 
          image_view_create_info.subresourceRange.baseArrayLayer += color_descriptor_layer_count;
          image_view_create_info.subresourceRange.layerCount -= color_descriptor_layer_count;
-         buffer_offset += bpe * (VkDeviceSize)buffer_z_pitch * color_descriptor_layer_count;
+         buffer_va += bpe * (VkDeviceSize)buffer_z_pitch * color_descriptor_layer_count;
       }
    }
 }

@@ -1407,7 +1407,7 @@ terakan_CmdBindVertexBuffers2(VkCommandBuffer const commandBuffer, uint32_t cons
          continue;
       }
       binding->bo = buffer->bo;
-      binding->bo_offset = buffer->bo_offset;
+      binding->va = buffer->va;
       binding->size_bytes_minus_1 = size - 1;
    }
 

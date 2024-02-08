@@ -317,7 +317,7 @@ terakan_shader_impl_compile(terakan_shader_impl * const shader, terakan_device *
       }
       return vk_error(device, result);
    }
-   shader->static_state.program_start = 0;
+   shader->static_state.program_va_shr8 = 0;
    {
       void * const program_bo_mapping = terakan_bo_map(shader->static_state.program_bo);
       if (program_bo_mapping == nullptr) {

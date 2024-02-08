@@ -88,7 +88,7 @@ struct terakan_push_constants_state {
       /* NULL if not up to date, the rest is undefined if that's the case. */
       char * mapping_if_up_to_date;
       struct terakan_bo const * bo;
-      uint32_t base_kcache_lines;
+      uint32_t va_kcache_lines;
       uint32_t size_kcache_lines;
       uint32_t app_up_to_date_bytes_written;
    } allocation;

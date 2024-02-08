@@ -75,11 +75,21 @@ enum terakan_bo_priority {
    TERAKAN_BO_PRIORITY_SCRATCH_BUFFER = 11,
 };
 
+enum terakan_bo_relocation_type {
+   TERAKAN_BO_RELOCATION_TYPE_NONE,
+   TERAKAN_BO_RELOCATION_TYPE_DRM_NOP,
+};
+
 struct terakan_device;
 
 /* Partially implemented by the winsys. */
 struct terakan_bo {
    struct terakan_device * device;
+
+   /* 0 if virtual memory is not supported, in which case addresses in packets are relative to the
+    * start of the BO.
+    */
+   uint64_t va;
 
    /* Value of the monotonically increasing counter of created BOs given to this BO.
     * Only for purposes like hashing - must not be used as an unique identifier, as it may wrap

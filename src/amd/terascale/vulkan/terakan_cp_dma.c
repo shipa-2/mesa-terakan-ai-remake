@@ -45,25 +45,27 @@
 void
 terakan_cp_dma_sync_cp_me(struct terakan_gfx_command_writer * const command_writer)
 {
-   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 1 + 5, 1, 4, false);
+   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 1 + 5, 1, 2, false);
    if (unlikely(packet == NULL)) {
       return;
    }
+   struct terakan_bo const * const gfx_discard_bo =
+      terakan_gfx_command_writer_device(command_writer)->gfx_discard_bo;
+   uint64_t const discard_dest_va = gfx_discard_bo->va + TERAKAN_CP_DMA_COPY_OPTIMAL_ALIGNMENT;
    *packet++ = PKT3(PKT3_CP_DMA, 5 - 1, 0);
-   *packet++ = 0;
-   *packet++ = PKT3_CP_DMA_CP_SYNC;
-   *packet++ = TERAKAN_CP_DMA_COPY_OPTIMAL_ALIGNMENT;
-   *packet++ = 0;
+   *packet++ = (uint32_t)gfx_discard_bo->va;
+   *packet++ = ((gfx_discard_bo->va >> 32) & 0xFF) | PKT3_CP_DMA_CP_SYNC;
+   *packet++ = (uint32_t)discard_dest_va;
+   *packet++ = (discard_dest_va >> 32) & 0xFF;
    /* The size must not be zero, otherwise nothing would happen (tested on Barts). */
    *packet++ = TERAKAN_CP_DMA_COPY_OPTIMAL_ALIGNMENT;
    uint32_t const discard_bo_reference = terakan_bo_reference_writer_add_reference(
-      &command_writer->base.bo_reference_writer,
-      terakan_gfx_command_writer_device(command_writer)->gfx_discard_bo, true, true,
+      &command_writer->base.bo_reference_writer, gfx_discard_bo, true, true,
       TERAKAN_BO_PRIORITY_DISCARD);
-   *packet++ = PKT3(PKT3_NOP, 0, 0);
-   *packet++ = discard_bo_reference;
-   *packet++ = PKT3(PKT3_NOP, 0, 0);
-   *packet++ = discard_bo_reference;
+   /* Source. */
+   terakan_gfx_command_writer_add_bo_relocation(command_writer, &packet, discard_bo_reference);
+   /* Destination. */
+   terakan_gfx_command_writer_add_bo_relocation(command_writer, &packet, discard_bo_reference);
 }
 
 static void
@@ -79,11 +81,10 @@ terakan_cp_dma_prepare(struct terakan_gfx_command_writer * const command_writer)
 
 void
 terakan_cp_dma_copy(struct terakan_gfx_command_writer * const command_writer,
-                    struct terakan_bo const * const src_bo,
-                    enum terakan_bo_priority const src_bo_priority, VkDeviceSize const src_offset,
-                    struct terakan_bo const * const dst_bo,
-                    enum terakan_bo_priority const dst_bo_priority, VkDeviceSize const dst_offset,
-                    VkDeviceSize const size)
+                    struct terakan_bo const * const src_bo, uint64_t const src_va,
+                    enum terakan_bo_priority const src_bo_priority,
+                    struct terakan_bo const * const dst_bo, uint64_t const dst_va,
+                    enum terakan_bo_priority const dst_bo_priority, VkDeviceSize const size)
 {
    uint32_t * packet;
 
@@ -92,76 +93,82 @@ terakan_cp_dma_copy(struct terakan_gfx_command_writer * const command_writer,
    /* Align the source address to the optimal alignment by skipping the misaligned bytes of the
     * source. They will be copied after the rest of the region.
     */
-   VkDeviceSize current_src_offset_aligned =
-      ALIGN_POT(src_offset, TERAKAN_CP_DMA_COPY_OPTIMAL_ALIGNMENT);
+   uint64_t current_src_va_aligned =
+      ALIGN_POT(src_va, (uint64_t)TERAKAN_CP_DMA_COPY_OPTIMAL_ALIGNMENT);
    VkDeviceSize const src_misaligned_head_size =
-      MIN2(current_src_offset_aligned - src_offset, size);
+      MIN2((VkDeviceSize)(current_src_va_aligned - src_va), size);
    VkDeviceSize src_aligned_size_remaining = size - src_misaligned_head_size;
-   VkDeviceSize current_dst_offset_src_aligned = dst_offset + src_misaligned_head_size;
+   uint64_t current_dst_va_src_aligned = dst_va + src_misaligned_head_size;
    while (src_aligned_size_remaining != 0) {
       uint32_t const command_copy_size =
          (uint32_t)MIN2(src_aligned_size_remaining, TERAKAN_CP_DMA_MAX_ALIGNED_COPY_BYTE_COUNT);
-      packet = terakan_gfx_command_writer_emit(command_writer, 1 + 5, 2, 4, false);
+      packet = terakan_gfx_command_writer_emit(command_writer, 1 + 5, 2, 2, false);
       if (unlikely(packet == NULL)) {
          return;
       }
       *packet++ = PKT3(PKT3_CP_DMA, 5 - 1, 0);
-      *packet++ = (uint32_t)current_src_offset_aligned;
-      *packet++ = (uint32_t)((current_src_offset_aligned >> 32) & UINT8_MAX);
-      *packet++ = (uint32_t)current_dst_offset_src_aligned;
-      *packet++ = (uint32_t)((current_dst_offset_src_aligned >> 32) & UINT8_MAX);
+      *packet++ = (uint32_t)current_src_va_aligned;
+      *packet++ = (current_src_va_aligned >> 32) & 0xFF;
+      *packet++ = (uint32_t)current_dst_va_src_aligned;
+      *packet++ = (current_dst_va_src_aligned >> 32) & 0xFF;
       *packet++ = command_copy_size;
-      *packet++ = PKT3(PKT3_NOP, 0, 0);
-      *packet++ = terakan_bo_reference_writer_add_reference(
-         &command_writer->base.bo_reference_writer, src_bo, true, false, src_bo_priority);
-      *packet++ = PKT3(PKT3_NOP, 0, 0);
-      *packet++ = terakan_bo_reference_writer_add_reference(
-         &command_writer->base.bo_reference_writer, dst_bo, false, true, dst_bo_priority);
-      current_src_offset_aligned += command_copy_size;
-      current_dst_offset_src_aligned += command_copy_size;
+      terakan_gfx_command_writer_add_bo_relocation(
+         command_writer, &packet,
+         terakan_bo_reference_writer_add_reference(&command_writer->base.bo_reference_writer,
+                                                   src_bo, true, false, src_bo_priority));
+      terakan_gfx_command_writer_add_bo_relocation(
+         command_writer, &packet,
+         terakan_bo_reference_writer_add_reference(&command_writer->base.bo_reference_writer,
+                                                   dst_bo, false, true, dst_bo_priority));
+      current_src_va_aligned += command_copy_size;
+      current_dst_va_src_aligned += command_copy_size;
       src_aligned_size_remaining -= command_copy_size;
    }
 
    if (src_misaligned_head_size != 0) {
-      packet = terakan_gfx_command_writer_emit(command_writer, 1 + 5, 2, 4, false);
+      packet = terakan_gfx_command_writer_emit(command_writer, 1 + 5, 2, 2, false);
       if (unlikely(packet == NULL)) {
          return;
       }
       *packet++ = PKT3(PKT3_CP_DMA, 5 - 1, 0);
-      *packet++ = (uint32_t)src_offset;
-      *packet++ = (uint32_t)((src_offset >> 32) & UINT8_MAX);
-      *packet++ = (uint32_t)dst_offset;
-      *packet++ = (uint32_t)((dst_offset >> 32) & UINT8_MAX);
+      *packet++ = (uint32_t)src_va;
+      *packet++ = (src_va >> 32) & 0xFF;
+      *packet++ = (uint32_t)dst_va;
+      *packet++ = (dst_va >> 32) & 0xFF;
       *packet++ = (uint32_t)src_misaligned_head_size;
-      *packet++ = PKT3(PKT3_NOP, 0, 0);
-      *packet++ = terakan_bo_reference_writer_add_reference(
-         &command_writer->base.bo_reference_writer, src_bo, true, false, src_bo_priority);
-      *packet++ = PKT3(PKT3_NOP, 0, 0);
-      *packet++ = terakan_bo_reference_writer_add_reference(
-         &command_writer->base.bo_reference_writer, dst_bo, false, true, dst_bo_priority);
+      terakan_gfx_command_writer_add_bo_relocation(
+         command_writer, &packet,
+         terakan_bo_reference_writer_add_reference(&command_writer->base.bo_reference_writer,
+                                                   src_bo, true, false, src_bo_priority));
+      terakan_gfx_command_writer_add_bo_relocation(
+         command_writer, &packet,
+         terakan_bo_reference_writer_add_reference(&command_writer->base.bo_reference_writer,
+                                                   dst_bo, false, true, dst_bo_priority));
    }
 
    /* Align the internal total amount counter. */
    VkDeviceSize const size_misalignment = size & (TERAKAN_CP_DMA_COPY_OPTIMAL_ALIGNMENT - 1);
    if (size_misalignment != 0) {
-      packet = terakan_gfx_command_writer_emit(command_writer, 1 + 5, 1, 4, false);
+      packet = terakan_gfx_command_writer_emit(command_writer, 1 + 5, 1, 2, false);
       if (unlikely(packet == NULL)) {
          return;
       }
+      struct terakan_bo const * const gfx_discard_bo =
+         terakan_gfx_command_writer_device(command_writer)->gfx_discard_bo;
+      uint64_t const discard_dest_va = gfx_discard_bo->va + TERAKAN_CP_DMA_COPY_OPTIMAL_ALIGNMENT;
       *packet++ = PKT3(PKT3_CP_DMA, 5 - 1, 0);
-      *packet++ = 0;
-      *packet++ = 0;
-      *packet++ = TERAKAN_CP_DMA_COPY_OPTIMAL_ALIGNMENT;
-      *packet++ = 0;
+      *packet++ = (uint32_t)gfx_discard_bo->va;
+      *packet++ = (gfx_discard_bo->va >> 32) & 0xFF;
+      *packet++ = (uint32_t)discard_dest_va;
+      *packet++ = (discard_dest_va >> 32) & 0xFF;
       *packet++ = (uint32_t)(TERAKAN_CP_DMA_COPY_OPTIMAL_ALIGNMENT - size_misalignment);
       uint32_t const discard_bo_reference = terakan_bo_reference_writer_add_reference(
-         &command_writer->base.bo_reference_writer,
-         terakan_gfx_command_writer_device(command_writer)->gfx_discard_bo, true, true,
+         &command_writer->base.bo_reference_writer, gfx_discard_bo, true, true,
          TERAKAN_BO_PRIORITY_DISCARD);
-      *packet++ = PKT3(PKT3_NOP, 0, 0);
-      *packet++ = discard_bo_reference;
-      *packet++ = PKT3(PKT3_NOP, 0, 0);
-      *packet++ = discard_bo_reference;
+      /* Source. */
+      terakan_gfx_command_writer_add_bo_relocation(command_writer, &packet, discard_bo_reference);
+      /* Destination. */
+      terakan_gfx_command_writer_add_bo_relocation(command_writer, &packet, discard_bo_reference);
    }
 }
 
@@ -171,10 +178,10 @@ terakan_CmdCopyBuffer2(VkCommandBuffer const commandBuffer,
 {
    struct terakan_gfx_command_writer * const command_writer =
       terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx;
-   struct terakan_bo const * const src_bo =
-      terakan_buffer_from_handle(pCopyBufferInfo->srcBuffer)->bo;
-   struct terakan_bo const * const dst_bo =
-      terakan_buffer_from_handle(pCopyBufferInfo->dstBuffer)->bo;
+   struct terakan_buffer const * const src_buffer =
+      terakan_buffer_from_handle(pCopyBufferInfo->srcBuffer);
+   struct terakan_buffer const * const dst_buffer =
+      terakan_buffer_from_handle(pCopyBufferInfo->dstBuffer);
    for (uint32_t region_index = 0; region_index < pCopyBufferInfo->regionCount; ++region_index) {
       VkBufferCopy2 const * const region = &pCopyBufferInfo->pRegions[region_index];
       if (unlikely(region->size == 0)) {
@@ -182,7 +189,9 @@ terakan_CmdCopyBuffer2(VkCommandBuffer const commandBuffer,
       }
       command_writer->post_buffer_copy_write_barrier_actions |=
          TERAKAN_BARRIER_ACTION_SYNC_ME_TO_CP_DMA;
-      terakan_cp_dma_copy(command_writer, src_bo, TERAKAN_BO_PRIORITY_CP_DMA, region->srcOffset,
-                          dst_bo, TERAKAN_BO_PRIORITY_CP_DMA, region->dstOffset, region->size);
+      terakan_cp_dma_copy(command_writer, src_buffer->bo, src_buffer->va + region->srcOffset,
+                          TERAKAN_BO_PRIORITY_CP_DMA, dst_buffer->bo,
+                          dst_buffer->va + region->dstOffset, TERAKAN_BO_PRIORITY_CP_DMA,
+                          region->size);
    }
 }

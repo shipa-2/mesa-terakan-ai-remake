@@ -49,7 +49,7 @@ terakan_buffer_create_uniform_buffer_descriptor(VkDescriptorBufferInfo const * c
       return NULL;
    }
    if (!terakan_descriptor_create_for_uniform_buffer(
-          buffer->bo, buffer->bo_offset + buffer_info->offset,
+          buffer->bo, buffer->va + buffer_info->offset,
           vk_buffer_range(&buffer->vk, buffer_info->offset, buffer_info->range), resource_out)) {
       return NULL;
    }
@@ -66,7 +66,7 @@ terakan_buffer_create_storage_buffer_descriptor(VkDescriptorBufferInfo const * c
       return NULL;
    }
    if (!terakan_descriptor_create_for_storage_buffer(
-          buffer->bo, buffer->bo_offset + buffer_info->offset,
+          buffer->bo, buffer->va + buffer_info->offset,
           vk_buffer_range(&buffer->vk, buffer_info->offset, buffer_info->range),
           container_of(buffer->vk.base.device->physical, struct terakan_physical_device const, vk)
              ->tiling_info.pipe_interleave_bytes_log2,
@@ -179,7 +179,7 @@ terakan_BindBufferMemory2(UNUSED VkDevice const device, uint32_t const bindInfoC
       VkBindBufferMemoryInfo const * const bind_info = &pBindInfos[bind_info_index];
       struct terakan_buffer * const buffer = terakan_buffer_from_handle(bind_info->buffer);
       buffer->bo = terakan_device_memory_from_handle(bind_info->memory)->bo;
-      buffer->bo_offset = bind_info->memoryOffset;
+      buffer->va = buffer->bo->va + bind_info->memoryOffset;
    }
 
    return VK_SUCCESS;
@@ -218,7 +218,7 @@ terakan_CreateBuffer(VkDevice const deviceHandle, VkBufferCreateInfo const * con
    vk_buffer_init(&device->vk, &buffer->vk, pCreateInfo);
 
    buffer->bo = NULL;
-   buffer->bo_offset = 0;
+   buffer->va = 0;
 
    *pBuffer = terakan_buffer_to_handle(buffer);
    return VK_SUCCESS;
@@ -268,7 +268,7 @@ terakan_CreateBufferView(VkDevice const deviceHandle,
     * non-VK_WHOLE_SIZE `range` (VUID-VkBufferViewCreateInfo-range-00928).
     */
    if (buffer_view->vk.elements != 0) {
-      VkDeviceSize const bo_offset = buffer->bo_offset + pCreateInfo->offset;
+      uint64_t const va = buffer->va + pCreateInfo->offset;
 
       VkFormat const format = pCreateInfo->format;
       unsigned const bpe = vk_format_get_blocksize(format);
@@ -276,10 +276,10 @@ terakan_CreateBufferView(VkDevice const deviceHandle,
       uint32_t const vertex_data_format = terakan_format_vertex_get_format(format);
       uint32_t const vertex_number_format = terakan_format_data_get_number_format(format);
       if (vertex_data_format != FMT_INVALID && vertex_number_format != UINT32_MAX) {
-         buffer_view->resource[0] = (uint32_t)bo_offset;
+         buffer_view->resource[0] = (uint32_t)va;
          buffer_view->resource[1] = (uint32_t)(bpe * buffer_view->vk.elements - 1);
          buffer_view->resource[2] =
-            S_030008_BASE_ADDRESS_HI(bo_offset >> 32) | S_030008_STRIDE(bpe) |
+            S_030008_BASE_ADDRESS_HI(va >> 32) | S_030008_STRIDE(bpe) |
             S_030008_DATA_FORMAT(vertex_data_format) |
             S_030008_NUM_FORMAT_ALL(vertex_number_format) |
             S_030008_FORMAT_COMP_ALL(terakan_format_vertex_get_sign(format));
@@ -309,7 +309,7 @@ terakan_CreateBufferView(VkDevice const deviceHandle,
             if (rat_format != V_028C70_COLOR_INVALID && rat_number_type != UINT32_MAX &&
                 rat_swap != UINT32_MAX) {
                terakan_color_descriptor_calculate_buffer_base_pitch_view_dim(
-                  &buffer_view->color, bo_offset, buffer_view->vk.elements, bpe,
+                  &buffer_view->color, va, buffer_view->vk.elements, bpe,
                   terakan_device_physical_device(device)->tiling_info.pipe_interleave_bytes_log2);
                buffer_view->color.info =
                   S_028C70_FORMAT(rat_format) | S_028C70_ARRAY_MODE(V_028C70_ARRAY_LINEAR_ALIGNED) |

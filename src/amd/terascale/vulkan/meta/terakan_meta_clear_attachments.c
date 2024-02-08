@@ -232,7 +232,7 @@ terakan_CmdClearAttachments(VkCommandBuffer const commandBuffer, uint32_t const 
 
    struct terakan_meta_clear_color_push_constants push_constants = {};
    struct terakan_bo const * push_constants_bo = NULL;
-   uint32_t push_constants_base;
+   uint32_t push_constants_va_lines;
 
    for (uint32_t attachment_index = 0; attachment_index < attachmentCount; ++attachment_index) {
       VkClearAttachment const * const attachment = &pAttachments[attachment_index];
@@ -257,7 +257,7 @@ terakan_CmdClearAttachments(VkCommandBuffer const commandBuffer, uint32_t const 
       if (push_constants_bo == NULL) {
          void * const push_constants_mapping = terakan_command_buffer_allocate_push_constants(
             command_writer->base.command_buffer, sizeof(push_constants), &push_constants_bo,
-            &push_constants_base);
+            &push_constants_va_lines);
          if (unlikely(push_constants_mapping == NULL)) {
             return;
          }
@@ -266,7 +266,7 @@ terakan_CmdClearAttachments(VkCommandBuffer const commandBuffer, uint32_t const 
             &command_writer->hw_state_draw, TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS,
             (sizeof(push_constants) + (TERAKAN_KCACHE_HW_LINE_BYTES - 1)) /
                TERAKAN_KCACHE_HW_LINE_BYTES,
-            push_constants_bo, push_constants_base);
+            push_constants_bo, push_constants_va_lines);
       }
 
       terakan_meta_begin_cb_no_blend(command_writer, 0b1111, V_028808_CB_NORMAL);

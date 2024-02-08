@@ -96,7 +96,7 @@ struct terakan_image {
    struct radeon_surf surface;
 
    struct terakan_bo const * bo;
-   VkDeviceSize bo_offset;
+   VkDeviceSize va;
 };
 
 VK_DEFINE_NONDISP_HANDLE_CASTS(terakan_image, vk.base, VkImage, VK_OBJECT_TYPE_IMAGE)

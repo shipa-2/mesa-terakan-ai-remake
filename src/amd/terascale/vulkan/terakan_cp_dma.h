@@ -51,9 +51,9 @@ void terakan_cp_dma_sync_cp_me(struct terakan_gfx_command_writer * const command
  */
 
 void terakan_cp_dma_copy(struct terakan_gfx_command_writer * command_writer,
-                         struct terakan_bo const * src_bo, enum terakan_bo_priority src_bo_priority,
-                         VkDeviceSize src_offset, struct terakan_bo const * dst_bo,
-                         enum terakan_bo_priority dst_bo_priority, VkDeviceSize dst_offset,
+                         struct terakan_bo const * src_bo, uint64_t src_va,
+                         enum terakan_bo_priority src_bo_priority, struct terakan_bo const * dst_bo,
+                         uint64_t dst_va, enum terakan_bo_priority dst_bo_priority,
                          VkDeviceSize size);
 
 #ifdef __cplusplus

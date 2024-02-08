@@ -24,6 +24,7 @@
 #ifndef TERAKAN_PHYSICAL_DEVICE_H
 #define TERAKAN_PHYSICAL_DEVICE_H
 
+#include "terakan_bo.h"
 #include "terakan_instance.h"
 #include "wsi_common.h"
 
@@ -127,6 +128,8 @@ struct terakan_physical_device {
    struct terakan_physical_device_tiling_info tiling_info;
    VkDeviceSize buffer_image_bo_alignment;
 
+   enum terakan_bo_relocation_type gfx_bo_relocation_type;
+
    /* nir_shader_compiler_options's lifetime must be at least as long as that of any NIR shader. */
    nir_shader_compiler_options nir_options_non_fs;
    nir_shader_compiler_options nir_options_fs;
@@ -157,7 +160,8 @@ VkResult terakan_physical_device_init(
    VkDeviceSize gtt_page_size, VkDeviceSize gtt_size, VkDeviceSize vram_size,
    VkDeviceSize vram_visible, VkDeviceSize max_memory_allocation_size,
    VkDeviceSize min_memory_map_alignment,
-   struct terakan_physical_device_tiling_info const * tiling_info, uint32_t clock_crystal_frequency,
+   struct terakan_physical_device_tiling_info const * tiling_info,
+   enum terakan_bo_relocation_type gfx_bo_relocation_type, uint32_t clock_crystal_frequency,
    struct vk_sync_type const * const * supported_sync_types_static);
 
 #ifdef __cplusplus

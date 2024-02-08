@@ -72,13 +72,13 @@ terakan_CmdBindIndexBuffer(VkCommandBuffer const commandBuffer, VkBuffer const b
                                   TERAKAN_STATE_DRAW_INDEX_VGT_INDEX_TYPE);
 
    /* The index buffer is not needed by internal draws, modify hw_state_draw directly. */
-   uint64_t const vgt_index_buffer_base = buffer->bo_offset + offset;
+   uint64_t const vgt_index_buffer_va = buffer->va + offset;
    bool const vgt_index_buffer_modified =
       command_writer->hw_state_draw.vgt_index_buffer.bo != buffer->bo ||
-      command_writer->hw_state_draw.vgt_index_buffer.base != vgt_index_buffer_base ||
+      command_writer->hw_state_draw.vgt_index_buffer.va != vgt_index_buffer_va ||
       command_writer->hw_state_draw.vgt_index_buffer.size != vgt_index_buffer_size;
    command_writer->hw_state_draw.vgt_index_buffer.bo = buffer->bo;
-   command_writer->hw_state_draw.vgt_index_buffer.base = vgt_index_buffer_base;
+   command_writer->hw_state_draw.vgt_index_buffer.va = vgt_index_buffer_va;
    command_writer->hw_state_draw.vgt_index_buffer.size = vgt_index_buffer_size;
    terakan_hw_state_draw_written(&command_writer->hw_state_draw,
                                  TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_BUFFER,

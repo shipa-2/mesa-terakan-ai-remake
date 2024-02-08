@@ -32,6 +32,7 @@
 #include "terakan_state.h"
 
 #include "gallium/drivers/r600/evergreend.h"
+#include "gallium/drivers/r600/r600d_common.h"
 #include "util/bitset.h"
 #include "util/list.h"
 #include "util/macros.h"
@@ -178,7 +179,7 @@ TERAKAN_DEVICE_DEFINE_OBJECT_SHORTCUTS(command_buffer, container_of(command_buff
  */
 void * terakan_command_buffer_allocate_push_constants(
    struct terakan_command_buffer * command_buffer, uint32_t size_bytes,
-   struct terakan_bo const ** bo_out, uint32_t * base_kcache_lines_out);
+   struct terakan_bo const ** bo_out, uint32_t * va_kcache_lines_out);
 
 extern struct vk_command_buffer_ops const terakan_command_buffer_ops;
 
@@ -225,8 +226,8 @@ TERAKAN_DEVICE_DEFINE_OBJECT_SHORTCUTS(gfx_command_writer,
                                        terakan_command_writer_device(&gfx_command_writer->base))
 
 /* Entry point for emitting packets.
- * Allocates space for `packet_dwords`, and if relocations are needed, `relocation_packet_dwords`,
- * and assumes that the application will write them all.
+ * Allocates space for `packet_dwords` and `relocation_count` relocations, and assumes that the
+ * application will write them all.
  * `packet_dwords` must not be 0.
  * Also ensures that `bo_count` calls to `terakan_bo_reference_writer_add_reference` for
  * `terakan_gfx_command_writer::bo_reference_writer` will succeed (regardless of which BOs are
@@ -239,8 +240,20 @@ TERAKAN_DEVICE_DEFINE_OBJECT_SHORTCUTS(gfx_command_writer,
  */
 uint32_t * terakan_gfx_command_writer_emit(struct terakan_gfx_command_writer * command_writer,
                                            uint32_t packet_dwords, uint32_t bo_count,
-                                           uint32_t relocation_packet_dwords,
+                                           uint32_t relocation_count,
                                            bool abort_if_all_state_emitted);
+
+static inline void
+terakan_gfx_command_writer_add_bo_relocation(
+   struct terakan_gfx_command_writer const * const command_writer,
+   uint32_t ** const indirect_buffer_append_ptr, uint32_t const bo_reference)
+{
+   if (terakan_gfx_command_writer_physical_device(command_writer)->gfx_bo_relocation_type ==
+       TERAKAN_BO_RELOCATION_TYPE_DRM_NOP) {
+      *((*indirect_buffer_append_ptr)++) = PKT3(PKT3_NOP, 0, 0);
+      *((*indirect_buffer_append_ptr)++) = bo_reference;
+   }
+}
 
 void terakan_gfx_command_writer_emit_event_write_eop_discarding_data(
    struct terakan_gfx_command_writer * command_writer, uint32_t event);

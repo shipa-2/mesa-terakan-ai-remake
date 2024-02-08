@@ -43,7 +43,7 @@ extern "C" {
 struct terakan_hw_state_sq_kcache_buffer {
    /* BO and base are undefined if the size is 0. */
    struct terakan_bo const * bo;
-   uint32_t base_lines;
+   uint32_t va_lines;
    uint32_t size_lines;
 };
 
@@ -206,7 +206,7 @@ struct terakan_hw_state_draw {
    /* TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_BUFFER */
    struct {
       struct terakan_bo const * bo;
-      uint64_t base;
+      uint64_t va;
       /* In units of indices. */
       uint32_t size;
    } vgt_index_buffer;
@@ -220,7 +220,7 @@ struct terakan_hw_state_draw {
    /* TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_FS */
    struct {
       struct terakan_bo const * bo;
-      uint32_t start;
+      uint32_t va_shr8;
    } sq_pgm_fs;
 
    /* TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_VS */
@@ -490,22 +490,22 @@ terakan_hw_state_draw_cb_color_written(struct terakan_hw_state_draw * const stat
 typedef void (*terakan_hw_state_draw_set_sq_kcache_function)(struct terakan_hw_state_draw * state,
                                                              uint32_t index, uint32_t size_lines,
                                                              struct terakan_bo const * bo,
-                                                             uint32_t base_lines);
+                                                             uint32_t va_lines);
 void terakan_hw_state_draw_set_sq_kcache_vs(struct terakan_hw_state_draw * state, uint32_t index,
                                             uint32_t size_lines, struct terakan_bo const * bo,
-                                            uint32_t base_lines);
+                                            uint32_t va_lines);
 void terakan_hw_state_draw_set_sq_kcache_tcs(struct terakan_hw_state_draw * state, uint32_t index,
                                              uint32_t size_lines, struct terakan_bo const * bo,
-                                             uint32_t base_lines);
+                                             uint32_t va_lines);
 void terakan_hw_state_draw_set_sq_kcache_tes(struct terakan_hw_state_draw * state, uint32_t index,
                                              uint32_t size_lines, struct terakan_bo const * bo,
-                                             uint32_t base_lines);
+                                             uint32_t va_lines);
 void terakan_hw_state_draw_set_sq_kcache_gs(struct terakan_hw_state_draw * state, uint32_t index,
                                             uint32_t size_lines, struct terakan_bo const * bo,
-                                            uint32_t base_lines);
+                                            uint32_t va_lines);
 void terakan_hw_state_draw_set_sq_kcache_fs(struct terakan_hw_state_draw * state, uint32_t index,
                                             uint32_t size_lines, struct terakan_bo const * bo,
-                                            uint32_t base_lines);
+                                            uint32_t va_lines);
 extern terakan_hw_state_draw_set_sq_kcache_function const
    terakan_hw_state_draw_set_sq_kcache_for_stage[MESA_SHADER_FRAGMENT + 1];
 

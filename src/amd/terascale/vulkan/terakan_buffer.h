@@ -42,7 +42,7 @@ struct terakan_buffer {
    struct vk_buffer vk;
 
    struct terakan_bo const * bo;
-   VkDeviceSize bo_offset;
+   uint64_t va;
 };
 
 VK_DEFINE_NONDISP_HANDLE_CASTS(terakan_buffer, vk.base, VkBuffer, VK_OBJECT_TYPE_BUFFER)

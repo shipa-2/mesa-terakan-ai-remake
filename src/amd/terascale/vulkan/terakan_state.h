@@ -103,7 +103,7 @@ enum terakan_state_draw_index {
                  #dependent " depends on " #dependency " and thus must have a higher index.")
 
 struct terakan_state_draw_sq_resource_fs {
-   VkDeviceSize bo_offset;
+   uint64_t va;
    /* If `bo` is NULL, no buffer is bound. */
    struct terakan_bo const * bo;
    uint32_t size_bytes_minus_1;

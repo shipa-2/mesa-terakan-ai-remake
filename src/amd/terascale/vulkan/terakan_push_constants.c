@@ -96,7 +96,7 @@ terakan_push_constants_apply(struct terakan_gfx_command_writer * const command_w
    if (state->allocation.mapping_if_up_to_date == NULL) {
       state->allocation.mapping_if_up_to_date = terakan_command_buffer_allocate_push_constants(
          command_writer->base.command_buffer, TERAKAN_KCACHE_HW_LINE_BYTES * kcache_lines_used,
-         &state->allocation.bo, &state->allocation.base_kcache_lines);
+         &state->allocation.bo, &state->allocation.va_kcache_lines);
       if (unlikely(state->allocation.mapping_if_up_to_date == NULL)) {
          return;
       }
@@ -130,7 +130,7 @@ terakan_push_constants_apply(struct terakan_gfx_command_writer * const command_w
       uint32_t resource[8];
       terakan_descriptor_create_for_uniform_buffer(
          state->allocation.bo,
-         TERAKAN_KCACHE_HW_LINE_BYTES * (VkDeviceSize)state->allocation.base_kcache_lines,
+         TERAKAN_KCACHE_HW_LINE_BYTES * (VkDeviceSize)state->allocation.va_kcache_lines,
          TERAKAN_KCACHE_HW_LINE_BYTES * state->allocation.size_kcache_lines, resource);
       if (is_compute) {
          /* TODO(Triang3l): Bind to the compute stage. */
@@ -142,7 +142,7 @@ terakan_push_constants_apply(struct terakan_gfx_command_writer * const command_w
             terakan_hw_state_draw_set_sq_kcache_for_stage[stage_index](
                &command_writer->hw_state_draw, TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS,
                state->allocation.size_kcache_lines, state->allocation.bo,
-               state->allocation.base_kcache_lines);
+               state->allocation.va_kcache_lines);
             terakan_hw_state_draw_set_sq_resource_for_stage[stage_index](
                &command_writer->hw_state_draw, TERAKAN_RESOURCE_RANGE_PUSH_CONSTANTS,
                state->allocation.bo, resource);

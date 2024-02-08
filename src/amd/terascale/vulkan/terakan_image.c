@@ -206,7 +206,7 @@ terakan_BindImageMemory2(VkDevice const device, uint32_t const bindInfoCount,
       VkBindImageMemoryInfo const * const bind_info = &pBindInfos[bind_info_index];
       struct terakan_image * const image = terakan_image_from_handle(bind_info->image);
       image->bo = terakan_device_memory_from_handle(bind_info->memory)->bo;
-      image->bo_offset = bind_info->memoryOffset;
+      image->va = image->bo->va + bind_info->memoryOffset;
    }
 
    return VK_SUCCESS;
@@ -364,12 +364,12 @@ terakan_image_create_resource_descriptor(VkImageViewCreateInfo const * const ima
       }
    }
 
-   uint32_t const image_bo_offset_256b = image->bo_offset / 256;
+   uint32_t const image_va_256b = (uint32_t)(image->va / 256);
 
    /* Base level is 0 - offsetting the base address instead, so single-level 2D views of 3D images
     * can be created.
     */
-   descriptor_out[2] = S_030008_BASE_ADDRESS(image_bo_offset_256b + level->offset_256B);
+   descriptor_out[2] = S_030008_BASE_ADDRESS(image_va_256b + level->offset_256B);
 
    unsigned char const * const format_swizzle =
       terakan_format_data_get_swizzle(image_view_create_info->format);
@@ -425,7 +425,7 @@ terakan_image_create_resource_descriptor(VkImageViewCreateInfo const * const ima
       uint32_t const second_level_index =
          MIN2(image_view_create_info->subresourceRange.baseMipLevel + 1, image->vk.mip_levels - 1);
       descriptor_out[3] = S_03000C_MIP_ADDRESS(
-         image_bo_offset_256b +
+         image_va_256b +
          (is_stencil_layout
              ? image->surface.u.legacy.zs.stencil_level[second_level_index].offset_256B
              : image->surface.u.legacy.level[second_level_index].offset_256B));
@@ -497,7 +497,7 @@ terakan_image_create_color_descriptor(
    uint32_t const base_slice_start =
       create_info_slice_start & ~(uint32_t)(TERAKAN_IMAGE_MAX_TARGET_SLICES - 1);
    descriptor_out->base =
-      (uint32_t)(image->bo_offset / 256 + level->offset_256B +
+      (uint32_t)(image->va / 256 + level->offset_256B +
                  (VkDeviceSize)level->slice_size_dw * base_slice_start / (256 / sizeof(uint32_t)));
 
    /* nblk is expected to have already been aligned appropriately in the surface computation. */
@@ -654,7 +654,7 @@ terakan_CreateImage(VkDevice const deviceHandle, VkImageCreateInfo const * const
    }
 
    image->bo = NULL;
-   image->bo_offset = 0;
+   image->va = 0;
 
    *pImage = terakan_image_to_handle(image);
    return VK_SUCCESS;

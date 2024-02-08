@@ -159,7 +159,7 @@ terakan_state_draw_apply_sq_pgm_fs(struct terakan_gfx_command_writer * const com
    struct terakan_vertex_input_static_state const * const static_vi = state->sq_pgm_fs.static_state;
 
    struct terakan_bo const * program_bo;
-   uint32_t program_start;
+   uint32_t program_va_shr8;
 
    static_assert(
       BITSET_WORDBITS >= TERAKAN_RESOURCE_HW_COUNT_FETCH,
@@ -176,7 +176,7 @@ terakan_state_draw_apply_sq_pgm_fs(struct terakan_gfx_command_writer * const com
          static_vi->bindings_needed_by_attributes_and_provided)) {
       /* Use the static vertex input state fetch shader. */
       program_bo = static_vi->program_bo;
-      program_start = static_vi->program_start;
+      program_va_shr8 = static_vi->program_va_shr8;
    } else {
       /* Dynamically create the fetch shader, allocated alongside push constants. */
       struct terakan_device const * const device =
@@ -205,13 +205,13 @@ terakan_state_draw_apply_sq_pgm_fs(struct terakan_gfx_command_writer * const com
          command_writer->base.command_buffer,
          terakan_vertex_input_fs_byte_count(fs_alu_qword_count, fs_alu_clause_count,
                                             fs_fetch_count),
-         &program_bo, &program_start);
+         &program_bo, &program_va_shr8);
       if (unlikely(fs_mapping == NULL)) {
          /* Fall back to the empty fetch shader to avoid drawing with an uninitialized fetch shader
           * address.
           */
          program_bo = device->empty_vertex_input.program_bo;
-         program_start = device->empty_vertex_input.program_start;
+         program_va_shr8 = device->empty_vertex_input.program_va_shr8;
          BITSET_ZERO(resources_needed);
       } else {
          terakan_vertex_input_create_fs_program(is_r9xx, fs_alu_qword_count, fs_alu,
@@ -221,9 +221,9 @@ terakan_state_draw_apply_sq_pgm_fs(struct terakan_gfx_command_writer * const com
    }
 
    bool const program_modified = command_writer->hw_state_draw.sq_pgm_fs.bo != program_bo ||
-                                 command_writer->hw_state_draw.sq_pgm_fs.start != program_start;
+                                 command_writer->hw_state_draw.sq_pgm_fs.va_shr8 != program_va_shr8;
    command_writer->hw_state_draw.sq_pgm_fs.bo = program_bo;
-   command_writer->hw_state_draw.sq_pgm_fs.start = program_start;
+   command_writer->hw_state_draw.sq_pgm_fs.va_shr8 = program_va_shr8;
    terakan_hw_state_draw_written(&command_writer->hw_state_draw,
                                  TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_FS, program_modified);
 
@@ -247,14 +247,14 @@ terakan_state_draw_apply_sq_resources_fs(struct terakan_gfx_command_writer * con
       int const buffer_index = u_bit_scan(&buffers_remaining);
       struct terakan_state_draw_sq_resource_fs const * const buffer =
          &command_writer->state_draw.sq_resources_fs[buffer_index];
-      resource[0] = (uint32_t)buffer->bo_offset;
+      resource[0] = (uint32_t)buffer->va;
       resource[1] = buffer->size_bytes_minus_1;
       /* The stride field in the descriptor is 11 bits wide on R8xx, 12 bits wide on R9xx.
        * To support 2048 stride, which is mandatory on Vulkan and Direct3D, the fetch shader
        * multiplies the index by 2 on R8xx, so the stride in the descriptor should be divided by 2.
        */
       resource[2] =
-         S_030008_BASE_ADDRESS_HI(buffer->bo_offset >> 32) |
+         S_030008_BASE_ADDRESS_HI(buffer->va >> 32) |
          ((uint32_t)((buffer->stride >> (is_r9xx && buffer->stride >= 0x800 ? 1 : 0)) & 0xFFF)
           << 8);
       terakan_hw_state_draw_set_sq_resource_vi(&command_writer->hw_state_draw, buffer_index,

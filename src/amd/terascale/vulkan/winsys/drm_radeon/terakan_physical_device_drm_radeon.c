@@ -296,8 +296,8 @@ terakan_physical_device_drm_radeon_try_create(struct vk_instance * const instanc
       &device->base, instance, &terakan_physical_device_drm_radeon_fn,
       drm_device->deviceinfo.pci->device_id, page_size, (VkDeviceSize)gem_info.gart_size,
       (VkDeviceSize)gem_info.vram_size, (VkDeviceSize)gem_info.vram_visible,
-      UINT32_MAX & ~(page_size - 1), page_size, &tiling_info, clock_crystal_frequency,
-      device->sync_types);
+      UINT32_MAX & ~(page_size - 1), page_size, &tiling_info, TERAKAN_BO_RELOCATION_TYPE_DRM_NOP,
+      clock_crystal_frequency, device->sync_types);
    if (result != VK_SUCCESS) {
       goto fail_render_node_path;
    }

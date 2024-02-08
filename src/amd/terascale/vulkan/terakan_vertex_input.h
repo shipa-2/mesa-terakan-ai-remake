@@ -167,7 +167,7 @@ void terakan_vertex_input_create_fs_program(bool is_r9xx, uint32_t alu_qword_cou
 
 struct terakan_vertex_input_static_state {
    struct terakan_bo * program_bo;
-   uint32_t program_start;
+   uint32_t program_va_shr8;
 
    BITSET_DECLARE(attributes_needed_and_provided, TERAKAN_VERTEX_INPUT_MAX_ATTRIBUTES);
    /* The values are undefined for attributes not in attributes_needed_and_provided. */

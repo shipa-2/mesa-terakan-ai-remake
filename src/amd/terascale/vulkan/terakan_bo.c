@@ -60,6 +60,8 @@ terakan_bo_init(struct terakan_bo * const bo, struct terakan_device * const devi
 {
    bo->device = device;
 
+   bo->va = 0;
+
    bo->creation_number = p_atomic_inc_return(&device->last_bo_creation_number);
 
    bo->mapping = NULL;

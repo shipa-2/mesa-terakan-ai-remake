@@ -173,8 +173,8 @@ struct terakan_color_descriptor {
 };
 
 void terakan_color_descriptor_calculate_buffer_base_pitch_view_dim(
-   struct terakan_color_descriptor * descriptor, VkDeviceSize bo_address, VkDeviceSize elements,
-   unsigned bpe, unsigned tile_pipe_interleave_bytes_log2);
+   struct terakan_color_descriptor * descriptor, uint64_t va, VkDeviceSize elements, unsigned bpe,
+   unsigned tile_pipe_interleave_bytes_log2);
 
 static inline void
 terakan_color_descriptor_image_view_to_color_attachment(
@@ -228,12 +228,11 @@ terakan_descriptor_type_has_rat(VkDescriptorType const descriptor_type)
           descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
 }
 
-bool terakan_descriptor_create_for_uniform_buffer(struct terakan_bo const * bo,
-                                                  VkDeviceSize bo_offset, VkDeviceSize range,
-                                                  uint32_t resource_out[8]);
+bool terakan_descriptor_create_for_uniform_buffer(struct terakan_bo const * bo, uint64_t va,
+                                                  VkDeviceSize range, uint32_t resource_out[8]);
 
-bool terakan_descriptor_create_for_storage_buffer(struct terakan_bo const * bo,
-                                                  VkDeviceSize bo_offset, VkDeviceSize range,
+bool terakan_descriptor_create_for_storage_buffer(struct terakan_bo const * bo, uint64_t va,
+                                                  VkDeviceSize range,
                                                   unsigned tile_pipe_interleave_bytes_log2,
                                                   uint32_t resource_out[8],
                                                   struct terakan_color_descriptor * color_out);
