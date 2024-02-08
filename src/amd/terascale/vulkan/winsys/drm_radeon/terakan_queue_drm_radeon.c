@@ -150,7 +150,7 @@ terakan_queue_completion_submission_drm_radeon_submit(
    /* Make the BO not idle until the GPU has completed the submission. */
    void * const signal_bo_reference = alloca(device->bo_reference_size);
    device->winsys_fn->bo->create_reference(signal_bo_reference, &submission->bo->base, false, true,
-                                           TERAKAN_BO_PRIORITY_FENCE_TRACE);
+                                           TERAKAN_BO_PRIORITY_SYNC);
    return device->winsys_fn->queue->submit(device, submission->base.queue->ip_type, 1,
                                            signal_bo_reference, signal_indirect_buffer_size_dwords,
                                            signal_indirect_buffer);

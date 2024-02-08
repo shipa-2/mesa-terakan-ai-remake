@@ -38,9 +38,7 @@ extern "C" {
  * Similar to RADEON_PRIO in the Gallium Radeon winsys.
  */
 enum terakan_bo_priority {
-   TERAKAN_BO_PRIORITY_DISCARD = 0,
-
-   TERAKAN_BO_PRIORITY_FENCE_TRACE = 0,
+   TERAKAN_BO_PRIORITY_SYNC = 0,
    TERAKAN_BO_PRIORITY_TRANSFORM_FEEDBACK_COUNTER = 0,
 
    TERAKAN_BO_PRIORITY_QUERY = 1,

@@ -1028,7 +1028,7 @@ terakan_gfx_command_writer_emit_event_write_eop_discarding_data(
       command_writer, &packet,
       terakan_bo_reference_writer_add_reference(&command_writer->base.bo_reference_writer,
                                                 gfx_discard_bo, false, true,
-                                                TERAKAN_BO_PRIORITY_FENCE_TRACE));
+                                                TERAKAN_BO_PRIORITY_SYNC));
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL

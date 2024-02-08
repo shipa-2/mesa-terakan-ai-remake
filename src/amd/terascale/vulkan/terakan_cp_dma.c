@@ -61,7 +61,7 @@ terakan_cp_dma_sync_cp_me(struct terakan_gfx_command_writer * const command_writ
    *packet++ = TERAKAN_CP_DMA_COPY_OPTIMAL_ALIGNMENT;
    uint32_t const discard_bo_reference = terakan_bo_reference_writer_add_reference(
       &command_writer->base.bo_reference_writer, gfx_discard_bo, true, true,
-      TERAKAN_BO_PRIORITY_DISCARD);
+      TERAKAN_BO_PRIORITY_SYNC);
    /* Source. */
    terakan_gfx_command_writer_add_bo_relocation(command_writer, &packet, discard_bo_reference);
    /* Destination. */
@@ -164,7 +164,7 @@ terakan_cp_dma_copy(struct terakan_gfx_command_writer * const command_writer,
       *packet++ = (uint32_t)(TERAKAN_CP_DMA_COPY_OPTIMAL_ALIGNMENT - size_misalignment);
       uint32_t const discard_bo_reference = terakan_bo_reference_writer_add_reference(
          &command_writer->base.bo_reference_writer, gfx_discard_bo, true, true,
-         TERAKAN_BO_PRIORITY_DISCARD);
+         TERAKAN_BO_PRIORITY_SYNC);
       /* Source. */
       terakan_gfx_command_writer_add_bo_relocation(command_writer, &packet, discard_bo_reference);
       /* Destination. */
