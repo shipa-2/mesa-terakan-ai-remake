@@ -35,9 +35,10 @@
 #include <stdint.h>
 
 void
-terakan_color_descriptor_calculate_buffer_base_pitch_view_dim(
+terakan_color_descriptor_calculate_buffer_base_pitch_dim_offset(
    struct terakan_color_descriptor * const descriptor, uint64_t const va,
-   VkDeviceSize const elements, unsigned const bpe, unsigned const tile_pipe_interleave_bytes_log2)
+   VkDeviceSize const elements, unsigned const bpe, unsigned const tile_pipe_interleave_bytes_log2,
+   uint32_t * const alignment_offset_elements_out)
 {
    uint64_t const va_aligned = va >> tile_pipe_interleave_bytes_log2
                                         << tile_pipe_interleave_bytes_log2;
@@ -54,8 +55,7 @@ terakan_color_descriptor_calculate_buffer_base_pitch_view_dim(
       1);
 
    uint32_t const alignment_elements = (va - va_aligned) / bpe;
-   /* Used by the driver, must be zeroed before being passed to the hardware. */
-   descriptor->view = S_028C6C_SLICE_START(alignment_elements);
+   *alignment_offset_elements_out = alignment_elements;
 
    assert(elements != 0);
    descriptor->dim = (uint32_t)(alignment_elements + elements - 1);

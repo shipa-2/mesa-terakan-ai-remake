@@ -76,6 +76,7 @@ enum terakan_meta_shader_index {
    TERAKAN_META_SHADER_CLEAR_COLOR_PS,
 
    TERAKAN_META_SHADER_COPY_BUFFER_TO_IMAGE_PS,
+   TERAKAN_META_SHADER_COPY_IMAGE_TO_BUFFER_PS,
 
    TERAKAN_META_SHADER_COUNT,
 };
@@ -83,6 +84,7 @@ enum terakan_meta_shader_index {
 extern struct terakan_meta_shader const terakan_meta_position_from_index_vs;
 extern struct terakan_meta_shader const terakan_meta_clear_color_ps;
 extern struct terakan_meta_shader const terakan_meta_copy_buffer_to_image_ps;
+extern struct terakan_meta_shader const terakan_meta_copy_image_to_buffer_ps;
 
 extern struct terakan_meta_shader const * const terakan_meta_shaders[TERAKAN_META_SHADER_COUNT];
 
@@ -101,8 +103,9 @@ void terakan_meta_set_vs(struct terakan_gfx_command_writer * command_writer,
 void terakan_meta_set_ps(struct terakan_gfx_command_writer * command_writer,
                          enum terakan_meta_shader_index shader_index);
 
-void terakan_meta_begin_cb_no_blend(struct terakan_gfx_command_writer * command_writer,
-                                    uint32_t cb_target_mask, uint32_t cb_color_control_mode);
+void terakan_meta_begin_cb(struct terakan_gfx_command_writer * command_writer,
+                           uint32_t cb_color_control_mode, uint32_t cb_target_mask,
+                           uint8_t disable_blend_for_targets);
 
 void terakan_meta_begin_2d(struct terakan_gfx_command_writer * command_writer);
 

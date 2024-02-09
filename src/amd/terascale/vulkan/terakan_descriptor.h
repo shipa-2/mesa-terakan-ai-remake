@@ -26,9 +26,11 @@
 
 #include "terakan_bo.h"
 
+#include "gallium/drivers/r600/eg_sq.h"
 #include "gallium/drivers/r600/evergreend.h"
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <vulkan/vulkan_core.h>
 
@@ -62,6 +64,27 @@ extern "C" {
  * layouts.
  */
 #define TERAKAN_KCACHE_MAX_UNIFORM_BUFFERS TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS
+
+/* For easier writing of meta shaders. */
+#define TERAKAN_KCACHE_BYTE_LINE(offset) ((offset) >> TERAKAN_KCACHE_HW_LINE_BYTES_LOG2)
+#define TERAKAN_KCACHE_BYTE_VECTOR(offset)                                                         \
+   (((offset) & (TERAKAN_KCACHE_HW_LINE_BYTES - 1)) / (4 * sizeof(float)))
+#define TERAKAN_KCACHE_BYTE_SOURCE(offset)       (0x80 + TERAKAN_KCACHE_BYTE_VECTOR(offset))
+#define TERAKAN_KCACHE_BYTE_COMPONENT(offset)    (((offset) / sizeof(float)) & 3)
+#define TERAKAN_KCACHE_FIELD_LINE(type, field)   TERAKAN_KCACHE_BYTE_LINE(offsetof(type, field))
+#define TERAKAN_KCACHE_FIELD_VECTOR(type, field) TERAKAN_KCACHE_BYTE_VECTOR(offsetof(type, field))
+#define TERAKAN_KCACHE_FIELD_SOURCE(type, field) TERAKAN_KCACHE_BYTE_SOURCE(offsetof(type, field))
+#define TERAKAN_KCACHE_FIELD_COMPONENT(type, field)                                                \
+   TERAKAN_KCACHE_BYTE_COMPONENT(offsetof(type, field))
+#define TERAKAN_KCACHE_FIELD_WORD0_SRC0(type, field)                                               \
+   (S_SQ_ALU_WORD0_SRC0_SEL(TERAKAN_KCACHE_FIELD_SOURCE(type, field)) |                            \
+    S_SQ_ALU_WORD0_SRC0_CHAN(TERAKAN_KCACHE_FIELD_COMPONENT(type, field)))
+#define TERAKAN_KCACHE_FIELD_WORD0_SRC1(type, field)                                               \
+   (S_SQ_ALU_WORD0_SRC1_SEL(TERAKAN_KCACHE_FIELD_SOURCE(type, field)) |                            \
+    S_SQ_ALU_WORD0_SRC1_CHAN(TERAKAN_KCACHE_FIELD_COMPONENT(type, field)))
+#define TERAKAN_KCACHE_FIELD_WORD1_SRC2(type, field)                                               \
+   (S_SQ_ALU_WORD1_OP3_SRC2_SEL(TERAKAN_KCACHE_FIELD_SOURCE(type, field)) |                        \
+    S_SQ_ALU_WORD1_OP3_SRC2_CHAN(TERAKAN_KCACHE_FIELD_COMPONENT(type, field)))
 
 #define TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE 176
 #define TERAKAN_RESOURCE_HW_COUNT_VERTEX        160
@@ -172,9 +195,21 @@ struct terakan_color_descriptor {
    uint32_t dim;
 };
 
-void terakan_color_descriptor_calculate_buffer_base_pitch_view_dim(
+void terakan_color_descriptor_calculate_buffer_base_pitch_dim_offset(
    struct terakan_color_descriptor * descriptor, uint64_t va, VkDeviceSize elements, unsigned bpe,
-   unsigned tile_pipe_interleave_bytes_log2);
+   unsigned tile_pipe_interleave_bytes_log2, uint32_t * alignment_offset_elements_out);
+
+static inline void
+terakan_color_descriptor_calculate_buffer_base_pitch_view_dim(
+   struct terakan_color_descriptor * const descriptor, uint64_t const va,
+   VkDeviceSize const elements, unsigned const bpe, unsigned const tile_pipe_interleave_bytes_log2)
+{
+   uint32_t alignment_offset_elements;
+   terakan_color_descriptor_calculate_buffer_base_pitch_dim_offset(
+      descriptor, va, elements, bpe, tile_pipe_interleave_bytes_log2, &alignment_offset_elements);
+   /* Used by the driver, must be zeroed before being passed to the hardware. */
+   descriptor->view = S_028C6C_SLICE_START(alignment_offset_elements);
+}
 
 static inline void
 terakan_color_descriptor_image_view_to_color_attachment(
@@ -205,6 +240,17 @@ struct terakan_color_meta_descriptor {
    uint32_t fmask;
    uint32_t fmask_slice;
 };
+
+static inline struct terakan_color_meta_descriptor
+terakan_color_meta_descriptor_create_disabled(struct terakan_color_descriptor const * const color)
+{
+   return (struct terakan_color_meta_descriptor){
+      .cmask = color->base,
+      .cmask_slice = S_028C80_TILE_MAX(0),
+      .fmask = color->base,
+      .fmask_slice = S_028C88_TILE_MAX(G_028C68_SLICE_TILE_MAX(color->slice)),
+   };
+}
 
 static inline bool
 terakan_descriptor_type_has_resource(VkDescriptorType const descriptor_type)

@@ -431,9 +431,7 @@ terakan_image_create_resource_descriptor(VkImageViewCreateInfo const * const ima
              : image->surface.u.legacy.level[second_level_index].offset_256B));
 
       uint32_t const last_level =
-         (image_view_create_info->subresourceRange.levelCount == VK_REMAINING_MIP_LEVELS
-             ? image->vk.mip_levels - image_view_create_info->subresourceRange.baseMipLevel
-             : image_view_create_info->subresourceRange.levelCount) -
+         vk_image_subresource_level_count(&image->vk, &image_view_create_info->subresourceRange) -
          1;
       if (last_level != 0) {
          descriptor_out[5] |= S_030014_LAST_LEVEL(last_level);
@@ -508,10 +506,8 @@ terakan_image_create_color_descriptor(
 
    uint32_t const view_slice_start = create_info_slice_start - base_slice_start;
    uint32_t const create_info_slice_max =
-      (image_view_create_info->subresourceRange.layerCount == VK_REMAINING_ARRAY_LAYERS
-          ? image->vk.array_layers
-          : create_info_slice_start + image_view_create_info->subresourceRange.layerCount) -
-      1;
+      image_view_create_info->subresourceRange.baseArrayLayer +
+      vk_image_subresource_layer_count(&image->vk, &image_view_create_info->subresourceRange) - 1;
    uint32_t const view_slice_max =
       MIN2(create_info_slice_max - base_slice_start, TERAKAN_IMAGE_MAX_TARGET_SLICES - 1);
    descriptor_out->view =
@@ -601,11 +597,7 @@ terakan_image_create_color_descriptor(
          1);
 
    if (meta_descriptor_out_opt != NULL) {
-      meta_descriptor_out_opt->cmask = descriptor_out->base;
-      meta_descriptor_out_opt->cmask_slice = S_028C80_TILE_MAX(0);
-      meta_descriptor_out_opt->fmask = descriptor_out->base;
-      meta_descriptor_out_opt->fmask_slice =
-         S_028C88_TILE_MAX(G_028C68_SLICE_TILE_MAX(descriptor_out->slice));
+      *meta_descriptor_out_opt = terakan_color_meta_descriptor_create_disabled(descriptor_out);
    }
 
    /* TODO(Triang3l): CMask, FMask. */

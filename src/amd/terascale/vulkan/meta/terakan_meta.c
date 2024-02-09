@@ -29,6 +29,7 @@
 #include "gallium/drivers/r600/eg_sq.h"
 #include "gallium/drivers/r600/evergreend.h"
 #include "gallium/drivers/r600/r600_opcodes.h"
+#include "util/bitscan.h"
 
 #include <assert.h>
 #include <stdbool.h>
@@ -126,6 +127,7 @@ struct terakan_meta_shader const * const terakan_meta_shaders[TERAKAN_META_SHADE
    [TERAKAN_META_SHADER_POSITION_FROM_INDEX_VS] = &terakan_meta_position_from_index_vs,
    [TERAKAN_META_SHADER_CLEAR_COLOR_PS] = &terakan_meta_clear_color_ps,
    [TERAKAN_META_SHADER_COPY_BUFFER_TO_IMAGE_PS] = &terakan_meta_copy_buffer_to_image_ps,
+   [TERAKAN_META_SHADER_COPY_IMAGE_TO_BUFFER_PS] = &terakan_meta_copy_image_to_buffer_ps,
 };
 
 void
@@ -212,9 +214,16 @@ terakan_meta_set_ps(struct terakan_gfx_command_writer * const command_writer,
 }
 
 void
-terakan_meta_begin_cb_no_blend(struct terakan_gfx_command_writer * const command_writer,
-                               uint32_t const cb_target_mask, uint32_t const cb_color_control_mode)
+terakan_meta_begin_cb(struct terakan_gfx_command_writer * const command_writer,
+                      uint32_t const cb_color_control_mode, uint32_t const cb_target_mask,
+                      uint8_t const disable_blend_for_targets)
 {
+   terakan_meta_modify_state_draw_dword(
+      command_writer, TERAKAN_STATE_DRAW_INDEX_CB_COLOR_CONTROL,
+      TERAKAN_HW_STATE_DRAW_INDEX_CB_COLOR_CONTROL, &command_writer->hw_state_draw.cb_color_control,
+      S_028808_MODE(cb_target_mask ? cb_color_control_mode : V_028808_CB_DISABLE) |
+         S_028808_ROP3(0xCC));
+
    terakan_meta_modify_state_draw_dword(command_writer, TERAKAN_STATE_DRAW_INDEX_CB_TARGET_MASK,
                                         TERAKAN_HW_STATE_DRAW_INDEX_CB_TARGET_MASK,
                                         &command_writer->hw_state_draw.cb_target_mask,
@@ -223,23 +232,15 @@ terakan_meta_begin_cb_no_blend(struct terakan_gfx_command_writer * const command
       /* Going to bind color targets for this meta draw. */
       terakan_state_draw_set_pending(&command_writer->state_draw,
                                      TERAKAN_STATE_DRAW_INDEX_CB_COLOR_MRT);
+   }
 
-      /* Disable blending. */
+   if (disable_blend_for_targets) {
       terakan_state_draw_set_pending(&command_writer->state_draw,
                                      TERAKAN_STATE_DRAW_INDEX_CB_BLEND_CONTROL);
-      {
-         unsigned remaining_target_mask = (unsigned)cb_target_mask;
-         while (remaining_target_mask) {
-            int const target_index = (ffs((int)remaining_target_mask) - 1) / 4;
-            remaining_target_mask &= ~(0b1111u << (4 * target_index));
-            terakan_hw_state_draw_set_cb_blend_control(&command_writer->hw_state_draw, target_index,
-                                                       0);
-         }
+      unsigned remaining_targets_to_disable_blend = (unsigned)disable_blend_for_targets;
+      while (remaining_targets_to_disable_blend) {
+         terakan_hw_state_draw_set_cb_blend_control(
+            &command_writer->hw_state_draw, u_bit_scan(&remaining_targets_to_disable_blend), 0);
       }
    }
-   terakan_meta_modify_state_draw_dword(
-      command_writer, TERAKAN_STATE_DRAW_INDEX_CB_COLOR_CONTROL,
-      TERAKAN_HW_STATE_DRAW_INDEX_CB_COLOR_CONTROL, &command_writer->hw_state_draw.cb_color_control,
-      S_028808_MODE(cb_target_mask ? cb_color_control_mode : V_028808_CB_DISABLE) |
-         S_028808_ROP3(0xCC));
 }
