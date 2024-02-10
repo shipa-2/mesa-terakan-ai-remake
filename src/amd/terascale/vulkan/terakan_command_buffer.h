@@ -189,11 +189,28 @@ struct terakan_command_writer {
 
    struct terakan_command_buffer * command_buffer;
 
+   struct {
+      /* All other fields are undefined if next_mapping is NULL. */
+      char * next_mapping;
+      struct terakan_bo const * bo;
+      uint64_t next_va;
+      uint32_t remaining_bytes;
+   } allocation_among_push_constants;
+
    struct terakan_bo_reference_writer bo_reference_writer;
 };
 
 TERAKAN_DEVICE_DEFINE_OBJECT_SHORTCUTS(
    command_writer, terakan_command_buffer_device(command_writer->command_buffer))
+
+/* Returns the mapping, or NULL if failed.
+ * For small amounts of data (within what can be allocated using
+ * terakan_command_buffer_allocate_push_constants).
+ * Alignment must not exceed the kcache line size.
+ */
+void * terakan_command_writer_allocate_among_push_constants(
+   struct terakan_command_writer * command_writer, uint32_t size_bytes, uint32_t alignment_bytes,
+   struct terakan_bo const ** bo_out, uint64_t * va_out);
 
 struct terakan_gfx_command_writer {
    struct terakan_command_writer base;

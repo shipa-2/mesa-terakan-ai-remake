@@ -32,6 +32,7 @@
 #include "gallium/drivers/r600/r600_opcodes.h"
 #include "gallium/drivers/r600/r600d_common.h"
 #include "util/macros.h"
+#include "util/u_math.h"
 
 #include <assert.h>
 #include <stdbool.h>
@@ -332,7 +333,53 @@ terakan_meta_emit_rect_3_vertices_draw(struct terakan_gfx_command_writer * const
 {
    terakan_before_hw_draw(command_writer);
 
-   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 3 + 3, 0, 0, false);
+   uint32_t * packet;
+
+   uint32_t const vertices[] = {
+      (uint16_t)rect->offset.x | ((uint32_t)rect->offset.y << 16),
+      (uint16_t)rect->offset.x | ((uint32_t)(rect->offset.y + rect->extent.height) << 16),
+      (uint16_t)(rect->offset.x + rect->extent.width) | ((uint32_t)rect->offset.y << 16)};
+
+   if (instance_count > 1) {
+      /* PKT3_DRAW_INDEX_IMMD with multiple instances causes a hang in this usage scenario (tested
+       * on Barts with the firmware used by DRM Radeon 2.50.0).
+       */
+      struct terakan_bo const * index_buffer_bo;
+      uint64_t index_buffer_va;
+      uint32_t * const index_buffer_mapping = terakan_command_writer_allocate_among_push_constants(
+         &command_writer->base, sizeof(vertices), sizeof(uint32_t), &index_buffer_bo,
+         &index_buffer_va);
+      if (unlikely(index_buffer_mapping == NULL)) {
+         return;
+      }
+      /* terakan_meta_begin_index_immediate_32 sets VGT_INDEX_TYPE to non-endian-swapped. */
+      util_memcpy_cpu_to_le32(index_buffer_mapping, vertices, sizeof(vertices));
+
+      packet = terakan_gfx_command_writer_emit(command_writer, 2 + 5, 1, 1, false);
+      if (unlikely(packet == NULL)) {
+         return;
+      }
+
+      /* NUM_INSTANCES in the same indirect buffer as the draw. */
+      *packet++ = PKT3(PKT3_NUM_INSTANCES, 0, 0);
+      *packet++ = instance_count;
+
+      *packet++ = PKT3(PKT3_DRAW_INDEX, 5 - 2, 0);
+      *packet++ = (uint32_t)index_buffer_va;
+      *packet++ = (index_buffer_va >> 32) & 0xFF;
+      *packet++ = ARRAY_SIZE(vertices);
+      *packet++ = S_0287F0_SOURCE_SELECT(V_0287F0_DI_SRC_SEL_DMA);
+      terakan_gfx_command_writer_add_bo_relocation(
+         command_writer, &packet,
+         terakan_bo_reference_writer_add_reference(&command_writer->base.bo_reference_writer,
+                                                   index_buffer_bo, true, false,
+                                                   TERAKAN_BO_PRIORITY_INDEX_BUFFER));
+
+      return;
+   }
+
+   packet =
+      terakan_gfx_command_writer_emit(command_writer, 2 + 3 + ARRAY_SIZE(vertices), 0, 0, false);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -341,12 +388,8 @@ terakan_meta_emit_rect_3_vertices_draw(struct terakan_gfx_command_writer * const
    *packet++ = PKT3(PKT3_NUM_INSTANCES, 0, 0);
    *packet++ = instance_count;
 
-   *packet++ = PKT3(PKT3_DRAW_INDEX_IMMD, 1 + 3, 0);
-   *packet++ = 3;
+   *packet++ = PKT3(PKT3_DRAW_INDEX_IMMD, 1 + ARRAY_SIZE(vertices), 0);
+   *packet++ = ARRAY_SIZE(vertices);
    *packet++ = S_0287F0_SOURCE_SELECT(V_0287F0_DI_SRC_SEL_IMMEDIATE);
-   *packet++ = (uint32_t)(uint16_t)rect->offset.x | ((uint32_t)rect->offset.y << 16);
-   *packet++ =
-      (uint32_t)(uint16_t)rect->offset.x | ((uint32_t)(rect->offset.y + rect->extent.height) << 16);
-   *packet++ =
-      (uint32_t)(uint16_t)(rect->offset.x + rect->extent.width) | ((uint32_t)rect->offset.y << 16);
+   memcpy(packet, vertices, sizeof(vertices));
 }

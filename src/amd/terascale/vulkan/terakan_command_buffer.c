@@ -34,6 +34,7 @@
 
 #include "gallium/drivers/r600/evergreend.h"
 #include "gallium/drivers/r600/r600d_common.h"
+#include "util/bitscan.h"
 #include "util/macros.h"
 #include "vk_alloc.h"
 #include "vk_log.h"
@@ -401,6 +402,55 @@ struct vk_command_buffer_ops const terakan_command_buffer_ops = {
    .reset = terakan_command_buffer_reset,
    .destroy = terakan_command_buffer_destroy,
 };
+
+void *
+terakan_command_writer_allocate_among_push_constants(
+   struct terakan_command_writer * const command_writer, uint32_t const size_bytes,
+   uint32_t const alignment_bytes, struct terakan_bo const ** const bo_out, uint64_t * const va_out)
+{
+   assert(util_is_power_of_two_nonzero(alignment_bytes));
+   assert(alignment_bytes <= TERAKAN_KCACHE_HW_LINE_BYTES);
+
+   if (command_writer->allocation_among_push_constants.next_mapping != NULL) {
+      uint64_t const existing_va_aligned = ALIGN_POT(
+         command_writer->allocation_among_push_constants.next_va, (uint64_t)alignment_bytes);
+      uint32_t const alignment_skip =
+         (uint32_t)(existing_va_aligned - command_writer->allocation_among_push_constants.next_va);
+      if (command_writer->allocation_among_push_constants.remaining_bytes >=
+          alignment_skip + size_bytes) {
+         char * const existing_mapping_aligned =
+            command_writer->allocation_among_push_constants.next_mapping + alignment_skip;
+         command_writer->allocation_among_push_constants.next_mapping =
+            existing_mapping_aligned + size_bytes;
+         command_writer->allocation_among_push_constants.next_va = existing_va_aligned + size_bytes;
+         command_writer->allocation_among_push_constants.remaining_bytes -=
+            alignment_skip + size_bytes;
+         *bo_out = command_writer->allocation_among_push_constants.bo;
+         *va_out = existing_va_aligned;
+         return existing_mapping_aligned;
+      }
+   }
+
+   uint32_t const size_bytes_kcache_line_aligned =
+      ALIGN_POT(size_bytes, TERAKAN_KCACHE_HW_LINE_BYTES);
+   struct terakan_bo const * new_bo;
+   uint32_t new_va_kcache_lines;
+   char * const new_mapping = terakan_command_buffer_allocate_push_constants(
+      command_writer->command_buffer, size_bytes_kcache_line_aligned, &new_bo,
+      &new_va_kcache_lines);
+   if (unlikely(new_mapping == NULL)) {
+      return NULL;
+   }
+   uint64_t const new_va = (uint64_t)new_va_kcache_lines << TERAKAN_KCACHE_HW_LINE_BYTES_LOG2;
+   command_writer->allocation_among_push_constants.next_mapping = new_mapping + size_bytes;
+   command_writer->allocation_among_push_constants.bo = new_bo;
+   command_writer->allocation_among_push_constants.next_va = new_va + size_bytes;
+   command_writer->allocation_among_push_constants.remaining_bytes =
+      size_bytes_kcache_line_aligned - size_bytes;
+   *bo_out = new_bo;
+   *va_out = new_va;
+   return new_mapping;
+}
 
 static void
 terakan_gfx_command_writer_end_indirect_buffer(
@@ -1087,6 +1137,8 @@ terakan_BeginCommandBuffer(VkCommandBuffer const commandBuffer,
    command_buffer->command_writer.gfx = gfx_command_writer;
 
    gfx_command_writer->base.command_buffer = command_buffer;
+
+   gfx_command_writer->base.allocation_among_push_constants.next_mapping = NULL;
 
    /* The first emission will request the first indirect buffer. */
    gfx_command_writer->indirect_buffer = NULL;
