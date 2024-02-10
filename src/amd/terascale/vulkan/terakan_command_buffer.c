@@ -310,8 +310,6 @@ terakan_command_buffer_release_resources(struct terakan_command_buffer * const c
       container_of(command_buffer->vk.pool, struct terakan_command_pool, vk);
 
    if (command_buffer->command_writer.gfx != NULL) {
-      struct terakan_command_pool * const command_pool =
-         container_of(command_buffer->vk.pool, struct terakan_command_pool, vk);
       list_add(&command_buffer->command_writer.gfx->base.free_link,
                &command_pool->command_writers_free);
       command_buffer->command_writer.gfx = NULL;
