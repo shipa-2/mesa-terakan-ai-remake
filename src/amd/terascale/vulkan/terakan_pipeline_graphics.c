@@ -625,6 +625,7 @@ terakan_pipeline_graphics_pre_rasterization_init(
    if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_VP_SCISSORS)) {
       assert(state->vp->scissor_count <=
              ARRAY_SIZE(pipeline->pre_rasterization.pa_sc_vport_generic_scissor_tl_br_xy));
+      pipeline->pre_rasterization.pa_sc_vport_generic_scissor_count = state->vp->scissor_count;
       for (uint32_t scissor_index = 0; scissor_index < state->vp->scissor_count; ++scissor_index) {
          terakan_state_translate_window_rect_unpacked(
             &state->vp->scissors[scissor_index],
