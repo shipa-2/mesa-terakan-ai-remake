@@ -942,9 +942,18 @@ terakan_CmdCopyImageToBuffer2(VkCommandBuffer const commandBuffer,
    VkImageViewCreateInfo image_view_create_info = {
       .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
       .image = pCopyImageToBufferInfo->srcImage,
-      .viewType = image->vk.image_type == VK_IMAGE_TYPE_1D ? VK_IMAGE_VIEW_TYPE_1D_ARRAY
-                                                           : VK_IMAGE_VIEW_TYPE_2D_ARRAY,
    };
+   switch (image->vk.image_type) {
+   case VK_IMAGE_TYPE_1D:
+      image_view_create_info.viewType = VK_IMAGE_VIEW_TYPE_1D_ARRAY;
+      break;
+   case VK_IMAGE_TYPE_3D:
+      image_view_create_info.viewType = VK_IMAGE_VIEW_TYPE_3D;
+      break;
+   default:
+      image_view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+      break;
+   }
 
    struct terakan_buffer const * const buffer =
       terakan_buffer_from_handle(pCopyImageToBufferInfo->dstBuffer);

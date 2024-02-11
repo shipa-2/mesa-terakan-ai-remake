@@ -109,15 +109,25 @@ struct terakan_image_non_display_tiling {
 struct terakan_image_non_display_tiling
 terakan_image_get_non_display_tiling(bool is_r9xx, VkFormat image_format, bool level_is_linear);
 
+/* For transfer purposes, VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT and
+ * VK_IMAGE_CREATE_BLOCK_TEXEL_VIEW_COMPATIBLE_BIT are assumed to be always enabled for all images
+ * they're applicable to.
+ */
 bool terakan_image_create_resource_descriptor(VkImageViewCreateInfo const * image_view_create_info,
                                               uint32_t descriptor_out[8]);
 
 /* Returns the number of array layers accessible through the descriptor as color descriptors support
  * fewer layers than texture resource descriptors.
+ *
  * Meta draws like copying can access all layers of the image by adding the result of this function
  * to baseArrayLayer, creating a new color descriptor, and performing the draw again for the next
  * subset of layers.
+ *
  * On failure, returns 0.
+ *
+ * For transfer purposes, VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT and
+ * VK_IMAGE_CREATE_BLOCK_TEXEL_VIEW_COMPATIBLE_BIT are assumed to be always enabled for all images
+ * they're applicable to.
  */
 uint32_t terakan_image_create_color_descriptor(
    VkImageViewCreateInfo const * image_view_create_info,

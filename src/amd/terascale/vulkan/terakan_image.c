@@ -246,51 +246,58 @@ terakan_image_create_resource_descriptor(VkImageViewCreateInfo const * const ima
 
    uint32_t dimension;
    uint32_t layer_count = 1;
-   switch (image_view_create_info->viewType) {
-   case VK_IMAGE_VIEW_TYPE_1D:
-      dimension = V_030000_SQ_TEX_DIM_1D_ARRAY;
-      break;
-   case VK_IMAGE_VIEW_TYPE_2D:
-      dimension = image->vk.samples > VK_SAMPLE_COUNT_1_BIT ? V_030000_SQ_TEX_DIM_2D_ARRAY_MSAA
-                                                            : V_030000_SQ_TEX_DIM_2D_ARRAY;
-      break;
-   case VK_IMAGE_VIEW_TYPE_3D:
+   if (image->vk.image_type == VK_IMAGE_TYPE_3D) {
+      /* 2D array views of 3D images can be used only for attachments, not for sampled or storage
+       * images.
+       */
+      if (image_view_create_info->viewType != VK_IMAGE_VIEW_TYPE_3D) {
+         return false;
+      }
       dimension = V_030000_SQ_TEX_DIM_3D;
-      break;
-   case VK_IMAGE_VIEW_TYPE_CUBE:
-      dimension = V_030000_SQ_TEX_DIM_CUBEMAP;
-      layer_count = 6;
-      break;
-   case VK_IMAGE_VIEW_TYPE_1D_ARRAY:
-      dimension = V_030000_SQ_TEX_DIM_1D_ARRAY;
-      layer_count = image_view_create_info->subresourceRange.layerCount;
-      break;
-   case VK_IMAGE_VIEW_TYPE_2D_ARRAY:
-      dimension = image->vk.samples > VK_SAMPLE_COUNT_1_BIT ? V_030000_SQ_TEX_DIM_2D_ARRAY_MSAA
-                                                            : V_030000_SQ_TEX_DIM_2D_ARRAY;
-      layer_count = image_view_create_info->subresourceRange.layerCount;
-      break;
-   case VK_IMAGE_VIEW_TYPE_CUBE_ARRAY:
-      dimension = V_030000_SQ_TEX_DIM_CUBEMAP;
-      layer_count = image_view_create_info->subresourceRange.layerCount;
-      break;
-   default:
-      assert(!"Unsupported image view type");
-      return false;
-   }
-   if (image->vk.array_layers <= 1) {
-      switch (dimension) {
-      case V_030000_SQ_TEX_DIM_1D_ARRAY:
-         dimension = V_030000_SQ_TEX_DIM_1D;
+   } else {
+      switch (image_view_create_info->viewType) {
+      case VK_IMAGE_VIEW_TYPE_1D:
+         dimension = V_030000_SQ_TEX_DIM_1D_ARRAY;
          break;
-      case V_030000_SQ_TEX_DIM_2D_ARRAY:
-         dimension = V_030000_SQ_TEX_DIM_2D;
+      case VK_IMAGE_VIEW_TYPE_2D:
+         dimension = image->vk.samples > VK_SAMPLE_COUNT_1_BIT ? V_030000_SQ_TEX_DIM_2D_ARRAY_MSAA
+                                                               : V_030000_SQ_TEX_DIM_2D_ARRAY;
          break;
-      case V_030000_SQ_TEX_DIM_2D_ARRAY_MSAA:
-         dimension = V_030000_SQ_TEX_DIM_2D_MSAA;
+      case VK_IMAGE_VIEW_TYPE_CUBE:
+         dimension = V_030000_SQ_TEX_DIM_CUBEMAP;
+         layer_count = 6;
+         break;
+      case VK_IMAGE_VIEW_TYPE_1D_ARRAY:
+         dimension = V_030000_SQ_TEX_DIM_1D_ARRAY;
+         layer_count = image_view_create_info->subresourceRange.layerCount;
+         break;
+      case VK_IMAGE_VIEW_TYPE_2D_ARRAY:
+         dimension = image->vk.samples > VK_SAMPLE_COUNT_1_BIT ? V_030000_SQ_TEX_DIM_2D_ARRAY_MSAA
+                                                               : V_030000_SQ_TEX_DIM_2D_ARRAY;
+         layer_count = image_view_create_info->subresourceRange.layerCount;
+         break;
+      case VK_IMAGE_VIEW_TYPE_CUBE_ARRAY:
+         dimension = V_030000_SQ_TEX_DIM_CUBEMAP;
+         layer_count = image_view_create_info->subresourceRange.layerCount;
          break;
       default:
-         break;
+         assert(!"Unsupported image view type");
+         return false;
+      }
+      if (image->vk.array_layers <= 1) {
+         switch (dimension) {
+         case V_030000_SQ_TEX_DIM_1D_ARRAY:
+            dimension = V_030000_SQ_TEX_DIM_1D;
+            break;
+         case V_030000_SQ_TEX_DIM_2D_ARRAY:
+            dimension = V_030000_SQ_TEX_DIM_2D;
+            break;
+         case V_030000_SQ_TEX_DIM_2D_ARRAY_MSAA:
+            dimension = V_030000_SQ_TEX_DIM_2D_MSAA;
+            break;
+         default:
+            break;
+         }
       }
    }
 
@@ -315,56 +322,105 @@ terakan_image_create_resource_descriptor(VkImageViewCreateInfo const * const ima
       signs = terakan_format_texture_get_word4_signs(image_view_create_info->format);
    }
 
+   /* Mips are stored differently from the base level, they're padded along each direction to the
+    * number of texels rounded to the next power of 2.
+    * Color descriptors can treat the base and the mips the same because SLICE_TILE_MAX is specified
+    * explicitly, however, there's no equivalent setting for resources.
+    * Therefore, BASE_ADDRESS must not point to non-0 mip levels within an image, as that would
+    * result in array/3D layer pitch smaller than needed.
+    */
+
+   uint32_t resource_width = image->vk.extent.width;
+   uint32_t resource_height = image->vk.extent.height;
+   uint32_t resource_depth_or_layers =
+      image->vk.image_type == VK_IMAGE_TYPE_3D ? image->vk.extent.depth : image->vk.array_layers;
+
+   uint32_t resource_base_level_index = 0;
+   bool const is_uncompressed_view = vk_format_is_compressed(image->vk.format) &&
+                                     !vk_format_is_compressed(image_view_create_info->format);
+   if (is_uncompressed_view) {
+      /* It's not possible to simply divide the size by 4 rounding up, as the mip pyramid of the
+       * uncompressed view will not contain all the pixels in the mip pyramid of the actual
+       * compressed texture:
+       * - Level 1 of a compressed 10x1 (3x1 blocks) texture is 5x1 (2x1 blocks).
+       *   However, level 1 of its 3x1 uncompressed view is 1x1.
+       * - Levels smaller than 4x4x1 in the compressed texture all become 1x1x1 in the uncompressed
+       *   view, but there can't be multiple mips with the same size.
+       * Therefore, it's not possible to access more than 1 level via an uncompressed view of a
+       * compressed texture.
+       * VUID-VkImageViewCreateInfo-image-07072: "If image was created with the
+       * VK_IMAGE_CREATE_BLOCK_TEXEL_VIEW_COMPATIBLE_BIT flag and format is a non-compressed format,
+       * the levelCount member of subresourceRange must be 1"
+       */
+      if (image_view_create_info->subresourceRange.levelCount != 1) {
+         return false;
+      }
+      /* Make the uncompressed view point to the specified level with the exact needed size.
+       * Mips can have more padding than the base, however, so MIP_ADDRESS must be used to point to
+       * them instead of BASE_ADDRESS.
+       */
+      resource_width = DIV_ROUND_UP(
+         u_minify(image->vk.extent.width, image_view_create_info->subresourceRange.baseMipLevel),
+         image->surface.blk_w);
+      resource_height = DIV_ROUND_UP(
+         u_minify(image->vk.extent.height, image_view_create_info->subresourceRange.baseMipLevel),
+         image->surface.blk_h);
+      if (image_view_create_info->subresourceRange.baseMipLevel != 0) {
+         /* Note that for 2D-tiled images, small mips switch to 1D tiling. However, the mode to use
+          * depends only on the size of the mip itself in blocks and the macro tile size (which is
+          * calculated for the tiling configuration of the entire surface), so the tiling mode for
+          * the needed mip will be the same regardless of the levels prior to it.
+          */
+         resource_base_level_index = image_view_create_info->subresourceRange.baseMipLevel - 1;
+         /* TODO(Triang3l): Pad the value reported by vkGetDeviceImageMemoryRequirements so this
+          * doesn't cause an overflow if doubling the block count results in more blocks than
+          * doubling the pixel count.
+          */
+         /* Multiplying the width by 2 makes sure one mip is created regardless of whether other
+          * dimensions end up being scaled.
+          */
+         resource_width *= 2;
+         if (resource_height > 1) {
+            resource_height *= 2;
+         }
+         if (image->vk.image_type == VK_IMAGE_TYPE_3D) {
+            resource_depth_or_layers = u_minify(image->vk.extent.depth, resource_base_level_index);
+         }
+      }
+   }
+
    bool const is_stencil_layout = is_stencil_aspect && image->surface.has_stencil;
-   struct legacy_surf_level const * const level =
-      is_stencil_layout
-         ? &image->surface.u.legacy.zs
-               .stencil_level[image_view_create_info->subresourceRange.baseMipLevel]
-         : &image->surface.u.legacy.level[image_view_create_info->subresourceRange.baseMipLevel];
+   struct legacy_surf_level const * const resource_base_level =
+      is_stencil_layout ? &image->surface.u.legacy.zs.stencil_level[resource_base_level_index]
+                        : &image->surface.u.legacy.level[resource_base_level_index];
 
    struct terakan_physical_device const * const physical_device =
       container_of(image->vk.base.device->physical, struct terakan_physical_device const, vk);
 
    bool const non_display_tiling = terakan_image_get_non_display_tiling(
                                       physical_device->chip_family_info.is_r9xx, image->vk.format,
-                                      level->mode <= RADEON_SURF_MODE_LINEAR_ALIGNED)
+                                      resource_base_level->mode <= RADEON_SURF_MODE_LINEAR_ALIGNED)
                                       .tc;
 
-   uint32_t width =
-      u_minify(image->vk.extent.width, image_view_create_info->subresourceRange.baseMipLevel);
-   uint32_t height =
-      u_minify(image->vk.extent.height, image_view_create_info->subresourceRange.baseMipLevel);
-   /* Allowing uncompressed views of compressed and subsampled images. */
-   if (!vk_format_is_compressed(image_view_create_info->format)) {
-      width = (width + (image->surface.blk_w - 1)) / image->surface.blk_w;
-      height = (height + (image->surface.blk_h - 1)) / image->surface.blk_h;
-   }
-
    /* nblk is expected to have already been aligned appropriately in the surface computation. */
+   /* TODO(Triang3l): Fixup base nblk alignment with the uncompressed view scale-by-2 hack. */
    descriptor_out[0] = S_030000_DIM(dimension) |
                        (physical_device->chip_family_info.is_r9xx
                            ? CM_S_030000_NON_DISP_TILING_ORDER(non_display_tiling)
                            : S_030000_NON_DISP_TILING_ORDER(non_display_tiling)) |
-                       S_030000_PITCH(level->nblk_x / 8 - 1) | S_030000_TEX_WIDTH(width - 1);
-
-   uint32_t image_base_level_depth_or_layers =
-      image->vk.image_type == VK_IMAGE_TYPE_3D
-         ? u_minify(image->vk.extent.depth, image_view_create_info->subresourceRange.baseMipLevel)
-         : image->vk.array_layers;
+                       S_030000_PITCH(resource_base_level->nblk_x / 8 - 1) |
+                       S_030000_TEX_WIDTH(resource_width - 1);
 
    /* For 1D arrays, the 3D Register Reference Guide incorrectly states that the number of layers is
     * in TEX_HEIGHT. It must be specified in TEX_DEPTH regardless of the dimensionality.
     */
-   descriptor_out[1] = S_030004_TEX_HEIGHT(height - 1) |
-                       S_030004_TEX_DEPTH(image_base_level_depth_or_layers - 1) |
-                       S_030004_ARRAY_MODE(terakan_image_array_mode_ac_to_hw(level->mode));
+   descriptor_out[1] =
+      S_030004_TEX_HEIGHT(resource_height - 1) | S_030004_TEX_DEPTH(resource_depth_or_layers - 1) |
+      S_030004_ARRAY_MODE(terakan_image_array_mode_ac_to_hw(resource_base_level->mode));
 
    uint32_t const image_va_256b = (uint32_t)(image->va / 256);
 
-   /* Base level is 0 - offsetting the base address instead, so single-level 2D views of 3D images
-    * can be created.
-    */
-   descriptor_out[2] = S_030008_BASE_ADDRESS(image_va_256b + level->offset_256B);
+   descriptor_out[2] = S_030008_BASE_ADDRESS(image_va_256b + resource_base_level->offset_256B);
 
    unsigned char const * const format_swizzle =
       terakan_format_data_get_swizzle(image_view_create_info->format);
@@ -387,7 +443,7 @@ terakan_image_create_resource_descriptor(VkImageViewCreateInfo const * const ima
       S_030014_BASE_ARRAY(image_view_create_info->subresourceRange.baseArrayLayer) |
       S_030014_LAST_ARRAY(
          (layer_count == VK_REMAINING_ARRAY_LAYERS
-             ? image_base_level_depth_or_layers
+             ? image->vk.array_layers
              : image_view_create_info->subresourceRange.baseArrayLayer + layer_count) -
          1);
 
@@ -401,7 +457,7 @@ terakan_image_create_resource_descriptor(VkImageViewCreateInfo const * const ima
       S_03001C_BANK_WIDTH(util_logbase2(image->surface.u.legacy.bankw)) |
       S_03001C_BANK_HEIGHT(util_logbase2(image->surface.u.legacy.bankh)) |
       S_03001C_DEPTH_SAMPLE_ORDER(vk_format_is_depth_or_stencil(image->vk.format) &&
-                                  level->mode > RADEON_SURF_MODE_LINEAR_ALIGNED) |
+                                  resource_base_level->mode > RADEON_SURF_MODE_LINEAR_ALIGNED) |
       S_03001C_NUM_BANKS(physical_device->tiling_info.banks_log2 - 1) |
       S_03001C_TYPE(V_03001C_SQ_TEX_VTX_VALID_TEXTURE);
 
@@ -418,20 +474,21 @@ terakan_image_create_resource_descriptor(VkImageViewCreateInfo const * const ima
       descriptor_out[5] |= S_030014_LAST_LEVEL(samples_log2);
    } else {
       uint32_t const second_level_index =
-         MIN2(image_view_create_info->subresourceRange.baseMipLevel + 1, image->vk.mip_levels - 1);
+         MIN2(resource_base_level_index + 1, image->vk.mip_levels - 1);
       descriptor_out[3] = S_03000C_MIP_ADDRESS(
          image_va_256b +
          (is_stencil_layout
              ? image->surface.u.legacy.zs.stencil_level[second_level_index].offset_256B
              : image->surface.u.legacy.level[second_level_index].offset_256B));
 
-      uint32_t const last_level =
+      descriptor_out[4] |= S_030010_BASE_LEVEL(
+         image_view_create_info->subresourceRange.baseMipLevel - resource_base_level_index);
+      descriptor_out[5] |= S_030014_LAST_LEVEL(
+         image_view_create_info->subresourceRange.baseMipLevel - resource_base_level_index +
          vk_image_subresource_level_count(&image->vk, &image_view_create_info->subresourceRange) -
-         1;
-      if (last_level != 0) {
-         descriptor_out[5] |= S_030014_LAST_LEVEL(last_level);
-         descriptor_out[6] |= S_030018_MAX_ANISO_RATIO(4);
-      }
+         1);
+
+      descriptor_out[6] |= S_030018_MAX_ANISO_RATIO(4);
    }
 
    return true;
