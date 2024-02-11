@@ -347,19 +347,17 @@ terakan_image_create_resource_descriptor(VkImageViewCreateInfo const * const ima
                            : S_030000_NON_DISP_TILING_ORDER(non_display_tiling)) |
                        S_030000_PITCH(level->nblk_x / 8 - 1) | S_030000_TEX_WIDTH(width - 1);
 
+   uint32_t image_base_level_depth_or_layers =
+      image->vk.image_type == VK_IMAGE_TYPE_3D
+         ? u_minify(image->vk.extent.depth, image_view_create_info->subresourceRange.baseMipLevel)
+         : image->vk.array_layers;
+
    /* For 1D arrays, the 3D Register Reference Guide incorrectly states that the number of layers is
     * in TEX_HEIGHT. It must be specified in TEX_DEPTH regardless of the dimensionality.
     */
    descriptor_out[1] = S_030004_TEX_HEIGHT(height - 1) |
+                       S_030004_TEX_DEPTH(image_base_level_depth_or_layers - 1) |
                        S_030004_ARRAY_MODE(terakan_image_array_mode_ac_to_hw(level->mode));
-   if (image->vk.image_type == VK_IMAGE_TYPE_3D) {
-      assert(image_view_create_info->viewType == VK_IMAGE_VIEW_TYPE_2D ||
-             image_view_create_info->viewType == VK_IMAGE_VIEW_TYPE_2D_ARRAY ||
-             image_view_create_info->viewType == VK_IMAGE_VIEW_TYPE_3D);
-      descriptor_out[1] |= S_030004_TEX_DEPTH(image->vk.extent.depth - 1);
-   } else {
-      descriptor_out[1] |= S_030004_TEX_DEPTH(image->vk.array_layers - 1);
-   }
 
    uint32_t const image_va_256b = (uint32_t)(image->va / 256);
 
@@ -389,7 +387,7 @@ terakan_image_create_resource_descriptor(VkImageViewCreateInfo const * const ima
       S_030014_BASE_ARRAY(image_view_create_info->subresourceRange.baseArrayLayer) |
       S_030014_LAST_ARRAY(
          (layer_count == VK_REMAINING_ARRAY_LAYERS
-             ? image->vk.array_layers
+             ? image_base_level_depth_or_layers
              : image_view_create_info->subresourceRange.baseArrayLayer + layer_count) -
          1);
 
@@ -503,8 +501,14 @@ terakan_image_create_color_descriptor(
 
    uint32_t const view_slice_start = create_info_slice_start - base_slice_start;
    uint32_t const create_info_slice_max =
-      image_view_create_info->subresourceRange.baseArrayLayer +
-      vk_image_subresource_layer_count(&image->vk, &image_view_create_info->subresourceRange) - 1;
+      (image_view_create_info->subresourceRange.layerCount == VK_REMAINING_ARRAY_LAYERS
+          ? (image->vk.image_type == VK_IMAGE_TYPE_3D
+                ? u_minify(image->vk.extent.depth,
+                           image_view_create_info->subresourceRange.baseMipLevel)
+                : image->vk.array_layers)
+          : image_view_create_info->subresourceRange.baseArrayLayer +
+               image_view_create_info->subresourceRange.layerCount) -
+      1;
    uint32_t const view_slice_max =
       MIN2(create_info_slice_max - base_slice_start, TERAKAN_IMAGE_MAX_TARGET_SLICES - 1);
    descriptor_out->view =
