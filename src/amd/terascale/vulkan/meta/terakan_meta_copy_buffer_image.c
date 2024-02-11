@@ -771,6 +771,7 @@ terakan_meta_copy_buffer_image_image_view_subresource_range(
 {
    subresource_range_out->aspectMask = region->imageSubresource.aspectMask;
    subresource_range_out->baseMipLevel = region->imageSubresource.mipLevel;
+   subresource_range_out->levelCount = 1;
    if (image->vk.image_type == VK_IMAGE_TYPE_3D) {
       subresource_range_out->baseArrayLayer = (uint32_t)region->imageOffset.z;
       subresource_range_out->layerCount = region->imageExtent.depth;
@@ -797,10 +798,6 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
       .image = pCopyBufferToImageInfo->dstImage,
       .viewType = image->vk.image_type == VK_IMAGE_TYPE_1D ? VK_IMAGE_VIEW_TYPE_1D_ARRAY
                                                            : VK_IMAGE_VIEW_TYPE_2D_ARRAY,
-      .subresourceRange =
-         {
-            .levelCount = 1,
-         },
    };
 
    struct terakan_buffer const * const buffer =
@@ -947,10 +944,6 @@ terakan_CmdCopyImageToBuffer2(VkCommandBuffer const commandBuffer,
       .image = pCopyImageToBufferInfo->srcImage,
       .viewType = image->vk.image_type == VK_IMAGE_TYPE_1D ? VK_IMAGE_VIEW_TYPE_1D_ARRAY
                                                            : VK_IMAGE_VIEW_TYPE_2D_ARRAY,
-      .subresourceRange =
-         {
-            .levelCount = 1,
-         },
    };
 
    struct terakan_buffer const * const buffer =
