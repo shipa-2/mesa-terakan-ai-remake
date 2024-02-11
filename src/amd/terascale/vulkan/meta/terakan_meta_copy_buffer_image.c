@@ -743,27 +743,25 @@ terakan_meta_copy_buffer_image_pitches_and_rect(struct terakan_image const * con
                                                 uint32_t * const buffer_z_pitch_out,
                                                 VkRect2D * const rect_out)
 {
-   /* Buffer row length and image height are block-aligned. */
-   uint32_t const buffer_y_pitch =
-      (region->bufferRowLength != 0 ? region->bufferRowLength : region->imageExtent.width) /
-      image->surface.blk_w;
+   /* Buffer row length and image height must be block-aligned. However, safer to assume the
+    * intention of rounding up in case of invalid (like simply copying imageExtent) usage.
+    */
+   uint32_t const buffer_y_pitch = DIV_ROUND_UP(
+      region->bufferRowLength != 0 ? region->bufferRowLength : region->imageExtent.width,
+      image->surface.blk_w);
    *buffer_y_pitch_out = buffer_y_pitch;
    *buffer_z_pitch_out =
-      buffer_y_pitch *
-      ((region->bufferImageHeight != 0 ? region->bufferImageHeight : region->imageExtent.height) /
-       image->surface.blk_h);
+      buffer_y_pitch * DIV_ROUND_UP(region->bufferImageHeight != 0 ? region->bufferImageHeight
+                                                                   : region->imageExtent.height,
+                                    image->surface.blk_h);
 
    /* The offset must be block-aligned, but offset + extent is limited to the extent of the
     * subresource, which is not block-aligned.
     */
    rect_out->offset.x = region->imageOffset.x / image->surface.blk_w;
    rect_out->offset.y = region->imageOffset.y / image->surface.blk_h;
-   rect_out->extent.width =
-      region->imageExtent.width / image->surface.blk_w +
-      (uint32_t)((region->imageExtent.width & (image->surface.blk_w - 1)) != 0);
-   rect_out->extent.height =
-      region->imageExtent.height / image->surface.blk_h +
-      (uint32_t)((region->imageExtent.height & (image->surface.blk_h - 1)) != 0);
+   rect_out->extent.width = DIV_ROUND_UP(region->imageExtent.width, image->surface.blk_w);
+   rect_out->extent.height = DIV_ROUND_UP(region->imageExtent.height, image->surface.blk_h);
 }
 
 static void
