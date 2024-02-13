@@ -452,6 +452,10 @@ terakan_physical_device_get_capabilities(
     */
    properties_out->nonCoherentAtomSize = 1;
 
+   /* VK_KHR_sampler_mirror_clamp_to_edge (#15, Vulkan 1.2). */
+   extensions_out->KHR_sampler_mirror_clamp_to_edge = true;
+   features_out->samplerMirrorClampToEdge = true;
+
    /* VK_KHR_dynamic_rendering (#45, Vulkan 1.3). */
    extensions_out->KHR_dynamic_rendering = true;
    features_out->dynamicRendering = true;
