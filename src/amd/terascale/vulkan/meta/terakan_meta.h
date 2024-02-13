@@ -68,10 +68,14 @@ enum terakan_meta_shader_index {
     */
    TERAKAN_META_SHADER_EMPTY_OPAQUE_PS,
 
-   /* Vertex index unpacked as X16Y16 into the position, instance ID into the array layer.
+   /* Vertex index unpacked as X16Y16 into the position.
     * Exports the instance ID as an integer in all components of the first parameter.
     */
    TERAKAN_META_SHADER_POSITION_FROM_INDEX_VS,
+   /* Vertex index unpacked as X16Y16 into the position, instance ID into the array layer.
+    * Exports the instance ID as an integer in all components of the first parameter.
+    */
+   TERAKAN_META_SHADER_POSITION_AND_LAYER_FROM_INDEX_VS,
 
    TERAKAN_META_SHADER_CLEAR_COLOR_PS,
 
@@ -82,6 +86,7 @@ enum terakan_meta_shader_index {
 };
 
 extern struct terakan_meta_shader const terakan_meta_position_from_index_vs;
+extern struct terakan_meta_shader const terakan_meta_position_and_layer_from_index_vs;
 extern struct terakan_meta_shader const terakan_meta_clear_color_ps;
 extern struct terakan_meta_shader const terakan_meta_copy_buffer_to_image_ps;
 extern struct terakan_meta_shader const terakan_meta_copy_image_to_buffer_ps;

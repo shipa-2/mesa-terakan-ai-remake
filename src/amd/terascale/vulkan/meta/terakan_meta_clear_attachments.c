@@ -218,7 +218,7 @@ terakan_CmdClearAttachments(VkCommandBuffer const commandBuffer, uint32_t const 
 
    terakan_meta_begin_2d_immediate_rects(command_writer, TERAKAN_META_DB_RENDER_OVERRIDE_DEFAULT);
 
-   terakan_meta_set_vs(command_writer, TERAKAN_META_SHADER_POSITION_FROM_INDEX_VS);
+   terakan_meta_set_vs(command_writer, TERAKAN_META_SHADER_POSITION_AND_LAYER_FROM_INDEX_VS);
    terakan_meta_set_ps(command_writer, TERAKAN_META_SHADER_CLEAR_COLOR_PS);
 
    /* TODO(Triang3l): Clear depth and stencil via the viewport Z min/max and stencil reference. */

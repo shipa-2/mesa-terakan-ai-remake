@@ -164,21 +164,29 @@ static uint32_t const terakan_meta_copy_buffer_to_image_ps_r8xx[] = {
 static uint32_t const terakan_meta_copy_image_to_buffer_ps_r8xx[] = {
    /* Control flow. */
 
-   /* 0: Fetch from the source texture. */
+   /* 0: Loading the array layer index (may exceed the maximum number of attachment layers for
+    * images without attachment usage enabled).
+    */
 
-   S_SQ_CF_WORD0_ADDR(4),
+   S_SQ_CF_WORD0_ADDR(5),
+   S_SQ_CF_ALU_WORD1_COUNT(5 - 5) | S_SQ_CF_ALU_WORD1_BARRIER(1) |
+      EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
+
+   /* 1: Fetch from the source texture. */
+
+   S_SQ_CF_WORD0_ADDR(6),
    S_SQ_CF_WORD1_COUNT(0) | S_SQ_CF_WORD1_BARRIER(1) | EG_V_SQ_CF_WORD1_SQ_CF_INST_TEX,
 
-   /* 1: Address calculation. */
+   /* 2: Address calculation. */
 
-   S_SQ_CF_WORD0_ADDR(6) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS) |
+   S_SQ_CF_WORD0_ADDR(8) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS) |
       S_SQ_CF_ALU_WORD0_KCACHE_MODE0(V_SQ_CF_KCACHE_LOCK_1),
    S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(TERAKAN_KCACHE_FIELD_LINE(
       struct terakan_meta_copy_buffer_image_push_constants, image_offset_x_minus_buffer_offset)) |
-      S_SQ_CF_ALU_WORD1_COUNT(11 - 6) | S_SQ_CF_ALU_WORD1_BARRIER(1) |
+      S_SQ_CF_ALU_WORD1_COUNT(13 - 8) | S_SQ_CF_ALU_WORD1_BARRIER(1) |
       EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
-   /* 2: Write to the RAT. */
+   /* 3: Write to the RAT. */
 
    S_SQ_CF_ALLOC_EXPORT_WORD0_RAT_RAT_ID(0) |
       S_SQ_CF_ALLOC_EXPORT_WORD0_RAT_RAT_INST(V_RAT_INST_STORE_TYPED) |
@@ -188,7 +196,7 @@ static uint32_t const terakan_meta_copy_image_to_buffer_ps_r8xx[] = {
       S_SQ_CF_ALLOC_EXPORT_WORD1_VALID_PIXEL_MODE(1) | S_SQ_CF_ALLOC_EXPORT_WORD1_BARRIER(1) |
       EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_MEM_RAT,
 
-   /* 3: Perform a dummy export and end the program. */
+   /* 4: Perform a dummy export and end the program. */
 
    S_SQ_CF_ALLOC_EXPORT_WORD0_TYPE(V_SQ_CF_ALLOC_EXPORT_WORD0_SQ_EXPORT_PIXEL) |
       S_SQ_CF_ALLOC_EXPORT_WORD0_ARRAY_BASE(0),
@@ -197,7 +205,19 @@ static uint32_t const terakan_meta_copy_image_to_buffer_ps_r8xx[] = {
       S_SQ_CF_ALLOC_EXPORT_WORD1_BARRIER(1) | S_SQ_CF_ALLOC_EXPORT_WORD1_END_OF_PROGRAM(1) |
       EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_EXPORT_DONE,
 
-   /* 4, 5: Fetch from the source texture to R1. */
+   /* ALU clause. */
+
+   /* Load the array layer index.
+    *
+    * 5: (V) INTERP_LOAD_P0 R0.Z, Param0.X, unused 0
+    */
+
+   S_SQ_ALU_WORD0_LAST(1) | S_SQ_ALU_WORD0_SRC0_SEL(V_SQ_ALU_SRC_PARAM_BASE) |
+      S_SQ_ALU_WORD0_SRC0_CHAN(0) | S_SQ_ALU_WORD0_SRC0_SEL(V_SQ_ALU_SRC_0),
+   S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(2) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
+      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_INTERP_LOAD_P0),
+
+   /* 6, 7: Fetch from the source texture to R1. */
 
    S_SQ_TEX_WORD0_TEX_INST(3) |
       S_SQ_TEX_WORD0_RESOURCE_ID(TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META) |
@@ -215,9 +235,9 @@ static uint32_t const terakan_meta_copy_image_to_buffer_ps_r8xx[] = {
 
    /* Convert from image XY to buffer XY, and apply the layer pitch to the layer index.
     *
-    * 6:     PV.X = SUB_INT R0.X, CB[push].image_offset_x_minus_buffer_offset
-    * 7:     PV.Y = SUB_INT R0.Y, CB[push].image_offset_y
-    * 8: (T) PS (Z) = MULLO_UINT CB[push].buffer_z_pitch, R0.Z
+    *  8:     PV.X = SUB_INT R0.X, CB[push].image_offset_x_minus_buffer_offset
+    *  9:     PV.Y = SUB_INT R0.Y, CB[push].image_offset_y
+    * 10: (T) PS (Z) = MULLO_UINT CB[push].buffer_z_pitch, R0.Z
     * Cycle 0: X = R0, Y = R0, T constant
     * Cycle 1: Z = R0
     */
@@ -243,8 +263,8 @@ static uint32_t const terakan_meta_copy_image_to_buffer_ps_r8xx[] = {
 
    /* Apply the layer offset to the address, and apply the row pitch to the row index.
     *
-    *  9:     PV.X = ADD_INT PV.X, PS
-    * 10: (T) PS (Y) = MULLO_UINT CB[push].buffer_y_pitch, PV.Y
+    * 11:     PV.X = ADD_INT PV.X, PS
+    * 12: (T) PS (Y) = MULLO_UINT CB[push].buffer_y_pitch, PV.Y
     * Cycle 0: T constant
     */
 
@@ -262,7 +282,7 @@ static uint32_t const terakan_meta_copy_image_to_buffer_ps_r8xx[] = {
 
    /* Apply the row offset to the address written to R0.X.
     *
-    * 11: (v) R0.X = ADD_INT PV.X, PS
+    * 13: (v) R0.X = ADD_INT PV.X, PS
     */
 
    S_SQ_ALU_WORD0_LAST(1) | S_SQ_ALU_WORD0_SRC0_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC0_CHAN(0) |
@@ -429,19 +449,27 @@ static uint32_t const terakan_meta_copy_buffer_to_image_ps_r9xx[] = {
 static uint32_t const terakan_meta_copy_image_to_buffer_ps_r9xx[] = {
    /* Control flow. */
 
-   /* 0: Fetch from the source texture. */
+   /* 0: Loading the array layer index (may exceed the maximum number of attachment layers for
+    * images without attachment usage enabled).
+    */
 
    S_SQ_CF_WORD0_ADDR(6),
+   S_SQ_CF_ALU_WORD1_COUNT(6 - 6) | S_SQ_CF_ALU_WORD1_BARRIER(1) |
+      EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
+
+   /* 1: Fetch from the source texture. */
+
+   S_SQ_CF_WORD0_ADDR(8),
    S_SQ_CF_WORD1_COUNT(0) | S_SQ_CF_WORD1_BARRIER(1) | EG_V_SQ_CF_WORD1_SQ_CF_INST_TEX,
 
-   /* 1: Address calculation. */
+   /* 2: Address calculation. */
 
-   S_SQ_CF_WORD0_ADDR(8) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS) |
+   S_SQ_CF_WORD0_ADDR(10) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS) |
       S_SQ_CF_ALU_WORD0_KCACHE_MODE0(V_SQ_CF_KCACHE_LOCK_1),
-   S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(0) | S_SQ_CF_ALU_WORD1_COUNT(19 - 8) |
+   S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(0) | S_SQ_CF_ALU_WORD1_COUNT(21 - 10) |
       S_SQ_CF_ALU_WORD1_BARRIER(1) | EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
-   /* 2: Write to the RAT. */
+   /* 3: Write to the RAT. */
 
    S_SQ_CF_ALLOC_EXPORT_WORD0_RAT_RAT_ID(0) |
       S_SQ_CF_ALLOC_EXPORT_WORD0_RAT_RAT_INST(V_RAT_INST_STORE_TYPED) |
@@ -451,7 +479,7 @@ static uint32_t const terakan_meta_copy_image_to_buffer_ps_r9xx[] = {
       S_SQ_CF_ALLOC_EXPORT_WORD1_VALID_PIXEL_MODE(1) | S_SQ_CF_ALLOC_EXPORT_WORD1_BARRIER(1) |
       EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_MEM_RAT,
 
-   /* 3: Perform a dummy export. */
+   /* 4: Perform a dummy export. */
 
    S_SQ_CF_ALLOC_EXPORT_WORD0_TYPE(V_SQ_CF_ALLOC_EXPORT_WORD0_SQ_EXPORT_PIXEL) |
       S_SQ_CF_ALLOC_EXPORT_WORD0_ARRAY_BASE(0),
@@ -459,12 +487,24 @@ static uint32_t const terakan_meta_copy_image_to_buffer_ps_r9xx[] = {
       S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Z(7) | S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_W(7) |
       S_SQ_CF_ALLOC_EXPORT_WORD1_BARRIER(1) | EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_EXPORT_DONE,
 
-   /* 4: End the program. */
+   /* 5: End the program. */
 
    0,
    CM_V_SQ_CF_WORD1_SQ_CF_INST_END,
 
-   /* 5 (alignment padding), 6, 7: Fetch from the source texture to R1. */
+   /* ALU clause. */
+
+   /* Load the array layer index.
+    *
+    * 6: INTERP_LOAD_P0 R0.Z, Param0.X, unused 0
+    */
+
+   S_SQ_ALU_WORD0_LAST(1) | S_SQ_ALU_WORD0_SRC0_SEL(V_SQ_ALU_SRC_PARAM_BASE) |
+      S_SQ_ALU_WORD0_SRC0_CHAN(0) | S_SQ_ALU_WORD0_SRC0_SEL(V_SQ_ALU_SRC_0),
+   S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(2) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
+      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_INTERP_LOAD_P0),
+
+   /* 7 (alignment padding), 8, 9: Fetch from the source texture to R1. */
 
    0,
    0,
@@ -485,8 +525,8 @@ static uint32_t const terakan_meta_copy_image_to_buffer_ps_r9xx[] = {
 
    /* Convert from image XY to buffer XY, and apply the layer pitch to the layer index.
     *
-    * 8: R0.X = SUB_INT R0.X, CB[push].image_offset_x_minus_buffer_offset
-    * 9: PV.Y = SUB_INT R0.Y, CB[push].image_offset_y
+    * 10: R0.X = SUB_INT R0.X, CB[push].image_offset_x_minus_buffer_offset
+    * 11: PV.Y = SUB_INT R0.Y, CB[push].image_offset_y
     * Cycle 0: X = R0, Y = R0
     */
 
@@ -505,10 +545,10 @@ static uint32_t const terakan_meta_copy_image_to_buffer_ps_r9xx[] = {
    /* Apply the row pitch to the row index.
     *
     * MULLO_UINT uses 4 slots.
-    * 10: PV.X = MULLO_UINT CB[push].buffer_y_pitch, PV.Y
-    * 11: R0.Y = MULLO_UINT CB[push].buffer_y_pitch, PV.Y
-    * 12: PV.Z = MULLO_UINT CB[push].buffer_y_pitch, PV.Y
-    * 13: PV.W = MULLO_UINT CB[push].buffer_y_pitch, PV.Y
+    * 12: PV.X = MULLO_UINT CB[push].buffer_y_pitch, PV.Y
+    * 13: R0.Y = MULLO_UINT CB[push].buffer_y_pitch, PV.Y
+    * 14: PV.Z = MULLO_UINT CB[push].buffer_y_pitch, PV.Y
+    * 15: PV.W = MULLO_UINT CB[push].buffer_y_pitch, PV.Y
     */
 
    TERAKAN_KCACHE_FIELD_WORD0_SRC0(struct terakan_meta_copy_buffer_image_push_constants,
@@ -539,10 +579,10 @@ static uint32_t const terakan_meta_copy_image_to_buffer_ps_r9xx[] = {
    /* Apply the layer pitch to the layer index.
     *
     * MULLO_UINT uses 4 slots.
-    * 14: PV.X = MULLO_UINT CB[push].buffer_z_pitch, R0.Z
-    * 15: PV.Y = MULLO_UINT CB[push].buffer_z_pitch, R0.Z
-    * 16: PV.Z = MULLO_UINT CB[push].buffer_z_pitch, R0.Z
-    * 17: PV.W = MULLO_UINT CB[push].buffer_z_pitch, R0.Z
+    * 16: PV.X = MULLO_UINT CB[push].buffer_z_pitch, R0.Z
+    * 17: PV.Y = MULLO_UINT CB[push].buffer_z_pitch, R0.Z
+    * 18: PV.Z = MULLO_UINT CB[push].buffer_z_pitch, R0.Z
+    * 19: PV.W = MULLO_UINT CB[push].buffer_z_pitch, R0.Z
     */
 
    TERAKAN_KCACHE_FIELD_WORD0_SRC0(struct terakan_meta_copy_buffer_image_push_constants,
@@ -572,7 +612,7 @@ static uint32_t const terakan_meta_copy_image_to_buffer_ps_r9xx[] = {
 
    /* Apply the layer offset to the address.
     *
-    * 18: PV.X = ADD_INT R0.X, PV.Z
+    * 20: PV.X = ADD_INT R0.X, PV.Z
     * Cycle 0: X = R0
     */
 
@@ -583,7 +623,7 @@ static uint32_t const terakan_meta_copy_image_to_buffer_ps_r9xx[] = {
 
    /* Apply the row offset to the address written to R0.X.
     *
-    * 19: R0.X = ADD_INT PV.X, R0.Y
+    * 21: R0.X = ADD_INT PV.X, R0.Y
     * Cycle 1: Y = R0
     */
 
@@ -591,17 +631,6 @@ static uint32_t const terakan_meta_copy_image_to_buffer_ps_r9xx[] = {
       S_SQ_ALU_WORD0_SRC1_SEL(0) | S_SQ_ALU_WORD0_SRC1_CHAN(1),
    S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(0) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_ADD_INT),
-
-   /* 16, 17: Vertex-fetch from the source buffer to R0. */
-
-   S_SQ_VTX_WORD0_VTX_INST(0) | S_SQ_VTX_WORD0_FETCH_TYPE(SQ_VTX_FETCH_NO_INDEX_OFFSET) |
-      S_SQ_VTX_WORD0_BUFFER_ID(TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META) |
-      S_SQ_VTX_WORD0_SRC_GPR(0) | S_SQ_VTX_WORD0_SRC_SEL_X(V_03000C_SQ_SEL_X),
-   S_SQ_VTX_WORD1_GPR_DST_GPR(0) | S_SQ_VTX_WORD1_DST_SEL_X(V_03000C_SQ_SEL_X) |
-      S_SQ_VTX_WORD1_DST_SEL_Y(V_03000C_SQ_SEL_Y) | S_SQ_VTX_WORD1_DST_SEL_Z(V_03000C_SQ_SEL_Z) |
-      S_SQ_VTX_WORD1_DST_SEL_W(V_03000C_SQ_SEL_W) | S_SQ_VTX_WORD1_USE_CONST_FIELDS(1),
-   0,
-   0,
 };
 
 struct terakan_meta_shader const terakan_meta_copy_buffer_to_image_ps =
@@ -670,70 +699,79 @@ struct terakan_meta_shader const terakan_meta_copy_buffer_to_image_ps =
          },
 };
 
-struct terakan_meta_shader const terakan_meta_copy_image_to_buffer_ps =
-   {
-      .r8xx =
-         {
-            .program = terakan_meta_copy_image_to_buffer_ps_r8xx,
-            .program_size_bytes = sizeof(terakan_meta_copy_image_to_buffer_ps_r8xx),
-            .static_registers =
-               {
-                  .sq_pgm_resources =
-                     {
-                        S_028844_NUM_GPRS(2) | TERAKAN_META_SQ_PGM_RESOURCES_COMMON,
-                        TERAKAN_META_SQ_PGM_RESOURCES_2_COMMON,
-                     },
-                  .stage =
-                     {
-                        .ps =
-                           {
-                              .sq_pgm_exports_ps = S_02884C_EXPORT_COLORS(1),
-                              .spi_ps_in_control =
-                                 {
-                                    S_0286CC_NUM_INTERP(1) | S_0286CC_LINEAR_GRADIENT_ENA(1),
-                                    S_0286D0_FIXED_PT_POSITION_ENA(1) |
-                                       S_0286D0_FIXED_PT_POSITION_ADDR(0),
-                                 },
-                              .spi_baryc_cntl = S_0286E0_LINEAR_CENTER_ENA(1),
-                              .cb_shader_mask = 0xF,
-                           },
-                     },
-               },
-         },
-      .r9xx =
-         {
-            .program = terakan_meta_copy_image_to_buffer_ps_r9xx,
-            .program_size_bytes = sizeof(terakan_meta_copy_image_to_buffer_ps_r9xx),
-            .static_registers =
-               {
-                  .sq_pgm_resources =
-                     {
-                        S_028844_NUM_GPRS(2) | TERAKAN_META_SQ_PGM_RESOURCES_COMMON,
-                        TERAKAN_META_SQ_PGM_RESOURCES_2_COMMON,
-                     },
-                  .stage =
-                     {
-                        .ps =
-                           {
-                              .sq_pgm_exports_ps = S_02884C_EXPORT_COLORS(1),
-                              .spi_ps_in_control =
-                                 {
-                                    S_0286CC_NUM_INTERP(1) | S_0286CC_LINEAR_GRADIENT_ENA(1),
-                                    S_0286D0_FIXED_PT_POSITION_ENA(1) |
-                                       S_0286D0_FIXED_PT_POSITION_ADDR(0),
-                                 },
-                              .spi_baryc_cntl = S_0286E0_LINEAR_CENTER_ENA(1),
-                              .cb_shader_mask = 0xF,
-                           },
-                     },
-               },
-         },
-      .kcache_needed = (uint16_t)1 << TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS,
-      .resources_needed =
-         {
-            [BITSET_BITWORD(TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META)] =
-               BITSET_BIT(TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META),
-         },
+struct terakan_meta_shader const
+   terakan_meta_copy_image_to_buffer_ps =
+      {
+         .r8xx =
+            {
+               .program = terakan_meta_copy_image_to_buffer_ps_r8xx,
+               .program_size_bytes = sizeof(terakan_meta_copy_image_to_buffer_ps_r8xx),
+               .static_registers =
+                  {
+                     .sq_pgm_resources =
+                        {
+                           S_028844_NUM_GPRS(2) | TERAKAN_META_SQ_PGM_RESOURCES_COMMON,
+                           TERAKAN_META_SQ_PGM_RESOURCES_2_COMMON,
+                        },
+                     .stage =
+                        {
+                           .ps =
+                              {
+                                 .sq_pgm_exports_ps = S_02884C_EXPORT_COLORS(1),
+                                 .spi_ps_input_cntl =
+                                    {
+                                       [0] = S_028644_FLAT_SHADE(1),
+                                    },
+                                 .spi_ps_in_control =
+                                    {
+                                       S_0286CC_NUM_INTERP(1) | S_0286CC_LINEAR_GRADIENT_ENA(1),
+                                       S_0286D0_FIXED_PT_POSITION_ENA(1) |
+                                          S_0286D0_FIXED_PT_POSITION_ADDR(0),
+                                    },
+                                 .spi_baryc_cntl = S_0286E0_LINEAR_CENTER_ENA(1),
+                                 .cb_shader_mask = 0xF,
+                              },
+                        },
+                  },
+            },
+         .r9xx =
+            {
+               .program = terakan_meta_copy_image_to_buffer_ps_r9xx,
+               .program_size_bytes = sizeof(terakan_meta_copy_image_to_buffer_ps_r9xx),
+               .static_registers =
+                  {
+                     .sq_pgm_resources =
+                        {
+                           S_028844_NUM_GPRS(2) | TERAKAN_META_SQ_PGM_RESOURCES_COMMON,
+                           TERAKAN_META_SQ_PGM_RESOURCES_2_COMMON,
+                        },
+                     .stage =
+                        {
+                           .ps =
+                              {
+                                 .sq_pgm_exports_ps = S_02884C_EXPORT_COLORS(1),
+                                 .spi_ps_input_cntl =
+                                    {
+                                       [0] = S_028644_FLAT_SHADE(1),
+                                    },
+                                 .spi_ps_in_control =
+                                    {
+                                       S_0286CC_NUM_INTERP(1) | S_0286CC_LINEAR_GRADIENT_ENA(1),
+                                       S_0286D0_FIXED_PT_POSITION_ENA(1) |
+                                          S_0286D0_FIXED_PT_POSITION_ADDR(0),
+                                    },
+                                 .spi_baryc_cntl = S_0286E0_LINEAR_CENTER_ENA(1),
+                                 .cb_shader_mask = 0xF,
+                              },
+                        },
+                  },
+            },
+         .kcache_needed = (uint16_t)1 << TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS,
+         .resources_needed =
+            {
+               [BITSET_BITWORD(TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META)] =
+                  BITSET_BIT(TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META),
+            },
 };
 
 static void
@@ -819,7 +857,7 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
 
    terakan_meta_begin_2d_immediate_rects(command_writer, TERAKAN_META_DB_RENDER_OVERRIDE_DEFAULT);
 
-   terakan_meta_set_vs(command_writer, TERAKAN_META_SHADER_POSITION_FROM_INDEX_VS);
+   terakan_meta_set_vs(command_writer, TERAKAN_META_SHADER_POSITION_AND_LAYER_FROM_INDEX_VS);
    terakan_meta_set_ps(command_writer, TERAKAN_META_SHADER_COPY_BUFFER_TO_IMAGE_PS);
 
    terakan_meta_begin_cb(command_writer, V_028808_CB_NORMAL, 0xF, 0b1);
