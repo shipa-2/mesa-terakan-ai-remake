@@ -1400,14 +1400,14 @@ terakan_CmdBindVertexBuffers2(VkCommandBuffer const commandBuffer, uint32_t cons
       if (offset > buffer->vk.size) {
          continue;
       }
-      VkDeviceSize size = pSizes != NULL ? pSizes[offset] : VK_WHOLE_SIZE;
+      VkDeviceSize size = pSizes != NULL ? pSizes[buffer_index] : VK_WHOLE_SIZE;
       assert(size == VK_WHOLE_SIZE || size <= buffer->vk.size - offset);
       size = MIN3(size, buffer->vk.size - offset, (VkDeviceSize)UINT32_MAX + 1);
       if (size == 0) {
          continue;
       }
       binding->bo = buffer->bo;
-      binding->va = buffer->va;
+      binding->va = buffer->va + offset;
       binding->size_bytes_minus_1 = size - 1;
    }
 
