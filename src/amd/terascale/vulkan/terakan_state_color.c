@@ -147,6 +147,47 @@ terakan_CmdSetColorBlendEquationEXT(VkCommandBuffer const commandBuffer,
 }
 
 VKAPI_ATTR void VKAPI_CALL
+terakan_CmdSetColorWriteMaskEXT(VkCommandBuffer const commandBuffer, uint32_t const firstAttachment,
+                                uint32_t const attachmentCount,
+                                VkColorComponentFlags const * const pColorWriteMasks)
+{
+   struct terakan_state_draw * const state =
+      &terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx->state_draw;
+   for (uint32_t attachment_relative_index = 0; attachment_relative_index < attachmentCount;
+        ++attachment_relative_index) {
+      uint32_t const attachment_index = firstAttachment + attachment_relative_index;
+      assert(attachment_index < ARRAY_SIZE(state->attachment_cb_blend_control));
+      uint8_t const attachment_write_mask =
+         (uint8_t)pColorWriteMasks[attachment_relative_index] & 0b1111;
+      if (state->cb_target_mask.attachment_write_masks[attachment_index] != attachment_write_mask) {
+         state->cb_target_mask.attachment_write_masks[attachment_index] = attachment_write_mask;
+         terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_INDEX_CB_TARGET_MASK);
+      }
+   }
+}
+
+VKAPI_ATTR void VKAPI_CALL
+terakan_CmdSetColorWriteEnableEXT(VkCommandBuffer const commandBuffer,
+                                  uint32_t const attachmentCount,
+                                  VkBool32 const * const pColorWriteEnables)
+{
+   struct terakan_state_draw * const state =
+      &terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx->state_draw;
+   assert(attachmentCount <= TERAKAN_COLOR_HW_MRT_COUNT);
+   uint8_t write_enable =
+      state->cb_target_mask.attachment_write_enable & ~(uint8_t)BITFIELD_MASK(attachmentCount);
+   for (uint32_t attachment_index = 0; attachment_index < attachmentCount; ++attachment_index) {
+      if (pColorWriteEnables[attachment_index]) {
+         write_enable |= (uint8_t)1 << attachment_index;
+      }
+   }
+   if (state->cb_target_mask.attachment_write_enable != write_enable) {
+      state->cb_target_mask.attachment_write_enable = write_enable;
+      terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_INDEX_CB_TARGET_MASK);
+   }
+}
+
+VKAPI_ATTR void VKAPI_CALL
 terakan_CmdSetBlendConstants(VkCommandBuffer const commandBuffer, float const blendConstants[4])
 {
    struct terakan_hw_state_draw * const hw_state_draw =

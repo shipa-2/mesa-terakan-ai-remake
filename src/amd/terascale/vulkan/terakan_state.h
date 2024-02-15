@@ -87,11 +87,13 @@ enum terakan_state_draw_index {
    /* Depends on TERAKAN_STATE_DRAW_INDEX_SQ_PGM_PS. */
    TERAKAN_STATE_DRAW_INDEX_COLOR_ATTACHMENT_USAGE,
    /* Depends on TERAKAN_STATE_DRAW_INDEX_COLOR_ATTACHMENT_USAGE. */
+   TERAKAN_STATE_DRAW_INDEX_CB_COLOR_MRT,
+   /* Depends on TERAKAN_STATE_DRAW_INDEX_COLOR_ATTACHMENT_USAGE and
+    * TERAKAN_STATE_DRAW_INDEX_CB_COLOR_MRT.
+    */
    TERAKAN_STATE_DRAW_INDEX_CB_TARGET_MASK,
    /* Depends on TERAKAN_STATE_DRAW_INDEX_CB_TARGET_MASK. */
    TERAKAN_STATE_DRAW_INDEX_CB_COLOR_CONTROL,
-   /* Depends on TERAKAN_STATE_DRAW_INDEX_COLOR_ATTACHMENT_USAGE. */
-   TERAKAN_STATE_DRAW_INDEX_CB_COLOR_MRT,
    /* Depends on TERAKAN_STATE_DRAW_INDEX_COLOR_ATTACHMENT_USAGE. */
    TERAKAN_STATE_DRAW_INDEX_CB_BLEND_CONTROL,
 
@@ -257,8 +259,24 @@ struct terakan_state_draw {
           */
          uint8_t written_by_shader;
       } from_apply_sq_pgm_ps;
-      uint8_t bound;
    } color_attachment_usage;
+
+   /* TERAKAN_STATE_DRAW_INDEX_CB_COLOR_MRT
+    * The descriptors are undefined for targets with the BO being NULL.
+    */
+   struct terakan_state_draw_cb_color attachment_cb_color[TERAKAN_COLOR_HW_MRT_COUNT];
+
+   /* TERAKAN_STATE_DRAW_INDEX_CB_TARGET_MASK */
+   struct {
+      /* If the attachment_write_enable bit for the attachment is not set, the write mask must be
+       * assumed to be 0.
+       */
+      uint8_t attachment_write_enable;
+      uint8_t attachment_write_masks[TERAKAN_COLOR_HW_MRT_COUNT];
+      struct {
+         uint32_t attachment_format_masks;
+      } from_apply_cb_color_mrt;
+   } cb_target_mask;
 
    /* TERAKAN_STATE_DRAW_INDEX_CB_COLOR_CONTROL */
    struct {
@@ -266,15 +284,6 @@ struct terakan_state_draw {
          bool any_target_enabled;
       } from_apply_cb_target_mask;
    } cb_color_control;
-
-   /* TERAKAN_STATE_DRAW_INDEX_CB_COLOR_MRT
-    * The values are undefined if the color_attachments_bound bit for the color attachment index is
-    * not set.
-    * However, for bound color targets, all fields are expected to have defined values (no special
-    * handling is done for the BO being NULL, for instance). Color attachments with a VK_NULL_HANDLE
-    * view must be excluded from color_attachments_bound, and various invalid bindings also may be.
-    */
-   struct terakan_state_draw_cb_color attachment_cb_color[TERAKAN_COLOR_HW_MRT_COUNT];
 
    /* TERAKAN_STATE_DRAW_INDEX_CB_BLEND_CONTROL
     * The CB_BLEND#_CONTROL register values stored here are directly the application's values for

@@ -40,6 +40,11 @@ extern "C" {
 bool terakan_format_is_linear_only(VkFormat format);
 bool terakan_format_is_tiled_only(VkFormat format);
 
+/* [Format component count][swap]. */
+extern uint8_t const terakan_format_color_export_component_masks[4 + 1][4];
+
+extern uint8_t const terakan_format_color_component_counts[1 << 6];
+
 /* For images with both depth and stencil, these functions always return the values for the depth
  * aspect.
  * The stencil aspect is always 8 UINT with STD swap (Vulkan has both depth and stencil in X

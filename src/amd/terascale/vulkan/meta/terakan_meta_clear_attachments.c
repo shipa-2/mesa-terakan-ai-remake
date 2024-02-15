@@ -240,13 +240,6 @@ terakan_CmdClearAttachments(VkCommandBuffer const commandBuffer, uint32_t const 
          continue;
       }
 
-      assert(command_writer->state_draw.color_attachment_usage.bound &
-             ((uint8_t)1 << attachment->colorAttachment));
-      if (unlikely(!(command_writer->state_draw.color_attachment_usage.bound &
-                     ((uint8_t)1 << attachment->colorAttachment)))) {
-         continue;
-      }
-
       if (memcmp(push_constants.clear_value, attachment->clearValue.color.uint32,
                  sizeof(uint32_t) * 4) != 0) {
          memcpy(push_constants.clear_value, attachment->clearValue.color.uint32,

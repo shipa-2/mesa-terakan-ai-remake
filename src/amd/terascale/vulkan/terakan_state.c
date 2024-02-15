@@ -28,6 +28,7 @@
 #include "terakan_command_buffer.h"
 #include "terakan_descriptor.h"
 #include "terakan_device.h"
+#include "terakan_format.h"
 #include "terakan_hw_state.h"
 #include "terakan_image.h"
 #include "terakan_shader.h"
@@ -513,15 +514,63 @@ static void
 terakan_state_draw_apply_color_attachment_usage(
    struct terakan_gfx_command_writer * const command_writer)
 {
-   TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_TARGET_MASK, COLOR_ATTACHMENT_USAGE);
-   terakan_state_draw_set_pending(&command_writer->state_draw,
-                                  TERAKAN_STATE_DRAW_INDEX_CB_TARGET_MASK);
    TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_COLOR_MRT, COLOR_ATTACHMENT_USAGE);
    terakan_state_draw_set_pending(&command_writer->state_draw,
                                   TERAKAN_STATE_DRAW_INDEX_CB_COLOR_MRT);
+   TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_TARGET_MASK, COLOR_ATTACHMENT_USAGE);
+   terakan_state_draw_set_pending(&command_writer->state_draw,
+                                  TERAKAN_STATE_DRAW_INDEX_CB_TARGET_MASK);
    TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_BLEND_CONTROL, COLOR_ATTACHMENT_USAGE);
    terakan_state_draw_set_pending(&command_writer->state_draw,
                                   TERAKAN_STATE_DRAW_INDEX_CB_BLEND_CONTROL);
+}
+
+static void
+terakan_state_draw_apply_cb_color_mrt(struct terakan_gfx_command_writer * const command_writer)
+{
+   uint32_t attachment_format_masks = 0b0;
+
+   TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_COLOR_MRT, COLOR_ATTACHMENT_USAGE);
+   unsigned attachments_remaining =
+      command_writer->state_draw.color_attachment_usage.from_apply_sq_pgm_ps.written_by_shader;
+   for (uint32_t hw_color_index = 0; attachments_remaining; ++hw_color_index) {
+      unsigned const attachment_index = (unsigned)u_bit_scan(&attachments_remaining);
+      struct terakan_state_draw_cb_color const * const attachment =
+         &command_writer->state_draw.attachment_cb_color[attachment_index];
+      if (attachment->bo == NULL) {
+         /* Expected to be disabled in CB_TARGET_MASK. */
+         continue;
+      }
+
+      bool const cb_color_modified =
+         command_writer->hw_state_draw.cb_color.bo[hw_color_index] != attachment->bo ||
+         memcmp(&command_writer->hw_state_draw.cb_color.color[hw_color_index], &attachment->color,
+                sizeof(struct terakan_color_descriptor)) != 0 ||
+         memcmp(&command_writer->hw_state_draw.cb_color.meta[hw_color_index], &attachment->meta,
+                sizeof(struct terakan_color_meta_descriptor)) != 0;
+      command_writer->hw_state_draw.cb_color.bo[hw_color_index] = attachment->bo;
+      memcpy(&command_writer->hw_state_draw.cb_color.color[hw_color_index], &attachment->color,
+             sizeof(struct terakan_color_descriptor));
+      memcpy(&command_writer->hw_state_draw.cb_color.meta[hw_color_index], &attachment->meta,
+             sizeof(struct terakan_color_meta_descriptor));
+      terakan_hw_state_draw_cb_color_written(&command_writer->hw_state_draw, hw_color_index,
+                                             cb_color_modified);
+
+      attachment_format_masks |=
+         (uint32_t)(terakan_format_color_export_component_masks
+                       [terakan_format_color_component_counts[G_028C70_FORMAT(
+                          attachment->color.info)]][G_028C70_COMP_SWAP(attachment->color.info)])
+         << (4 * attachment_index);
+   }
+
+   TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_TARGET_MASK, CB_COLOR_MRT);
+   if (command_writer->state_draw.cb_target_mask.from_apply_cb_color_mrt.attachment_format_masks !=
+       attachment_format_masks) {
+      command_writer->state_draw.cb_target_mask.from_apply_cb_color_mrt.attachment_format_masks =
+         attachment_format_masks;
+      terakan_state_draw_set_pending(&command_writer->state_draw,
+                                     TERAKAN_STATE_DRAW_INDEX_CB_TARGET_MASK);
+   }
 }
 
 static void
@@ -529,23 +578,45 @@ terakan_state_draw_apply_cb_target_mask(struct terakan_gfx_command_writer * cons
 {
    uint32_t cb_target_mask = 0b0;
 
+   uint8_t const attachment_write_enable =
+      command_writer->state_draw.cb_target_mask.attachment_write_enable;
+   uint32_t const attachment_format_masks =
+      command_writer->state_draw.cb_target_mask.from_apply_cb_color_mrt.attachment_format_masks;
    {
       TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_TARGET_MASK, COLOR_ATTACHMENT_USAGE);
       unsigned attachments_remaining =
          command_writer->state_draw.color_attachment_usage.from_apply_sq_pgm_ps.written_by_shader;
-      uint32_t hw_color_index = 0;
-      for (; attachments_remaining; ++hw_color_index) {
+      for (uint32_t hw_color_index = 0; attachments_remaining; ++hw_color_index) {
+         TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_TARGET_MASK, CB_COLOR_MRT);
          unsigned const attachment_index = (unsigned)u_bit_scan(&attachments_remaining);
-         if (!(command_writer->state_draw.color_attachment_usage.bound &
-               ((uint8_t)1 << attachment_index))) {
+         if (!(attachment_write_enable & ((uint8_t)1 << attachment_index))) {
             continue;
          }
-         cb_target_mask |= 0b1111 << (4 * attachment_index);
-         /* TODO(Triang3l): Blending state mask. */
-         /* TODO(Triang3l): Force-enable channels that don't exist in the format (add a new field
-          * with present channels under the CB_TARGET_MASK state configured in vkCmdBeginRendering),
-          * and force-disable targets that have only missing channels enabled in the blending state.
+         uint32_t const attachment_format_mask =
+            (attachment_format_masks >> (4 * attachment_index)) & 0b1111;
+         uint32_t attachment_target_mask =
+            attachment_format_mask &
+            command_writer->state_draw.cb_target_mask.attachment_write_masks[attachment_index];
+         if (!attachment_target_mask) {
+            /* No components present in the attachment format are enabled, ignore (here, and via
+             * `any_target_enabled`, in CB_COLOR_CONTROL MODE setup) the write mask specified by the
+             * application for the missing components.
+             * One of the particular cases of this is an attachment image not being bound also, in
+             * which case CB_TARGET_MASK should be disabled, so Terakan can simply leave CB_COLOR#
+             * registers undefined or unchanged for unbound targets without explicitly setting their
+             * format to INVALID.
+             */
+            continue;
+         }
+         /* Force missing components to written, to clearly specify in case all present components
+          * are enabled that a read-modify-write is not needed regardless of whether writing to
+          * the missing components is enabled by the application. This is based purely on a guess
+          * about a hypothetical situation though, for additional safety - the actual effect of a
+          * non-1111 mask on the CB performance compared to a 1111 one in reality hasn't been
+          * tested.
           */
+         attachment_target_mask |= attachment_format_mask ^ 0b1111;
+         cb_target_mask |= attachment_target_mask << (4 * hw_color_index);
       }
    }
 
@@ -584,44 +655,12 @@ terakan_state_draw_apply_cb_color_control(struct terakan_gfx_command_writer * co
 }
 
 static void
-terakan_state_draw_apply_cb_color_mrt(struct terakan_gfx_command_writer * const command_writer)
-{
-   TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_COLOR_MRT, COLOR_ATTACHMENT_USAGE);
-   uint8_t const attachments_written_by_shader =
-      command_writer->state_draw.color_attachment_usage.from_apply_sq_pgm_ps.written_by_shader;
-   unsigned attachments_remaining =
-      command_writer->state_draw.color_attachment_usage.bound & attachments_written_by_shader;
-   while (attachments_remaining) {
-      unsigned const attachment_index = (unsigned)u_bit_scan(&attachments_remaining);
-      struct terakan_state_draw_cb_color const * const attachment =
-         &command_writer->state_draw.attachment_cb_color[attachment_index];
-      unsigned const hw_color_index =
-         util_bitcount(attachments_written_by_shader & ((1u << attachment_index) - 1));
-      bool const modified =
-         command_writer->hw_state_draw.cb_color.bo[hw_color_index] != attachment->bo ||
-         memcmp(&command_writer->hw_state_draw.cb_color.color[hw_color_index], &attachment->color,
-                sizeof(struct terakan_color_descriptor)) != 0 ||
-         memcmp(&command_writer->hw_state_draw.cb_color.meta[hw_color_index], &attachment->meta,
-                sizeof(struct terakan_color_meta_descriptor)) != 0;
-      command_writer->hw_state_draw.cb_color.bo[hw_color_index] = attachment->bo;
-      memcpy(&command_writer->hw_state_draw.cb_color.color[hw_color_index], &attachment->color,
-             sizeof(struct terakan_color_descriptor));
-      memcpy(&command_writer->hw_state_draw.cb_color.meta[hw_color_index], &attachment->meta,
-             sizeof(struct terakan_color_meta_descriptor));
-      terakan_hw_state_draw_cb_color_written(&command_writer->hw_state_draw, hw_color_index,
-                                             modified);
-   }
-}
-
-static void
 terakan_state_draw_apply_cb_blend_control(struct terakan_gfx_command_writer * const command_writer)
 {
    TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_BLEND_CONTROL, COLOR_ATTACHMENT_USAGE);
-   uint8_t const attachments_written_by_shader =
-      command_writer->state_draw.color_attachment_usage.from_apply_sq_pgm_ps.written_by_shader;
    unsigned attachments_remaining =
-      command_writer->state_draw.color_attachment_usage.bound & attachments_written_by_shader;
-   while (attachments_remaining) {
+      command_writer->state_draw.color_attachment_usage.from_apply_sq_pgm_ps.written_by_shader;
+   for (uint32_t hw_color_index = 0; attachments_remaining; ++hw_color_index) {
       unsigned const attachment_index = (unsigned)u_bit_scan(&attachments_remaining);
 
       uint32_t cb_blend_control =
@@ -631,10 +670,8 @@ terakan_state_draw_apply_cb_blend_control(struct terakan_gfx_command_writer * co
          cb_blend_control = 0;
       }
 
-      terakan_hw_state_draw_set_cb_blend_control(
-         &command_writer->hw_state_draw,
-         util_bitcount(attachments_written_by_shader & ((1u << attachment_index) - 1)),
-         cb_blend_control);
+      terakan_hw_state_draw_set_cb_blend_control(&command_writer->hw_state_draw, hw_color_index,
+                                                 cb_blend_control);
    }
 }
 
@@ -663,9 +700,9 @@ static terakan_state_draw_apply_function const
       [TERAKAN_STATE_DRAW_INDEX_DB_RENDER_OVERRIDE] = terakan_state_draw_apply_db_render_override,
       [TERAKAN_STATE_DRAW_INDEX_COLOR_ATTACHMENT_USAGE] =
          terakan_state_draw_apply_color_attachment_usage,
+      [TERAKAN_STATE_DRAW_INDEX_CB_COLOR_MRT] = terakan_state_draw_apply_cb_color_mrt,
       [TERAKAN_STATE_DRAW_INDEX_CB_TARGET_MASK] = terakan_state_draw_apply_cb_target_mask,
       [TERAKAN_STATE_DRAW_INDEX_CB_COLOR_CONTROL] = terakan_state_draw_apply_cb_color_control,
-      [TERAKAN_STATE_DRAW_INDEX_CB_COLOR_MRT] = terakan_state_draw_apply_cb_color_mrt,
       [TERAKAN_STATE_DRAW_INDEX_CB_BLEND_CONTROL] = terakan_state_draw_apply_cb_blend_control,
 };
 
@@ -796,7 +833,17 @@ terakan_state_draw_reset(struct terakan_state_draw * const state,
    state->pa_sc_aa_mask = UINT16_MAX;
 
    state->color_attachment_usage.from_apply_sq_pgm_ps.written_by_shader = 0b0;
-   state->color_attachment_usage.bound = 0b0;
+
+   /* pColorAttachments[...].imageView = VK_NULL_HANDLE */
+   memset(state->attachment_cb_color, 0, sizeof(state->attachment_cb_color));
+   state->cb_target_mask.from_apply_cb_color_mrt.attachment_format_masks = 0b0;
+
+   /* colorWriteEnable feature disabled */
+   state->cb_target_mask.attachment_write_enable =
+      (uint8_t)BITFIELD_MASK(TERAKAN_COLOR_HW_MRT_COUNT);
+   /* colorWriteMask = 0 */
+   memset(state->cb_target_mask.attachment_write_masks, 0,
+          sizeof(state->cb_target_mask.attachment_write_masks));
 
    state->cb_color_control.from_apply_cb_target_mask.any_target_enabled = false;
 

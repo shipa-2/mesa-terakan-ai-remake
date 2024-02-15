@@ -122,6 +122,54 @@ terakan_format_get_depth_or_first_non_void_channel(
              : util_format_get_first_non_void_channel(description->format);
 }
 
+uint8_t const terakan_format_color_export_component_masks[4 + 1][4] = {
+   [0] = {},
+   [1] =
+      {
+         [V_028C70_SWAP_STD] = 0b0001,
+         [V_028C70_SWAP_ALT] = 0b0010,
+         [V_028C70_SWAP_STD_REV] = 0b0100,
+         [V_028C70_SWAP_ALT_REV] = 0b1000,
+      },
+   [2] =
+      {
+         [V_028C70_SWAP_STD] = 0b0011,
+         [V_028C70_SWAP_ALT] = 0b1001,
+         [V_028C70_SWAP_STD_REV] = 0b0011,
+         [V_028C70_SWAP_ALT_REV] = 0b1001,
+      },
+   [3] =
+      {
+         [V_028C70_SWAP_STD] = 0b0111,
+         [V_028C70_SWAP_ALT] = 0b1011,
+         [V_028C70_SWAP_STD_REV] = 0b0111,
+         [V_028C70_SWAP_ALT_REV] = 0b1011,
+      },
+   [4] =
+      {
+         [V_028C70_SWAP_STD] = 0b1111,
+         [V_028C70_SWAP_ALT] = 0b1111,
+         [V_028C70_SWAP_STD_REV] = 0b1111,
+         [V_028C70_SWAP_ALT_REV] = 0b1111,
+      },
+};
+
+uint8_t const terakan_format_color_component_counts[1 << 6] = {
+   [V_028C70_COLOR_8] = 1,           [V_028C70_COLOR_16] = 1,
+   [V_028C70_COLOR_16_FLOAT] = 1,    [V_028C70_COLOR_8_8] = 2,
+   [V_028C70_COLOR_5_6_5] = 3,       [V_028C70_COLOR_1_5_5_5] = 4,
+   [V_028C70_COLOR_4_4_4_4] = 4,     [V_028C70_COLOR_5_5_5_1] = 4,
+   [V_028C70_COLOR_32] = 1,          [V_028C70_COLOR_32_FLOAT] = 1,
+   [V_028C70_COLOR_16_16] = 2,       [V_028C70_COLOR_16_16_FLOAT] = 2,
+   [V_028C70_COLOR_8_24] = 2,        [V_028C70_COLOR_24_8] = 2,
+   [V_028C70_COLOR_10_11_11] = 3,    [V_028C70_COLOR_10_11_11_FLOAT] = 3,
+   [V_028C70_COLOR_2_10_10_10] = 4,  [V_028C70_COLOR_8_8_8_8] = 4,
+   [V_028C70_COLOR_10_10_10_2] = 4,  [V_028C70_COLOR_X24_8_32_FLOAT] = 2,
+   [V_028C70_COLOR_32_32] = 2,       [V_028C70_COLOR_32_32_FLOAT] = 2,
+   [V_028C70_COLOR_16_16_16_16] = 4, [V_028C70_COLOR_16_16_16_16_FLOAT] = 4,
+   [V_028C70_COLOR_32_32_32_32] = 4, [V_028C70_COLOR_32_32_32_32_FLOAT] = 4,
+};
+
 uint32_t
 terakan_format_color_get_format(VkFormat const format)
 {

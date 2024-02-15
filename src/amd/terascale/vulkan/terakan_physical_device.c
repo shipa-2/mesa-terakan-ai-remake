@@ -536,6 +536,10 @@ terakan_physical_device_get_capabilities(
     * implemented.
     */
 
+   /* VK_EXT_color_write_enable (#382). */
+   extensions_out->EXT_color_write_enable = true;
+   features_out->colorWriteEnable = true;
+
    /* TODO(Triang3l): VK_KHR_maintenance4 (#414, Vulkan 1.3): maxBufferSize = UINT32_MAX. */
    /* Addresses within buffers are limited to 32 bits in several places:
     * - Index buffer binding via INDEX_BASE.
@@ -557,6 +561,7 @@ terakan_physical_device_get_capabilities(
    features_out->extendedDynamicState3SampleMask = true;
    features_out->extendedDynamicState3ColorBlendEnable = true;
    features_out->extendedDynamicState3ColorBlendEquation = true;
+   features_out->extendedDynamicState3ColorWriteMask = true;
    features_out->extendedDynamicState3ProvokingVertexMode = true;
    features_out->extendedDynamicState3DepthClipEnable = true;
    features_out->extendedDynamicState3DepthClipNegativeOneToOne = true;

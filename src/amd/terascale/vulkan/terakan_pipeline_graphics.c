@@ -326,6 +326,40 @@ terakan_pipeline_graphics_apply_cb_blend_control_equation(
    }
 }
 
+static void
+terakan_pipeline_graphics_apply_color_attachment_write_mask(
+   struct terakan_gfx_command_writer * const command_writer,
+   struct terakan_pipeline_graphics const * const pipeline)
+{
+   for (uint32_t attachment_index = 0;
+        attachment_index < pipeline->fragment_output.color_blend_attachment_count;
+        ++attachment_index) {
+      uint8_t * const attachment_write_mask_ptr =
+         &command_writer->state_draw.cb_target_mask.attachment_write_masks[attachment_index];
+      uint8_t const attachment_write_mask =
+         pipeline->fragment_output.color_attachment_write_masks[attachment_index];
+      if (*attachment_write_mask_ptr != attachment_write_mask) {
+         *attachment_write_mask_ptr = attachment_write_mask;
+         terakan_state_draw_set_pending(&command_writer->state_draw,
+                                        TERAKAN_STATE_DRAW_INDEX_CB_TARGET_MASK);
+      }
+   }
+}
+
+static void
+terakan_pipeline_graphics_apply_color_attachment_write_enable(
+   struct terakan_gfx_command_writer * const command_writer,
+   struct terakan_pipeline_graphics const * const pipeline)
+{
+   if (command_writer->state_draw.cb_target_mask.attachment_write_enable !=
+       pipeline->fragment_output.color_attachment_write_enable) {
+      command_writer->state_draw.cb_target_mask.attachment_write_enable =
+         pipeline->fragment_output.color_attachment_write_enable;
+      terakan_state_draw_set_pending(&command_writer->state_draw,
+                                     TERAKAN_STATE_DRAW_INDEX_CB_TARGET_MASK);
+   }
+}
+
 static terakan_pipeline_graphics_apply_state_function const
    terakan_pipeline_graphics_apply_state_functions[TERAKAN_PIPELINE_GRAPHICS_STATE_COUNT] = {
       [TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SC_VPORT_Z_MIN_0_MAX_1] =
@@ -356,6 +390,10 @@ static terakan_pipeline_graphics_apply_state_function const
          terakan_pipeline_graphics_apply_cb_blend_control_enable,
       [TERAKAN_PIPELINE_GRAPHICS_STATE_CB_BLEND_CONTROL_EQUATION] =
          terakan_pipeline_graphics_apply_cb_blend_control_equation,
+      [TERAKAN_PIPELINE_GRAPHICS_STATE_COLOR_ATTACHMENT_WRITE_MASK] =
+         terakan_pipeline_graphics_apply_color_attachment_write_mask,
+      [TERAKAN_PIPELINE_GRAPHICS_STATE_COLOR_ATTACHMENT_WRITE_ENABLE] =
+         terakan_pipeline_graphics_apply_color_attachment_write_enable,
 };
 
 void
@@ -788,6 +826,26 @@ terakan_pipeline_graphics_fragment_output_init(struct terakan_pipeline_graphics 
          }
       }
       BITSET_SET(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_CB_BLEND_CONTROL_EQUATION);
+   }
+
+   /* TERAKAN_PIPELINE_GRAPHICS_STATE_COLOR_ATTACHMENT_WRITE_MASK */
+   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_WRITE_MASKS)) {
+      for (uint32_t attachment_index = 0;
+           attachment_index < pipeline->fragment_output.color_blend_attachment_count;
+           ++attachment_index) {
+         pipeline->fragment_output.color_attachment_write_masks[attachment_index] =
+            state->cb->attachments[attachment_index].write_mask & 0b1111;
+      }
+      BITSET_SET(pipeline->static_state,
+                 TERAKAN_PIPELINE_GRAPHICS_STATE_COLOR_ATTACHMENT_WRITE_MASK);
+   }
+
+   /* TERAKAN_PIPELINE_GRAPHICS_STATE_COLOR_ATTACHMENT_WRITE_ENABLE */
+   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_COLOR_WRITE_ENABLES)) {
+      pipeline->fragment_output.color_attachment_write_enable =
+         state->cb->color_write_enables & BITFIELD_MASK(TERAKAN_COLOR_HW_MRT_COUNT);
+      BITSET_SET(pipeline->static_state,
+                 TERAKAN_PIPELINE_GRAPHICS_STATE_COLOR_ATTACHMENT_WRITE_ENABLE);
    }
 }
 
