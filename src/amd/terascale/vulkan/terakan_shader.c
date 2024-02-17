@@ -233,6 +233,9 @@ terakan_shader_lower_and_optimize_post_link(
    /* Perform lowerings on the level of basic building blocks after the interface has been set up.
     */
 
+   /* TODO(Triang3l): Invoke nir_lower_fragcoord_wtrans when r600_lower_and_optimize_nir is removed.
+    */
+
    assert(nir->options->lower_to_scalar);
    NIR_PASS(_, nir, nir_lower_alu_to_scalar, nir->options->lower_to_scalar_filter, NULL);
    NIR_PASS(_, nir, nir_lower_phis_to_scalar, false);
