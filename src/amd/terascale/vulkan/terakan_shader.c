@@ -88,8 +88,22 @@ terakan_shader_spirv_to_nir(struct terakan_device * const device, size_t const s
                                                     : &physical_device->nir_options_non_fs,
                       false, NULL);
 
+   /* SFN expects certain fragment shader system values to be accessed via load_input rather than
+    * the system value load intrinsics, make sure that's the case before nir_lower_system_values is
+    * done that would otherwise generate system value load intrinsics.
+    */
+
+   if (nir->info.stage == MESA_SHADER_FRAGMENT) {
+      struct nir_lower_sysvals_to_varyings_options const lower_sysvals_to_varyings_options = {
+         .frag_coord = true,
+         .front_face = true,
+         .point_coord = true,
+      };
+      NIR_PASS(_, nir, nir_lower_sysvals_to_varyings, &lower_sysvals_to_varyings_options);
+   }
+
    /* Assign meanings and indices to variables in cases that don't depend on the actual executable
-    * code.
+    * code once all variables are set up (including via nir_lower_sysvals_to_varyings).
     */
 
    if (nir->info.stage != MESA_SHADER_COMPUTE) {
