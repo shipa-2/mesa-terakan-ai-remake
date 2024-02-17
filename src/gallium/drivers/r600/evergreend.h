@@ -900,7 +900,7 @@
 #define   C_028780_SEPARATE_ALPHA_BLEND                0xDFFFFFFF
 #define   S_028780_BLEND_CONTROL_ENABLE(x)             (((unsigned)(x) & 0x1) << 30)
 #define   G_028780_BLEND_CONTROL_ENABLE(x)             (((x) >> 30) & 0x1)
-#define   C_028780_BLEND_CONTROL_ENABLE                0xEFFFFFFF
+#define   C_028780_BLEND_CONTROL_ENABLE                0xBFFFFFFF
 #define R_028814_PA_SU_SC_MODE_CNTL                  0x028814
 #define   S_028814_CULL_FRONT(x)                       (((unsigned)(x) & 0x1) << 0)
 #define   G_028814_CULL_FRONT(x)                       (((x) >> 0) & 0x1)
