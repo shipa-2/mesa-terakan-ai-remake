@@ -44,7 +44,7 @@ terakan_CmdBeginRendering(VkCommandBuffer const commandBuffer,
    VkClearAttachment clear_attachments[TERAKAN_COLOR_HW_MRT_COUNT + 1];
 
    terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_INDEX_CB_COLOR_MRT);
-   memset(state->attachment_cb_color, 0, sizeof(state->attachment_cb_color));
+   memset(state->cb_color_mrt.attachments, 0, sizeof(state->cb_color_mrt.attachments));
    for (uint32_t color_attachment_index = 0;
         color_attachment_index < pRenderingInfo->colorAttachmentCount; ++color_attachment_index) {
       VkRenderingAttachmentInfo const * const color_attachment =
@@ -57,7 +57,7 @@ terakan_CmdBeginRendering(VkCommandBuffer const commandBuffer,
       }
 
       struct terakan_state_draw_cb_color * const cb_color =
-         &state->attachment_cb_color[color_attachment_index];
+         &state->cb_color_mrt.attachments[color_attachment_index];
       cb_color->bo = color_view->bo;
       memcpy(&cb_color->color, &color_view->color, sizeof(struct terakan_color_descriptor));
       terakan_color_descriptor_image_view_to_color_attachment(&cb_color->color);

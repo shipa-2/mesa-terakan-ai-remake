@@ -214,7 +214,7 @@ terakan_physical_device_get_capabilities(
    /* TODO(Triang3l): geometryShader. */
    /* TODO(Triang3l): tessellationShader. */
    /* TODO(Triang3l): sampleRateShading. */
-   /* TODO(Triang3l): dualSrcBlend. */
+   features_out->dualSrcBlend = true;
    /* TODO(Triang3l): logicOp. */
    /* TODO(Triang3l): multiDrawIndirect. */
    /* TODO(Triang3l): drawIndirectFirstInstance. */
@@ -354,8 +354,14 @@ terakan_physical_device_get_capabilities(
    properties_out->maxFragmentInputComponents = 4 * TERAKAN_LIMITS_HW_PARAMETER_CACHE_VECTOR_COUNT;
 
    properties_out->maxFragmentOutputAttachments = TERAKAN_COLOR_HW_MRT_COUNT;
-   /* TODO(Triang3l): maxFragmentDualSrcAttachments when dual-source blending is enabled. */
-   properties_out->maxFragmentCombinedOutputResources = TERAKAN_COLOR_HW_MRT_AND_RAT_COUNT;
+   properties_out->maxFragmentDualSrcAttachments = 1;
+   /* maxFragmentCombinedOutputResources includes "output Location decorated color attachments", and
+    * with dual-source blending, both sources correspond to the same color attachment in Vulkan, but
+    * in the hardware, it uses two separate MRT indices and CB_COLOR1_INFO's SOURCE_FORMAT, so with
+    * dual-source blending, two rather than one MRT/RAT bindings are occupied by the first
+    * attachment.
+    */
+   properties_out->maxFragmentCombinedOutputResources = TERAKAN_COLOR_HW_MRT_AND_RAT_COUNT - 1;
 
    properties_out->maxComputeSharedMemorySize =
       sizeof(uint32_t) * TERAKAN_LIMITS_HW_LDS_SIMD_DWORD_COUNT;

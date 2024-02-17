@@ -44,7 +44,17 @@ terakan_nir_compact_fragment_data_locations(nir_shader * const shader,
    nir_foreach_shader_out_variable (var, shader) {
       gl_frag_result const location = (gl_frag_result)var->data.location;
       if (location >= FRAG_RESULT_DATA0 && location <= FRAG_RESULT_DATA7) {
-         uncompacted_locations |= (uint8_t)BITFIELD_BIT((int)location - (int)FRAG_RESULT_DATA0);
+         /* Dual-source blending factor is always exported at index 1 by SFN.
+          * Enable `location = 0, index = 0` too regardless of whether the shader actually writes to
+          * it so the bit count until the dual-source blending factor in the uncompacted location
+          * mask is always 1 to unconditionally match SFN's export index assignment and CB register
+          * setup.
+          */
+         if (var->data.index != 0) {
+            uncompacted_locations |= 0b11;
+         } else {
+            uncompacted_locations |= (uint8_t)BITFIELD_BIT((int)location - (int)FRAG_RESULT_DATA0);
+         }
       }
    }
    *uncompacted_locations_out = uncompacted_locations;
@@ -55,6 +65,10 @@ terakan_nir_compact_fragment_data_locations(nir_shader * const shader,
 
    bool any_location_compacted = false;
    nir_foreach_shader_out_variable (var, shader) {
+      if (var->data.index != 0) {
+         /* Dual-source blending factor is always exported at index 1 by SFN. */
+         continue;
+      }
       gl_frag_result const uncompacted_location = (gl_frag_result)var->data.location;
       if (uncompacted_location >= FRAG_RESULT_DATA0 && uncompacted_location <= FRAG_RESULT_DATA7) {
          var->data.location =

@@ -283,12 +283,17 @@ struct terakan_hw_state_draw {
       uint32_t cb_blend_control[TERAKAN_COLOR_HW_MRT_COUNT];
    } cb_blend_control;
 
-   /* TERAKAN_HW_STATE_DRAW_INDEX_CB_COLOR */
+   /* TERAKAN_HW_STATE_DRAW_INDEX_CB_COLOR
+    * Don't access externally directly, instead set via terakan_hw_state_draw_set_cb_color or
+    * terakan_hw_state_draw_set_cb_color1_dual_source.
+    */
    struct {
       uint16_t ever_written;
       uint16_t modified;
       struct terakan_bo const * bo[TERAKAN_COLOR_HW_MRT_AND_RAT_COUNT];
-      /* The values are undefined if the respective BO is NULL. */
+      /* The descriptor fields other than the INFO register are undefined if the respective BO is
+       * NULL.
+       */
       struct terakan_color_descriptor color[TERAKAN_COLOR_HW_MRT_AND_RAT_COUNT];
       struct terakan_color_meta_descriptor meta[TERAKAN_COLOR_HW_MRT_COUNT];
    } cb_color;
@@ -458,20 +463,22 @@ terakan_hw_state_draw_set_cb_blend_control(struct terakan_hw_state_draw * const 
    }
 }
 
-static inline void
-terakan_hw_state_draw_cb_color_written(struct terakan_hw_state_draw * const state,
-                                       uint32_t const color_index, bool modified)
-{
-   uint16_t const color_bit = (uint16_t)1 << color_index;
-   if (!(state->cb_color.ever_written & color_bit)) {
-      state->cb_color.ever_written |= color_bit;
-      modified = true;
-   }
-   if (modified) {
-      state->cb_color.modified |= color_bit;
-      BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_CB_COLOR);
-   }
-}
+/* Setting `bo` to NULL disables the color target, the descriptor pointers are ignored if `bo` is
+ * NULL.
+ * Note that all unbound targets that the pixel shader exports to must be disabled explicitly, as
+ * CB_COLOR# (at least INFO::SOURCE_FORMAT) also has effect on shader export.
+ */
+void terakan_hw_state_draw_set_cb_color(struct terakan_hw_state_draw * state, uint32_t color_index,
+                                        struct terakan_bo const * bo,
+                                        struct terakan_color_descriptor const * color,
+                                        struct terakan_color_meta_descriptor const * meta,
+                                        bool is_rat);
+/* For dual-source blending, unbinds the target 1, and sets its SOURCE_FORMAT to the specified
+ * format, which must match the MRT 0 according to Radeon Evergreen / Northern Islands Acceleration,
+ * so 2 exported quads come to blending in the same format.
+ */
+void terakan_hw_state_draw_set_cb_color1_dual_source(struct terakan_hw_state_draw * state,
+                                                     uint32_t source_format);
 
 /* Section 14.2.3. "Allocation of Descriptor Sets" of the Vulkan 1.3.275 specification says:
  *

@@ -610,7 +610,7 @@ terakan_hw_state_draw_emit_cb_color(struct terakan_gfx_command_writer * const co
       struct terakan_bo const * const bo = command_writer->hw_state_draw.cb_color.bo[color_index];
       struct terakan_color_descriptor const * const descriptor =
          &command_writer->hw_state_draw.cb_color.color[color_index];
-      if (bo != NULL && G_028C70_FORMAT(descriptor->info) != V_028C70_COLOR_INVALID) {
+      if (bo != NULL) {
          uint32_t const register_count =
             (sizeof(struct terakan_color_descriptor) +
              (has_meta ? sizeof(struct terakan_color_meta_descriptor) : 0)) /
@@ -657,14 +657,17 @@ terakan_hw_state_draw_emit_cb_color(struct terakan_gfx_command_writer * const co
             terakan_gfx_command_writer_add_bo_relocation(command_writer, &packet, bo_reference);
          }
       } else {
-         /* Set the format to invalid, not requiring any relocations. */
+         /* Set only the INFO of the unbound target, including the MRT 1 export format for
+          * dual-source blending, to the specified value, not requiring any relocations.
+          */
+         assert(G_028C70_FORMAT(descriptor->info) == V_028C70_COLOR_INVALID);
          uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, 0, 0, true);
          if (unlikely(packet == NULL)) {
             return;
          }
          *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
          *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028C70_CB_COLOR0_INFO + register_offset);
-         *packet++ = 0;
+         *packet++ = descriptor->info;
       }
 
       state->cb_color.modified &= ~((uint16_t)1 << color_index);
@@ -1691,6 +1694,76 @@ terakan_hw_state_draw_ensure_viewport_count(struct terakan_hw_state_draw * const
    state->viewport_count_ever_written = viewport_count;
 
    BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_VIEWPORT);
+}
+
+static void
+terakan_hw_state_draw_set_cb_color_impl(struct terakan_hw_state_draw * const state,
+                                        uint32_t const color_index,
+                                        struct terakan_bo const * const bo,
+                                        struct terakan_color_descriptor const * const color,
+                                        struct terakan_color_meta_descriptor const * const meta,
+                                        uint32_t const unbound_info)
+{
+   assert(color_index < ARRAY_SIZE(state->cb_color.color));
+   uint16_t const color_bit = (uint16_t)1 << color_index;
+
+   assert(G_028C70_FORMAT(unbound_info) == V_028C70_COLOR_INVALID);
+
+   bool modified =
+      !(state->cb_color.ever_written & color_bit) || state->cb_color.bo[color_index] != bo;
+   if (!modified) {
+      if (bo != NULL) {
+         modified = memcmp(&state->cb_color.color[color_index], color,
+                           sizeof(struct terakan_color_descriptor)) != 0;
+         if (!modified && color_index < TERAKAN_COLOR_HW_MRT_COUNT) {
+            modified = memcmp(&state->cb_color.meta[color_index], meta,
+                              sizeof(struct terakan_color_meta_descriptor)) != 0;
+         }
+      } else {
+         modified = state->cb_color.color[color_index].info != unbound_info;
+      }
+      if (!modified) {
+         return;
+      }
+   }
+
+   state->cb_color.bo[color_index] = bo;
+   if (bo != NULL) {
+      memcpy(&state->cb_color.color[color_index], color, sizeof(struct terakan_color_descriptor));
+      if (color_index < TERAKAN_COLOR_HW_MRT_COUNT) {
+         memcpy(&state->cb_color.meta[color_index], meta,
+                sizeof(struct terakan_color_meta_descriptor));
+      }
+   } else {
+      state->cb_color.color[color_index].info = unbound_info;
+   }
+
+   state->cb_color.ever_written |= color_bit;
+   state->cb_color.modified |= color_bit;
+   BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_CB_COLOR);
+}
+
+void
+terakan_hw_state_draw_set_cb_color(struct terakan_hw_state_draw * const state,
+                                   uint32_t const color_index, struct terakan_bo const * const bo,
+                                   struct terakan_color_descriptor const * const color,
+                                   struct terakan_color_meta_descriptor const * const meta,
+                                   bool const is_rat)
+{
+   assert(bo == NULL || G_028C70_RAT(color->info) == is_rat);
+   terakan_hw_state_draw_set_cb_color_impl(
+      state, color_index, bo, color, meta,
+      is_rat ? S_028C70_BLEND_BYPASS(1) | S_028C70_SOURCE_FORMAT(V_028C70_EXPORT_4C_32BPC) |
+                  S_028C70_RAT(1)
+             : S_028C70_SOURCE_FORMAT(V_028C70_EXPORT_4C_16BPC));
+}
+
+void
+terakan_hw_state_draw_set_cb_color1_dual_source(struct terakan_hw_state_draw * const state,
+                                                uint32_t const source_format)
+{
+   terakan_hw_state_draw_set_cb_color_impl(state, 1, NULL, NULL, NULL,
+                                           S_028C70_SOURCE_FORMAT(source_format));
 }
 
 static void

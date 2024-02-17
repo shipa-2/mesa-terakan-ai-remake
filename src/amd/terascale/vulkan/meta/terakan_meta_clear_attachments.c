@@ -265,32 +265,22 @@ terakan_CmdClearAttachments(VkCommandBuffer const commandBuffer, uint32_t const 
       terakan_meta_begin_cb(command_writer, V_028808_CB_NORMAL, 0xF, 0b1);
 
       struct terakan_state_draw_cb_color const * const attachment_cb_color =
-         &command_writer->state_draw.attachment_cb_color[attachment->colorAttachment];
+         &command_writer->state_draw.cb_color_mrt.attachments[attachment->colorAttachment];
       struct terakan_color_descriptor cb_color = attachment_cb_color->color;
       uint32_t const attachment_base_layer = G_028C6C_SLICE_START(cb_color.view);
       cb_color.view = (cb_color.view & C_028C6C_SLICE_START) |
                       S_028C6C_SLICE_START(attachment_base_layer + pRects[0].baseArrayLayer);
-      bool const cb_color_modified =
-         command_writer->hw_state_draw.cb_color.bo[0] != attachment_cb_color->bo ||
-         memcmp(&command_writer->hw_state_draw.cb_color.color[0], &cb_color, sizeof(cb_color)) !=
-            0 ||
-         memcmp(&command_writer->hw_state_draw.cb_color.meta[0], &attachment_cb_color->meta,
-                sizeof(attachment_cb_color->meta)) != 0;
-      if (cb_color_modified) {
-         command_writer->hw_state_draw.cb_color.bo[0] = attachment_cb_color->bo;
-         memcpy(&command_writer->hw_state_draw.cb_color.color[0], &cb_color, sizeof(cb_color));
-         memcpy(&command_writer->hw_state_draw.cb_color.meta[0], &attachment_cb_color->meta,
-                sizeof(attachment_cb_color->meta));
-      }
-      terakan_hw_state_draw_cb_color_written(&command_writer->hw_state_draw, 0, cb_color_modified);
+      terakan_hw_state_draw_set_cb_color(&command_writer->hw_state_draw, 0, attachment_cb_color->bo,
+                                         &cb_color, &attachment_cb_color->meta, false);
 
       for (uint32_t rect_index = 0; rect_index < rectCount; ++rect_index) {
          VkClearRect const * const rect = &pRects[rect_index];
          if (rect_index != 0 && rect->baseArrayLayer != pRects[rect_index - 1].baseArrayLayer) {
-            command_writer->hw_state_draw.cb_color.color[0].view =
-               (cb_color.view & C_028C6C_SLICE_START) |
-               S_028C6C_SLICE_START(attachment_base_layer + rect->baseArrayLayer);
-            terakan_hw_state_draw_cb_color_written(&command_writer->hw_state_draw, 0, true);
+            cb_color.view = (cb_color.view & C_028C6C_SLICE_START) |
+                            S_028C6C_SLICE_START(attachment_base_layer + rect->baseArrayLayer);
+            terakan_hw_state_draw_set_cb_color(&command_writer->hw_state_draw, 0,
+                                               attachment_cb_color->bo, &cb_color,
+                                               &attachment_cb_color->meta, false);
          }
          terakan_meta_emit_rect_3_vertices_draw(command_writer, &rect->rect, rect->layerCount);
       }

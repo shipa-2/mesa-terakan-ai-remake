@@ -514,15 +514,102 @@ static void
 terakan_state_draw_apply_color_attachment_usage(
    struct terakan_gfx_command_writer * const command_writer)
 {
+   TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_BLEND_CONTROL, COLOR_ATTACHMENT_USAGE);
+   terakan_state_draw_set_pending(&command_writer->state_draw,
+                                  TERAKAN_STATE_DRAW_INDEX_CB_BLEND_CONTROL);
    TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_COLOR_MRT, COLOR_ATTACHMENT_USAGE);
    terakan_state_draw_set_pending(&command_writer->state_draw,
                                   TERAKAN_STATE_DRAW_INDEX_CB_COLOR_MRT);
    TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_TARGET_MASK, COLOR_ATTACHMENT_USAGE);
    terakan_state_draw_set_pending(&command_writer->state_draw,
                                   TERAKAN_STATE_DRAW_INDEX_CB_TARGET_MASK);
+}
+
+static void
+terakan_state_draw_apply_cb_blend_control(struct terakan_gfx_command_writer * const command_writer)
+{
+   bool dual_source = false;
+
    TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_BLEND_CONTROL, COLOR_ATTACHMENT_USAGE);
-   terakan_state_draw_set_pending(&command_writer->state_draw,
-                                  TERAKAN_STATE_DRAW_INDEX_CB_BLEND_CONTROL);
+   unsigned attachments_remaining =
+      command_writer->state_draw.color_attachment_usage.from_apply_sq_pgm_ps.written_by_shader;
+   for (uint32_t hw_color_index = 0; attachments_remaining; ++hw_color_index) {
+      unsigned const attachment_index = (unsigned)u_bit_scan(&attachments_remaining);
+
+      uint32_t cb_blend_control =
+         command_writer->state_draw.attachment_cb_blend_control[attachment_index];
+
+      if (attachment_index == 0 && G_028780_BLEND_CONTROL_ENABLE(cb_blend_control)) {
+         uint32_t blend_factors_used = ((uint32_t)1 << G_028780_COLOR_SRCBLEND(cb_blend_control)) |
+                                       ((uint32_t)1 << G_028780_COLOR_DESTBLEND(cb_blend_control));
+         if (G_028780_SEPARATE_ALPHA_BLEND(cb_blend_control)) {
+            blend_factors_used |= ((uint32_t)1 << G_028780_ALPHA_SRCBLEND(cb_blend_control)) |
+                                  ((uint32_t)1 << G_028780_ALPHA_DESTBLEND(cb_blend_control));
+         }
+         uint32_t const dual_source_blend_factor_bits =
+            ((uint32_t)1 << V_028780_BLEND_SRC1_COLOR) |
+            ((uint32_t)1 << V_028780_BLEND_INV_SRC1_COLOR) |
+            ((uint32_t)1 << V_028780_BLEND_SRC1_ALPHA) |
+            ((uint32_t)1 << V_028780_BLEND_INV_SRC1_ALPHA);
+         if (blend_factors_used & dual_source_blend_factor_bits) {
+            TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_BLEND_CONTROL, COLOR_ATTACHMENT_USAGE);
+            /* Only enable dual-source blending if the compaction in the shader makes it possible to
+             * assume in the rest of the state logic that the dual-source blending factor is
+             * exported at index 1 after the compaction.
+             */
+            if (likely(!(~command_writer->state_draw.color_attachment_usage.from_apply_sq_pgm_ps
+                             .written_by_shader &
+                         0b11))) {
+               dual_source = true;
+            } else {
+               /* Section 30.1.2. "Dual-Source Blending" of the Vulkan 1.3.278 specification says:
+                *
+                *     "If the second color input to the blender is not written in the shader, or if
+                *     no output is bound to the second input of a blender, the value of the second
+                *     input is undefined."
+                *
+                * Disable dual-source blending for hardware state consistency, replacing factors
+                * specifically involving the undefined second input.
+                */
+               if (((uint32_t)1 << G_028780_COLOR_SRCBLEND(cb_blend_control)) &
+                   dual_source_blend_factor_bits) {
+                  cb_blend_control &= C_028780_COLOR_SRCBLEND;
+               }
+               if (((uint32_t)1 << G_028780_COLOR_DESTBLEND(cb_blend_control)) &
+                   dual_source_blend_factor_bits) {
+                  cb_blend_control &= C_028780_COLOR_DESTBLEND;
+               }
+               if (G_028780_SEPARATE_ALPHA_BLEND(cb_blend_control)) {
+                  if (((uint32_t)1 << G_028780_ALPHA_SRCBLEND(cb_blend_control)) &
+                      dual_source_blend_factor_bits) {
+                     cb_blend_control &= C_028780_ALPHA_SRCBLEND;
+                  }
+                  if (((uint32_t)1 << G_028780_ALPHA_DESTBLEND(cb_blend_control)) &
+                      dual_source_blend_factor_bits) {
+                     cb_blend_control &= C_028780_ALPHA_DESTBLEND;
+                  }
+               }
+            }
+         }
+      }
+
+      if (!G_028780_BLEND_CONTROL_ENABLE(cb_blend_control)) {
+         /* Don't emit setting packets if the bits that have been changed don't matter anyway. */
+         cb_blend_control = 0;
+      }
+
+      terakan_hw_state_draw_set_cb_blend_control(&command_writer->hw_state_draw, hw_color_index,
+                                                 cb_blend_control);
+   }
+
+   TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_COLOR_MRT, CB_BLEND_CONTROL);
+   if (command_writer->state_draw.cb_color_mrt.from_apply_cb_blend_control.dual_source_blend !=
+       dual_source) {
+      command_writer->state_draw.cb_color_mrt.from_apply_cb_blend_control.dual_source_blend =
+         dual_source;
+      terakan_state_draw_set_pending(&command_writer->state_draw,
+                                     TERAKAN_STATE_DRAW_INDEX_CB_COLOR_MRT);
+   }
 }
 
 static void
@@ -530,37 +617,57 @@ terakan_state_draw_apply_cb_color_mrt(struct terakan_gfx_command_writer * const 
 {
    uint32_t attachment_format_masks = 0b0;
 
-   TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_COLOR_MRT, COLOR_ATTACHMENT_USAGE);
-   unsigned attachments_remaining =
-      command_writer->state_draw.color_attachment_usage.from_apply_sq_pgm_ps.written_by_shader;
-   for (uint32_t hw_color_index = 0; attachments_remaining; ++hw_color_index) {
-      unsigned const attachment_index = (unsigned)u_bit_scan(&attachments_remaining);
-      struct terakan_state_draw_cb_color const * const attachment =
-         &command_writer->state_draw.attachment_cb_color[attachment_index];
-      if (attachment->bo == NULL) {
-         /* Expected to be disabled in CB_TARGET_MASK. */
-         continue;
+   {
+      TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_COLOR_MRT, CB_BLEND_CONTROL);
+      TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_COLOR_MRT, COLOR_ATTACHMENT_USAGE);
+      unsigned attachments_remaining =
+         command_writer->state_draw.cb_color_mrt.from_apply_cb_blend_control.dual_source_blend
+            ? 0b1
+            : command_writer->state_draw.color_attachment_usage.from_apply_sq_pgm_ps
+                 .written_by_shader;
+      for (uint32_t hw_color_index = 0; attachments_remaining; ++hw_color_index) {
+         unsigned const attachment_index = (unsigned)u_bit_scan(&attachments_remaining);
+         struct terakan_state_draw_cb_color const * const attachment =
+            &command_writer->state_draw.cb_color_mrt.attachments[attachment_index];
+         /* Even if the attachment doesn't have a non-VK_NULL_HANDLE image bound and is thus
+          * expected to be disabled in CB_TARGET_MASK, unbind it in hardware if the shader exports
+          * to it because CB_COLOR# also has effect on the export itself (SOURCE_FORMAT at least).
+          */
+         terakan_hw_state_draw_set_cb_color(&command_writer->hw_state_draw, hw_color_index,
+                                            attachment->bo, &attachment->color, &attachment->meta,
+                                            false);
+         if (attachment->bo != NULL) {
+            attachment_format_masks |=
+               (uint32_t)(terakan_format_color_export_component_masks
+                             [terakan_format_color_component_counts[G_028C70_FORMAT(
+                                attachment->color.info)]]
+                             [G_028C70_COMP_SWAP(attachment->color.info)])
+               << (4 * attachment_index);
+         }
       }
+   }
 
-      bool const cb_color_modified =
-         command_writer->hw_state_draw.cb_color.bo[hw_color_index] != attachment->bo ||
-         memcmp(&command_writer->hw_state_draw.cb_color.color[hw_color_index], &attachment->color,
-                sizeof(struct terakan_color_descriptor)) != 0 ||
-         memcmp(&command_writer->hw_state_draw.cb_color.meta[hw_color_index], &attachment->meta,
-                sizeof(struct terakan_color_meta_descriptor)) != 0;
-      command_writer->hw_state_draw.cb_color.bo[hw_color_index] = attachment->bo;
-      memcpy(&command_writer->hw_state_draw.cb_color.color[hw_color_index], &attachment->color,
-             sizeof(struct terakan_color_descriptor));
-      memcpy(&command_writer->hw_state_draw.cb_color.meta[hw_color_index], &attachment->meta,
-             sizeof(struct terakan_color_meta_descriptor));
-      terakan_hw_state_draw_cb_color_written(&command_writer->hw_state_draw, hw_color_index,
-                                             cb_color_modified);
+   TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_COLOR_MRT, CB_BLEND_CONTROL);
+   if (command_writer->state_draw.cb_color_mrt.from_apply_cb_blend_control.dual_source_blend) {
+      /* Unbind MRT 1, and set SOURCE_FORMAT of it to match that of MRT 0 so 2 exported quads come
+       * to blending in the same format according to Radeon Evergreen / Northern Islands
+       * Acceleration.
+       */
+      terakan_hw_state_draw_set_cb_color1_dual_source(
+         &command_writer->hw_state_draw,
+         command_writer->state_draw.cb_color_mrt.attachments[0].bo != NULL
+            ? G_028C70_SOURCE_FORMAT(
+                 command_writer->state_draw.cb_color_mrt.attachments[0].color.info)
+            : V_028C70_EXPORT_4C_16BPC);
 
-      attachment_format_masks |=
-         (uint32_t)(terakan_format_color_export_component_masks
-                       [terakan_format_color_component_counts[G_028C70_FORMAT(
-                          attachment->color.info)]][G_028C70_COMP_SWAP(attachment->color.info)])
-         << (4 * attachment_index);
+      /* Unbind all targets above 1 for safety if the shader writes to them. */
+      TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_COLOR_MRT, COLOR_ATTACHMENT_USAGE);
+      uint32_t const attachment_count = (uint32_t)util_bitcount(
+         command_writer->state_draw.color_attachment_usage.from_apply_sq_pgm_ps.written_by_shader);
+      for (uint32_t hw_color_index = 2; hw_color_index < attachment_count; ++hw_color_index) {
+         terakan_hw_state_draw_set_cb_color(&command_writer->hw_state_draw, hw_color_index, NULL,
+                                            NULL, NULL, false);
+      }
    }
 
    TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_TARGET_MASK, CB_COLOR_MRT);
@@ -654,27 +761,6 @@ terakan_state_draw_apply_cb_color_control(struct terakan_gfx_command_writer * co
                                  TERAKAN_HW_STATE_DRAW_INDEX_CB_COLOR_CONTROL, modified);
 }
 
-static void
-terakan_state_draw_apply_cb_blend_control(struct terakan_gfx_command_writer * const command_writer)
-{
-   TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_BLEND_CONTROL, COLOR_ATTACHMENT_USAGE);
-   unsigned attachments_remaining =
-      command_writer->state_draw.color_attachment_usage.from_apply_sq_pgm_ps.written_by_shader;
-   for (uint32_t hw_color_index = 0; attachments_remaining; ++hw_color_index) {
-      unsigned const attachment_index = (unsigned)u_bit_scan(&attachments_remaining);
-
-      uint32_t cb_blend_control =
-         command_writer->state_draw.attachment_cb_blend_control[attachment_index];
-      if (!G_028780_BLEND_CONTROL_ENABLE(cb_blend_control)) {
-         /* Don't emit setting packets if the bits that have been changed don't matter anyway. */
-         cb_blend_control = 0;
-      }
-
-      terakan_hw_state_draw_set_cb_blend_control(&command_writer->hw_state_draw, hw_color_index,
-                                                 cb_blend_control);
-   }
-}
-
 static terakan_state_draw_apply_function const
    terakan_state_draw_apply_functions[TERAKAN_STATE_DRAW_INDEX_COUNT] = {
       [TERAKAN_STATE_DRAW_INDEX_VGT_INDEX_TYPE] = terakan_state_draw_apply_vgt_index_type,
@@ -700,10 +786,10 @@ static terakan_state_draw_apply_function const
       [TERAKAN_STATE_DRAW_INDEX_DB_RENDER_OVERRIDE] = terakan_state_draw_apply_db_render_override,
       [TERAKAN_STATE_DRAW_INDEX_COLOR_ATTACHMENT_USAGE] =
          terakan_state_draw_apply_color_attachment_usage,
+      [TERAKAN_STATE_DRAW_INDEX_CB_BLEND_CONTROL] = terakan_state_draw_apply_cb_blend_control,
       [TERAKAN_STATE_DRAW_INDEX_CB_COLOR_MRT] = terakan_state_draw_apply_cb_color_mrt,
       [TERAKAN_STATE_DRAW_INDEX_CB_TARGET_MASK] = terakan_state_draw_apply_cb_target_mask,
       [TERAKAN_STATE_DRAW_INDEX_CB_COLOR_CONTROL] = terakan_state_draw_apply_cb_color_control,
-      [TERAKAN_STATE_DRAW_INDEX_CB_BLEND_CONTROL] = terakan_state_draw_apply_cb_blend_control,
 };
 
 void
@@ -834,8 +920,15 @@ terakan_state_draw_reset(struct terakan_state_draw * const state,
 
    state->color_attachment_usage.from_apply_sq_pgm_ps.written_by_shader = 0b0;
 
+   /* blendEnable = VK_FALSE
+    * src/dstColor/AlphaBlendFactor = VK_BLEND_FACTOR_ZERO
+    * color/alphaBlendOp = VK_BLEND_OP_ADD
+    */
+   memset(state->attachment_cb_blend_control, 0, sizeof(state->attachment_cb_blend_control));
+   state->cb_color_mrt.from_apply_cb_blend_control.dual_source_blend = false;
+
    /* pColorAttachments[...].imageView = VK_NULL_HANDLE */
-   memset(state->attachment_cb_color, 0, sizeof(state->attachment_cb_color));
+   memset(state->cb_color_mrt.attachments, 0, sizeof(state->cb_color_mrt.attachments));
    state->cb_target_mask.from_apply_cb_color_mrt.attachment_format_masks = 0b0;
 
    /* colorWriteEnable feature disabled */
@@ -851,10 +944,4 @@ terakan_state_draw_reset(struct terakan_state_draw * const state,
     * unsupported features.
     */
    BITSET_ONES(state->state_pending);
-
-   /* blendEnable = VK_FALSE
-    * src/dstColor/AlphaBlendFactor = VK_BLEND_FACTOR_ZERO
-    * color/alphaBlendOp = VK_BLEND_OP_ADD
-    */
-   memset(state->attachment_cb_blend_control, 0, sizeof(state->attachment_cb_blend_control));
 }

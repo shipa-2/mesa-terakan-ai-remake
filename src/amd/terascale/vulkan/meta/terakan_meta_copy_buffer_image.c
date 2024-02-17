@@ -925,22 +925,8 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
             return;
          }
          terakan_color_descriptor_image_view_to_color_attachment(&color_descriptor);
-
-         bool const cb_color_modified =
-            command_writer->hw_state_draw.cb_color.bo[0] != image->bo ||
-            memcmp(&command_writer->hw_state_draw.cb_color.color[0], &color_descriptor,
-                   sizeof(color_descriptor)) != 0 ||
-            memcmp(&command_writer->hw_state_draw.cb_color.meta[0], &color_meta_descriptor,
-                   sizeof(color_meta_descriptor)) != 0;
-         if (cb_color_modified) {
-            command_writer->hw_state_draw.cb_color.bo[0] = image->bo;
-            memcpy(&command_writer->hw_state_draw.cb_color.color[0], &color_descriptor,
-                   sizeof(color_descriptor));
-            memcpy(&command_writer->hw_state_draw.cb_color.meta[0], &color_meta_descriptor,
-                   sizeof(color_meta_descriptor));
-         }
-         terakan_hw_state_draw_cb_color_written(&command_writer->hw_state_draw, 0,
-                                                cb_color_modified);
+         terakan_hw_state_draw_set_cb_color(&command_writer->hw_state_draw, 0, image->bo,
+                                            &color_descriptor, &color_meta_descriptor, false);
 
          VkDeviceSize const buffer_size_elements =
             (color_descriptor_layer_count - 1) * buffer_z_pitch +
@@ -1086,18 +1072,8 @@ terakan_CmdCopyImageToBuffer2(VkCommandBuffer const commandBuffer,
 
       struct terakan_color_meta_descriptor const buffer_rat_meta =
          terakan_color_meta_descriptor_create_disabled(&buffer_rat);
-      bool const cb_color_modified = command_writer->hw_state_draw.cb_color.bo[0] != buffer->bo ||
-                                     memcmp(&command_writer->hw_state_draw.cb_color.color[0],
-                                            &buffer_rat, sizeof(buffer_rat)) != 0 ||
-                                     memcmp(&command_writer->hw_state_draw.cb_color.meta[0],
-                                            &buffer_rat_meta, sizeof(buffer_rat_meta)) != 0;
-      if (cb_color_modified) {
-         command_writer->hw_state_draw.cb_color.bo[0] = buffer->bo;
-         memcpy(&command_writer->hw_state_draw.cb_color.color[0], &buffer_rat, sizeof(buffer_rat));
-         memcpy(&command_writer->hw_state_draw.cb_color.meta[0], &buffer_rat_meta,
-                sizeof(buffer_rat_meta));
-      }
-      terakan_hw_state_draw_cb_color_written(&command_writer->hw_state_draw, 0, cb_color_modified);
+      terakan_hw_state_draw_set_cb_color(&command_writer->hw_state_draw, 0, buffer->bo, &buffer_rat,
+                                         &buffer_rat_meta, true);
 
       image_view_create_info.format = region_transfer_format;
 

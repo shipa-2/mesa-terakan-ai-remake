@@ -65,6 +65,11 @@ struct terakan_shader_static {
          uint32_t spi_ps_in_control[2];
          uint32_t spi_input_z;
          uint32_t spi_baryc_cntl;
+         /* This must include all color exports done by the shader, otherwise there will be hangs
+          * (tested with dEQP-VK.pipeline.monolithic.blend.dual_source.* on Barts).
+          * The CB_SHADER_MASK rules for dual-source blending described in Radeon Evergreen /
+          * Northern Islands Acceleration are incorrect.
+          */
          uint32_t cb_shader_mask;
       } ps;
    } stage;
