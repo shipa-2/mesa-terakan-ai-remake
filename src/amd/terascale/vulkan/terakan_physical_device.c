@@ -355,13 +355,7 @@ terakan_physical_device_get_capabilities(
 
    properties_out->maxFragmentOutputAttachments = TERAKAN_COLOR_HW_RTV_COUNT;
    properties_out->maxFragmentDualSrcAttachments = 1;
-   /* maxFragmentCombinedOutputResources includes "output Location decorated color attachments", and
-    * with dual-source blending, both sources correspond to the same color attachment in Vulkan, but
-    * in the hardware, it uses two separate MRT indices and CB_COLOR1_INFO's SOURCE_FORMAT, so with
-    * dual-source blending, two rather than one RTV/UAV bindings are occupied by the first
-    * attachment.
-    */
-   properties_out->maxFragmentCombinedOutputResources = TERAKAN_COLOR_HW_RTV_AND_UAV_COUNT - 1;
+   properties_out->maxFragmentCombinedOutputResources = TERAKAN_COLOR_UAV_COUNT_PIXEL;
 
    properties_out->maxComputeSharedMemorySize =
       sizeof(uint32_t) * TERAKAN_LIMITS_HW_LDS_SIMD_DWORD_COUNT;

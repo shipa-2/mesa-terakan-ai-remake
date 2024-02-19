@@ -48,6 +48,14 @@ extern "C" {
 #define TERAKAN_COLOR_HW_RTV_COUNT         8
 #define TERAKAN_COLOR_HW_RTV_AND_UAV_COUNT 12
 
+/* Limit the UAV count in pixel shaders by maxFragmentCombinedOutputResources, which includes
+ * "output Location decorated color attachments", and with dual-source blending, both sources
+ * correspond to the same color attachment in Vulkan, but in the hardware, dual-source blending uses
+ * two separate MRT indices and CB_COLOR1_INFO's SOURCE_FORMAT, so with dual-source blending, two
+ * rather than one RTV/UAV bindings are occupied by the first attachment.
+ */
+#define TERAKAN_COLOR_UAV_COUNT_PIXEL (TERAKAN_COLOR_HW_RTV_AND_UAV_COUNT - 1)
+
 /* Constant cache (kcache) hardware properties. */
 #define TERAKAN_KCACHE_HW_LINE_BYTES_LOG2          8
 #define TERAKAN_KCACHE_HW_LINE_BYTES               (1 << TERAKAN_KCACHE_HW_LINE_BYTES_LOG2)
@@ -135,11 +143,15 @@ extern "C" {
  * Not needed in FS, so can be used for an additional input attachment.
  */
 #define TERAKAN_RESOURCE_RANGE_NON_PIXEL_STAGE_SPECIFIC (TERAKAN_RESOURCE_HW_COUNT_VERTEX - 1)
-/* The 16 resources that fragment and compute shaders provide beyond the 160 available in vertex
- * stages can be fully allocated for resources needed only in those stages: 4 input attachments (the
- * minimum required by Vulkan) and 12 UAV IMMED buffers.
+/* Pixel and compute shaders provide additional 16 resource bindings beyond the 160 available in
+ * vertex stages. Use them for resources specific to those stages. In fragment shaders, place IMMED
+ * buffers of UAVs (11 with the limitations of maxFragmentCombinedOutputResources's interaction with
+ * dual-source blending) there, and give the rest of that range to an extension of the mutable
+ * resource type descriptor space for use as input attachments (at least 4 are mandatory in Vulkan).
  */
-#define TERAKAN_RESOURCE_RANGE_UAV_IMMEDIATE_BASE                                                  \
+#define TERAKAN_RESOURCE_RANGE_UAV_IMMEDIATE_BASE_PIXEL                                            \
+   (TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE - TERAKAN_COLOR_UAV_COUNT_PIXEL)
+#define TERAKAN_RESOURCE_RANGE_UAV_IMMEDIATE_BASE_COMPUTE                                          \
    (TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE - TERAKAN_COLOR_HW_RTV_AND_UAV_COUNT)
 /* Resources from the application's pipeline layout:
  * - Sampled images, uniform texel buffers.
@@ -153,7 +165,7 @@ extern "C" {
 #define TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_NON_PIXEL                                         \
    (TERAKAN_RESOURCE_RANGE_NON_PIXEL_STAGE_SPECIFIC - TERAKAN_RESOURCE_RANGE_MUTABLE_BASE)
 #define TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL                                             \
-   (TERAKAN_RESOURCE_RANGE_UAV_IMMEDIATE_BASE - TERAKAN_RESOURCE_RANGE_MUTABLE_BASE)
+   (TERAKAN_RESOURCE_RANGE_UAV_IMMEDIATE_BASE_PIXEL - TERAKAN_RESOURCE_RANGE_MUTABLE_BASE)
 static_assert(
    TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL >=
       TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_NON_PIXEL,

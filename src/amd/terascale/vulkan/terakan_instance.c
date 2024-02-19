@@ -179,10 +179,16 @@ terakan_CreateInstance(VkInstanceCreateInfo const * const pCreateInfo,
       MAX2(TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL -
               TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_NON_PIXEL,
            4);
+   /* Give all remaining resource bindings to sampled images.
+    * The sum of maxPerStageDescriptorStorageBuffers and maxPerStageDescriptorStorageImages is
+    * TERAKAN_COLOR_HW_RTV_AND_UAV_COUNT.
+    * In pixel shaders, it's limited by maxFragmentCombinedOutputResources regardless of how each
+    * storage buffer/image is accessed, however.
+    */
    instance->max_per_stage_sampled_images =
       MIN2(TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_NON_PIXEL - TERAKAN_COLOR_HW_RTV_AND_UAV_COUNT -
               instance->max_per_stage_uniform_buffers,
-           TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL - TERAKAN_COLOR_HW_RTV_AND_UAV_COUNT -
+           TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL - TERAKAN_COLOR_UAV_COUNT_PIXEL -
               instance->max_per_stage_uniform_buffers - instance->max_per_stage_input_attachments);
 
    /* Initialize physical device management. */
