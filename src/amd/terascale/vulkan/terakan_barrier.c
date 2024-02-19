@@ -105,8 +105,8 @@ terakan_barrier_get_src_actions(struct terakan_gfx_command_writer const * const 
 
    if (src_access &
        (VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT)) {
-      actions |= TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_MRT_DATA |
-                 TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_MRT_META;
+      actions |= TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RTV_DATA |
+                 TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RTV_META;
    }
 
    if (src_access & (VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
@@ -142,8 +142,8 @@ terakan_barrier_get_src_actions(struct terakan_gfx_command_writer const * const 
       /* TODO(Triang3l): Resolve actions. */
       if (src_stages & VK_PIPELINE_STAGE_2_BLIT_BIT) {
          if (for_color_image) {
-            actions |= TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_MRT_DATA |
-                       TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_MRT_META;
+            actions |= TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RTV_DATA |
+                       TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RTV_META;
          }
          /* TODO(Triang3l): Depth/stencil blit actions. */
       }
@@ -153,17 +153,17 @@ terakan_barrier_get_src_actions(struct terakan_gfx_command_writer const * const 
    if (src_access & (VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT)) {
       struct terakan_device const * const device =
          terakan_gfx_command_writer_device(command_writer);
-      VkPipelineStageFlags2 const src_rat_stages =
+      VkPipelineStageFlags2 const src_uav_stages =
          src_stages & ((device->vk.enabled_features.fragmentStoresAndAtomics
                            ? VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT
                            : 0) |
                        VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
-      if (src_rat_stages) {
-         actions |= TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RAT |
-                    (src_rat_stages & VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT
+      if (src_uav_stages) {
+         actions |= TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_UAV |
+                    (src_uav_stages & VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT
                         ? TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_PS
                         : 0) |
-                    (src_rat_stages & VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
+                    (src_uav_stages & VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
                         ? TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CS
                         : 0);
       }
@@ -210,8 +210,8 @@ terakan_barrier_get_dst_actions(struct terakan_gfx_command_writer const * const 
 
    if (dst_access &
        (VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT)) {
-      actions |= TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_MRT_DATA |
-                 TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_MRT_META;
+      actions |= TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RTV_DATA |
+                 TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RTV_META;
    }
 
    if (dst_access & (VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
@@ -225,16 +225,16 @@ terakan_barrier_get_dst_actions(struct terakan_gfx_command_writer const * const 
          (image_aspects & (VK_IMAGE_ASPECT_COLOR_BIT | VK_IMAGE_ASPECT_PLANE_0_BIT |
                            VK_IMAGE_ASPECT_PLANE_1_BIT | VK_IMAGE_ASPECT_PLANE_2_BIT)) != 0;
       if (for_buffer) {
-         actions |= TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RAT;
+         actions |= TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_UAV;
       }
       if (for_color_image) {
-         actions |= TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_MRT_DATA |
-                    TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_MRT_META;
+         actions |= TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RTV_DATA |
+                    TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RTV_META;
          if (dst_stages & (VK_PIPELINE_STAGE_2_COPY_BIT | VK_PIPELINE_STAGE_2_CLEAR_BIT)) {
-            /* Formats with non-power-of-two bytes per block don't support MRT usage and may use a
-             * buffer RAT instead.
+            /* Formats with non-power-of-two bytes per block don't support RTV usage and may use a
+             * buffer UAV instead.
              */
-            actions |= TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RAT;
+            actions |= TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_UAV;
          }
       }
       /* TODO(Triang3l): Depth/stencil actions. */
@@ -246,7 +246,7 @@ terakan_barrier_get_dst_actions(struct terakan_gfx_command_writer const * const 
                           ? VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT
                           : 0) |
                       VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT))) {
-      actions |= TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RAT;
+      actions |= TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_UAV;
    }
 
    return actions;
@@ -293,28 +293,28 @@ terakan_barrier_emit_pending_actions(struct terakan_gfx_command_writer * const c
    /* Wait for graphics writes to be flushed to prevent read/write-after-write hazards. */
 
    if (actions &
-       (TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RAT | TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_MRT_DATA |
-        TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_MRT_META)) {
+       (TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_UAV | TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RTV_DATA |
+        TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RTV_META)) {
       cp_coher_cntl_cb_db_dest_base_ena |=
          S_0085F0_CB0_DEST_BASE_ENA(1) | S_0085F0_CB1_DEST_BASE_ENA(1) |
          S_0085F0_CB2_DEST_BASE_ENA(1) | S_0085F0_CB3_DEST_BASE_ENA(1) |
          S_0085F0_CB4_DEST_BASE_ENA(1) | S_0085F0_CB5_DEST_BASE_ENA(1) |
          S_0085F0_CB6_DEST_BASE_ENA(1) | S_0085F0_CB7_DEST_BASE_ENA(1);
       cp_coher_cntl |= S_0085F0_CB_ACTION_ENA(1);
-      if (actions & TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RAT) {
+      if (actions & TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_UAV) {
          cp_coher_cntl_cb_db_dest_base_ena |=
             S_0085F0_CB8_DEST_BASE_ENA(1) | S_0085F0_CB9_DEST_BASE_ENA(1) |
             S_0085F0_CB10_DEST_BASE_ENA(1) | S_0085F0_CB11_DEST_BASE_ENA(1);
          cp_coher_cntl |= S_0085F0_SMX_ACTION_ENA(1);
-         /* Flushes and invalidates MRT and RAT data, but not meta. */
+         /* Flushes and invalidates RTV and UAV data, but not meta. */
          terakan_gfx_command_writer_emit_event_write_eop_discarding_data(
             command_writer, EVENT_TYPE(EVENT_TYPE_FLUSH_AND_INV_CB_DATA_TS) | EVENT_INDEX(5));
-      } else if (actions & TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_MRT_DATA) {
-         /* Flushes and invalidates MRT data, but not meta or RAT data. */
+      } else if (actions & TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RTV_DATA) {
+         /* Flushes and invalidates RTV data, but not meta or UAV data. */
          terakan_barrier_emit_event_write(
             command_writer, EVENT_TYPE(EVENT_TYPE_FLUSH_AND_INV_CB_PIXEL_DATA) | EVENT_INDEX(0));
       }
-      if (actions & TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_MRT_META) {
+      if (actions & TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RTV_META) {
          terakan_barrier_emit_event_write(
             command_writer, EVENT_TYPE(EVENT_TYPE_FLUSH_AND_INV_CB_META) | EVENT_INDEX(0));
       }

@@ -48,7 +48,7 @@ struct terakan_instance {
    uint64_t debug_flags;
 
    /* Binding allocation in the physical device limits. */
-   /* From 4 to 8. The rest of RAT bindings will be used for storage images. */
+   /* From 4 to 8. The rest of UAV bindings will be used for storage images. */
    uint32_t max_per_stage_storage_buffers;
    /* Uniform buffers, sampled images and input attachments are allocated from one range. */
    uint32_t max_per_stage_uniform_buffers;

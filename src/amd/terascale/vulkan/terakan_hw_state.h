@@ -280,7 +280,7 @@ struct terakan_hw_state_draw {
    struct {
       uint8_t ever_written;
       uint8_t modified;
-      uint32_t cb_blend_control[TERAKAN_COLOR_HW_MRT_COUNT];
+      uint32_t cb_blend_control[TERAKAN_COLOR_HW_RTV_COUNT];
    } cb_blend_control;
 
    /* TERAKAN_HW_STATE_DRAW_INDEX_CB_COLOR
@@ -290,12 +290,12 @@ struct terakan_hw_state_draw {
    struct {
       uint16_t ever_written;
       uint16_t modified;
-      struct terakan_bo const * bo[TERAKAN_COLOR_HW_MRT_AND_RAT_COUNT];
+      struct terakan_bo const * bo[TERAKAN_COLOR_HW_RTV_AND_UAV_COUNT];
       /* The descriptor fields other than the INFO register are undefined if the respective BO is
        * NULL.
        */
-      struct terakan_color_descriptor color[TERAKAN_COLOR_HW_MRT_AND_RAT_COUNT];
-      struct terakan_color_meta_descriptor meta[TERAKAN_COLOR_HW_MRT_COUNT];
+      struct terakan_color_descriptor color[TERAKAN_COLOR_HW_RTV_AND_UAV_COUNT];
+      struct terakan_color_meta_descriptor meta[TERAKAN_COLOR_HW_RTV_COUNT];
    } cb_color;
 
    /* Sequencer constants.
@@ -472,7 +472,7 @@ void terakan_hw_state_draw_set_cb_color(struct terakan_hw_state_draw * state, ui
                                         struct terakan_bo const * bo,
                                         struct terakan_color_descriptor const * color,
                                         struct terakan_color_meta_descriptor const * meta,
-                                        bool is_rat);
+                                        bool is_uav);
 /* For dual-source blending, unbinds the target 1, and sets its SOURCE_FORMAT to the specified
  * format, which must match the MRT 0 according to Radeon Evergreen / Northern Islands Acceleration,
  * so 2 exported quads come to blending in the same format.

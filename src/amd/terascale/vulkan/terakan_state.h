@@ -91,9 +91,9 @@ enum terakan_state_draw_index {
    /* Depends on TERAKAN_STATE_DRAW_INDEX_COLOR_ATTACHMENT_USAGE and
     * TERAKAN_STATE_DRAW_INDEX_CB_BLEND_CONTROL.
     */
-   TERAKAN_STATE_DRAW_INDEX_CB_COLOR_MRT,
+   TERAKAN_STATE_DRAW_INDEX_CB_COLOR_RTV,
    /* Depends on TERAKAN_STATE_DRAW_INDEX_COLOR_ATTACHMENT_USAGE and
-    * TERAKAN_STATE_DRAW_INDEX_CB_COLOR_MRT.
+    * TERAKAN_STATE_DRAW_INDEX_CB_COLOR_RTV.
     */
    TERAKAN_STATE_DRAW_INDEX_CB_TARGET_MASK,
    /* Depends on TERAKAN_STATE_DRAW_INDEX_CB_TARGET_MASK. */
@@ -245,9 +245,9 @@ struct terakan_state_draw {
 
    /* Color target state is indexed by render pass color attachment index (hence the word
     * "attachment" in the names).
-    * However, color exports in shaders are compacted to make sure all RATs are placed above all
-    * MRTs (the Programming Guide states that it's required, plus that makes it possible to allocate
-    * arrays of RATs without fragmentation), and so CB_SHADER_MASK doesn't have holes (that's needed
+    * However, color exports in shaders are compacted to make sure all UAVs are placed above all
+    * RTVs (the Programming Guide states that it's required, plus that makes it possible to allocate
+    * arrays of UAVs without fragmentation), and so CB_SHADER_MASK doesn't have holes (that's needed
     * to avoid hangs according to RadeonSI, but this appears to apply to earlier hardware too).
     * Therefore, color target registers are reindexed when they're written to the hardware state,
     * skipping targets not in `color_attachment_usage.written_by_shader`.
@@ -269,17 +269,17 @@ struct terakan_state_draw {
     * VK_DYNAMIC_STATE_COLOR_BLEND_EQUATION_EXT (all other fields). Any needed overrides are
     * resolved when applying, without modifying the stored values.
     */
-   uint32_t attachment_cb_blend_control[TERAKAN_COLOR_HW_MRT_COUNT];
+   uint32_t attachment_cb_blend_control[TERAKAN_COLOR_HW_RTV_COUNT];
 
-   /* TERAKAN_STATE_DRAW_INDEX_CB_COLOR_MRT
+   /* TERAKAN_STATE_DRAW_INDEX_CB_COLOR_RTV
     * The descriptors are undefined for targets with the BO being NULL.
     */
    struct {
-      struct terakan_state_draw_cb_color attachments[TERAKAN_COLOR_HW_MRT_COUNT];
+      struct terakan_state_draw_cb_color attachments[TERAKAN_COLOR_HW_RTV_COUNT];
       struct {
          bool dual_source_blend;
       } from_apply_cb_blend_control;
-   } cb_color_mrt;
+   } cb_color_rtv;
 
    /* TERAKAN_STATE_DRAW_INDEX_CB_TARGET_MASK */
    struct {
@@ -287,10 +287,10 @@ struct terakan_state_draw {
        * assumed to be 0.
        */
       uint8_t attachment_write_enable;
-      uint8_t attachment_write_masks[TERAKAN_COLOR_HW_MRT_COUNT];
+      uint8_t attachment_write_masks[TERAKAN_COLOR_HW_RTV_COUNT];
       struct {
          uint32_t attachment_format_masks;
-      } from_apply_cb_color_mrt;
+      } from_apply_cb_color_rtv;
    } cb_target_mask;
 
    /* TERAKAN_STATE_DRAW_INDEX_CB_COLOR_CONTROL */

@@ -843,7 +843,7 @@ terakan_pipeline_graphics_fragment_output_init(struct terakan_pipeline_graphics 
    /* TERAKAN_PIPELINE_GRAPHICS_STATE_COLOR_ATTACHMENT_WRITE_ENABLE */
    if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_COLOR_WRITE_ENABLES)) {
       pipeline->fragment_output.color_attachment_write_enable =
-         state->cb->color_write_enables & BITFIELD_MASK(TERAKAN_COLOR_HW_MRT_COUNT);
+         state->cb->color_write_enables & BITFIELD_MASK(TERAKAN_COLOR_HW_RTV_COUNT);
       BITSET_SET(pipeline->static_state,
                  TERAKAN_PIPELINE_GRAPHICS_STATE_COLOR_ATTACHMENT_WRITE_ENABLE);
    }

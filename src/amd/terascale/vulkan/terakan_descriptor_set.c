@@ -72,25 +72,25 @@ terakan_UpdateDescriptorSets(UNUSED VkDevice const device, uint32_t const descri
          (struct terakan_descriptor_set_sampler *)(dst_set->descriptors +
                                                    dst_set->layout->pool_first_sampler_offset_bytes) +
          dst_binding->first_set_sampler + descriptor_write->dstArrayElement;
-      struct terakan_descriptor_set_rat * const dst_rats =
-         (struct terakan_descriptor_set_rat *)(dst_set->descriptors +
-                                               dst_set->layout->pool_first_rat_offset_bytes) +
-         dst_binding->first_set_rat + descriptor_write->dstArrayElement;
+      struct terakan_descriptor_set_uav * const dst_uavs =
+         (struct terakan_descriptor_set_uav *)(dst_set->descriptors +
+                                               dst_set->layout->pool_first_uav_offset_bytes) +
+         dst_binding->first_set_uav + descriptor_write->dstArrayElement;
 
       switch (descriptor_write->descriptorType) {
       case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE: {
          for (uint32_t descriptor_index = 0; descriptor_index < descriptor_count;
               ++descriptor_index) {
-            struct terakan_descriptor_set_rat * const dst_rat = &dst_rats[descriptor_index];
+            struct terakan_descriptor_set_uav * const dst_uav = &dst_uavs[descriptor_index];
             struct terakan_image_view const * const image_view = terakan_image_view_from_handle(
                descriptor_write->pImageInfo[descriptor_index].imageView);
             if (image_view != NULL &&
                 G_028C70_FORMAT(image_view->color.info) != V_028C70_COLOR_INVALID) {
-               dst_rat->bo = image_view->bo;
-               memcpy(&dst_rat->color, &image_view->color, sizeof(struct terakan_color_descriptor));
-               terakan_color_descriptor_image_view_to_storage_image(&dst_rat->color);
+               dst_uav->bo = image_view->bo;
+               memcpy(&dst_uav->color, &image_view->color, sizeof(struct terakan_color_descriptor));
+               terakan_color_descriptor_image_view_to_storage_image(&dst_uav->color);
             } else {
-               dst_rat->bo = NULL;
+               dst_uav->bo = NULL;
             }
          }
       }
@@ -131,16 +131,16 @@ terakan_UpdateDescriptorSets(UNUSED VkDevice const device, uint32_t const descri
       case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER: {
          for (uint32_t descriptor_index = 0; descriptor_index < descriptor_count;
               ++descriptor_index) {
-            struct terakan_descriptor_set_rat * const dst_rat = &dst_rats[descriptor_index];
+            struct terakan_descriptor_set_uav * const dst_uav = &dst_uavs[descriptor_index];
             struct terakan_buffer_view const * const buffer_view = terakan_buffer_view_from_handle(
                descriptor_write->pTexelBufferView[descriptor_index]);
             if (buffer_view != NULL &&
                 G_028C70_FORMAT(buffer_view->color.info) != V_028C70_COLOR_INVALID) {
-               dst_rat->bo = buffer_view->bo;
-               memcpy(&dst_rat->color, &buffer_view->color,
+               dst_uav->bo = buffer_view->bo;
+               memcpy(&dst_uav->color, &buffer_view->color,
                       sizeof(struct terakan_color_descriptor));
             } else {
-               dst_rat->bo = NULL;
+               dst_uav->bo = NULL;
             }
          }
       }
@@ -179,12 +179,12 @@ terakan_UpdateDescriptorSets(UNUSED VkDevice const device, uint32_t const descri
               ++descriptor_index) {
             struct terakan_descriptor_set_resource * const dst_resource =
                &dst_resources[descriptor_index];
-            struct terakan_descriptor_set_rat * const dst_rat = &dst_rats[descriptor_index];
+            struct terakan_descriptor_set_uav * const dst_uav = &dst_uavs[descriptor_index];
             struct terakan_bo const * const bo = terakan_buffer_create_storage_buffer_descriptor(
                &descriptor_write->pBufferInfo[descriptor_index], dst_resource->resource,
-               &dst_rat->color);
+               &dst_uav->color);
             dst_resource->bo = bo;
-            dst_rat->bo = bo;
+            dst_uav->bo = bo;
          }
       } break;
 
@@ -261,15 +261,15 @@ terakan_UpdateDescriptorSets(UNUSED VkDevice const device, uint32_t const descri
                 sizeof(struct terakan_descriptor_set_sampler) * descriptor_copy->descriptorCount);
       }
 
-      if (terakan_descriptor_type_has_rat(descriptor_type)) {
-         assert(terakan_descriptor_type_has_rat(dst_binding->descriptor_type));
-         memcpy(dst_set->descriptors + dst_set->layout->pool_first_rat_offset_bytes +
-                   sizeof(struct terakan_descriptor_set_rat) *
-                      (dst_binding->first_set_rat + descriptor_copy->dstArrayElement),
-                src_set->descriptors + src_set->layout->pool_first_rat_offset_bytes +
-                   sizeof(struct terakan_descriptor_set_rat) *
-                      (src_binding->first_set_rat + descriptor_copy->srcArrayElement),
-                sizeof(struct terakan_descriptor_set_rat) * descriptor_copy->descriptorCount);
+      if (terakan_descriptor_type_has_uav(descriptor_type)) {
+         assert(terakan_descriptor_type_has_uav(dst_binding->descriptor_type));
+         memcpy(dst_set->descriptors + dst_set->layout->pool_first_uav_offset_bytes +
+                   sizeof(struct terakan_descriptor_set_uav) *
+                      (dst_binding->first_set_uav + descriptor_copy->dstArrayElement),
+                src_set->descriptors + src_set->layout->pool_first_uav_offset_bytes +
+                   sizeof(struct terakan_descriptor_set_uav) *
+                      (src_binding->first_set_uav + descriptor_copy->srcArrayElement),
+                sizeof(struct terakan_descriptor_set_uav) * descriptor_copy->descriptorCount);
       }
    }
 }
@@ -542,7 +542,7 @@ terakan_CreateDescriptorPool(VkDevice const deviceHandle,
 {
    struct terakan_device * const device = terakan_device_from_handle(deviceHandle);
 
-   size_t resource_count = 0, sampler_count = 0, rat_count = 0;
+   size_t resource_count = 0, sampler_count = 0, uav_count = 0;
    for (uint32_t pool_size_index = 0; pool_size_index < pCreateInfo->poolSizeCount;
         ++pool_size_index) {
       VkDescriptorPoolSize const pool_size = pCreateInfo->pPoolSizes[pool_size_index];
@@ -552,14 +552,14 @@ terakan_CreateDescriptorPool(VkDevice const deviceHandle,
       if (terakan_descriptor_type_has_sampler(pool_size.type)) {
          sampler_count += pool_size.descriptorCount;
       }
-      if (terakan_descriptor_type_has_rat(pool_size.type)) {
-         rat_count += pool_size.descriptorCount;
+      if (terakan_descriptor_type_has_uav(pool_size.type)) {
+         uav_count += pool_size.descriptorCount;
       }
    }
    size_t const descriptor_memory_size =
       sizeof(struct terakan_descriptor_set_resource) * resource_count +
       sizeof(struct terakan_descriptor_set_sampler) * sampler_count +
-      sizeof(struct terakan_descriptor_set_rat) * rat_count;
+      sizeof(struct terakan_descriptor_set_uav) * uav_count;
 
    VK_MULTIALLOC(multialloc);
    VK_MULTIALLOC_DECL(&multialloc, struct terakan_descriptor_pool, pool, 1);

@@ -140,8 +140,8 @@ terakan_GetDeviceBufferMemoryRequirements(VkDevice const deviceHandle,
       alignment = sizeof(uint32_t) * 4;
    } else {
       /* Required in many places: largest in vertex fetch instructions, largest possible vertex
-       * index size, a storage buffer vertex fetch and RAT element, indirect buffer alignment.
-       * Additionally, because storage buffers use 32-bit RATs, and with VK_EXT_robustness2 their
+       * index size, a storage buffer vertex fetch and UAV element, indirect buffer alignment.
+       * Additionally, because storage buffers use 32-bit UAVs, and with VK_EXT_robustness2 their
        * ranges are rounded up (not down) to robustStorageBufferAccessSizeAlignment, which is
        * sizeof(uint32_t) because of that, aligning all buffers and images to sizeof(uint32_t)
        * prevents writes to the end of storage buffers with an unaligned size from affecting the
@@ -297,23 +297,23 @@ terakan_CreateBufferView(VkDevice const deviceHandle,
          buffer_view->resource[TERAKAN_RESOURCE_BUFFER_PRIORITY_WORD] =
             TERAKAN_BO_PRIORITY_SHADER_READ_BUFFER;
 
-         /* The vertex buffer format is also used for the RAT IMMED buffer, so creating the RAT
-          * inside the vertex format supported conditional too (though all RAT formats should have
+         /* The vertex buffer format is also used for the UAV IMMED buffer, so creating the UAV
+          * inside the vertex format supported conditional too (though all UAV formats should have
           * vertex counterparts anyway).
           */
 
          if (pCreateInfo->offset % bpe == 0) {
-            uint32_t const rat_format = terakan_format_color_get_format(format);
-            uint32_t const rat_number_type = terakan_format_color_get_number_type(format);
-            uint32_t const rat_swap = terakan_format_color_get_swap(format);
-            if (rat_format != V_028C70_COLOR_INVALID && rat_number_type != UINT32_MAX &&
-                rat_swap != UINT32_MAX) {
+            uint32_t const uav_format = terakan_format_color_get_format(format);
+            uint32_t const uav_number_type = terakan_format_color_get_number_type(format);
+            uint32_t const uav_swap = terakan_format_color_get_swap(format);
+            if (uav_format != V_028C70_COLOR_INVALID && uav_number_type != UINT32_MAX &&
+                uav_swap != UINT32_MAX) {
                terakan_color_descriptor_calculate_buffer_base_pitch_view_dim(
                   &buffer_view->color, va, buffer_view->vk.elements, bpe,
                   terakan_device_physical_device(device)->tiling_info.pipe_interleave_bytes_log2);
                buffer_view->color.info =
-                  S_028C70_FORMAT(rat_format) | S_028C70_ARRAY_MODE(V_028C70_ARRAY_LINEAR_ALIGNED) |
-                  S_028C70_NUMBER_TYPE(rat_number_type) | S_028C70_COMP_SWAP(rat_swap) |
+                  S_028C70_FORMAT(uav_format) | S_028C70_ARRAY_MODE(V_028C70_ARRAY_LINEAR_ALIGNED) |
+                  S_028C70_NUMBER_TYPE(uav_number_type) | S_028C70_COMP_SWAP(uav_swap) |
                   S_028C70_BLEND_BYPASS(1) | S_028C70_SOURCE_FORMAT(V_028C70_EXPORT_4C_32BPC) |
                   S_028C70_RAT(1) | S_028C70_RESOURCE_TYPE(V_028C70_BUFFER);
                buffer_view->color.attrib = S_028C74_NON_DISP_TILING_ORDER(1);

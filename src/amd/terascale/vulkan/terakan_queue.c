@@ -132,7 +132,7 @@ terakan_queue_get_graphics_signal_indirect_buffer(
                                      ? VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT
                                      : 0) |
                                  VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT)) {
-      /* Perform a full destination cache flush if RATs need to be flushed because
+      /* Perform a full destination cache flush if UAVs need to be flushed because
        * FLUSH_AND_INV_CB_DATA_TS writes a timestamp and thus needs a BO.
        * Fence signals result in a full flush anyway, more granularity may only be useful for
        * semaphores.
@@ -253,7 +253,7 @@ terakan_queue_submit(struct vk_queue * const queue_base, struct vk_queue_submit 
     * - The value of which field (including relocations) of which view the dword should be replaced
     *   with.
     * - The attachment number within the subpass the value needs to be taken from (for color
-    *   targets, it may be different from the CB_COLOR# index due to MRT and RAT indices being
+    *   targets, it may be different from the CB_COLOR# index due to RTV and UAV indices being
     *   compacted skipping those not used in the fragment shader).
     * - Offset to the next substitution token. It can be stored in 16 bits since 2^16 dwords is
     *   essentially the maximum indirect buffer size on DRM Radeon 2.50.0 (when using virtual

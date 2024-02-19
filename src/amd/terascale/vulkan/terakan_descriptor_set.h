@@ -67,7 +67,7 @@ terakan_descriptor_set_sampler_init(struct terakan_descriptor_set_sampler * cons
    sampler_descriptor->unnormalized_coordinates = sampler->unnormalized_coordinates;
 }
 
-struct terakan_descriptor_set_rat {
+struct terakan_descriptor_set_uav {
    struct terakan_bo const * bo;
    struct terakan_color_descriptor color;
 };
@@ -75,14 +75,14 @@ struct terakan_descriptor_set_rat {
 #define TERAKAN_DESCRIPTOR_SET_DESCRIPTOR_ALIGNMENT                                                \
    MAX3(alignof(struct terakan_descriptor_set_resource),                                           \
         alignof(struct terakan_descriptor_set_sampler),                                            \
-        alignof(struct terakan_descriptor_set_rat))
+        alignof(struct terakan_descriptor_set_uav))
 
 static_assert(
    (sizeof(struct terakan_descriptor_set_resource) % TERAKAN_DESCRIPTOR_SET_DESCRIPTOR_ALIGNMENT) ==
          0 &&
       (sizeof(struct terakan_descriptor_set_sampler) %
        TERAKAN_DESCRIPTOR_SET_DESCRIPTOR_ALIGNMENT) == 0 &&
-      (sizeof(struct terakan_descriptor_set_rat) % TERAKAN_DESCRIPTOR_SET_DESCRIPTOR_ALIGNMENT) ==
+      (sizeof(struct terakan_descriptor_set_uav) % TERAKAN_DESCRIPTOR_SET_DESCRIPTOR_ALIGNMENT) ==
          0,
    "Assuming that descriptors of different types can be tightly packed in descriptor sets "
    "arbitrarily, and placing descriptors of any different types next to each other won't cause "

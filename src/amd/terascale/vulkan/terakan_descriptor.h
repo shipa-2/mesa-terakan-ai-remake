@@ -38,8 +38,15 @@
 extern "C" {
 #endif
 
-#define TERAKAN_COLOR_HW_MRT_COUNT         8
-#define TERAKAN_COLOR_HW_MRT_AND_RAT_COUNT 12
+/* MRTs [0, TERAKAN_COLOR_HW_RTV_COUNT) support both color attachments and storage buffers/images.
+ * MRTs [TERAKAN_COLOR_HW_RTV_COUNT, TERAKAN_COLOR_HW_RTV_AND_UAV_COUNT) support only storage
+ * buffers/images.
+ *
+ * RTV - Render Target View in Direct3D terms.
+ * UAV - Unordered Access View in Direct3D, also known as Random Access Target (RAT) on TeraScale.
+ */
+#define TERAKAN_COLOR_HW_RTV_COUNT         8
+#define TERAKAN_COLOR_HW_RTV_AND_UAV_COUNT 12
 
 /* Constant cache (kcache) hardware properties. */
 #define TERAKAN_KCACHE_HW_LINE_BYTES_LOG2          8
@@ -130,15 +137,15 @@ extern "C" {
 #define TERAKAN_RESOURCE_RANGE_NON_PIXEL_STAGE_SPECIFIC (TERAKAN_RESOURCE_HW_COUNT_VERTEX - 1)
 /* The 16 resources that fragment and compute shaders provide beyond the 160 available in vertex
  * stages can be fully allocated for resources needed only in those stages: 4 input attachments (the
- * minimum required by Vulkan) and 12 RAT IMMED buffers.
+ * minimum required by Vulkan) and 12 UAV IMMED buffers.
  */
-#define TERAKAN_RESOURCE_RANGE_RAT_IMMEDIATE_BASE                                                  \
-   (TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE - TERAKAN_COLOR_HW_MRT_AND_RAT_COUNT)
+#define TERAKAN_RESOURCE_RANGE_UAV_IMMEDIATE_BASE                                                  \
+   (TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE - TERAKAN_COLOR_HW_RTV_AND_UAV_COUNT)
 /* Resources from the application's pipeline layout:
  * - Sampled images, uniform texel buffers.
  * - Storage images, storage texel buffers, storage buffers - read-only when coherence with writable
  *   ones is not needed (vertex stages, or `restrict readonly` without `coherent`), as well as for
- *   RAT info queries.
+ *   UAV info queries.
  * - Uniform buffers - for dynamic indexing.
  * - Input attachments.
  */
@@ -146,7 +153,7 @@ extern "C" {
 #define TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_NON_PIXEL                                         \
    (TERAKAN_RESOURCE_RANGE_NON_PIXEL_STAGE_SPECIFIC - TERAKAN_RESOURCE_RANGE_MUTABLE_BASE)
 #define TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL                                             \
-   (TERAKAN_RESOURCE_RANGE_RAT_IMMEDIATE_BASE - TERAKAN_RESOURCE_RANGE_MUTABLE_BASE)
+   (TERAKAN_RESOURCE_RANGE_UAV_IMMEDIATE_BASE - TERAKAN_RESOURCE_RANGE_MUTABLE_BASE)
 static_assert(
    TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL >=
       TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_NON_PIXEL,
@@ -168,9 +175,9 @@ static_assert(
 #define TERAKAN_RESOURCE_BUFFER_PRIORITY_WORD 5
 
 /* Hardware CB_COLOR[0-11] registers.
- * Note that image views don't store color buffer or RAT descriptors directly, instead they contain
- * data for both, but color buffers and RATs each have fields they don't use, or require specific
- * values for each field.
+ * Note that image views don't store RTV or UAV descriptors directly, instead they contain data for
+ * both, but RTVs and UAVs each have fields they don't use, or require specific values for each
+ * field.
  * Before setting CB_COLOR[0-11] to these descriptors, pass them through
  * terakan_color_descriptor_image_view_to_color_attachment or
  * terakan_color_descriptor_image_view_to_storage_image depending on the needed binding type.
@@ -179,7 +186,7 @@ struct terakan_color_descriptor {
    uint32_t base;
    uint32_t pitch;
    uint32_t slice;
-   /* Because according to Radeon Evergreen / Northern Islands Acceleration, buffer RATs must use
+   /* Because according to Radeon Evergreen / Northern Islands Acceleration, buffer UAVs must use
     * the LINEAR_ALIGNED array mode (not LINEAR_GENERAL), for smaller alignments required by
     * Direct3D 11 (and even if disregarding Direct3D 11, by Vulkan itself as well - at most 256,
     * while the pipe interleave can potentially be 512 bytes), an offset needs to be added to
@@ -216,7 +223,7 @@ terakan_color_descriptor_image_view_to_color_attachment(
    struct terakan_color_descriptor * const descriptor)
 {
    descriptor->info &= C_028C70_RESOURCE_TYPE;
-   /* The meaning of DIM depends on RESOURCE_TYPE, but it's used only for RATs.
+   /* The meaning of DIM depends on RESOURCE_TYPE, but it's used only for UAVs.
     * DIM is ignored for color attachments, scissor must be used to prevent out-of-bounds access.
     */
    descriptor->dim = 0;
@@ -266,7 +273,7 @@ terakan_descriptor_type_has_sampler(VkDescriptorType const descriptor_type)
 }
 
 static inline bool
-terakan_descriptor_type_has_rat(VkDescriptorType const descriptor_type)
+terakan_descriptor_type_has_uav(VkDescriptorType const descriptor_type)
 {
    return descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE ||
           descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER ||

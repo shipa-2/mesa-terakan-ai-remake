@@ -46,7 +46,7 @@ terakan_color_descriptor_calculate_buffer_base_pitch_dim_offset(
 
    /* The pitch field is ignored by the hardware for buffers and can't store large buffer sizes, but
     * DRM Radeon 2.50.0 validates the pitch alignment regardless of whether the color surface is a
-    * buffer RAT. Provide the smallest valid pitch. SLICE_MAX is not needed, with the smallest
+    * buffer UAV. Provide the smallest valid pitch. SLICE_MAX is not needed, with the smallest
     * possible value, after the division by the pitch, DRM Radeon 2.50.0 will consider the whole
     * surface zero-size.
     */

@@ -53,9 +53,9 @@ struct terakan_descriptor_set_layout_binding {
     * Descriptors of each type for consecutive bindings are laid out in descriptor memory
     * sequentially so descriptor counts in writes can span both array elements and consecutive
     * bindings.
-    * RATs are allocated regardless of the stage flags for the simplicity of writing and copying.
+    * UAVs are allocated regardless of the stage flags for the simplicity of writing and copying.
     */
-   uint16_t first_set_rat;
+   uint16_t first_set_uav;
    uint16_t first_set_resource;
    uint8_t first_set_sampler;
 
@@ -105,7 +105,7 @@ struct terakan_descriptor_set_layout {
     * compatibility - binding a pipeline or drawing / dispatching doesn't disturb descriptor sets,
     * binding descriptor sets does.
     */
-   uint32_t pool_first_rat_offset_bytes;
+   uint32_t pool_first_uav_offset_bytes;
    uint32_t pool_size_bytes;
 
    uint16_t dynamic_offset_count;

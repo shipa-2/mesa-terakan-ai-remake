@@ -517,9 +517,9 @@ terakan_state_draw_apply_color_attachment_usage(
    TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_BLEND_CONTROL, COLOR_ATTACHMENT_USAGE);
    terakan_state_draw_set_pending(&command_writer->state_draw,
                                   TERAKAN_STATE_DRAW_INDEX_CB_BLEND_CONTROL);
-   TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_COLOR_MRT, COLOR_ATTACHMENT_USAGE);
+   TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_COLOR_RTV, COLOR_ATTACHMENT_USAGE);
    terakan_state_draw_set_pending(&command_writer->state_draw,
-                                  TERAKAN_STATE_DRAW_INDEX_CB_COLOR_MRT);
+                                  TERAKAN_STATE_DRAW_INDEX_CB_COLOR_RTV);
    TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_TARGET_MASK, COLOR_ATTACHMENT_USAGE);
    terakan_state_draw_set_pending(&command_writer->state_draw,
                                   TERAKAN_STATE_DRAW_INDEX_CB_TARGET_MASK);
@@ -602,33 +602,33 @@ terakan_state_draw_apply_cb_blend_control(struct terakan_gfx_command_writer * co
                                                  cb_blend_control);
    }
 
-   TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_COLOR_MRT, CB_BLEND_CONTROL);
-   if (command_writer->state_draw.cb_color_mrt.from_apply_cb_blend_control.dual_source_blend !=
+   TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_COLOR_RTV, CB_BLEND_CONTROL);
+   if (command_writer->state_draw.cb_color_rtv.from_apply_cb_blend_control.dual_source_blend !=
        dual_source) {
-      command_writer->state_draw.cb_color_mrt.from_apply_cb_blend_control.dual_source_blend =
+      command_writer->state_draw.cb_color_rtv.from_apply_cb_blend_control.dual_source_blend =
          dual_source;
       terakan_state_draw_set_pending(&command_writer->state_draw,
-                                     TERAKAN_STATE_DRAW_INDEX_CB_COLOR_MRT);
+                                     TERAKAN_STATE_DRAW_INDEX_CB_COLOR_RTV);
    }
 }
 
 static void
-terakan_state_draw_apply_cb_color_mrt(struct terakan_gfx_command_writer * const command_writer)
+terakan_state_draw_apply_cb_color_rtv(struct terakan_gfx_command_writer * const command_writer)
 {
    uint32_t attachment_format_masks = 0b0;
 
    {
-      TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_COLOR_MRT, CB_BLEND_CONTROL);
-      TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_COLOR_MRT, COLOR_ATTACHMENT_USAGE);
+      TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_COLOR_RTV, CB_BLEND_CONTROL);
+      TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_COLOR_RTV, COLOR_ATTACHMENT_USAGE);
       unsigned attachments_remaining =
-         command_writer->state_draw.cb_color_mrt.from_apply_cb_blend_control.dual_source_blend
+         command_writer->state_draw.cb_color_rtv.from_apply_cb_blend_control.dual_source_blend
             ? 0b1
             : command_writer->state_draw.color_attachment_usage.from_apply_sq_pgm_ps
                  .written_by_shader;
       for (uint32_t hw_color_index = 0; attachments_remaining; ++hw_color_index) {
          unsigned const attachment_index = (unsigned)u_bit_scan(&attachments_remaining);
          struct terakan_state_draw_cb_color const * const attachment =
-            &command_writer->state_draw.cb_color_mrt.attachments[attachment_index];
+            &command_writer->state_draw.cb_color_rtv.attachments[attachment_index];
          /* Even if the attachment doesn't have a non-VK_NULL_HANDLE image bound and is thus
           * expected to be disabled in CB_TARGET_MASK, unbind it in hardware if the shader exports
           * to it because CB_COLOR# also has effect on the export itself (SOURCE_FORMAT at least).
@@ -647,21 +647,21 @@ terakan_state_draw_apply_cb_color_mrt(struct terakan_gfx_command_writer * const 
       }
    }
 
-   TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_COLOR_MRT, CB_BLEND_CONTROL);
-   if (command_writer->state_draw.cb_color_mrt.from_apply_cb_blend_control.dual_source_blend) {
+   TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_COLOR_RTV, CB_BLEND_CONTROL);
+   if (command_writer->state_draw.cb_color_rtv.from_apply_cb_blend_control.dual_source_blend) {
       /* Unbind MRT 1, and set SOURCE_FORMAT of it to match that of MRT 0 so 2 exported quads come
        * to blending in the same format according to Radeon Evergreen / Northern Islands
        * Acceleration.
        */
       terakan_hw_state_draw_set_cb_color1_dual_source(
          &command_writer->hw_state_draw,
-         command_writer->state_draw.cb_color_mrt.attachments[0].bo != NULL
+         command_writer->state_draw.cb_color_rtv.attachments[0].bo != NULL
             ? G_028C70_SOURCE_FORMAT(
-                 command_writer->state_draw.cb_color_mrt.attachments[0].color.info)
+                 command_writer->state_draw.cb_color_rtv.attachments[0].color.info)
             : V_028C70_EXPORT_4C_16BPC);
 
       /* Unbind all targets above 1 for safety if the shader writes to them. */
-      TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_COLOR_MRT, COLOR_ATTACHMENT_USAGE);
+      TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_COLOR_RTV, COLOR_ATTACHMENT_USAGE);
       uint32_t const attachment_count = (uint32_t)util_bitcount(
          command_writer->state_draw.color_attachment_usage.from_apply_sq_pgm_ps.written_by_shader);
       for (uint32_t hw_color_index = 2; hw_color_index < attachment_count; ++hw_color_index) {
@@ -670,10 +670,10 @@ terakan_state_draw_apply_cb_color_mrt(struct terakan_gfx_command_writer * const 
       }
    }
 
-   TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_TARGET_MASK, CB_COLOR_MRT);
-   if (command_writer->state_draw.cb_target_mask.from_apply_cb_color_mrt.attachment_format_masks !=
+   TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_TARGET_MASK, CB_COLOR_RTV);
+   if (command_writer->state_draw.cb_target_mask.from_apply_cb_color_rtv.attachment_format_masks !=
        attachment_format_masks) {
-      command_writer->state_draw.cb_target_mask.from_apply_cb_color_mrt.attachment_format_masks =
+      command_writer->state_draw.cb_target_mask.from_apply_cb_color_rtv.attachment_format_masks =
          attachment_format_masks;
       terakan_state_draw_set_pending(&command_writer->state_draw,
                                      TERAKAN_STATE_DRAW_INDEX_CB_TARGET_MASK);
@@ -688,13 +688,13 @@ terakan_state_draw_apply_cb_target_mask(struct terakan_gfx_command_writer * cons
    uint8_t const attachment_write_enable =
       command_writer->state_draw.cb_target_mask.attachment_write_enable;
    uint32_t const attachment_format_masks =
-      command_writer->state_draw.cb_target_mask.from_apply_cb_color_mrt.attachment_format_masks;
+      command_writer->state_draw.cb_target_mask.from_apply_cb_color_rtv.attachment_format_masks;
    {
       TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_TARGET_MASK, COLOR_ATTACHMENT_USAGE);
       unsigned attachments_remaining =
          command_writer->state_draw.color_attachment_usage.from_apply_sq_pgm_ps.written_by_shader;
       for (uint32_t hw_color_index = 0; attachments_remaining; ++hw_color_index) {
-         TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_TARGET_MASK, CB_COLOR_MRT);
+         TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_TARGET_MASK, CB_COLOR_RTV);
          unsigned const attachment_index = (unsigned)u_bit_scan(&attachments_remaining);
          if (!(attachment_write_enable & ((uint8_t)1 << attachment_index))) {
             continue;
@@ -727,7 +727,7 @@ terakan_state_draw_apply_cb_target_mask(struct terakan_gfx_command_writer * cons
       }
    }
 
-   /* TODO(Triang3l): RATs. */
+   /* TODO(Triang3l): UAVs. */
 
    bool const modified = command_writer->hw_state_draw.cb_target_mask != cb_target_mask;
    command_writer->hw_state_draw.cb_target_mask = cb_target_mask;
@@ -787,7 +787,7 @@ static terakan_state_draw_apply_function const
       [TERAKAN_STATE_DRAW_INDEX_COLOR_ATTACHMENT_USAGE] =
          terakan_state_draw_apply_color_attachment_usage,
       [TERAKAN_STATE_DRAW_INDEX_CB_BLEND_CONTROL] = terakan_state_draw_apply_cb_blend_control,
-      [TERAKAN_STATE_DRAW_INDEX_CB_COLOR_MRT] = terakan_state_draw_apply_cb_color_mrt,
+      [TERAKAN_STATE_DRAW_INDEX_CB_COLOR_RTV] = terakan_state_draw_apply_cb_color_rtv,
       [TERAKAN_STATE_DRAW_INDEX_CB_TARGET_MASK] = terakan_state_draw_apply_cb_target_mask,
       [TERAKAN_STATE_DRAW_INDEX_CB_COLOR_CONTROL] = terakan_state_draw_apply_cb_color_control,
 };
@@ -925,15 +925,15 @@ terakan_state_draw_reset(struct terakan_state_draw * const state,
     * color/alphaBlendOp = VK_BLEND_OP_ADD
     */
    memset(state->attachment_cb_blend_control, 0, sizeof(state->attachment_cb_blend_control));
-   state->cb_color_mrt.from_apply_cb_blend_control.dual_source_blend = false;
+   state->cb_color_rtv.from_apply_cb_blend_control.dual_source_blend = false;
 
    /* pColorAttachments[...].imageView = VK_NULL_HANDLE */
-   memset(state->cb_color_mrt.attachments, 0, sizeof(state->cb_color_mrt.attachments));
-   state->cb_target_mask.from_apply_cb_color_mrt.attachment_format_masks = 0b0;
+   memset(state->cb_color_rtv.attachments, 0, sizeof(state->cb_color_rtv.attachments));
+   state->cb_target_mask.from_apply_cb_color_rtv.attachment_format_masks = 0b0;
 
    /* colorWriteEnable feature disabled */
    state->cb_target_mask.attachment_write_enable =
-      (uint8_t)BITFIELD_MASK(TERAKAN_COLOR_HW_MRT_COUNT);
+      (uint8_t)BITFIELD_MASK(TERAKAN_COLOR_HW_RTV_COUNT);
    /* colorWriteMask = 0 */
    memset(state->cb_target_mask.attachment_write_masks, 0,
           sizeof(state->cb_target_mask.attachment_write_masks));

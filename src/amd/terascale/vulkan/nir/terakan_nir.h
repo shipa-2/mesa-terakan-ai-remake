@@ -47,8 +47,8 @@ nir_def * terakan_nir_load_raw_resource_buffer(nir_builder * b, unsigned num_com
                                                nir_def * byte_address,
                                                unsigned byte_address_alignment);
 
-/* Compact fragment shader data output locations, so all MRTs precede all RATs as required and to be
- * able to allocate arrays of RATs without fragmentation, and so there are no holes in
+/* Compact fragment shader data output locations, so all RTVs precede all UAVs as required and to be
+ * able to allocate arrays of UAVs without fragmentation, and so there are no holes in
  * CB_SHADER_MASK, which, according to RadeonSI (but apparently applicable to earlier generations),
  * may cause hangs.
  * The mask of which pre-compaction fragment data outputs are used is written to

@@ -233,7 +233,7 @@ terakan_meta_begin_cb(struct terakan_gfx_command_writer * const command_writer,
    if (cb_target_mask) {
       /* Going to bind color targets for this meta draw. */
       terakan_state_draw_set_pending(&command_writer->state_draw,
-                                     TERAKAN_STATE_DRAW_INDEX_CB_COLOR_MRT);
+                                     TERAKAN_STATE_DRAW_INDEX_CB_COLOR_RTV);
    }
 
    if (disable_blend_for_targets) {

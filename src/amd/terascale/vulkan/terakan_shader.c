@@ -232,13 +232,13 @@ terakan_shader_lower_and_optimize_post_link(
    nir_load_store_vectorize_options const load_store_vectorize_options = {
       .callback = terakan_nir_should_vectorize_load_store,
       .modes = nir_var_mem_ubo | nir_var_mem_push_const,
-      /* TODO(Triang3l): Vectorize SSBO loads, but not those done via a RAT. */
+      /* TODO(Triang3l): Vectorize SSBO loads, but not those done via a UAV. */
       /* TODO(Triang3l): Robust access variable modes. */
    };
    NIR_PASS(_, nir, nir_opt_load_store_vectorize, &load_store_vectorize_options);
 
    /* Lower bindings according to the pipeline layout.
-    * In fragment shaders, this is done after compacting the fragment data output locations as RATs
+    * In fragment shaders, this is done after compacting the fragment data output locations as UAVs
     * must be placed above color attachments.
     */
 

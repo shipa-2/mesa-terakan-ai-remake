@@ -42,10 +42,10 @@
 #include <string.h>
 
 /* Buffer to image copying by drawing to a color attachment.
- * Not using an image RAT because "Tex2D UAV on cypress will fail/hang if tile mode is linear"
+ * Not using an image UAV because "Tex2D UAV on cypress will fail/hang if tile mode is linear"
  * according to the R800 AddrLib.
  *
- * Image to buffer copying by drawing and writing to a RAT.
+ * Image to buffer copying by drawing and writing to a UAV.
  */
 
 struct terakan_meta_copy_buffer_image_push_constants {
@@ -186,7 +186,7 @@ static uint32_t const terakan_meta_copy_image_to_buffer_ps_r8xx[] = {
       S_SQ_CF_ALU_WORD1_COUNT(13 - 8) | S_SQ_CF_ALU_WORD1_BARRIER(1) |
       EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
-   /* 3: Write to the RAT. */
+   /* 3: Write to the UAV. */
 
    S_SQ_CF_ALLOC_EXPORT_WORD0_RAT_RAT_ID(0) |
       S_SQ_CF_ALLOC_EXPORT_WORD0_RAT_RAT_INST(V_RAT_INST_STORE_TYPED) |
@@ -469,7 +469,7 @@ static uint32_t const terakan_meta_copy_image_to_buffer_ps_r9xx[] = {
    S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(0) | S_SQ_CF_ALU_WORD1_COUNT(21 - 10) |
       S_SQ_CF_ALU_WORD1_BARRIER(1) | EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
-   /* 3: Write to the RAT. */
+   /* 3: Write to the UAV. */
 
    S_SQ_CF_ALLOC_EXPORT_WORD0_RAT_RAT_ID(0) |
       S_SQ_CF_ALLOC_EXPORT_WORD0_RAT_RAT_INST(V_RAT_INST_STORE_TYPED) |
@@ -852,7 +852,7 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
       terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx;
 
    command_writer->post_color_image_copy_write_barrier_actions |=
-      TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_MRT_DATA |
+      TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RTV_DATA |
       TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_PS;
 
    terakan_meta_begin_2d_immediate_rects(command_writer, TERAKAN_META_DB_RENDER_OVERRIDE_DEFAULT);
@@ -982,7 +982,7 @@ terakan_CmdCopyImageToBuffer2(VkCommandBuffer const commandBuffer,
    struct terakan_buffer const * const buffer =
       terakan_buffer_from_handle(pCopyImageToBufferInfo->dstBuffer);
 
-   struct terakan_color_descriptor buffer_rat = {
+   struct terakan_color_descriptor buffer_uav = {
       .attrib = S_028C74_NON_DISP_TILING_ORDER(1),
    };
 
@@ -994,7 +994,7 @@ terakan_CmdCopyImageToBuffer2(VkCommandBuffer const commandBuffer,
          ->tiling_info.pipe_interleave_bytes_log2;
 
    command_writer->post_color_image_copy_write_barrier_actions |=
-      TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RAT | TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_PS;
+      TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_UAV | TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_PS;
 
    terakan_meta_begin_2d_immediate_rects(command_writer, TERAKAN_META_DB_RENDER_OVERRIDE_DEFAULT);
 
@@ -1024,16 +1024,16 @@ terakan_CmdCopyImageToBuffer2(VkCommandBuffer const commandBuffer,
       terakan_meta_copy_buffer_image_image_view_subresource_range(
          image, region, &image_view_create_info.subresourceRange);
 
-      uint32_t buffer_rat_alignment_offset_elements;
+      uint32_t buffer_uav_alignment_offset_elements;
       terakan_color_descriptor_calculate_buffer_base_pitch_dim_offset(
-         &buffer_rat, buffer->va + region->bufferOffset,
+         &buffer_uav, buffer->va + region->bufferOffset,
          (image_view_create_info.subresourceRange.layerCount - 1) * buffer_z_pitch +
             (rect.extent.height - 1) * buffer_y_pitch + rect.extent.width,
          is_stencil ? 1 : image->surface.bpe, tile_pipe_interleave_bytes_log2,
-         &buffer_rat_alignment_offset_elements);
+         &buffer_uav_alignment_offset_elements);
 
       int32_t const image_offset_x_minus_buffer_offset =
-         rect.offset.x - (int32_t)buffer_rat_alignment_offset_elements;
+         rect.offset.x - (int32_t)buffer_uav_alignment_offset_elements;
 
       if (push_constants.image_offset_x_minus_buffer_offset != image_offset_x_minus_buffer_offset ||
           push_constants.image_offset_y != rect.offset.y ||
@@ -1062,7 +1062,7 @@ terakan_CmdCopyImageToBuffer2(VkCommandBuffer const commandBuffer,
 
       VkFormat const region_transfer_format = is_stencil ? VK_FORMAT_R8_UINT : transfer_format;
 
-      buffer_rat.info =
+      buffer_uav.info =
          S_028C70_FORMAT(terakan_format_color_get_format(region_transfer_format)) |
          S_028C70_ARRAY_MODE(V_028C70_ARRAY_LINEAR_ALIGNED) |
          S_028C70_NUMBER_TYPE(terakan_format_color_get_number_type(region_transfer_format)) |
@@ -1070,10 +1070,10 @@ terakan_CmdCopyImageToBuffer2(VkCommandBuffer const commandBuffer,
          S_028C70_BLEND_BYPASS(1) | S_028C70_SOURCE_FORMAT(V_028C70_EXPORT_4C_32BPC) |
          S_028C70_RAT(1) | S_028C70_RESOURCE_TYPE(V_028C70_BUFFER);
 
-      struct terakan_color_meta_descriptor const buffer_rat_meta =
-         terakan_color_meta_descriptor_create_disabled(&buffer_rat);
-      terakan_hw_state_draw_set_cb_color(&command_writer->hw_state_draw, 0, buffer->bo, &buffer_rat,
-                                         &buffer_rat_meta, true);
+      struct terakan_color_meta_descriptor const buffer_uav_meta =
+         terakan_color_meta_descriptor_create_disabled(&buffer_uav);
+      terakan_hw_state_draw_set_cb_color(&command_writer->hw_state_draw, 0, buffer->bo, &buffer_uav,
+                                         &buffer_uav_meta, true);
 
       image_view_create_info.format = region_transfer_format;
 

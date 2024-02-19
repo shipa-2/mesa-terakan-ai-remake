@@ -270,7 +270,7 @@ terakan_physical_device_get_capabilities(
    properties_out->maxUniformBufferRange = TERAKAN_KCACHE_HW_MAX_BUFFER_SIZE_BYTES;
 
    /* Storage buffers are bound as R32 vertex fetch constants or random access targets.
-    * However, buffer RATs have LINEAR_ALIGNED array more, and thus alignment equal to the tile
+    * However, buffer UAVs have LINEAR_ALIGNED array more, and thus alignment equal to the tile
     * interleave, with the offset (in element units) applied in shaders. Adding the offset may
     * result in out-of-bounds index values near UINT32_MAX wrapping and becoming valid indices
     * near 0. Instead of comparing the index to the buffer size in shaders to implement robustness
@@ -292,10 +292,10 @@ terakan_physical_device_get_capabilities(
    properties_out->maxPerStageDescriptorStorageBuffers = instance->max_per_stage_storage_buffers;
    properties_out->maxPerStageDescriptorSampledImages = instance->max_per_stage_sampled_images;
    properties_out->maxPerStageDescriptorStorageImages =
-      TERAKAN_COLOR_HW_MRT_AND_RAT_COUNT - instance->max_per_stage_storage_buffers;
+      TERAKAN_COLOR_HW_RTV_AND_UAV_COUNT - instance->max_per_stage_storage_buffers;
    properties_out->maxPerStageDescriptorInputAttachments =
       instance->max_per_stage_input_attachments;
-   properties_out->maxColorAttachments = TERAKAN_COLOR_HW_MRT_COUNT;
+   properties_out->maxColorAttachments = TERAKAN_COLOR_HW_RTV_COUNT;
 
    properties_out->maxPerStageResources = properties_out->maxPerStageDescriptorUniformBuffers +
                                           properties_out->maxPerStageDescriptorStorageBuffers +
@@ -353,15 +353,15 @@ terakan_physical_device_get_capabilities(
 
    properties_out->maxFragmentInputComponents = 4 * TERAKAN_LIMITS_HW_PARAMETER_CACHE_VECTOR_COUNT;
 
-   properties_out->maxFragmentOutputAttachments = TERAKAN_COLOR_HW_MRT_COUNT;
+   properties_out->maxFragmentOutputAttachments = TERAKAN_COLOR_HW_RTV_COUNT;
    properties_out->maxFragmentDualSrcAttachments = 1;
    /* maxFragmentCombinedOutputResources includes "output Location decorated color attachments", and
     * with dual-source blending, both sources correspond to the same color attachment in Vulkan, but
     * in the hardware, it uses two separate MRT indices and CB_COLOR1_INFO's SOURCE_FORMAT, so with
-    * dual-source blending, two rather than one MRT/RAT bindings are occupied by the first
+    * dual-source blending, two rather than one RTV/UAV bindings are occupied by the first
     * attachment.
     */
-   properties_out->maxFragmentCombinedOutputResources = TERAKAN_COLOR_HW_MRT_AND_RAT_COUNT - 1;
+   properties_out->maxFragmentCombinedOutputResources = TERAKAN_COLOR_HW_RTV_AND_UAV_COUNT - 1;
 
    properties_out->maxComputeSharedMemorySize =
       sizeof(uint32_t) * TERAKAN_LIMITS_HW_LDS_SIMD_DWORD_COUNT;
@@ -807,7 +807,7 @@ terakan_physical_device_init(
     * With the largest tile size, the bank width and height can be treated as 1.
     *
     * For buffers, the same alignment is needed as for images with the LINEAR_ALIGNED array mode
-    * because it's required for RATs (equal to the pipe interleave in tiling), so it's included in
+    * because it's required for UAVs (equal to the pipe interleave in tiling), so it's included in
     * the image alignment. It's normally 256 bytes, but potentially can be 512 bytes, depending on
     * device. It's also not smaller than the kcache buffer alignment (256 bytes).
     */

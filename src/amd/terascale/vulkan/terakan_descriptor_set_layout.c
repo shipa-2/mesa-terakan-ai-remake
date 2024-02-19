@@ -213,7 +213,7 @@ terakan_CreateDescriptorSetLayout(VkDevice const deviceHandle,
     */
    uint8_t next_immutable_sampler_index = 0;
    uint16_t dynamic_offset_count = 0;
-   uint16_t set_rat_count = 0;
+   uint16_t set_uav_count = 0;
    uint16_t set_resource_count = 0;
    uint8_t set_sampler_count = 0;
    for (uint32_t create_info_binding_index = 0;
@@ -234,17 +234,17 @@ terakan_CreateDescriptorSetLayout(VkDevice const deviceHandle,
        * This isn't necessary due to the requirements for consecutive bindings in
        * vkUpdateDescriptorSets, but trivially allows for more graceful handling of invalid usage.
        */
-      layout_binding->first_set_rat = set_rat_count;
+      layout_binding->first_set_uav = set_uav_count;
       layout_binding->first_set_resource = set_resource_count;
       layout_binding->first_set_sampler = set_sampler_count;
 
       /* Add to the counts, validating against the numeric limits. */
-      if (terakan_descriptor_type_has_rat(binding_type)) {
-         if (TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_IN_PIPELINE - set_rat_count <
+      if (terakan_descriptor_type_has_uav(binding_type)) {
+         if (TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_IN_PIPELINE - set_uav_count <
              binding_descriptor_count) {
             goto too_many_descriptors_destroy;
          }
-         set_rat_count += binding_descriptor_count;
+         set_uav_count += binding_descriptor_count;
       }
       if (terakan_descriptor_type_has_resource(binding_type)) {
          if (TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_IN_PIPELINE - set_resource_count <
@@ -299,11 +299,11 @@ terakan_CreateDescriptorSetLayout(VkDevice const deviceHandle,
 
    layout->pool_first_sampler_offset_bytes =
       sizeof(struct terakan_descriptor_set_resource) * set_resource_count;
-   layout->pool_first_rat_offset_bytes =
+   layout->pool_first_uav_offset_bytes =
       layout->pool_first_sampler_offset_bytes +
       sizeof(struct terakan_descriptor_set_sampler) * set_sampler_count;
-   layout->pool_size_bytes = layout->pool_first_rat_offset_bytes +
-                             sizeof(struct terakan_descriptor_set_rat) * set_rat_count;
+   layout->pool_size_bytes = layout->pool_first_uav_offset_bytes +
+                             sizeof(struct terakan_descriptor_set_uav) * set_uav_count;
 
    layout->dynamic_offset_count = dynamic_offset_count;
    layout->immutable_sampler_count = immutable_sampler_count;

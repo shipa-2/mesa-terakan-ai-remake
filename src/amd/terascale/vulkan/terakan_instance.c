@@ -166,7 +166,7 @@ terakan_CreateInstance(VkInstanceCreateInfo const * const pCreateInfo,
     *
     * Each UAV in Direct3D 11 can also have a 32-bit counter. Vulkan doesn't have a similar concept,
     * a separate storage buffer/image binding is generally used for the counter. Unfortunately,
-    * there are not enough hardware RATs to make it possible to do that. However, there are 4
+    * there are not enough hardware UAVs to make it possible to do that. However, there are 4
     * storage buffer slots, and the translation layer may use one of them to store counters of all
     * of the bound UAVs.
     */
@@ -180,9 +180,9 @@ terakan_CreateInstance(VkInstanceCreateInfo const * const pCreateInfo,
               TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_NON_PIXEL,
            4);
    instance->max_per_stage_sampled_images =
-      MIN2(TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_NON_PIXEL - TERAKAN_COLOR_HW_MRT_AND_RAT_COUNT -
+      MIN2(TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_NON_PIXEL - TERAKAN_COLOR_HW_RTV_AND_UAV_COUNT -
               instance->max_per_stage_uniform_buffers,
-           TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL - TERAKAN_COLOR_HW_MRT_AND_RAT_COUNT -
+           TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL - TERAKAN_COLOR_HW_RTV_AND_UAV_COUNT -
               instance->max_per_stage_uniform_buffers - instance->max_per_stage_input_attachments);
 
    /* Initialize physical device management. */

@@ -173,7 +173,7 @@ terakan_CmdSetColorWriteEnableEXT(VkCommandBuffer const commandBuffer,
 {
    struct terakan_state_draw * const state =
       &terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx->state_draw;
-   assert(attachmentCount <= TERAKAN_COLOR_HW_MRT_COUNT);
+   assert(attachmentCount <= TERAKAN_COLOR_HW_RTV_COUNT);
    uint8_t write_enable =
       state->cb_target_mask.attachment_write_enable & ~(uint8_t)BITFIELD_MASK(attachmentCount);
    for (uint32_t attachment_index = 0; attachment_index < attachmentCount; ++attachment_index) {

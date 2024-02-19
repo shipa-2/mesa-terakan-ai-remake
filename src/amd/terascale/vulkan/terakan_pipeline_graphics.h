@@ -173,12 +173,12 @@ struct terakan_pipeline_graphics_fragment_output {
     * TERAKAN_PIPELINE_GRAPHICS_STATE_CB_BLEND_CONTROL_EQUATION: all other fields
     * color_blend_attachment_count elements are valid.
     */
-   uint32_t cb_blend_control[TERAKAN_COLOR_HW_MRT_COUNT];
+   uint32_t cb_blend_control[TERAKAN_COLOR_HW_RTV_COUNT];
 
    /* TERAKAN_PIPELINE_GRAPHICS_STATE_COLOR_ATTACHMENT_WRITE_MASK
     * color_blend_attachment_count elements are valid.
     */
-   uint8_t color_attachment_write_masks[TERAKAN_COLOR_HW_MRT_COUNT];
+   uint8_t color_attachment_write_masks[TERAKAN_COLOR_HW_RTV_COUNT];
 
    /* TERAKAN_PIPELINE_GRAPHICS_STATE_COLOR_ATTACHMENT_WRITE_ENABLE */
    uint8_t color_attachment_write_enable;
