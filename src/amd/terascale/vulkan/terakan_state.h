@@ -86,7 +86,10 @@ enum terakan_state_draw_index {
 
    /* Depends on TERAKAN_STATE_DRAW_INDEX_SQ_PGM_PS. */
    TERAKAN_STATE_DRAW_INDEX_COLOR_ATTACHMENT_USAGE,
-   /* Depends on TERAKAN_STATE_DRAW_INDEX_COLOR_ATTACHMENT_USAGE. */
+   TERAKAN_STATE_DRAW_INDEX_LOGIC_OP,
+   /* Depends on TERAKAN_STATE_DRAW_INDEX_COLOR_ATTACHMENT_USAGE and
+    * TERAKAN_STATE_DRAW_INDEX_LOGIC_OP.
+    */
    TERAKAN_STATE_DRAW_INDEX_CB_BLEND_CONTROL,
    /* Depends on TERAKAN_STATE_DRAW_INDEX_COLOR_ATTACHMENT_USAGE and
     * TERAKAN_STATE_DRAW_INDEX_CB_BLEND_CONTROL.
@@ -96,7 +99,7 @@ enum terakan_state_draw_index {
     * TERAKAN_STATE_DRAW_INDEX_CB_COLOR_RTV.
     */
    TERAKAN_STATE_DRAW_INDEX_CB_TARGET_MASK,
-   /* Depends on TERAKAN_STATE_DRAW_INDEX_CB_TARGET_MASK. */
+   /* Depends on TERAKAN_STATE_DRAW_INDEX_CB_TARGET_MASK and TERAKAN_STATE_DRAW_INDEX_LOGIC_OP. */
    TERAKAN_STATE_DRAW_INDEX_CB_COLOR_CONTROL,
 
    TERAKAN_STATE_DRAW_INDEX_COUNT,
@@ -263,13 +266,22 @@ struct terakan_state_draw {
       } from_apply_sq_pgm_ps;
    } color_attachment_usage;
 
+   /* TERAKAN_STATE_DRAW_INDEX_LOGIC_OP */
+   struct {
+      /* If not enabled, ROP3 must be assumed to be 0xCC. */
+      bool enable;
+      uint8_t rop3;
+   } logic_op;
+
    /* TERAKAN_STATE_DRAW_INDEX_CB_BLEND_CONTROL
     * The CB_BLEND#_CONTROL register values stored here are directly the application's values for
     * VK_DYNAMIC_STATE_COLOR_BLEND_ENABLE_EXT (BLEND_CONTROL_ENABLE) and
     * VK_DYNAMIC_STATE_COLOR_BLEND_EQUATION_EXT (all other fields). Any needed overrides are
     * resolved when applying, without modifying the stored values.
     */
-   uint32_t attachment_cb_blend_control[TERAKAN_COLOR_HW_RTV_COUNT];
+   struct {
+      uint32_t attachments[TERAKAN_COLOR_HW_RTV_COUNT];
+   } cb_blend_control;
 
    /* TERAKAN_STATE_DRAW_INDEX_CB_COLOR_RTV
     * The descriptors are undefined for targets with the BO being NULL.
@@ -296,7 +308,7 @@ struct terakan_state_draw {
    /* TERAKAN_STATE_DRAW_INDEX_CB_COLOR_CONTROL */
    struct {
       struct {
-         bool any_target_enabled;
+         bool any_rtv_enabled;
       } from_apply_cb_target_mask;
    } cb_color_control;
 };

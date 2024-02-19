@@ -215,7 +215,7 @@ terakan_physical_device_get_capabilities(
    /* TODO(Triang3l): tessellationShader. */
    /* TODO(Triang3l): sampleRateShading. */
    features_out->dualSrcBlend = true;
-   /* TODO(Triang3l): logicOp. */
+   features_out->logicOp = true;
    /* TODO(Triang3l): multiDrawIndirect. */
    /* TODO(Triang3l): drawIndirectFirstInstance. */
    features_out->depthClamp = true;
@@ -559,6 +559,7 @@ terakan_physical_device_get_capabilities(
    features_out->extendedDynamicState3DepthClampEnable = true;
    features_out->extendedDynamicState3PolygonMode = true;
    features_out->extendedDynamicState3SampleMask = true;
+   features_out->extendedDynamicState3LogicOpEnable = true;
    features_out->extendedDynamicState3ColorBlendEnable = true;
    features_out->extendedDynamicState3ColorBlendEquation = true;
    features_out->extendedDynamicState3ColorWriteMask = true;

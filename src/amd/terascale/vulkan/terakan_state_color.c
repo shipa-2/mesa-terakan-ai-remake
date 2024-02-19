@@ -34,6 +34,30 @@
 #include <string.h>
 
 VKAPI_ATTR void VKAPI_CALL
+terakan_CmdSetLogicOpEnableEXT(VkCommandBuffer const commandBuffer, VkBool32 const logicOpEnable)
+{
+   struct terakan_state_draw * const state =
+      &terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx->state_draw;
+   bool const enable = logicOpEnable != VK_FALSE;
+   if (state->logic_op.enable != enable) {
+      state->logic_op.enable = enable;
+      terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_INDEX_LOGIC_OP);
+   }
+}
+
+VKAPI_ATTR void VKAPI_CALL
+terakan_CmdSetLogicOpEXT(VkCommandBuffer const commandBuffer, VkLogicOp const logicOp)
+{
+   struct terakan_state_draw * const state =
+      &terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx->state_draw;
+   uint8_t const rop3 = terakan_state_draw_logic_op_rop3(logicOp);
+   if (state->logic_op.enable && state->logic_op.rop3 != rop3) {
+      terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_INDEX_LOGIC_OP);
+   }
+   state->logic_op.rop3 = rop3;
+}
+
+VKAPI_ATTR void VKAPI_CALL
 terakan_CmdSetColorBlendEnableEXT(VkCommandBuffer const commandBuffer,
                                   uint32_t const firstAttachment, uint32_t const attachmentCount,
                                   VkBool32 const * const pColorBlendEnables)
@@ -43,8 +67,9 @@ terakan_CmdSetColorBlendEnableEXT(VkCommandBuffer const commandBuffer,
    for (uint32_t attachment_relative_index = 0; attachment_relative_index < attachmentCount;
         ++attachment_relative_index) {
       uint32_t const attachment_index = firstAttachment + attachment_relative_index;
-      assert(attachment_index < ARRAY_SIZE(state->attachment_cb_blend_control));
-      uint32_t * const cb_blend_control_ptr = &state->attachment_cb_blend_control[attachment_index];
+      assert(attachment_index < ARRAY_SIZE(state->cb_blend_control.attachments));
+      uint32_t * const cb_blend_control_ptr =
+         &state->cb_blend_control.attachments[attachment_index];
       bool const attachment_enable = pColorBlendEnables[attachment_relative_index] != VK_FALSE;
       if (G_028780_BLEND_CONTROL_ENABLE(*cb_blend_control_ptr) != attachment_enable) {
          *cb_blend_control_ptr = (*cb_blend_control_ptr & C_028780_BLEND_CONTROL_ENABLE) |
@@ -113,8 +138,9 @@ terakan_CmdSetColorBlendEquationEXT(VkCommandBuffer const commandBuffer,
    for (uint32_t attachment_relative_index = 0; attachment_relative_index < attachmentCount;
         ++attachment_relative_index) {
       uint32_t const attachment_index = firstAttachment + attachment_relative_index;
-      assert(attachment_index < ARRAY_SIZE(state->attachment_cb_blend_control));
-      uint32_t * const cb_blend_control_ptr = &state->attachment_cb_blend_control[attachment_index];
+      assert(attachment_index < ARRAY_SIZE(state->cb_blend_control.attachments));
+      uint32_t * const cb_blend_control_ptr =
+         &state->cb_blend_control.attachments[attachment_index];
       bool const attachment_enable = G_028780_BLEND_CONTROL_ENABLE(*cb_blend_control_ptr);
       VkColorBlendEquationEXT const * const equation =
          &pColorBlendEquations[attachment_relative_index];
@@ -156,7 +182,7 @@ terakan_CmdSetColorWriteMaskEXT(VkCommandBuffer const commandBuffer, uint32_t co
    for (uint32_t attachment_relative_index = 0; attachment_relative_index < attachmentCount;
         ++attachment_relative_index) {
       uint32_t const attachment_index = firstAttachment + attachment_relative_index;
-      assert(attachment_index < ARRAY_SIZE(state->attachment_cb_blend_control));
+      assert(attachment_index < ARRAY_SIZE(state->cb_blend_control.attachments));
       uint8_t const attachment_write_mask =
          (uint8_t)pColorWriteMasks[attachment_relative_index] & 0b1111;
       if (state->cb_target_mask.attachment_write_masks[attachment_index] != attachment_write_mask) {

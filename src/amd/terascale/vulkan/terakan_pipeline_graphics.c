@@ -267,6 +267,37 @@ terakan_pipeline_graphics_apply_pa_sc_aa_mask(
 }
 
 static void
+terakan_pipeline_graphics_apply_logic_op_enable(
+   struct terakan_gfx_command_writer * const command_writer,
+   struct terakan_pipeline_graphics const * const pipeline)
+{
+   /* Make TERAKAN_STATE_DRAW_INDEX_LOGIC_OP pending only if needed due to the complexity of
+    * applying it.
+    */
+   if (command_writer->state_draw.logic_op.enable != pipeline->fragment_output.logic_op_enable) {
+      command_writer->state_draw.logic_op.enable = pipeline->fragment_output.logic_op_enable;
+      terakan_state_draw_set_pending(&command_writer->state_draw,
+                                     TERAKAN_STATE_DRAW_INDEX_LOGIC_OP);
+   }
+}
+
+static void
+terakan_pipeline_graphics_apply_logic_op_rop3(
+   struct terakan_gfx_command_writer * const command_writer,
+   struct terakan_pipeline_graphics const * const pipeline)
+{
+   /* Make TERAKAN_STATE_DRAW_INDEX_LOGIC_OP pending only if needed due to the complexity of
+    * applying it.
+    */
+   if (command_writer->state_draw.logic_op.enable &&
+       command_writer->state_draw.logic_op.rop3 != pipeline->fragment_output.logic_op_rop3) {
+      terakan_state_draw_set_pending(&command_writer->state_draw,
+                                     TERAKAN_STATE_DRAW_INDEX_LOGIC_OP);
+   }
+   command_writer->state_draw.logic_op.rop3 = pipeline->fragment_output.logic_op_rop3;
+}
+
+static void
 terakan_pipeline_graphics_apply_cb_blend_rgba(
    struct terakan_gfx_command_writer * const command_writer,
    struct terakan_pipeline_graphics const * const pipeline)
@@ -289,7 +320,7 @@ terakan_pipeline_graphics_apply_cb_blend_control_enable(
         attachment_index < pipeline->fragment_output.color_blend_attachment_count;
         ++attachment_index) {
       uint32_t * const cb_blend_control_ptr =
-         &command_writer->state_draw.attachment_cb_blend_control[attachment_index];
+         &command_writer->state_draw.cb_blend_control.attachments[attachment_index];
       bool const attachment_enable = G_028780_BLEND_CONTROL_ENABLE(
          pipeline->fragment_output.cb_blend_control[attachment_index]);
       if (G_028780_BLEND_CONTROL_ENABLE(*cb_blend_control_ptr) != attachment_enable) {
@@ -310,7 +341,7 @@ terakan_pipeline_graphics_apply_cb_blend_control_equation(
         attachment_index < pipeline->fragment_output.color_blend_attachment_count;
         ++attachment_index) {
       uint32_t * const cb_blend_control_ptr =
-         &command_writer->state_draw.attachment_cb_blend_control[attachment_index];
+         &command_writer->state_draw.cb_blend_control.attachments[attachment_index];
       bool const attachment_enable = G_028780_BLEND_CONTROL_ENABLE(*cb_blend_control_ptr);
       uint32_t const cb_blend_control =
          S_028780_BLEND_CONTROL_ENABLE(attachment_enable) |
@@ -384,6 +415,10 @@ static terakan_pipeline_graphics_apply_state_function const
          terakan_pipeline_graphics_apply_db_render_override_pre_rasterization,
       [TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SC_AA_MASK] =
          terakan_pipeline_graphics_apply_pa_sc_aa_mask,
+      [TERAKAN_PIPELINE_GRAPHICS_STATE_LOGIC_OP_ENABLE] =
+         terakan_pipeline_graphics_apply_logic_op_enable,
+      [TERAKAN_PIPELINE_GRAPHICS_STATE_LOGIC_OP_ROP3] =
+         terakan_pipeline_graphics_apply_logic_op_rop3,
       [TERAKAN_PIPELINE_GRAPHICS_STATE_CB_BLEND_RGBA] =
          terakan_pipeline_graphics_apply_cb_blend_rgba,
       [TERAKAN_PIPELINE_GRAPHICS_STATE_CB_BLEND_CONTROL_ENABLE] =
@@ -767,6 +802,24 @@ static void
 terakan_pipeline_graphics_fragment_output_init(struct terakan_pipeline_graphics * const pipeline,
                                                struct vk_graphics_pipeline_state const * const state)
 {
+   /* TERAKAN_PIPELINE_GRAPHICS_STATE_LOGIC_OP_ENABLE */
+   bool logic_op_potentially_enabled = true;
+   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_LOGIC_OP_ENABLE)) {
+      bool const logic_op_enable = state->cb->logic_op_enable;
+      pipeline->fragment_output.logic_op_enable = logic_op_enable;
+      BITSET_SET(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_LOGIC_OP_ENABLE);
+      logic_op_potentially_enabled = logic_op_enable;
+   }
+
+   /* TERAKAN_PIPELINE_GRAPHICS_STATE_LOGIC_OP_ROP3
+    * Optimize out if the logical operation is known to be disabled.
+    */
+   if (logic_op_potentially_enabled && !BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_LOGIC_OP)) {
+      pipeline->fragment_output.logic_op_rop3 =
+         terakan_state_draw_logic_op_rop3((VkLogicOp)state->cb->logic_op);
+      BITSET_SET(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_LOGIC_OP_ROP3);
+   }
+
    /* TERAKAN_PIPELINE_GRAPHICS_STATE_CB_BLEND_RGBA */
    if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_BLEND_CONSTANTS)) {
       memcpy(pipeline->fragment_output.cb_blend_rgba, state->cb->blend_constants,
