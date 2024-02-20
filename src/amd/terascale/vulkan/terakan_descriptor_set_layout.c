@@ -438,7 +438,8 @@ terakan_CreateDescriptorSetLayout(VkDevice const deviceHandle,
       layout_shader->sampler_count = stage_sampler_count;
    }
 
-   assert(next_shader_range_index == shader_range_count);
+   /* Not == because contiguous ranges may be merged. */
+   assert(next_shader_range_index <= shader_range_count);
 
    vk_free2(&device->vk.alloc, pAllocator, sorted_create_info_bindings);
 
