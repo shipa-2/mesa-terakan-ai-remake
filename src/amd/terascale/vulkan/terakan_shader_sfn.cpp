@@ -69,7 +69,9 @@ terakan_shader_impl_compile(terakan_shader_impl * const shader, terakan_device *
 #if 0
    r600_finalize_nir_common(nir, gfx_level);
 #endif
-   /* For r600_lower_and_optimize_nir, for fields like number bit sizes. */
+   /* For r600_lower_and_optimize_nir, for fields like number bit sizes, and also for
+    * DB_SHADER_CONTROL in fragment shaders.
+    */
    nir_shader_gather_info(nir, nir_shader_get_entrypoint(nir));
    r600_lower_and_optimize_nir(nir, key, gfx_level, &so_info);
 
@@ -180,15 +182,53 @@ terakan_shader_impl_compile(terakan_shader_impl * const shader, terakan_device *
    } break;
 
    case MESA_SHADER_FRAGMENT: {
-      bool export_z = false;
+      uint32_t db_shader_control =
+         S_02880C_KILL_ENABLE(shader->shader.uses_kill) |
+         S_02880C_CONSERVATIVE_Z_EXPORT(nir->info.fs.depth_layout == FRAG_DEPTH_LAYOUT_GREATER
+                                           ? V_02880C_EXPORT_GREATER_THAN_Z
+                                           : (nir->info.fs.depth_layout == FRAG_DEPTH_LAYOUT_LESS
+                                                 ? V_02880C_EXPORT_LESS_THAN_Z
+                                                 : V_02880C_EXPORT_ANY_Z));
       for (unsigned output_index = 0; output_index < shader->shader.noutput; ++output_index) {
-         gl_frag_result const frag_result = shader->shader.output[output_index].frag_result;
-         if (frag_result == FRAG_RESULT_DEPTH || frag_result == FRAG_RESULT_STENCIL ||
-             frag_result == FRAG_RESULT_SAMPLE_MASK) {
-            export_z = true;
+         switch (shader->shader.output[output_index].frag_result) {
+         case FRAG_RESULT_DEPTH:
+            db_shader_control |= S_02880C_Z_EXPORT_ENABLE(1);
+            break;
+         case FRAG_RESULT_STENCIL:
+            db_shader_control |= S_02880C_STENCIL_EXPORT_ENABLE(1);
+            break;
+         case FRAG_RESULT_SAMPLE_MASK:
+            db_shader_control |= S_02880C_MASK_EXPORT_ENABLE(1);
+            break;
+         default:
             break;
          }
       }
+      db_shader_control |= S_02880C_DB_SOURCE_FORMAT(
+         db_shader_control & S_02880C_MASK_EXPORT_ENABLE(1)
+            ? (db_shader_control & S_02880C_Z_EXPORT_ENABLE(1) ? V_02880C_EXPORT_DB_FULL
+                                                               : V_02880C_EXPORT_DB_FOUR16)
+            : V_02880C_EXPORT_DB_TWO);
+      db_shader_control |= S_02880C_DUAL_EXPORT_ENABLE(
+         G_02880C_DB_SOURCE_FORMAT(db_shader_control) != V_02880C_EXPORT_DB_FULL);
+      /* See RadeonSI DB_SHADER_CONTROL setup for more details about the possible Z order and
+       * EXEC_ON_* cases.
+       * Not using ReZ currently due to unknown performance impact.
+       */
+      if (nir->info.fs.early_fragment_tests) {
+         db_shader_control |= S_02880C_DEPTH_BEFORE_SHADER(1) |
+                              S_02880C_Z_ORDER(V_02880C_EARLY_Z_THEN_LATE_Z) |
+                              S_02880C_EXEC_ON_NOOP(nir->info.writes_memory);
+      } else if (nir->info.writes_memory) {
+         db_shader_control |= S_02880C_Z_ORDER(V_02880C_LATE_Z) | S_02880C_EXEC_ON_HIER_FAIL(1);
+      } else {
+         db_shader_control |= S_02880C_Z_ORDER(V_02880C_EARLY_Z_THEN_LATE_Z);
+      }
+      shader->fs.db_shader_control = db_shader_control;
+
+      bool export_z = (db_shader_control &
+                       ~(uint32_t)(C_02880C_Z_EXPORT_ENABLE & C_02880C_STENCIL_EXPORT_ENABLE &
+                                   C_02880C_MASK_EXPORT_ENABLE)) != 0;
       /* Something must be exported, either at least one color or at least the DB export.
        * Explicitly ensuring that is not necessary in this code due to the + 1.
        */
@@ -284,8 +324,6 @@ terakan_shader_impl_compile(terakan_shader_impl * const shader, terakan_device *
          S_0286D8_PROVIDE_Z_TO_SPI(position_input != nullptr);
 
       shader->static_state.stage.ps.cb_shader_mask = shader->shader.ps_color_export_mask;
-
-      /* TODO(Triang3l): DB_SHADER_CONTROL. */
    } break;
 
    default:

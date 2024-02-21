@@ -271,6 +271,19 @@ terakan_color_meta_descriptor_create_disabled(struct terakan_color_descriptor co
    };
 }
 
+struct terakan_depth_stencil_descriptor {
+   uint32_t view;
+   /* DB_Z_INFO contains some configuration shared between depth and stencil, even if the image
+    * contains only stencil.
+    */
+   uint32_t z_info;
+   uint32_t stencil_info;
+   uint32_t z_base;
+   uint32_t stencil_base;
+   uint32_t size;
+   uint32_t slice;
+};
+
 static inline bool
 terakan_descriptor_type_has_resource(VkDescriptorType const descriptor_type)
 {

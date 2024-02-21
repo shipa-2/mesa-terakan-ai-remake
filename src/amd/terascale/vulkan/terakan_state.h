@@ -82,7 +82,13 @@ enum terakan_state_draw_index {
 
    TERAKAN_STATE_DRAW_INDEX_PA_SC_AA_MASK,
 
+   TERAKAN_STATE_DRAW_INDEX_DB_DEPTH_STENCIL_BUFFER,
+
    TERAKAN_STATE_DRAW_INDEX_DB_RENDER_OVERRIDE,
+
+   TERAKAN_STATE_DRAW_INDEX_DB_STENCILREFMASK,
+
+   TERAKAN_STATE_DRAW_INDEX_DB_DEPTH_CONTROL,
 
    /* Depends on TERAKAN_STATE_DRAW_INDEX_SQ_PGM_PS. */
    TERAKAN_STATE_DRAW_INDEX_COLOR_ATTACHMENT_USAGE,
@@ -101,6 +107,9 @@ enum terakan_state_draw_index {
    TERAKAN_STATE_DRAW_INDEX_CB_TARGET_MASK,
    /* Depends on TERAKAN_STATE_DRAW_INDEX_CB_TARGET_MASK and TERAKAN_STATE_DRAW_INDEX_LOGIC_OP. */
    TERAKAN_STATE_DRAW_INDEX_CB_COLOR_CONTROL,
+
+   /* Depends on TERAKAN_STATE_DRAW_INDEX_SQ_PGM_PS and TERAKAN_STATE_DRAW_INDEX_CB_COLOR_RTV. */
+   TERAKAN_STATE_DRAW_INDEX_DB_SHADER_CONTROL,
 
    TERAKAN_STATE_DRAW_INDEX_COUNT,
 };
@@ -243,8 +252,23 @@ struct terakan_state_draw {
    /* TERAKAN_STATE_DRAW_INDEX_PA_SC_AA_MASK */
    uint16_t pa_sc_aa_mask;
 
+   /* TERAKAN_STATE_DRAW_INDEX_DB_DEPTH_STENCIL_BUFFER */
+   struct {
+      struct terakan_bo const * bo;
+      /* The descriptor is undefined if the BO is NULL. */
+      struct terakan_depth_stencil_descriptor descriptor;
+   } db_depth_stencil_buffer;
+
    /* TERAKAN_STATE_DRAW_INDEX_DB_RENDER_OVERRIDE */
    uint32_t db_render_override;
+
+   /* TERAKAN_STATE_DRAW_INDEX_DB_STENCILREFMASK */
+   uint32_t db_stencilrefmask_front_back[2];
+
+   /* TERAKAN_STATE_DRAW_INDEX_DB_DEPTH_CONTROL
+    * BACKFACE_ENABLE is always enabled implicitly.
+    */
+   uint32_t db_depth_control;
 
    /* Color target state is indexed by render pass color attachment index (hence the word
     * "attachment" in the names).
@@ -311,6 +335,13 @@ struct terakan_state_draw {
          bool any_rtv_enabled;
       } from_apply_cb_target_mask;
    } cb_color_control;
+
+   /* TERAKAN_STATE_DRAW_INDEX_DB_SHADER_CONTROL */
+   struct {
+      struct {
+         bool cb_dual_export_allowed;
+      } from_apply_cb_color_rtv;
+   } db_shader_control;
 };
 
 static inline void

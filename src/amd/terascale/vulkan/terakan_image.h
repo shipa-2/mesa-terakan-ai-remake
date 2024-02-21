@@ -134,6 +134,10 @@ uint32_t terakan_image_create_color_descriptor(
    struct terakan_color_descriptor * descriptor_out,
    struct terakan_color_meta_descriptor * meta_descriptor_out_opt);
 
+bool terakan_image_create_depth_stencil_descriptor(
+   VkImageViewCreateInfo const * image_view_create_info,
+   struct terakan_depth_stencil_descriptor * descriptor_out);
+
 struct terakan_device;
 
 struct terakan_image_winsys_fn {
@@ -151,6 +155,8 @@ struct terakan_image_view {
 
    struct terakan_color_descriptor color;
    struct terakan_color_meta_descriptor color_meta;
+
+   struct terakan_depth_stencil_descriptor depth_stencil;
 };
 
 VK_DEFINE_NONDISP_HANDLE_CASTS(terakan_image_view, vk.base, VkImageView, VK_OBJECT_TYPE_IMAGE_VIEW)

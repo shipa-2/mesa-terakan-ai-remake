@@ -495,9 +495,9 @@ terakan_physical_device_get_capabilities(
    properties_out->provokingVertexModePerPipeline = VK_TRUE;
    properties_out->transformFeedbackPreservesTriangleFanProvokingVertex = VK_TRUE;
 
-   /* TODO(Triang3l): VK_EXT_extended_dynamic_state (#268, Vulkan 1.3) when all state is
-    * implemented.
-    */
+   /* VK_EXT_extended_dynamic_state (#268, Vulkan 1.3). */
+   extensions_out->EXT_extended_dynamic_state = true;
+   features_out->extendedDynamicState = true;
 
    /* VK_KHR_map_memory2 (#272). */
    extensions_out->KHR_map_memory2 = true;

@@ -444,7 +444,8 @@ struct terakan_meta_shader const terakan_meta_position_and_layer_from_index_vs =
 };
 
 void
-terakan_meta_begin_2d(struct terakan_gfx_command_writer * const command_writer)
+terakan_meta_begin_2d(struct terakan_gfx_command_writer * const command_writer,
+                      uint32_t const pa_cl_vte_cntl)
 {
    terakan_meta_modify_state_draw_dword(command_writer, TERAKAN_STATE_DRAW_INDEX_PA_CL_CLIP_CNTL,
                                         TERAKAN_HW_STATE_DRAW_INDEX_PA_CL_CLIP_CNTL,
@@ -455,10 +456,7 @@ terakan_meta_begin_2d(struct terakan_gfx_command_writer * const command_writer)
                                         TERAKAN_HW_STATE_DRAW_INDEX_PA_SU_SC_MODE_CNTL,
                                         &command_writer->hw_state_draw.pa_su_sc_mode_cntl, 0);
 
-   terakan_meta_modify_state_draw_dword(command_writer, TERAKAN_STATE_DRAW_INDEX_PA_CL_VTE_CNTL,
-                                        TERAKAN_HW_STATE_DRAW_INDEX_PA_CL_VTE_CNTL,
-                                        &command_writer->hw_state_draw.pa_cl_vte_cntl,
-                                        S_028818_VTX_XY_FMT(1) | S_028818_VTX_Z_FMT(1));
+   terakan_meta_set_pa_cl_vte_cntl(command_writer, pa_cl_vte_cntl);
 
    uint32_t const num_samples_log2 = 0;
    /* TODO(Triang3l): Make what depends on the sample count pending in state_draw. */

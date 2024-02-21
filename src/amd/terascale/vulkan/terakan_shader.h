@@ -93,6 +93,9 @@ struct terakan_shader_impl {
    } vs;
 
    struct {
+      /* DUAL_EXPORT_ENABLE specifies only whether it can potentially be enabled for the shader. */
+      uint32_t db_shader_control;
+
       uint8_t fragment_data_uncompacted_locations;
    } fs;
 

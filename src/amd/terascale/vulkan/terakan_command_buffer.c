@@ -745,17 +745,6 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
 
       /* TODO(Triang3l): Move to hw_state_draw. */
       PKT3(PKT3_SET_CONTEXT_REG, 1, 0),
-      TERAKAN_CONTEXT_REG_OFFSET(R_028800_DB_DEPTH_CONTROL),
-      0,
-
-      /* TODO(Triang3l): Move to hw_state_draw. */
-      PKT3(PKT3_SET_CONTEXT_REG, 1, 0),
-      TERAKAN_CONTEXT_REG_OFFSET(R_02880C_DB_SHADER_CONTROL),
-      S_02880C_Z_ORDER(V_02880C_EARLY_Z_THEN_LATE_Z) | S_02880C_DUAL_EXPORT_ENABLE(1) |
-         S_02880C_DB_SOURCE_FORMAT(V_02880C_EXPORT_DB_TWO),
-
-      /* TODO(Triang3l): Move to hw_state_draw. */
-      PKT3(PKT3_SET_CONTEXT_REG, 1, 0),
       TERAKAN_CONTEXT_REG_OFFSET(R_028B70_DB_ALPHA_TO_MASK),
       0,
    };

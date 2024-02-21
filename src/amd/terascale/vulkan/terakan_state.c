@@ -302,6 +302,10 @@ terakan_state_draw_apply_sq_pgm_ps(struct terakan_gfx_command_writer * const com
       terakan_state_draw_set_pending(&command_writer->state_draw,
                                      TERAKAN_STATE_DRAW_INDEX_COLOR_ATTACHMENT_USAGE);
    }
+
+   TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(DB_SHADER_CONTROL, SQ_PGM_PS);
+   terakan_state_draw_set_pending(&command_writer->state_draw,
+                                  TERAKAN_STATE_DRAW_INDEX_DB_SHADER_CONTROL);
 }
 
 static void
@@ -336,7 +340,7 @@ terakan_state_draw_apply_pa_cl_vport_z_scale_offset(
    terakan_hw_state_draw_ensure_viewport_count(&command_writer->hw_state_draw,
                                                command_writer->state_draw.viewport_count);
    bool const dx_clip_space_def =
-      G_028810_DX_CLIP_SPACE_DEF(command_writer->hw_state_draw.pa_cl_clip_cntl) != 0;
+      G_028810_DX_CLIP_SPACE_DEF(command_writer->state_draw.pa_cl_clip_cntl) != 0;
    for (uint32_t viewport_index = 0; viewport_index < command_writer->state_draw.viewport_count;
         ++viewport_index) {
       struct terakan_state_draw_viewport const * const viewport =
@@ -501,6 +505,26 @@ terakan_state_draw_apply_pa_sc_aa_mask(struct terakan_gfx_command_writer * const
 }
 
 static void
+terakan_state_draw_apply_db_depth_stencil_buffer(
+   struct terakan_gfx_command_writer * const command_writer)
+{
+   bool modified = command_writer->hw_state_draw.db_depth_stencil_buffer.bo !=
+                   command_writer->state_draw.db_depth_stencil_buffer.bo;
+   command_writer->hw_state_draw.db_depth_stencil_buffer.bo =
+      command_writer->state_draw.db_depth_stencil_buffer.bo;
+   if (command_writer->state_draw.db_depth_stencil_buffer.bo != NULL) {
+      modified =
+         modified || memcmp(&command_writer->hw_state_draw.db_depth_stencil_buffer.descriptor,
+                            &command_writer->state_draw.db_depth_stencil_buffer.descriptor,
+                            sizeof(struct terakan_depth_stencil_descriptor)) != 0;
+      command_writer->hw_state_draw.db_depth_stencil_buffer.descriptor =
+         command_writer->state_draw.db_depth_stencil_buffer.descriptor;
+   }
+   terakan_hw_state_draw_written(&command_writer->hw_state_draw,
+                                 TERAKAN_HW_STATE_DRAW_INDEX_DB_DEPTH_STENCIL_BUFFER, modified);
+}
+
+static void
 terakan_state_draw_apply_db_render_override(struct terakan_gfx_command_writer * const command_writer)
 {
    bool const modified = command_writer->hw_state_draw.db_render_override !=
@@ -508,6 +532,47 @@ terakan_state_draw_apply_db_render_override(struct terakan_gfx_command_writer * 
    command_writer->hw_state_draw.db_render_override = command_writer->state_draw.db_render_override;
    terakan_hw_state_draw_written(&command_writer->hw_state_draw,
                                  TERAKAN_HW_STATE_DRAW_INDEX_DB_RENDER_OVERRIDE, modified);
+}
+
+static void
+terakan_state_draw_apply_db_stencilrefmask(struct terakan_gfx_command_writer * const command_writer)
+{
+   bool const modified =
+      memcmp(command_writer->hw_state_draw.db_stencilrefmask_front_back,
+             command_writer->state_draw.db_stencilrefmask_front_back, sizeof(uint32_t) * 2) != 0;
+   memcpy(command_writer->hw_state_draw.db_stencilrefmask_front_back,
+          command_writer->state_draw.db_stencilrefmask_front_back, sizeof(uint32_t) * 2);
+   terakan_hw_state_draw_written(&command_writer->hw_state_draw,
+                                 TERAKAN_HW_STATE_DRAW_INDEX_DB_STENCILREFMASK, modified);
+}
+
+static void
+terakan_state_draw_apply_db_depth_control(struct terakan_gfx_command_writer * const command_writer)
+{
+   uint32_t db_depth_control = command_writer->state_draw.db_depth_control;
+
+   /* Clear irrelevant state to avoid state changes if it ends up being different.
+    * Also force BACKFACE_ENABLE for simplicity of changing the state, as in Vulkan front and back
+    * face stencil state is always specified separately, to ensure it's never lost.
+    */
+
+   if (G_028800_STENCIL_ENABLE(db_depth_control)) {
+      db_depth_control |= S_028800_BACKFACE_ENABLE(1);
+   } else {
+      db_depth_control &= C_028800_BACKFACE_ENABLE & C_028800_STENCILFUNC & C_028800_STENCILFAIL &
+                          C_028800_STENCILZPASS & C_028800_STENCILZFAIL & C_028800_STENCILFUNC_BF &
+                          C_028800_STENCILFAIL_BF & C_028800_STENCILZPASS_BF &
+                          C_028800_STENCILZFAIL_BF;
+   }
+
+   if (!G_028800_Z_ENABLE(db_depth_control)) {
+      db_depth_control &= C_028800_Z_WRITE_ENABLE & C_028800_ZFUNC;
+   }
+
+   bool const modified = command_writer->hw_state_draw.db_depth_control != db_depth_control;
+   command_writer->hw_state_draw.db_depth_control = db_depth_control;
+   terakan_hw_state_draw_written(&command_writer->hw_state_draw,
+                                 TERAKAN_HW_STATE_DRAW_INDEX_DB_DEPTH_CONTROL, modified);
 }
 
 static void
@@ -647,6 +712,12 @@ terakan_state_draw_apply_cb_color_rtv(struct terakan_gfx_command_writer * const 
 {
    uint32_t attachment_format_masks = 0b0;
 
+   bool cb_dual_export_allowed = true;
+
+   /* TODO(Triang3l): Merge application of color attachment bindings with color write mask
+    * application, unbinding color attachments with writing disabled to skip 32bpc exports for them.
+    */
+
    {
       TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_COLOR_RTV, CB_BLEND_CONTROL);
       TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_COLOR_RTV, COLOR_ATTACHMENT_USAGE);
@@ -673,6 +744,8 @@ terakan_state_draw_apply_cb_color_rtv(struct terakan_gfx_command_writer * const 
                                 attachment->color.info)]]
                              [G_028C70_COMP_SWAP(attachment->color.info)])
                << (4 * attachment_index);
+            cb_dual_export_allowed &=
+               G_028C70_SOURCE_FORMAT(attachment->color.info) != V_028C70_EXPORT_4C_32BPC;
          }
       }
    }
@@ -707,6 +780,15 @@ terakan_state_draw_apply_cb_color_rtv(struct terakan_gfx_command_writer * const 
          attachment_format_masks;
       terakan_state_draw_set_pending(&command_writer->state_draw,
                                      TERAKAN_STATE_DRAW_INDEX_CB_TARGET_MASK);
+   }
+
+   TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(DB_SHADER_CONTROL, CB_COLOR_RTV);
+   if (command_writer->state_draw.db_shader_control.from_apply_cb_color_rtv.cb_dual_export_allowed !=
+       cb_dual_export_allowed) {
+      command_writer->state_draw.db_shader_control.from_apply_cb_color_rtv.cb_dual_export_allowed =
+         cb_dual_export_allowed;
+      terakan_state_draw_set_pending(&command_writer->state_draw,
+                                     TERAKAN_STATE_DRAW_INDEX_DB_SHADER_CONTROL);
    }
 }
 
@@ -800,6 +882,27 @@ terakan_state_draw_apply_cb_color_control(struct terakan_gfx_command_writer * co
                                  TERAKAN_HW_STATE_DRAW_INDEX_CB_COLOR_CONTROL, modified);
 }
 
+static void
+terakan_state_draw_apply_db_shader_control(struct terakan_gfx_command_writer * const command_writer)
+{
+   TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(DB_SHADER_CONTROL, SQ_PGM_PS);
+   uint32_t db_shader_control = command_writer->state_draw.sq_pgm_ps.fs != NULL
+                                   ? command_writer->state_draw.sq_pgm_ps.fs->fs.db_shader_control
+                                   : S_02880C_Z_ORDER(V_02880C_EARLY_Z_THEN_LATE_Z) |
+                                        S_02880C_DUAL_EXPORT_ENABLE(1) |
+                                        S_02880C_DB_SOURCE_FORMAT(V_02880C_EXPORT_DB_TWO);
+
+   TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(DB_SHADER_CONTROL, CB_COLOR_RTV);
+   if (!command_writer->state_draw.db_shader_control.from_apply_cb_color_rtv.cb_dual_export_allowed) {
+      db_shader_control &= C_02880C_DUAL_EXPORT_ENABLE;
+   }
+
+   bool const modified = command_writer->hw_state_draw.db_shader_control != db_shader_control;
+   command_writer->hw_state_draw.db_shader_control = db_shader_control;
+   terakan_hw_state_draw_written(&command_writer->hw_state_draw,
+                                 TERAKAN_HW_STATE_DRAW_INDEX_DB_SHADER_CONTROL, modified);
+}
+
 static terakan_state_draw_apply_function const
    terakan_state_draw_apply_functions[TERAKAN_STATE_DRAW_INDEX_COUNT] = {
       [TERAKAN_STATE_DRAW_INDEX_VGT_INDEX_TYPE] = terakan_state_draw_apply_vgt_index_type,
@@ -822,7 +925,11 @@ static terakan_state_draw_apply_function const
       [TERAKAN_STATE_DRAW_INDEX_PA_CL_VTE_CNTL] = terakan_state_draw_apply_pa_cl_vte_cntl,
       [TERAKAN_STATE_DRAW_INDEX_PA_SC_MODE_CNTL_0] = terakan_state_draw_apply_pa_sc_mode_cntl_0,
       [TERAKAN_STATE_DRAW_INDEX_PA_SC_AA_MASK] = terakan_state_draw_apply_pa_sc_aa_mask,
+      [TERAKAN_STATE_DRAW_INDEX_DB_DEPTH_STENCIL_BUFFER] =
+         terakan_state_draw_apply_db_depth_stencil_buffer,
       [TERAKAN_STATE_DRAW_INDEX_DB_RENDER_OVERRIDE] = terakan_state_draw_apply_db_render_override,
+      [TERAKAN_STATE_DRAW_INDEX_DB_STENCILREFMASK] = terakan_state_draw_apply_db_stencilrefmask,
+      [TERAKAN_STATE_DRAW_INDEX_DB_DEPTH_CONTROL] = terakan_state_draw_apply_db_depth_control,
       [TERAKAN_STATE_DRAW_INDEX_COLOR_ATTACHMENT_USAGE] =
          terakan_state_draw_apply_color_attachment_usage,
       [TERAKAN_STATE_DRAW_INDEX_LOGIC_OP] = terakan_state_draw_apply_logic_op,
@@ -830,6 +937,7 @@ static terakan_state_draw_apply_function const
       [TERAKAN_STATE_DRAW_INDEX_CB_COLOR_RTV] = terakan_state_draw_apply_cb_color_rtv,
       [TERAKAN_STATE_DRAW_INDEX_CB_TARGET_MASK] = terakan_state_draw_apply_cb_target_mask,
       [TERAKAN_STATE_DRAW_INDEX_CB_COLOR_CONTROL] = terakan_state_draw_apply_cb_color_control,
+      [TERAKAN_STATE_DRAW_INDEX_DB_SHADER_CONTROL] = terakan_state_draw_apply_db_shader_control,
 };
 
 void
@@ -958,6 +1066,26 @@ terakan_state_draw_reset(struct terakan_state_draw * const state,
    /* pSampleMask = NULL */
    state->pa_sc_aa_mask = UINT16_MAX;
 
+   /* pDepthAttachment = NULL
+    * pStencilAttachment = NULL
+    */
+   state->db_depth_stencil_buffer.bo = NULL;
+
+   /* depthTestEnable = VK_FALSE
+    * depthWriteEnable = VK_FALSE
+    * depthCompareOp = VK_COMPARE_OP_NEVER
+    * stencilTestEnable = VK_FALSE
+    * front, back = {
+    *    failOp, passOp, depthFailOp = VK_STENCIL_OP_KEEP
+    *    compareOp = VK_COMPARE_OP_NEVER
+    *    compareMask = 0b0
+    *    writeMask = 0b0
+    *    reference = 0b0
+    * }
+    */
+   memset(state->db_stencilrefmask_front_back, 0, sizeof(state->db_stencilrefmask_front_back));
+   state->db_depth_control = 0;
+
    state->color_attachment_usage.from_apply_sq_pgm_ps.written_by_shader = 0b0;
 
    /* logicOpEnable = VK_FALSE */
@@ -975,6 +1103,7 @@ terakan_state_draw_reset(struct terakan_state_draw * const state,
    /* pColorAttachments[...].imageView = VK_NULL_HANDLE */
    memset(state->cb_color_rtv.attachments, 0, sizeof(state->cb_color_rtv.attachments));
    state->cb_target_mask.from_apply_cb_color_rtv.attachment_format_masks = 0b0;
+   state->db_shader_control.from_apply_cb_color_rtv.cb_dual_export_allowed = true;
 
    /* colorWriteEnable feature disabled */
    state->cb_target_mask.attachment_write_enable =

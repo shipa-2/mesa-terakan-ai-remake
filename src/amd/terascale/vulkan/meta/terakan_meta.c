@@ -120,6 +120,13 @@ static struct terakan_meta_shader const terakan_meta_empty_opaque_ps = {
                   },
             },
       },
+   .stage =
+      {
+         .ps =
+            {
+               .db_shader_control = TERAKAN_META_DB_SHADER_CONTROL_DEFAULT,
+            },
+      },
 };
 
 struct terakan_meta_shader const * const terakan_meta_shaders[TERAKAN_META_SHADER_COUNT] = {
@@ -138,10 +145,24 @@ terakan_meta_modify_state_draw_dword(struct terakan_gfx_command_writer * const c
                                      enum terakan_hw_state_draw_index const hw_state_index,
                                      uint32_t * const hw_state_item, uint32_t const value)
 {
+   /* Making the state pending unconditionally even if the value in the hardware state ends up
+    * unchanged for simplicity of assumptions about other terakan_hw_state_draw fields covered by
+    * the same terakan_state_draw item on the caller's side.
+    */
    terakan_state_draw_set_pending(&command_writer->state_draw, invalidate_state_index);
    bool const modified = *hw_state_item != value;
    *hw_state_item = value;
    terakan_hw_state_draw_written(&command_writer->hw_state_draw, hw_state_index, modified);
+}
+
+void
+terakan_meta_set_pa_cl_vte_cntl(struct terakan_gfx_command_writer * const command_writer,
+                                uint32_t const pa_cl_vte_cntl)
+{
+   terakan_meta_modify_state_draw_dword(command_writer, TERAKAN_STATE_DRAW_INDEX_PA_CL_VTE_CNTL,
+                                        TERAKAN_HW_STATE_DRAW_INDEX_PA_CL_VTE_CNTL,
+                                        &command_writer->hw_state_draw.pa_cl_vte_cntl,
+                                        pa_cl_vte_cntl);
 }
 
 void
@@ -152,6 +173,26 @@ terakan_meta_set_db_render_override(struct terakan_gfx_command_writer * const co
                                         TERAKAN_HW_STATE_DRAW_INDEX_DB_RENDER_OVERRIDE,
                                         &command_writer->hw_state_draw.db_render_override,
                                         db_render_override);
+}
+
+void
+terakan_meta_set_db_depth_control(struct terakan_gfx_command_writer * const command_writer,
+                                  uint32_t const db_depth_control)
+{
+   terakan_meta_modify_state_draw_dword(command_writer, TERAKAN_STATE_DRAW_INDEX_DB_DEPTH_CONTROL,
+                                        TERAKAN_HW_STATE_DRAW_INDEX_DB_DEPTH_CONTROL,
+                                        &command_writer->hw_state_draw.db_depth_control,
+                                        db_depth_control);
+}
+
+void
+terakan_meta_set_db_shader_control(struct terakan_gfx_command_writer * const command_writer,
+                                   uint32_t const db_shader_control)
+{
+   terakan_meta_modify_state_draw_dword(command_writer, TERAKAN_STATE_DRAW_INDEX_DB_SHADER_CONTROL,
+                                        TERAKAN_HW_STATE_DRAW_INDEX_DB_SHADER_CONTROL,
+                                        &command_writer->hw_state_draw.db_shader_control,
+                                        db_shader_control);
 }
 
 void
@@ -187,28 +228,37 @@ terakan_meta_set_vs(struct terakan_gfx_command_writer * const command_writer,
 
 void
 terakan_meta_set_ps(struct terakan_gfx_command_writer * const command_writer,
-                    enum terakan_meta_shader_index const shader_index)
+                    enum terakan_meta_shader_index const shader_index,
+                    bool const set_db_shader_control)
 {
+   struct terakan_meta_shader const * const shader = terakan_meta_shaders[shader_index];
+
+   if (set_db_shader_control) {
+      terakan_meta_set_db_shader_control(command_writer, shader->stage.ps.db_shader_control);
+   }
+
    terakan_state_draw_set_pending(&command_writer->state_draw, TERAKAN_STATE_DRAW_INDEX_SQ_PGM_PS);
 
    struct terakan_device const * const device = terakan_gfx_command_writer_device(command_writer);
 
    struct terakan_shader_static const * const shader_static = &device->meta_shaders[shader_index];
 
-   if (BITSET_TEST(command_writer->hw_state_draw.state_ever_written,
-                   TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_PS) &&
-       command_writer->hw_state_draw.sq_pgm_ps == shader_static) {
+   bool const shader_static_modified =
+      !BITSET_TEST(command_writer->hw_state_draw.state_ever_written,
+                   TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_PS) ||
+      command_writer->hw_state_draw.sq_pgm_ps != shader_static;
+   if (!shader_static_modified && shader_index != TERAKAN_META_SHADER_EMPTY_OPAQUE_PS) {
       /* If this shader was set via this function previously, everything else set by this function
        * must still be up to date.
+       * TERAKAN_META_SHADER_EMPTY_OPAQUE_PS, however, is also used for application's draws - ensure
+       * everything is set up consistently.
        */
       return;
    }
 
    command_writer->hw_state_draw.sq_pgm_ps = shader_static;
    terakan_hw_state_draw_written(&command_writer->hw_state_draw,
-                                 TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_PS, true);
-
-   struct terakan_meta_shader const * const shader = terakan_meta_shaders[shader_index];
+                                 TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_PS, shader_static_modified);
 
    terakan_hw_state_draw_set_sq_constants_needed_by_fs(
       &command_writer->hw_state_draw, shader->kcache_needed, shader->resources_needed,

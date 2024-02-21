@@ -697,6 +697,13 @@ struct terakan_meta_shader const terakan_meta_copy_buffer_to_image_ps =
             [BITSET_BITWORD(TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META)] =
                BITSET_BIT(TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META),
          },
+      .stage =
+         {
+            .ps =
+               {
+                  .db_shader_control = TERAKAN_META_DB_SHADER_CONTROL_DEFAULT,
+               },
+         },
 };
 
 struct terakan_meta_shader const
@@ -771,6 +778,13 @@ struct terakan_meta_shader const
             {
                [BITSET_BITWORD(TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META)] =
                   BITSET_BIT(TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META),
+            },
+         .stage =
+            {
+               .ps =
+                  {
+                     .db_shader_control = TERAKAN_META_DB_SHADER_CONTROL_PS_MEMORY_EXPORT,
+                  },
             },
 };
 
@@ -855,10 +869,11 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
       TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RTV_DATA |
       TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_PS;
 
-   terakan_meta_begin_2d_immediate_rects(command_writer, TERAKAN_META_DB_RENDER_OVERRIDE_DEFAULT);
+   terakan_meta_begin_2d_immediate_rects(command_writer, TERAKAN_META_PA_CL_VTE_CNTL_2D,
+                                         TERAKAN_META_DB_RENDER_OVERRIDE_DEFAULT, true);
 
    terakan_meta_set_vs(command_writer, TERAKAN_META_SHADER_POSITION_AND_LAYER_FROM_INDEX_VS);
-   terakan_meta_set_ps(command_writer, TERAKAN_META_SHADER_COPY_BUFFER_TO_IMAGE_PS);
+   terakan_meta_set_ps(command_writer, TERAKAN_META_SHADER_COPY_BUFFER_TO_IMAGE_PS, false);
 
    terakan_meta_begin_cb(command_writer, V_028808_CB_NORMAL, 0xF, 0b1);
 
@@ -927,6 +942,9 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
          terakan_color_descriptor_image_view_to_color_attachment(&color_descriptor);
          terakan_hw_state_draw_set_cb_color(&command_writer->hw_state_draw, 0, image->bo,
                                             &color_descriptor, &color_meta_descriptor, false);
+         terakan_meta_set_db_shader_control_with_rtv(
+            command_writer, terakan_meta_copy_buffer_to_image_ps.stage.ps.db_shader_control,
+            color_descriptor.info);
 
          VkDeviceSize const buffer_size_elements =
             (color_descriptor_layer_count - 1) * buffer_z_pitch +
@@ -996,10 +1014,11 @@ terakan_CmdCopyImageToBuffer2(VkCommandBuffer const commandBuffer,
    command_writer->post_color_image_copy_write_barrier_actions |=
       TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_UAV | TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_PS;
 
-   terakan_meta_begin_2d_immediate_rects(command_writer, TERAKAN_META_DB_RENDER_OVERRIDE_DEFAULT);
+   terakan_meta_begin_2d_immediate_rects(command_writer, TERAKAN_META_PA_CL_VTE_CNTL_2D,
+                                         TERAKAN_META_DB_RENDER_OVERRIDE_DEFAULT, true);
 
    terakan_meta_set_vs(command_writer, TERAKAN_META_SHADER_POSITION_FROM_INDEX_VS);
-   terakan_meta_set_ps(command_writer, TERAKAN_META_SHADER_COPY_IMAGE_TO_BUFFER_PS);
+   terakan_meta_set_ps(command_writer, TERAKAN_META_SHADER_COPY_IMAGE_TO_BUFFER_PS, true);
 
    terakan_meta_begin_cb(command_writer, V_028808_CB_NORMAL, 0xF, 0b0);
 

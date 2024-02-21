@@ -663,6 +663,106 @@ terakan_image_create_color_descriptor(
    return view_slice_max - view_slice_start + 1;
 }
 
+bool
+terakan_image_create_depth_stencil_descriptor(
+   VkImageViewCreateInfo const * const image_view_create_info,
+   struct terakan_depth_stencil_descriptor * const descriptor_out)
+{
+   struct terakan_image const * const image =
+      terakan_image_from_handle(image_view_create_info->image);
+
+   /* The driver allows depth / stencil formats to be used for non-DB purposes (like general
+    * 24_UNORM images), but some images created without VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT
+    * may be incompatible with DB (such as linear). Only allow DB usage if explicitly requested.
+    */
+   if (!(image->vk.usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)) {
+      return false;
+   }
+
+   uint32_t const z_format = terakan_format_depth_get_format(image->vk.format);
+   bool const has_stencil_8 = terakan_format_has_stencil_8(image->vk.format);
+   assert(z_format != V_028040_Z_INVALID || has_stencil_8);
+   if (z_format == V_028040_Z_INVALID && !has_stencil_8) {
+      return false;
+   }
+
+   /* With VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, limiting the number of array layers in the
+    * image to TERAKAN_IMAGE_MAX_TARGET_SLICES, so no need to handle the entire
+    * TERAKAN_IMAGE_MAX_DEPTH_2D_SLICES range.
+    */
+   descriptor_out->view =
+      S_028008_SLICE_START(image_view_create_info->subresourceRange.baseArrayLayer) |
+      S_028008_SLICE_MAX(
+         (image_view_create_info->subresourceRange.layerCount == VK_REMAINING_ARRAY_LAYERS
+             ? (image->vk.image_type == VK_IMAGE_TYPE_3D
+                   ? u_minify(image->vk.extent.depth,
+                              image_view_create_info->subresourceRange.baseMipLevel)
+                   : image->vk.array_layers)
+             : image_view_create_info->subresourceRange.baseArrayLayer +
+                  image_view_create_info->subresourceRange.layerCount) -
+         1);
+
+   /* Depth aspect for images with depth, stencil aspect for stencil-only images, but the relevant
+    * fields are the same.
+    */
+   struct legacy_surf_level const * const first_aspect_level =
+      &image->surface.u.legacy.level[image_view_create_info->subresourceRange.baseMipLevel];
+   /* VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT implies RADEON_SURF_SBUFFER, so the stencil fields
+    * of the surface layout can be used regardless of whether the image has a depth aspect.
+    */
+   assert(!(has_stencil_8 && !image->surface.has_stencil));
+
+   struct terakan_physical_device const * const physical_device =
+      container_of(image->vk.base.device->physical, struct terakan_physical_device const, vk);
+
+   uint32_t const image_va_256b = (uint32_t)(image->va / 256);
+
+   descriptor_out->z_info =
+      S_028040_FORMAT(z_format) |
+      S_028040_ARRAY_MODE(terakan_image_array_mode_ac_to_hw(first_aspect_level->mode)) |
+      S_028040_NUM_BANKS(physical_device->tiling_info.banks_log2 - 1) |
+      S_028040_BANK_WIDTH(util_logbase2(image->surface.u.legacy.bankw)) |
+      S_028040_BANK_HEIGHT(util_logbase2(image->surface.u.legacy.bankh)) |
+      S_028040_MACRO_TILE_ASPECT(util_logbase2(image->surface.u.legacy.mtilea));
+   if (physical_device->chip_family_info.is_r9xx) {
+      descriptor_out->z_info |= S_028040_NUM_SAMPLES(util_logbase2((uint32_t)image->vk.samples));
+   }
+   if (z_format != V_028040_Z_INVALID) {
+      /* ZRANGE_PRECISION can't be set from the GPU based on the value the last clear was actually
+       * done to because it's in DB_Z_INFO, which is used by the kernel driver for surface
+       * validation, so set it according to how the format is commonly used in applications.
+       */
+      descriptor_out->z_info |=
+         S_028040_TILE_SPLIT(
+            terakan_image_tile_split_bytes_to_hw(image->surface.u.legacy.tile_split)) |
+         S_028040_ZRANGE_PRECISION(z_format == V_028040_Z_16 || z_format == V_028040_Z_24);
+      descriptor_out->z_base = image_va_256b + first_aspect_level->offset_256B;
+   } else {
+      descriptor_out->z_base = 0;
+   }
+
+   descriptor_out->stencil_info =
+      S_028044_FORMAT(has_stencil_8 ? V_028044_STENCIL_8 : V_028044_STENCIL_INVALID);
+   if (has_stencil_8) {
+      descriptor_out->stencil_info |= S_028044_TILE_SPLIT(
+         terakan_image_tile_split_bytes_to_hw(image->surface.u.legacy.stencil_tile_split));
+      descriptor_out->stencil_base =
+         image_va_256b + image->surface.u.legacy.zs
+                            .stencil_level[image_view_create_info->subresourceRange.baseMipLevel]
+                            .offset_256B;
+   } else {
+      descriptor_out->stencil_base = 0;
+   }
+
+   /* nblk is expected to have already been aligned appropriately in the surface computation. */
+   descriptor_out->size = S_028058_PITCH_TILE_MAX(first_aspect_level->nblk_x / 8 - 1) |
+                          S_028058_HEIGHT_TILE_MAX(first_aspect_level->nblk_y / 8 - 1);
+   descriptor_out->slice =
+      S_02805C_SLICE_TILE_MAX(first_aspect_level->nblk_x * first_aspect_level->nblk_y / 64 - 1);
+
+   return true;
+}
+
 VKAPI_ATTR void VKAPI_CALL
 terakan_DestroyImage(VkDevice const deviceHandle, VkImage const imageHandle,
                      VkAllocationCallbacks const * const pAllocator)
@@ -762,7 +862,9 @@ terakan_CreateImageView(VkDevice const deviceHandle,
       memset(&image_view->color_meta, 0, sizeof(image_view->color_meta));
    }
 
-   /* TODO(Triang3l): Other descriptor types. */
+   if (!terakan_image_create_depth_stencil_descriptor(pCreateInfo, &image_view->depth_stencil)) {
+      memset(&image_view->depth_stencil, 0, sizeof(image_view->depth_stencil));
+   }
 
    *pView = terakan_image_view_to_handle(image_view);
    return VK_SUCCESS;

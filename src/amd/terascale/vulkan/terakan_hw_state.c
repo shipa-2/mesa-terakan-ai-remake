@@ -441,6 +441,130 @@ terakan_hw_state_draw_emit_pa_sc_aa_mask(struct terakan_gfx_command_writer * con
 }
 
 static void
+terakan_hw_state_draw_emit_db_depth_stencil_buffer(
+   struct terakan_gfx_command_writer * const command_writer)
+{
+   uint32_t * packet;
+   uint32_t bo_reference;
+
+   struct terakan_bo const * const bo = command_writer->hw_state_draw.db_depth_stencil_buffer.bo;
+   if (bo == NULL) {
+      packet = terakan_gfx_command_writer_emit(command_writer, 2 + 2, 0, 0, true);
+      if (unlikely(packet == NULL)) {
+         return;
+      }
+      *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 2, 0);
+      *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028040_DB_Z_INFO);
+      *packet++ = S_028040_FORMAT(V_028040_Z_INVALID);
+      *packet++ = S_028044_FORMAT(V_028044_STENCIL_INVALID);
+      return;
+   }
+
+   struct terakan_depth_stencil_descriptor const * const descriptor =
+      &command_writer->hw_state_draw.db_depth_stencil_buffer.descriptor;
+
+   bool const z_bound = G_028040_FORMAT(descriptor->z_info) != V_028040_Z_INVALID;
+   bool const stencil_bound = G_028044_FORMAT(descriptor->stencil_info) != V_028044_STENCIL_INVALID;
+
+   if (!z_bound && !stencil_bound) {
+      packet = terakan_gfx_command_writer_emit(command_writer, 2 + 2, 0, 0, true);
+      if (unlikely(packet == NULL)) {
+         return;
+      }
+      *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 2, 0);
+      *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028040_DB_Z_INFO);
+      *packet++ = S_028040_FORMAT(V_028040_Z_INVALID);
+      *packet++ = S_028044_FORMAT(V_028044_STENCIL_INVALID);
+      return;
+   }
+
+   /* R_028008_DB_DEPTH_VIEW */
+   packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, 0, 0, true);
+   if (unlikely(packet == NULL)) {
+      return;
+   }
+   *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
+   *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028008_DB_DEPTH_VIEW);
+   *packet++ = descriptor->view;
+
+   if (z_bound && stencil_bound) {
+      /* Single sequence for both depth and stencil. */
+      uint32_t const combined_depth_stencil_register_count =
+         (R_02805C_DB_DEPTH_SLICE - R_028040_DB_Z_INFO) / sizeof(uint32_t) + 1;
+      packet = terakan_gfx_command_writer_emit(
+         command_writer, 2 + combined_depth_stencil_register_count, 1, 4, true);
+      if (unlikely(packet == NULL)) {
+         return;
+      }
+      *packet++ = PKT3(PKT3_SET_CONTEXT_REG, combined_depth_stencil_register_count, 0);
+      *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028040_DB_Z_INFO);
+      *packet++ = descriptor->z_info;
+      *packet++ = descriptor->stencil_info;
+      /* Read bases. */
+      *packet++ = descriptor->z_base;
+      *packet++ = descriptor->stencil_base;
+      /* Write bases. */
+      *packet++ = descriptor->z_base;
+      *packet++ = descriptor->stencil_base;
+      *packet++ = descriptor->size;
+      *packet++ = descriptor->slice;
+      /* BO references are valid only for the last terakan_gfx_command_writer_emit. */
+      bo_reference =
+         terakan_bo_reference_writer_add_reference(&command_writer->base.bo_reference_writer, bo,
+                                                   true, true, TERAKAN_BO_PRIORITY_DEPTH_BUFFER);
+      for (uint32_t relocation_index = 0; relocation_index < 4; ++relocation_index) {
+         terakan_gfx_command_writer_add_bo_relocation(command_writer, &packet, bo_reference);
+      }
+      return;
+   }
+
+   /* Either depth or stencil bound. */
+   assert(z_bound != stencil_bound);
+   {
+      uint32_t const packet_dwords =
+         /* R_028040_DB_Z_INFO, R_028044_DB_STENCIL_INFO */
+         2 + 2 +
+         /* R_028048_DB_Z_READ_BASE or R_02804C_DB_STENCIL_READ_BASE */
+         2 + 1 +
+         /* R_028050_DB_Z_WRITE_BASE or R_028054_DB_STENCIL_WRITE_BASE */
+         2 + 1 +
+         /* R_028058_DB_DEPTH_SIZE, R_02805C_DB_DEPTH_SLICE */
+         2 + 2;
+      packet = terakan_gfx_command_writer_emit(command_writer, packet_dwords, 1, 2, true);
+      if (unlikely(packet == NULL)) {
+         return;
+      }
+      *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 2, 0);
+      *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028040_DB_Z_INFO);
+      *packet++ = descriptor->z_info;
+      *packet++ = descriptor->stencil_info;
+      /* BO references are valid only for the last terakan_gfx_command_writer_emit. */
+      bo_reference =
+         terakan_bo_reference_writer_add_reference(&command_writer->base.bo_reference_writer, bo,
+                                                   true, true, TERAKAN_BO_PRIORITY_DEPTH_BUFFER);
+      /* Read and write bases. */
+      uint32_t const base = z_bound ? descriptor->z_base : descriptor->stencil_base;
+      uint32_t const base_register_offset =
+         z_bound ? TERAKAN_CONTEXT_REG_OFFSET(R_028048_DB_Z_READ_BASE)
+                 : TERAKAN_CONTEXT_REG_OFFSET(R_02804C_DB_STENCIL_READ_BASE);
+      for (uint32_t base_index = 0; base_index < 2; ++base_index) {
+         *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
+         *packet++ = base_register_offset + 2 * base_index;
+         *packet++ = base;
+         terakan_gfx_command_writer_add_bo_relocation(command_writer, &packet, bo_reference);
+      }
+      *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 2, 0);
+      *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028058_DB_DEPTH_SIZE);
+      *packet++ = descriptor->size;
+      *packet++ = descriptor->slice;
+   }
+
+   /* TODO(Triang3l): Higher priority for multisampled depth / stencil buffers (possibly pass the
+    * sample count via the view not only on R9xx, but on R8xx too, but mask it away here on R8xx).
+    */
+}
+
+static void
 terakan_hw_state_draw_emit_db_render_override(
    struct terakan_gfx_command_writer * const command_writer)
 {
@@ -451,6 +575,44 @@ terakan_hw_state_draw_emit_db_render_override(
    *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
    *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_02800C_DB_RENDER_OVERRIDE);
    *packet++ = command_writer->hw_state_draw.db_render_override;
+}
+
+static void
+terakan_hw_state_draw_emit_db_stencilrefmask(
+   struct terakan_gfx_command_writer * const command_writer)
+{
+   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 2, 0, 0, true);
+   if (unlikely(packet == NULL)) {
+      return;
+   }
+   *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 2, 0);
+   *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028430_DB_STENCILREFMASK);
+   memcpy(packet, command_writer->hw_state_draw.db_stencilrefmask_front_back, sizeof(uint32_t) * 2);
+}
+
+static void
+terakan_hw_state_draw_emit_db_depth_control(struct terakan_gfx_command_writer * const command_writer)
+{
+   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, 0, 0, true);
+   if (unlikely(packet == NULL)) {
+      return;
+   }
+   *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
+   *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028800_DB_DEPTH_CONTROL);
+   *packet++ = command_writer->hw_state_draw.db_depth_control;
+}
+
+static void
+terakan_hw_state_draw_emit_db_shader_control(
+   struct terakan_gfx_command_writer * const command_writer)
+{
+   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, 0, 0, true);
+   if (unlikely(packet == NULL)) {
+      return;
+   }
+   *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
+   *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_02880C_DB_SHADER_CONTROL);
+   *packet++ = command_writer->hw_state_draw.db_shader_control;
 }
 
 static void
@@ -1625,8 +1787,15 @@ static terakan_hw_state_draw_emit_function const
       [TERAKAN_HW_STATE_DRAW_INDEX_PA_CL_GB] = terakan_hw_state_draw_emit_pa_cl_gb,
       [TERAKAN_HW_STATE_DRAW_INDEX_PA_SC_AA_SAMPLES] = terakan_hw_state_draw_emit_pa_sc_aa_samples,
       [TERAKAN_HW_STATE_DRAW_INDEX_PA_SC_AA_MASK] = terakan_hw_state_draw_emit_pa_sc_aa_mask,
+      [TERAKAN_HW_STATE_DRAW_INDEX_DB_DEPTH_STENCIL_BUFFER] =
+         terakan_hw_state_draw_emit_db_depth_stencil_buffer,
       [TERAKAN_HW_STATE_DRAW_INDEX_DB_RENDER_OVERRIDE] =
          terakan_hw_state_draw_emit_db_render_override,
+      [TERAKAN_HW_STATE_DRAW_INDEX_DB_STENCILREFMASK] =
+         terakan_hw_state_draw_emit_db_stencilrefmask,
+      [TERAKAN_HW_STATE_DRAW_INDEX_DB_DEPTH_CONTROL] = terakan_hw_state_draw_emit_db_depth_control,
+      [TERAKAN_HW_STATE_DRAW_INDEX_DB_SHADER_CONTROL] =
+         terakan_hw_state_draw_emit_db_shader_control,
       [TERAKAN_HW_STATE_DRAW_INDEX_CB_TARGET_MASK] = terakan_hw_state_draw_emit_cb_target_mask,
       [TERAKAN_HW_STATE_DRAW_INDEX_CB_BLEND_RGBA] = terakan_hw_state_draw_emit_cb_blend_rgba,
       [TERAKAN_HW_STATE_DRAW_INDEX_CB_COLOR_CONTROL] = terakan_hw_state_draw_emit_cb_color_control,

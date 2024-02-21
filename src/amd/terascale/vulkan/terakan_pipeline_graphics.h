@@ -87,10 +87,21 @@ enum terakan_pipeline_graphics_state_index {
 
    TERAKAN_PIPELINE_GRAPHICS_STATE_MULTISAMPLE_END,
 
+   /* Fragment shader. */
+
+   TERAKAN_PIPELINE_GRAPHICS_STATE_FRAGMENT_SHADER_START =
+      TERAKAN_PIPELINE_GRAPHICS_STATE_MULTISAMPLE_END,
+
+   TERAKAN_PIPELINE_GRAPHICS_STATE_DB_STENCILREFMASK,
+
+   TERAKAN_PIPELINE_GRAPHICS_STATE_DB_DEPTH_CONTROL,
+
+   TERAKAN_PIPELINE_GRAPHICS_STATE_FRAGMENT_SHADER_END,
+
    /* Fragment output. */
 
    TERAKAN_PIPELINE_GRAPHICS_STATE_FRAGMENT_OUTPUT_START =
-      TERAKAN_PIPELINE_GRAPHICS_STATE_MULTISAMPLE_END,
+      TERAKAN_PIPELINE_GRAPHICS_STATE_FRAGMENT_SHADER_END,
 
    TERAKAN_PIPELINE_GRAPHICS_STATE_LOGIC_OP_ENABLE,
    TERAKAN_PIPELINE_GRAPHICS_STATE_LOGIC_OP_ROP3,
@@ -162,6 +173,16 @@ struct terakan_pipeline_graphics_multisample {
    uint16_t pa_sc_aa_mask;
 };
 
+struct terakan_pipeline_graphics_fragment_shader {
+   /* TERAKAN_PIPELINE_GRAPHICS_STATE_DB_STENCILREFMASK */
+   uint32_t db_stencilrefmask_clear;
+   uint32_t db_stencilrefmask_front_back[2];
+
+   /* TERAKAN_PIPELINE_GRAPHICS_STATE_DB_DEPTH_CONTROL */
+   uint32_t db_depth_control_clear;
+   uint32_t db_depth_control;
+};
+
 struct terakan_pipeline_graphics_fragment_output {
    /* TERAKAN_PIPELINE_GRAPHICS_STATE_LOGIC_OP_ENABLE */
    bool logic_op_enable;
@@ -214,6 +235,8 @@ struct terakan_pipeline_graphics {
     * and of the fragment output state.
     */
    struct terakan_pipeline_graphics_multisample multisample;
+
+   struct terakan_pipeline_graphics_fragment_shader fragment_shader;
 
    struct terakan_pipeline_graphics_fragment_output fragment_output;
 };

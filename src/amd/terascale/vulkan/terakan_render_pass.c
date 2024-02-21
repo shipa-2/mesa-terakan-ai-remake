@@ -43,6 +43,62 @@ terakan_CmdBeginRendering(VkCommandBuffer const commandBuffer,
    uint32_t clear_attachment_count = 0;
    VkClearAttachment clear_attachments[TERAKAN_COLOR_HW_RTV_COUNT + 1];
 
+   terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_INDEX_DB_DEPTH_STENCIL_BUFFER);
+   state->db_depth_stencil_buffer.bo = NULL;
+   memset(&state->db_depth_stencil_buffer.descriptor, 0,
+          sizeof(state->db_depth_stencil_buffer.descriptor));
+   VkClearDepthStencilValue depth_stencil_clear_value = {};
+   VkImageAspectFlags depth_stencil_clear_aspects = 0;
+   if (pRenderingInfo->pDepthAttachment != NULL) {
+      struct terakan_image_view const * const depth_view =
+         terakan_image_view_from_handle(pRenderingInfo->pDepthAttachment->imageView);
+      if (depth_view != NULL &&
+          G_028040_FORMAT(depth_view->depth_stencil.z_info) != V_028040_Z_INVALID) {
+         state->db_depth_stencil_buffer.bo = depth_view->bo;
+         state->db_depth_stencil_buffer.descriptor.view = depth_view->depth_stencil.view;
+         state->db_depth_stencil_buffer.descriptor.z_info = depth_view->depth_stencil.z_info;
+         state->db_depth_stencil_buffer.descriptor.z_base = depth_view->depth_stencil.z_base;
+         state->db_depth_stencil_buffer.descriptor.size = depth_view->depth_stencil.size;
+         state->db_depth_stencil_buffer.descriptor.slice = depth_view->depth_stencil.slice;
+         if (pRenderingInfo->pDepthAttachment->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) {
+            depth_stencil_clear_value.depth =
+               pRenderingInfo->pDepthAttachment->clearValue.depthStencil.depth;
+            depth_stencil_clear_aspects |= VK_IMAGE_ASPECT_DEPTH_BIT;
+         }
+      }
+   }
+   if (pRenderingInfo->pStencilAttachment != NULL) {
+      struct terakan_image_view const * const stencil_view =
+         terakan_image_view_from_handle(pRenderingInfo->pStencilAttachment->imageView);
+      if (stencil_view != NULL &&
+          G_028044_FORMAT(stencil_view->depth_stencil.stencil_info) != V_028044_STENCIL_INVALID) {
+         if (state->db_depth_stencil_buffer.bo == NULL) {
+            state->db_depth_stencil_buffer.bo = stencil_view->bo;
+            state->db_depth_stencil_buffer.descriptor.view = stencil_view->depth_stencil.view;
+            state->db_depth_stencil_buffer.descriptor.z_info =
+               stencil_view->depth_stencil.z_info &
+               (C_028040_FORMAT & C_028040_ZRANGE_PRECISION & C_028040_TILE_SPLIT);
+            state->db_depth_stencil_buffer.descriptor.size = stencil_view->depth_stencil.size;
+            state->db_depth_stencil_buffer.descriptor.slice = stencil_view->depth_stencil.slice;
+         }
+         state->db_depth_stencil_buffer.descriptor.stencil_info =
+            stencil_view->depth_stencil.stencil_info;
+         state->db_depth_stencil_buffer.descriptor.stencil_base =
+            stencil_view->depth_stencil.stencil_base;
+         if (pRenderingInfo->pStencilAttachment->loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR) {
+            depth_stencil_clear_value.stencil =
+               pRenderingInfo->pStencilAttachment->clearValue.depthStencil.stencil;
+            depth_stencil_clear_aspects |= VK_IMAGE_ASPECT_STENCIL_BIT;
+         }
+      }
+   }
+   if (depth_stencil_clear_aspects) {
+      VkClearAttachment * const clear_depth_stencil_attachment =
+         &clear_attachments[clear_attachment_count++];
+      clear_depth_stencil_attachment->aspectMask = depth_stencil_clear_aspects;
+      clear_depth_stencil_attachment->clearValue.depthStencil = depth_stencil_clear_value;
+   }
+
    terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_INDEX_CB_COLOR_RTV);
    memset(state->cb_color_rtv.attachments, 0, sizeof(state->cb_color_rtv.attachments));
    for (uint32_t color_attachment_index = 0;

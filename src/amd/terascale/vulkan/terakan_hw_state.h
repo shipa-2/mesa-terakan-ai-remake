@@ -137,7 +137,15 @@ enum terakan_hw_state_draw_index {
 
    TERAKAN_HW_STATE_DRAW_INDEX_PA_SC_AA_MASK,
 
+   TERAKAN_HW_STATE_DRAW_INDEX_DB_DEPTH_STENCIL_BUFFER,
+
    TERAKAN_HW_STATE_DRAW_INDEX_DB_RENDER_OVERRIDE,
+
+   TERAKAN_HW_STATE_DRAW_INDEX_DB_STENCILREFMASK,
+
+   TERAKAN_HW_STATE_DRAW_INDEX_DB_DEPTH_CONTROL,
+
+   TERAKAN_HW_STATE_DRAW_INDEX_DB_SHADER_CONTROL,
 
    TERAKAN_HW_STATE_DRAW_INDEX_CB_TARGET_MASK,
 
@@ -255,8 +263,24 @@ struct terakan_hw_state_draw {
    /* TERAKAN_HW_STATE_DRAW_INDEX_PA_SC_AA_MASK */
    uint16_t pa_sc_aa_mask;
 
+   /* TERAKAN_HW_STATE_DRAW_INDEX_DB_DEPTH_STENCIL_BUFFER */
+   struct {
+      struct terakan_bo const * bo;
+      /* The descriptor is undefined if the BO is NULL. */
+      struct terakan_depth_stencil_descriptor descriptor;
+   } db_depth_stencil_buffer;
+
    /* TERAKAN_HW_STATE_DRAW_INDEX_DB_RENDER_OVERRIDE */
    uint32_t db_render_override;
+
+   /* TERAKAN_HW_STATE_DRAW_INDEX_DB_STENCILREFMASK */
+   uint32_t db_stencilrefmask_front_back[2];
+
+   /* TERAKAN_HW_STATE_DRAW_INDEX_DB_DEPTH_CONTROL */
+   uint32_t db_depth_control;
+
+   /* TERAKAN_HW_STATE_DRAW_INDEX_DB_SHADER_CONTROL */
+   uint32_t db_shader_control;
 
    /* TERAKAN_HW_STATE_DRAW_INDEX_CB_TARGET_MASK */
    uint32_t cb_target_mask;
@@ -431,6 +455,11 @@ terakan_hw_state_draw_written(struct terakan_hw_state_draw * const state,
    }
 }
 
+/* Newly added viewports will be initialized to safe values, and all their state will be marked as
+ * modified. If the caller only needs some of the viewport state for its PA and DB setup, it doesn't
+ * need to handle the case of a first-time-used viewport, and can just configure the fields it
+ * needs.
+ */
 void terakan_hw_state_draw_ensure_viewport_count(struct terakan_hw_state_draw * state,
                                                  uint32_t viewport_count);
 

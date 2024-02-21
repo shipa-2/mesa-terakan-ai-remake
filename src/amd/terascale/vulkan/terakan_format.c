@@ -99,8 +99,8 @@ bool
 terakan_format_is_tiled_only(VkFormat const format)
 {
    /* Combined depth and stencil images are always tiled, libdrm_radeon forces tiling for
-    * RADEON_ZBUFFER or RADEON_SBUFFER (which both must be specified so the stencil layout is
-    * computed, so can't omit them if depth / stencil attachment usage is not needed) even when a
+    * RADEON_SURF_ZBUFFER or RADEON_SURF_SBUFFER (which both must be specified so the stencil layout
+    * is computed, so can't omit them if depth / stencil attachment usage is not needed) even when a
     * linear array mode is requested.
     * According to the Gallium R600 driver, compressed textures must always be tiled.
     */

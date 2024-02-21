@@ -267,6 +267,31 @@ terakan_pipeline_graphics_apply_pa_sc_aa_mask(
 }
 
 static void
+terakan_pipeline_graphics_apply_db_stencilrefmask(
+   struct terakan_gfx_command_writer * const command_writer,
+   struct terakan_pipeline_graphics const * const pipeline)
+{
+   for (unsigned face_index = 0; face_index < 2; ++face_index) {
+      terakan_state_draw_replace_fields(
+         &command_writer->state_draw, TERAKAN_STATE_DRAW_INDEX_DB_STENCILREFMASK,
+         &command_writer->state_draw.db_stencilrefmask_front_back[face_index],
+         pipeline->fragment_shader.db_stencilrefmask_clear,
+         pipeline->fragment_shader.db_stencilrefmask_front_back[face_index]);
+   }
+}
+
+static void
+terakan_pipeline_graphics_apply_db_depth_control(
+   struct terakan_gfx_command_writer * const command_writer,
+   struct terakan_pipeline_graphics const * const pipeline)
+{
+   terakan_state_draw_replace_fields(
+      &command_writer->state_draw, TERAKAN_STATE_DRAW_INDEX_DB_DEPTH_CONTROL,
+      &command_writer->state_draw.db_depth_control,
+      pipeline->fragment_shader.db_depth_control_clear, pipeline->fragment_shader.db_depth_control);
+}
+
+static void
 terakan_pipeline_graphics_apply_logic_op_enable(
    struct terakan_gfx_command_writer * const command_writer,
    struct terakan_pipeline_graphics const * const pipeline)
@@ -415,6 +440,10 @@ static terakan_pipeline_graphics_apply_state_function const
          terakan_pipeline_graphics_apply_db_render_override_pre_rasterization,
       [TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SC_AA_MASK] =
          terakan_pipeline_graphics_apply_pa_sc_aa_mask,
+      [TERAKAN_PIPELINE_GRAPHICS_STATE_DB_STENCILREFMASK] =
+         terakan_pipeline_graphics_apply_db_stencilrefmask,
+      [TERAKAN_PIPELINE_GRAPHICS_STATE_DB_DEPTH_CONTROL] =
+         terakan_pipeline_graphics_apply_db_depth_control,
       [TERAKAN_PIPELINE_GRAPHICS_STATE_LOGIC_OP_ENABLE] =
          terakan_pipeline_graphics_apply_logic_op_enable,
       [TERAKAN_PIPELINE_GRAPHICS_STATE_LOGIC_OP_ROP3] =
@@ -799,6 +828,90 @@ terakan_pipeline_graphics_multisample_init(struct terakan_pipeline_graphics * co
 }
 
 static void
+terakan_pipeline_graphics_fragment_shader_state_init(
+   struct terakan_pipeline_graphics * const pipeline,
+   struct vk_graphics_pipeline_state const * const state)
+{
+   /* TERAKAN_PIPELINE_GRAPHICS_STATE_DB_STENCILREFMASK */
+   if (BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_DS_STENCIL_TEST_ENABLE) ||
+       state->ds->stencil.test_enable) {
+      pipeline->fragment_shader.db_stencilrefmask_clear = UINT32_MAX;
+      memset(pipeline->fragment_shader.db_stencilrefmask_front_back, 0,
+             sizeof(pipeline->fragment_shader.db_stencilrefmask_front_back));
+      if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_DS_STENCIL_COMPARE_MASK)) {
+         pipeline->fragment_shader.db_stencilrefmask_clear &= C_028430_STENCILMASK;
+         pipeline->fragment_shader.db_stencilrefmask_front_back[0] |=
+            S_028430_STENCILMASK(state->ds->stencil.front.compare_mask);
+         pipeline->fragment_shader.db_stencilrefmask_front_back[1] |=
+            S_028430_STENCILMASK(state->ds->stencil.back.compare_mask);
+      }
+      if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_DS_STENCIL_WRITE_MASK)) {
+         pipeline->fragment_shader.db_stencilrefmask_clear &= C_028430_STENCILWRITEMASK;
+         pipeline->fragment_shader.db_stencilrefmask_front_back[0] |=
+            S_028430_STENCILWRITEMASK(state->ds->stencil.front.write_mask);
+         pipeline->fragment_shader.db_stencilrefmask_front_back[1] |=
+            S_028430_STENCILWRITEMASK(state->ds->stencil.back.write_mask);
+      }
+      if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_DS_STENCIL_REFERENCE)) {
+         pipeline->fragment_shader.db_stencilrefmask_clear &= C_028430_STENCILREF;
+         pipeline->fragment_shader.db_stencilrefmask_front_back[0] |=
+            S_028430_STENCILREF(state->ds->stencil.front.reference);
+         pipeline->fragment_shader.db_stencilrefmask_front_back[1] |=
+            S_028430_STENCILREF(state->ds->stencil.back.reference);
+      }
+      assert(!((pipeline->fragment_shader.db_stencilrefmask_front_back[0] |
+                pipeline->fragment_shader.db_stencilrefmask_front_back[1]) &
+               pipeline->fragment_shader.db_stencilrefmask_clear));
+      if (pipeline->fragment_shader.db_stencilrefmask_clear != UINT32_MAX) {
+         BITSET_SET(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_DB_STENCILREFMASK);
+      }
+   }
+
+   /* TERAKAN_PIPELINE_GRAPHICS_STATE_DB_DEPTH_CONTROL */
+   pipeline->fragment_shader.db_depth_control_clear = UINT32_MAX;
+   pipeline->fragment_shader.db_depth_control = 0;
+   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_DS_DEPTH_TEST_ENABLE)) {
+      pipeline->fragment_shader.db_depth_control_clear &= C_028800_Z_ENABLE;
+      pipeline->fragment_shader.db_depth_control |= S_028800_Z_ENABLE(state->ds->depth.test_enable);
+   }
+   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_DS_DEPTH_WRITE_ENABLE)) {
+      pipeline->fragment_shader.db_depth_control_clear &= C_028800_Z_WRITE_ENABLE;
+      pipeline->fragment_shader.db_depth_control |=
+         S_028800_Z_WRITE_ENABLE(state->ds->depth.write_enable);
+   }
+   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_DS_DEPTH_COMPARE_OP)) {
+      pipeline->fragment_shader.db_depth_control_clear &= C_028800_ZFUNC;
+      pipeline->fragment_shader.db_depth_control |=
+         S_028800_ZFUNC((uint32_t)state->ds->depth.compare_op);
+   }
+   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_DS_STENCIL_TEST_ENABLE)) {
+      pipeline->fragment_shader.db_depth_control_clear &= C_028800_STENCIL_ENABLE;
+      pipeline->fragment_shader.db_depth_control |=
+         S_028800_STENCIL_ENABLE(state->ds->stencil.test_enable);
+   }
+   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_DS_STENCIL_OP)) {
+      pipeline->fragment_shader.db_depth_control_clear &=
+         C_028800_STENCILFAIL & C_028800_STENCILZPASS & C_028800_STENCILZFAIL &
+         C_028800_STENCILFUNC & C_028800_STENCILFAIL_BF & C_028800_STENCILZPASS_BF &
+         C_028800_STENCILZFAIL_BF & C_028800_STENCILFUNC_BF;
+      pipeline->fragment_shader.db_depth_control |=
+         S_028800_STENCILFAIL((uint32_t)state->ds->stencil.front.op.fail) |
+         S_028800_STENCILZPASS((uint32_t)state->ds->stencil.front.op.pass) |
+         S_028800_STENCILZFAIL((uint32_t)state->ds->stencil.front.op.depth_fail) |
+         S_028800_STENCILFUNC((uint32_t)state->ds->stencil.front.op.compare) |
+         S_028800_STENCILFAIL_BF((uint32_t)state->ds->stencil.back.op.fail) |
+         S_028800_STENCILZPASS_BF((uint32_t)state->ds->stencil.back.op.pass) |
+         S_028800_STENCILZFAIL_BF((uint32_t)state->ds->stencil.back.op.depth_fail) |
+         S_028800_STENCILFUNC_BF((uint32_t)state->ds->stencil.back.op.compare);
+   }
+   assert(!(pipeline->fragment_shader.db_depth_control &
+            pipeline->fragment_shader.db_depth_control_clear));
+   if (pipeline->fragment_shader.db_depth_control_clear != UINT32_MAX) {
+      BITSET_SET(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_DB_DEPTH_CONTROL);
+   }
+}
+
+static void
 terakan_pipeline_graphics_fragment_output_init(struct terakan_pipeline_graphics * const pipeline,
                                                struct vk_graphics_pipeline_state const * const state)
 {
@@ -1003,6 +1116,7 @@ terakan_pipeline_graphics_create(struct terakan_device * const device,
    terakan_pipeline_graphics_pre_rasterization_init(
       pipeline, &state, device->vk.enabled_extensions.EXT_depth_range_unrestricted);
    terakan_pipeline_graphics_multisample_init(pipeline, &state);
+   terakan_pipeline_graphics_fragment_shader_state_init(pipeline, &state);
    terakan_pipeline_graphics_fragment_output_init(pipeline, &state);
 
    *pipeline_out = pipeline;
