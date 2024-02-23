@@ -801,6 +801,8 @@
 #define   G_028040_ZRANGE_PRECISION(x)                 (((x) >> 31) & 0x1)
 #define   C_028040_ZRANGE_PRECISION                    0x7FFFFFFF
 #define   S_028040_TILE_SPLIT(x)                       (((unsigned)(x) & 0x7) << 8)
+#define   G_028040_TILE_SPLIT(x)                       (((x) >> 8) & 0x7)
+#define   C_028040_TILE_SPLIT                          0xFFFFF8FF
 #define   S_028040_NUM_BANKS(x)                        (((unsigned)(x) & 0x3) << 12)
 #define   S_028040_BANK_WIDTH(x)                       (((unsigned)(x) & 0x3) << 16)
 #define   S_028040_BANK_HEIGHT(x)                      (((unsigned)(x) & 0x3) << 20)
