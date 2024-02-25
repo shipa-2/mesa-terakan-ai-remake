@@ -152,6 +152,8 @@ terakan_CmdDraw(VkCommandBuffer const commandBuffer, uint32_t const vertexCount,
    *packet++ = PKT3(PKT3_DRAW_INDEX_AUTO, 3 - 2, 0);
    *packet++ = vertexCount;
    *packet++ = S_0287F0_SOURCE_SELECT(V_0287F0_DI_SRC_SEL_AUTO_INDEX);
+
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -184,4 +186,6 @@ terakan_CmdDrawIndexed(VkCommandBuffer const commandBuffer, uint32_t const index
    *packet++ = firstIndex;
    *packet++ = indexCount;
    *packet++ = S_0287F0_SOURCE_SELECT(V_0287F0_DI_SRC_SEL_DMA);
+
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
 }

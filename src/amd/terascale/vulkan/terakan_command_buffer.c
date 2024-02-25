@@ -454,6 +454,13 @@ static void
 terakan_gfx_command_writer_end_indirect_buffer(
    struct terakan_gfx_command_writer * const command_writer)
 {
+#ifndef NDEBUG
+   assert(
+      !command_writer->is_emitting &&
+      "terakan_gfx_command_writer_emit_done must be called with the final append pointer after "
+      "every command emission");
+#endif
+
    if (command_writer->indirect_buffer == NULL) {
       return;
    }
@@ -498,6 +505,7 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
    *packet++ = PKT3(PKT3_CONTEXT_CONTROL, 1, 0);
    *packet++ = (uint32_t)1 << 31; /* CC0_UPDATE_LOAD_ENABLES(1) */
    *packet++ = (uint32_t)1 << 31; /* CC1_UPDATE_SHADOW_ENABLES(1) */
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
 
    /*
     * Setup graphics context registers outside terakan_hw_state_draw.
@@ -516,6 +524,7 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
        * 8 registers) instead of 0. */
       *packet++ = S_028838_PS_GPRS(0x1E) | S_028838_VS_GPRS(0x1E) | S_028838_GS_GPRS(0x1E) |
                   S_028838_ES_GPRS(0x1E) | S_028838_HS_GPRS(0x1E) | S_028838_LS_GPRS(0x1E);
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
    }
 
    uint32_t const draw_context_regs[] = {
@@ -755,6 +764,8 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
       return;
    }
    memcpy(packet, draw_context_regs, sizeof(draw_context_regs));
+   packet += ARRAY_SIZE(draw_context_regs);
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
 
    if (is_r9xx) {
       /* TODO(Triang3l): Move to hw_state_draw. */
@@ -765,6 +776,7 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
       *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
       *packet++ = TERAKAN_CONTEXT_REG_OFFSET(CM_R_028AA8_IA_MULTI_VGT_PARAM);
       *packet++ = S_028AA8_PRIMGROUP_SIZE(128 - 1);
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
 
       packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, 0, 0, false);
       if (unlikely(packet == NULL)) {
@@ -773,6 +785,7 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
       *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
       *packet++ = TERAKAN_CONTEXT_REG_OFFSET(CM_R_0286FC_SPI_LDS_MGMT);
       *packet++ = 0;
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
 
       /* TODO(Triang3l): Move to hw_state_draw. */
       packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, 0, 0, false);
@@ -783,6 +796,7 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
       *packet++ = TERAKAN_CONTEXT_REG_OFFSET(CM_R_028804_DB_EQAA);
       *packet++ = S_028804_HIGH_QUALITY_INTERSECTIONS(1) | S_028804_INCOHERENT_EQAA_READS(1) |
                   S_028804_STATIC_ANCHOR_ASSOCIATIONS(1);
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
    }
 
    packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, 0, 0, false);
@@ -794,6 +808,7 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
       TERAKAN_CONTEXT_REG_OFFSET(is_r9xx ? CM_R_028BE4_PA_SU_VTX_CNTL : R_028C08_PA_SU_VTX_CNTL);
    *packet++ = S_028C08_PIX_CENTER_HALF(1) | S_028C08_ROUND_MODE(V_028C08_X_ROUND_TO_EVEN) |
                S_028C08_QUANT_MODE(V_028C08_X_1_256TH);
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
 
    /*
     * Setup configuration registers common between graphics and compute.
@@ -832,6 +847,7 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
    *packet++ = 0;
    /* R_008C14_SQ_GLOBAL_GPR_RESOURCE_MGMT_2 */
    *packet++ = 0;
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
 
    /* TODO(Triang3l): Dynamic GPR usage on R8xx - see evergreen_emit_config_state, and also disable
     * them for tessellation, see evergreen_adjust_gprs. Keep them always enabled for R9xx though.
@@ -845,6 +861,7 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
    *packet++ = PKT3(PKT3_SET_CONFIG_REG, 1, 0);
    *packet++ = TERAKAN_CONFIG_REG_OFFSET(R_008D8C_SQ_DYN_GPR_CNTL_PS_FLUSH_REQ);
    *packet++ = S_008D8C_DYN_GPR_ENABLE(1);
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
 
    uint32_t const config_regs[] = {
       /* Remove LS and HS from one SIMD for a hardware bug workaround according to the Gallium R600
@@ -877,6 +894,8 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
       return;
    }
    memcpy(packet, config_regs, sizeof(config_regs));
+   packet += ARRAY_SIZE(config_regs);
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
 
    /*
     * Setup configuration registers for graphics.
@@ -927,6 +946,7 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
       *packet++ = TERAKAN_CONFIG_REG_OFFSET(R_008E2C_SQ_LDS_RESOURCE_MGMT);
       *packet++ = S_008E2C_NUM_PS_LDS(TERAKAN_LIMITS_HW_LDS_SIMD_DWORD_COUNT / 2) |
                   S_008E2C_NUM_LS_LDS(TERAKAN_LIMITS_HW_LDS_SIMD_DWORD_COUNT / 2);
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
    }
 }
 
@@ -957,6 +977,7 @@ terakan_gfx_command_writer_new_indirect_buffer(
    *packet++ = PKT3(PKT3_SET_CTL_CONST, 1, 0);
    *packet++ = TERAKAN_CTL_CONST_OFFSET(R_03CFF4_SQ_VTX_START_INST_LOC);
    *packet++ = UINT32_MAX;
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
 
    terakan_hw_state_draw_indirect_buffer_begun_and_sq_resources_cleared(
       &command_writer->hw_state_draw);
@@ -984,6 +1005,13 @@ terakan_gfx_command_writer_emit(struct terakan_gfx_command_writer * const comman
                                 uint32_t const packet_dwords, uint32_t const bo_count,
                                 uint32_t const relocation_count, bool abort_if_all_state_emitted)
 {
+#ifndef NDEBUG
+   assert(
+      !command_writer->is_emitting &&
+      "terakan_gfx_command_writer_emit_done must be called with the final append pointer after "
+      "every command emission");
+#endif
+
    /* Empty indirect buffer submissions may not be supported by the queue, make sure indirect
     * buffers can't be allocated only to end up being empty.
     */
@@ -1038,6 +1066,10 @@ terakan_gfx_command_writer_emit(struct terakan_gfx_command_writer * const comman
       return NULL;
    }
 
+#ifndef NDEBUG
+   command_writer->is_emitting = true;
+#endif
+
    uint32_t * const indirect_buffer_allocation =
       command_writer->indirect_buffer->indirect_buffer +
       command_writer->indirect_buffer->indirect_buffer_size_dwords;
@@ -1066,6 +1098,7 @@ terakan_gfx_command_writer_emit_event_write_eop_discarding_data(
       terakan_bo_reference_writer_add_reference(&command_writer->base.bo_reference_writer,
                                                 gfx_discard_bo, false, true,
                                                 TERAKAN_BO_PRIORITY_SYNC));
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
@@ -1134,6 +1167,10 @@ terakan_BeginCommandBuffer(VkCommandBuffer const commandBuffer,
 
    gfx_command_writer->is_beginning_indirect_buffer = false;
 
+#ifndef NDEBUG
+   gfx_command_writer->is_emitting = false;
+#endif
+
    gfx_command_writer->pending_barrier_actions = 0;
 
    gfx_command_writer->post_buffer_copy_write_barrier_actions = 0;
@@ -1192,11 +1229,13 @@ terakan_BeginCommandBuffer(VkCommandBuffer const commandBuffer,
       0,
    };
    {
-      uint32_t * const invalidate_cache_packets_ptr = terakan_gfx_command_writer_emit(
+      uint32_t * invalidate_cache_packets_ptr = terakan_gfx_command_writer_emit(
          gfx_command_writer, ARRAY_SIZE(invalidate_caches_packets), 0, 0, false);
       if (likely(invalidate_cache_packets_ptr != NULL)) {
          memcpy(invalidate_cache_packets_ptr, invalidate_caches_packets,
                 sizeof(invalidate_caches_packets));
+         invalidate_cache_packets_ptr += ARRAY_SIZE(invalidate_caches_packets);
+         terakan_gfx_command_writer_emit_done(gfx_command_writer, invalidate_cache_packets_ptr);
       }
    }
 

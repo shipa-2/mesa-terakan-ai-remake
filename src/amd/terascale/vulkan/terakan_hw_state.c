@@ -80,6 +80,7 @@ terakan_hw_state_draw_emit_vgt_index_type(struct terakan_gfx_command_writer * co
    }
    *packet++ = PKT3(PKT3_INDEX_TYPE, 1 - 1, 0);
    *packet++ = command_writer->hw_state_draw.vgt_index_type;
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
 }
 
 static void
@@ -101,6 +102,8 @@ terakan_hw_state_draw_emit_vgt_index_buffer(struct terakan_gfx_command_writer * 
 
    *packet++ = PKT3(EG_PKT3_INDEX_BUFFER_SIZE, 1 - 1, 0);
    *packet++ = command_writer->hw_state_draw.vgt_index_buffer.size;
+
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
 }
 
 static void
@@ -114,6 +117,7 @@ terakan_hw_state_draw_emit_vgt_primitive_type(
    *packet++ = PKT3(PKT3_SET_CONFIG_REG, 1, 0);
    *packet++ = TERAKAN_CONFIG_REG_OFFSET(R_008958_VGT_PRIMITIVE_TYPE);
    *packet++ = command_writer->hw_state_draw.vgt_primitive_type;
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
 }
 
 static void
@@ -126,6 +130,7 @@ terakan_hw_state_draw_emit_vgt_index_offset(struct terakan_gfx_command_writer * 
    *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
    *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028408_VGT_INDX_OFFSET);
    *packet++ = command_writer->hw_state_draw.vgt_index_offset;
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
 }
 
 static void
@@ -143,6 +148,7 @@ terakan_hw_state_draw_emit_sq_pgm_fs(struct terakan_gfx_command_writer * const c
       terakan_bo_reference_writer_add_reference(&command_writer->base.bo_reference_writer,
                                                 command_writer->hw_state_draw.sq_pgm_fs.bo, true,
                                                 false, TERAKAN_BO_PRIORITY_SHADER_BINARY));
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
 }
 
 static void
@@ -194,6 +200,8 @@ terakan_hw_state_draw_emit_sq_pgm_vs(struct terakan_gfx_command_writer * const c
    *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
    *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_02881C_PA_CL_VS_OUT_CNTL);
    *packet++ = shader->stage.vs.pa_cl_vs_out_cntl;
+
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
 }
 
 static void
@@ -258,6 +266,8 @@ terakan_hw_state_draw_emit_sq_pgm_ps(struct terakan_gfx_command_writer * const c
    *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
    *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_02823C_CB_SHADER_MASK);
    *packet++ = shader->stage.ps.cb_shader_mask;
+
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
 }
 
 static void
@@ -271,6 +281,7 @@ terakan_hw_state_draw_emit_sq_vtx_start_inst_loc(
    *packet++ = PKT3(PKT3_SET_CTL_CONST, 1, 0);
    *packet++ = TERAKAN_CTL_CONST_OFFSET(R_03CFF4_SQ_VTX_START_INST_LOC);
    *packet++ = command_writer->hw_state_draw.sq_vtx_start_inst_loc;
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
 }
 
 static void
@@ -283,6 +294,7 @@ terakan_hw_state_draw_emit_pa_cl_clip_cntl(struct terakan_gfx_command_writer * c
    *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
    *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028810_PA_CL_CLIP_CNTL);
    *packet++ = command_writer->hw_state_draw.pa_cl_clip_cntl;
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
 }
 
 static void
@@ -296,6 +308,7 @@ terakan_hw_state_draw_emit_pa_su_sc_mode_cntl(
    *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
    *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028814_PA_SU_SC_MODE_CNTL);
    *packet++ = command_writer->hw_state_draw.pa_su_sc_mode_cntl;
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
 }
 
 static void
@@ -308,6 +321,7 @@ terakan_hw_state_draw_emit_pa_cl_vte_cntl(struct terakan_gfx_command_writer * co
    *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
    *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028818_PA_CL_VTE_CNTL);
    *packet++ = command_writer->hw_state_draw.pa_cl_vte_cntl;
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
 }
 
 static void
@@ -321,6 +335,7 @@ terakan_hw_state_draw_emit_pa_sc_mode_cntl_0(
    *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
    *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028A48_PA_SC_MODE_CNTL_0);
    *packet++ = command_writer->hw_state_draw.pa_sc_mode_cntl_0;
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
 }
 
 static void
@@ -340,6 +355,8 @@ terakan_hw_state_draw_emit_pa_cl_gb(struct terakan_gfx_command_writer * const co
          : R_028C0C_PA_CL_GB_VERT_CLIP_ADJ);
    memcpy(packet, command_writer->hw_state_draw.pa_cl_gb_vert_horz_clip_disc_adj,
           sizeof(float) * 4);
+   packet += 4;
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
 }
 
 static void
@@ -390,6 +407,8 @@ terakan_hw_state_draw_emit_pa_sc_aa_samples(struct terakan_gfx_command_writer * 
          memcpy(packet, sample_locs, sizeof(uint32_t) * num_sample_loc_dwords);
          packet += num_sample_loc_dwords;
       }
+
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
    } else {
       uint32_t * packet = terakan_gfx_command_writer_emit(
          command_writer, (2 + 1) + (2 + num_sample_loc_dwords * 4), 0, 0, true);
@@ -408,6 +427,8 @@ terakan_hw_state_draw_emit_pa_sc_aa_samples(struct terakan_gfx_command_writer * 
          memcpy(packet, sample_locs, sizeof(uint32_t) * num_sample_loc_dwords);
          packet += num_sample_loc_dwords;
       }
+
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
    }
 }
 
@@ -426,6 +447,7 @@ terakan_hw_state_draw_emit_pa_sc_aa_mask(struct terakan_gfx_command_writer * con
       *packet++ = TERAKAN_CONTEXT_REG_OFFSET(CM_R_028C38_PA_SC_AA_MASK_X0Y0_X1Y0);
       *packet++ = aa_mask;
       *packet++ = aa_mask;
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
    } else {
       aa_mask &= (((uint32_t)1 << 8) - 1) | ((((uint32_t)1 << 8) - 1) << 16);
       aa_mask |= aa_mask << 8;
@@ -437,6 +459,7 @@ terakan_hw_state_draw_emit_pa_sc_aa_mask(struct terakan_gfx_command_writer * con
       *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
       *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028C3C_PA_SC_AA_MASK);
       *packet++ = aa_mask;
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
    }
 }
 
@@ -457,6 +480,7 @@ terakan_hw_state_draw_emit_db_depth_stencil_buffer(
       *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028040_DB_Z_INFO);
       *packet++ = S_028040_FORMAT(V_028040_Z_INVALID);
       *packet++ = S_028044_FORMAT(V_028044_STENCIL_INVALID);
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
       return;
    }
 
@@ -475,6 +499,7 @@ terakan_hw_state_draw_emit_db_depth_stencil_buffer(
       *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028040_DB_Z_INFO);
       *packet++ = S_028040_FORMAT(V_028040_Z_INVALID);
       *packet++ = S_028044_FORMAT(V_028044_STENCIL_INVALID);
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
       return;
    }
 
@@ -486,6 +511,7 @@ terakan_hw_state_draw_emit_db_depth_stencil_buffer(
    *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
    *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028008_DB_DEPTH_VIEW);
    *packet++ = descriptor->view;
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
 
    if (z_bound && stencil_bound) {
       /* Single sequence for both depth and stencil. */
@@ -515,6 +541,7 @@ terakan_hw_state_draw_emit_db_depth_stencil_buffer(
       for (uint32_t relocation_index = 0; relocation_index < 4; ++relocation_index) {
          terakan_gfx_command_writer_add_bo_relocation(command_writer, &packet, bo_reference);
       }
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
       return;
    }
 
@@ -557,6 +584,7 @@ terakan_hw_state_draw_emit_db_depth_stencil_buffer(
       *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028058_DB_DEPTH_SIZE);
       *packet++ = descriptor->size;
       *packet++ = descriptor->slice;
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
    }
 
    /* TODO(Triang3l): Higher priority for multisampled depth / stencil buffers (possibly pass the
@@ -575,6 +603,7 @@ terakan_hw_state_draw_emit_db_render_override(
    *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
    *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_02800C_DB_RENDER_OVERRIDE);
    *packet++ = command_writer->hw_state_draw.db_render_override;
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
 }
 
 static void
@@ -588,6 +617,8 @@ terakan_hw_state_draw_emit_db_stencilrefmask(
    *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 2, 0);
    *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028430_DB_STENCILREFMASK);
    memcpy(packet, command_writer->hw_state_draw.db_stencilrefmask_front_back, sizeof(uint32_t) * 2);
+   packet += 2;
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
 }
 
 static void
@@ -600,6 +631,7 @@ terakan_hw_state_draw_emit_db_depth_control(struct terakan_gfx_command_writer * 
    *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
    *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028800_DB_DEPTH_CONTROL);
    *packet++ = command_writer->hw_state_draw.db_depth_control;
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
 }
 
 static void
@@ -613,6 +645,7 @@ terakan_hw_state_draw_emit_db_shader_control(
    *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
    *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_02880C_DB_SHADER_CONTROL);
    *packet++ = command_writer->hw_state_draw.db_shader_control;
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
 }
 
 static void
@@ -625,6 +658,7 @@ terakan_hw_state_draw_emit_cb_target_mask(struct terakan_gfx_command_writer * co
    *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
    *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028238_CB_TARGET_MASK);
    *packet++ = command_writer->hw_state_draw.cb_target_mask;
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
 }
 
 static void
@@ -637,6 +671,8 @@ terakan_hw_state_draw_emit_cb_blend_rgba(struct terakan_gfx_command_writer * con
    *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 4, 0);
    *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028414_CB_BLEND_RED);
    memcpy(packet, command_writer->hw_state_draw.cb_blend_rgba, sizeof(float) * 4);
+   packet += 4;
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
 }
 
 static void
@@ -649,6 +685,8 @@ terakan_hw_state_draw_emit_cb_color_control(struct terakan_gfx_command_writer * 
    *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
    *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028808_CB_COLOR_CONTROL);
    *packet++ = command_writer->hw_state_draw.cb_color_control;
+
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
 }
 
 static void
@@ -688,6 +726,7 @@ terakan_hw_state_draw_emit_viewport(struct terakan_gfx_command_writer * const co
             memcpy(packet, viewport->pa_cl_vport_z_scale_offset, sizeof(float) * 2);
             packet += 2;
          }
+         terakan_gfx_command_writer_emit_done(command_writer, packet);
       }
 
       if (BITSET_TEST(viewport->state_modified,
@@ -701,6 +740,7 @@ terakan_hw_state_draw_emit_viewport(struct terakan_gfx_command_writer * const co
             TERAKAN_CONTEXT_REG_OFFSET(R_028250_PA_SC_VPORT_SCISSOR_0_TL) + 2 * viewport_index;
          memcpy(packet, viewport->pa_sc_vport_scissor, sizeof(uint32_t) * 2);
          packet += 2;
+         terakan_gfx_command_writer_emit_done(command_writer, packet);
       }
 
       if (BITSET_TEST(viewport->state_modified,
@@ -713,6 +753,7 @@ terakan_hw_state_draw_emit_viewport(struct terakan_gfx_command_writer * const co
          *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_0282D0_PA_SC_VPORT_ZMIN_0) + 2 * viewport_index;
          memcpy(packet, viewport->pa_sc_vport_z_min_max, sizeof(float) * 2);
          packet += 2;
+         terakan_gfx_command_writer_emit_done(command_writer, packet);
       }
 
       /* Keep state_modified of each viewport zero if the bit isn't set in viewports_modified so
@@ -747,6 +788,8 @@ terakan_hw_state_draw_emit_cb_blend_control(struct terakan_gfx_command_writer * 
       *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028780_CB_BLEND0_CONTROL) + range_start;
       memcpy(packet, &state->cb_blend_control.cb_blend_control[range_start],
              sizeof(uint32_t) * range_length);
+      packet += range_length;
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
 
       state->cb_blend_control.modified &= (uint8_t)~BITFIELD_RANGE(range_start, range_length);
    }
@@ -818,6 +861,8 @@ terakan_hw_state_draw_emit_cb_color(struct terakan_gfx_command_writer * const co
               ++relocation_index) {
             terakan_gfx_command_writer_add_bo_relocation(command_writer, &packet, bo_reference);
          }
+
+         terakan_gfx_command_writer_emit_done(command_writer, packet);
       } else {
          /* Set only the INFO of the unbound target, including the MRT 1 export format for
           * dual-source blending, to the specified value, not requiring any relocations.
@@ -830,6 +875,7 @@ terakan_hw_state_draw_emit_cb_color(struct terakan_gfx_command_writer * const co
          *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
          *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028C70_CB_COLOR0_INFO + register_offset);
          *packet++ = descriptor->info;
+         terakan_gfx_command_writer_emit_done(command_writer, packet);
       }
 
       state->cb_color.modified &= ~((uint16_t)1 << color_index);
@@ -877,6 +923,8 @@ terakan_hw_state_draw_emit_sq_kcache_buffer(
                                                    TERAKAN_BO_PRIORITY_UNIFORM_BUFFER));
    }
 
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
+
    return true;
 }
 
@@ -897,6 +945,7 @@ terakan_hw_state_draw_emit_resource(struct terakan_gfx_command_writer * const co
       *packet++ = PKT3(PKT3_SET_CTL_CONST, 1, 0);
       *packet++ = TERAKAN_CTL_CONST_OFFSET(R_03FF04_SQ_TEX_RESOURCE_CLEAR);
       *packet++ = global_index;
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
       return true;
    }
 
@@ -933,6 +982,8 @@ terakan_hw_state_draw_emit_resource(struct terakan_gfx_command_writer * const co
       terakan_gfx_command_writer_add_bo_relocation(command_writer, &packet, bo_reference);
    }
 
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
+
    return true;
 }
 
@@ -947,6 +998,8 @@ terakan_hw_state_draw_emit_sq_sampler(struct terakan_gfx_command_writer * const 
    *packet++ = PKT3(PKT3_SET_SAMPLER, 3, 0);
    *packet++ = 3 * global_index;
    memcpy(packet, sampler, sizeof(uint32_t) * 3);
+   packet += 3;
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
    return true;
 }
 
@@ -963,6 +1016,8 @@ terakan_hw_state_draw_emit_sq_sampler_border_color(
    *packet++ = index_register_offset;
    *packet++ = stage_local_index;
    memcpy(packet, border_color, sizeof(float) * 4);
+   packet += 4;
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
    return true;
 }
 

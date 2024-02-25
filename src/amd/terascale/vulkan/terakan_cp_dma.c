@@ -68,6 +68,7 @@ terakan_cp_dma_sync_cp_me(struct terakan_gfx_command_writer * const command_writ
    terakan_gfx_command_writer_add_bo_relocation(command_writer, &packet, discard_bo_reference);
    /* Destination. */
    terakan_gfx_command_writer_add_bo_relocation(command_writer, &packet, discard_bo_reference);
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
 }
 
 static void
@@ -122,6 +123,7 @@ terakan_cp_dma_copy(struct terakan_gfx_command_writer * const command_writer,
          command_writer, &packet,
          terakan_bo_reference_writer_add_reference(&command_writer->base.bo_reference_writer,
                                                    dst_bo, false, true, dst_bo_priority));
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
       current_src_va_aligned += command_copy_size;
       current_dst_va_src_aligned += command_copy_size;
       src_aligned_size_remaining -= command_copy_size;
@@ -146,6 +148,7 @@ terakan_cp_dma_copy(struct terakan_gfx_command_writer * const command_writer,
          command_writer, &packet,
          terakan_bo_reference_writer_add_reference(&command_writer->base.bo_reference_writer,
                                                    dst_bo, false, true, dst_bo_priority));
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
    }
 
    /* Align the internal total amount counter. */
@@ -171,6 +174,7 @@ terakan_cp_dma_copy(struct terakan_gfx_command_writer * const command_writer,
       terakan_gfx_command_writer_add_bo_relocation(command_writer, &packet, discard_bo_reference);
       /* Destination. */
       terakan_gfx_command_writer_add_bo_relocation(command_writer, &packet, discard_bo_reference);
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
    }
 }
 

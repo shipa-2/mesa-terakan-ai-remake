@@ -221,6 +221,10 @@ struct terakan_gfx_command_writer {
 
    bool is_beginning_indirect_buffer;
 
+#ifndef NDEBUG
+   bool is_emitting;
+#endif
+
    enum terakan_barrier_action_flags pending_barrier_actions;
 
    /* Actions the next barrier with srcAccessMask & TRANSFER_WRITE, srcStageMask & COPY should
@@ -242,18 +246,39 @@ struct terakan_gfx_command_writer {
 TERAKAN_DEVICE_DEFINE_OBJECT_SHORTCUTS(gfx_command_writer,
                                        terakan_command_writer_device(&gfx_command_writer->base))
 
+static inline void
+terakan_gfx_command_writer_emit_done(ASSERTED struct terakan_gfx_command_writer * command_writer,
+                                     ASSERTED uint32_t const * const final_append_ptr)
+{
+#ifndef NDEBUG
+   assert(command_writer->is_emitting);
+   assert(final_append_ptr ==
+             command_writer->indirect_buffer->indirect_buffer +
+             command_writer->indirect_buffer->indirect_buffer_size_dwords);
+   command_writer->is_emitting = false;
+#endif
+}
+
 /* Entry point for emitting packets.
+ *
  * Allocates space for `packet_dwords` and `relocation_count` relocations, and assumes that the
  * application will write them all.
  * `packet_dwords` must not be 0.
+ *
  * Also ensures that `bo_count` calls to `terakan_bo_reference_writer_add_reference` for
  * `terakan_gfx_command_writer::bo_reference_writer` will succeed (regardless of which BOs are
  * specified).
+ *
  * Switches to the next indirect buffer and reapplies the state if needed.
+ *
  * Returns a pointer to the packet dwords, or NULL if failed to allocate (the result must be
  * checked).
+ *
  * The returned BO reference allocation is valid within the current command buffer recording until
  * the next `terakan_gfx_command_writer_emit` call for it.
+ *
+ * After writing, terakan_gfx_command_writer_emit_done must be called with the actual append pointer
+ * for the end of the emission to verify that packet_dwords have been written via it.
  */
 uint32_t * terakan_gfx_command_writer_emit(struct terakan_gfx_command_writer * command_writer,
                                            uint32_t packet_dwords, uint32_t bo_count,
@@ -265,6 +290,9 @@ terakan_gfx_command_writer_add_bo_relocation(
    struct terakan_gfx_command_writer const * const command_writer,
    uint32_t ** const indirect_buffer_append_ptr, uint32_t const bo_reference)
 {
+#ifndef NDEBUG
+   assert(command_writer->is_emitting);
+#endif
    if (terakan_gfx_command_writer_physical_device(command_writer)->gfx_bo_relocation_type ==
        TERAKAN_BO_RELOCATION_TYPE_DRM_NOP) {
       *((*indirect_buffer_append_ptr)++) = PKT3(PKT3_NOP, 0, 0);

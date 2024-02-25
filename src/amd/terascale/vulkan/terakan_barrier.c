@@ -262,6 +262,7 @@ terakan_barrier_emit_event_write(struct terakan_gfx_command_writer * const comma
    }
    *packet++ = PKT3(PKT3_EVENT_WRITE, 0, 0);
    *packet++ = event;
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
 }
 
 void
@@ -395,6 +396,7 @@ terakan_barrier_emit_pending_actions(struct terakan_gfx_command_writer * const c
       *surface_sync_packet++ = UINT32_MAX; /* CP_COHER_SIZE */
       *surface_sync_packet++ = 0;          /* CP_COHER_BASE */
       *surface_sync_packet++ = 10;         /* POLL_INTERVAL */
+      terakan_gfx_command_writer_emit_done(command_writer, surface_sync_packet);
    }
 
    /* Wait until all synchronization in ME is done before starting new PFP reads if PFP is in the
@@ -409,6 +411,7 @@ terakan_barrier_emit_pending_actions(struct terakan_gfx_command_writer * const c
       }
       *pfp_sync_me_packet++ = PKT3(PKT3_PFP_SYNC_ME, 0, 0);
       *pfp_sync_me_packet++ = 0;
+      terakan_gfx_command_writer_emit_done(command_writer, pfp_sync_me_packet);
    }
 }
 

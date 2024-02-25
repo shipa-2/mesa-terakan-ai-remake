@@ -552,6 +552,8 @@ terakan_meta_emit_rect_3_vertices_draw(struct terakan_gfx_command_writer * const
                                                    index_buffer_bo, true, false,
                                                    TERAKAN_BO_PRIORITY_INDEX_BUFFER));
 
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
+
       return;
    }
 
@@ -569,4 +571,7 @@ terakan_meta_emit_rect_3_vertices_draw(struct terakan_gfx_command_writer * const
    *packet++ = ARRAY_SIZE(vertices);
    *packet++ = S_0287F0_SOURCE_SELECT(V_0287F0_DI_SRC_SEL_IMMEDIATE);
    memcpy(packet, vertices, sizeof(vertices));
+   packet += ARRAY_SIZE(vertices);
+
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
 }
