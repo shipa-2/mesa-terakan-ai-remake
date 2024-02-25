@@ -535,18 +535,20 @@ terakan_pipeline_graphics_vertex_input_init(struct terakan_pipeline_graphics * c
 {
    VkResult result;
 
-   /* TERAKAN_PIPELINE_GRAPHICS_STATE_VGT_PRIMITIVE_TYPE */
-   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_IA_PRIMITIVE_TOPOLOGY)) {
-      pipeline->vertex_input.vgt_primitive_type =
-         terakan_state_draw_primitive_topology_vgt_primitive_type(state->ia->primitive_topology);
-      BITSET_SET(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_VGT_PRIMITIVE_TYPE);
+   if (state->ia != NULL) {
+      /* TERAKAN_PIPELINE_GRAPHICS_STATE_VGT_PRIMITIVE_TYPE */
+      if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_IA_PRIMITIVE_TOPOLOGY)) {
+         pipeline->vertex_input.vgt_primitive_type =
+            terakan_state_draw_primitive_topology_vgt_primitive_type(state->ia->primitive_topology);
+         BITSET_SET(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_VGT_PRIMITIVE_TYPE);
+      }
    }
 
    /* TERAKAN_PIPELINE_GRAPHICS_STATE_SQ_PGM_FS,
     * TERAKAN_PIPELINE_GRAPHICS_STATE_SQ_RESOURCES_FS_STRIDE,
     * TERAKAN_PIPELINE_GRAPHICS_STATE_SQ_PGM_FS_2048_STRIDE_WORKAROUND
     */
-   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_VI)) {
+   if (state->vi != NULL && !BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_VI)) {
       struct terakan_vertex_input_static_state * const fs_state = &pipeline->vertex_input.sq_pgm_fs;
 
       bool const is_r9xx = terakan_device_physical_device(device)->chip_family_info.is_r9xx;
@@ -683,91 +685,103 @@ terakan_pipeline_graphics_pre_rasterization_init(
    struct terakan_pipeline_graphics * const pipeline,
    struct vk_graphics_pipeline_state const * const state, bool const depth_range_unrestricted)
 {
-   /* TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SC_VPORT_Z_MIN_0_MAX_1,
-    * TERAKAN_PIPELINE_GRAPHICS_STATE_DB_RENDER_OVERRIDE_PRE_RASTERIZATION
-    */
-   pipeline->pre_rasterization.db_render_override_clear = UINT32_MAX;
-   pipeline->pre_rasterization.db_render_override = 0;
-   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_RS_DEPTH_CLAMP_ENABLE)) {
-      if (depth_range_unrestricted) {
-         pipeline->pre_rasterization.db_render_override_clear &= C_02800C_DISABLE_VIEWPORT_CLAMP;
-         pipeline->pre_rasterization.db_render_override |=
-            S_02800C_DISABLE_VIEWPORT_CLAMP(!state->rs->depth_clamp_enable);
-      } else {
-         pipeline->pre_rasterization.pa_sc_vport_z_min_0_max_1 = !state->rs->depth_clamp_enable;
-         BITSET_SET(pipeline->static_state,
-                    TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SC_VPORT_Z_MIN_0_MAX_1);
-      }
-   }
-   assert(!(pipeline->pre_rasterization.db_render_override &
-            pipeline->pre_rasterization.db_render_override_clear));
-   if (pipeline->pre_rasterization.db_render_override_clear != UINT32_MAX) {
-      BITSET_SET(pipeline->static_state,
-                 TERAKAN_PIPELINE_GRAPHICS_STATE_DB_RENDER_OVERRIDE_PRE_RASTERIZATION);
-   }
-
-   /* TERAKAN_PIPELINE_GRAPHICS_STATE_VIEWPORT_COUNT */
-   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_VP_VIEWPORT_COUNT)) {
-      assert(state->vp->viewport_count <= ARRAY_SIZE(pipeline->pre_rasterization.viewports));
-      pipeline->pre_rasterization.viewport_count = state->vp->viewport_count;
-      BITSET_SET(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_VIEWPORT_COUNT);
-      /* TERAKAN_PIPELINE_GRAPHICS_STATE_VIEWPORT */
-      if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_VP_VIEWPORTS)) {
-         for (uint32_t viewport_index = 0; viewport_index < state->vp->viewport_count;
-              ++viewport_index) {
-            terakan_state_draw_viewport_translate(
-               &state->vp->viewports[viewport_index],
-               &pipeline->pre_rasterization.viewports[viewport_index]);
+   if (state->rs != NULL) {
+      /* TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SC_VPORT_Z_MIN_0_MAX_1,
+       * TERAKAN_PIPELINE_GRAPHICS_STATE_DB_RENDER_OVERRIDE_PRE_RASTERIZATION
+       */
+      pipeline->pre_rasterization.db_render_override_clear = UINT32_MAX;
+      pipeline->pre_rasterization.db_render_override = 0;
+      if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_RS_DEPTH_CLAMP_ENABLE)) {
+         if (depth_range_unrestricted) {
+            pipeline->pre_rasterization.db_render_override_clear &= C_02800C_DISABLE_VIEWPORT_CLAMP;
+            pipeline->pre_rasterization.db_render_override |=
+               S_02800C_DISABLE_VIEWPORT_CLAMP(!state->rs->depth_clamp_enable);
+         } else {
+            pipeline->pre_rasterization.pa_sc_vport_z_min_0_max_1 = !state->rs->depth_clamp_enable;
+            BITSET_SET(pipeline->static_state,
+                       TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SC_VPORT_Z_MIN_0_MAX_1);
          }
-         BITSET_SET(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_VIEWPORT);
+      }
+      assert(!(pipeline->pre_rasterization.db_render_override &
+               pipeline->pre_rasterization.db_render_override_clear));
+      if (pipeline->pre_rasterization.db_render_override_clear != UINT32_MAX) {
+         BITSET_SET(pipeline->static_state,
+                    TERAKAN_PIPELINE_GRAPHICS_STATE_DB_RENDER_OVERRIDE_PRE_RASTERIZATION);
       }
    }
 
-   /* TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SC_VPORT_GENERIC_SCISSOR */
-   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_VP_SCISSORS)) {
-      assert(state->vp->scissor_count <=
-             ARRAY_SIZE(pipeline->pre_rasterization.pa_sc_vport_generic_scissor_tl_br_xy));
-      pipeline->pre_rasterization.pa_sc_vport_generic_scissor_count = state->vp->scissor_count;
-      for (uint32_t scissor_index = 0; scissor_index < state->vp->scissor_count; ++scissor_index) {
-         terakan_state_translate_window_rect_unpacked(
-            &state->vp->scissors[scissor_index],
-            pipeline->pre_rasterization.pa_sc_vport_generic_scissor_tl_br_xy[scissor_index][0]);
+   if (state->vp != NULL) {
+      /* TERAKAN_PIPELINE_GRAPHICS_STATE_VIEWPORT_COUNT */
+      if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_VP_VIEWPORT_COUNT)) {
+         assert(state->vp->viewport_count <= ARRAY_SIZE(pipeline->pre_rasterization.viewports));
+         pipeline->pre_rasterization.viewport_count = state->vp->viewport_count;
+         BITSET_SET(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_VIEWPORT_COUNT);
+         /* TERAKAN_PIPELINE_GRAPHICS_STATE_VIEWPORT */
+         if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_VP_VIEWPORTS)) {
+            for (uint32_t viewport_index = 0; viewport_index < state->vp->viewport_count;
+                 ++viewport_index) {
+               terakan_state_draw_viewport_translate(
+                  &state->vp->viewports[viewport_index],
+                  &pipeline->pre_rasterization.viewports[viewport_index]);
+            }
+            BITSET_SET(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_VIEWPORT);
+         }
       }
-      BITSET_SET(pipeline->static_state,
-                 TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SC_VPORT_GENERIC_SCISSOR);
+
+      /* TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SC_VPORT_GENERIC_SCISSOR */
+      if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_VP_SCISSORS)) {
+         assert(state->vp->scissor_count <=
+                ARRAY_SIZE(pipeline->pre_rasterization.pa_sc_vport_generic_scissor_tl_br_xy));
+         pipeline->pre_rasterization.pa_sc_vport_generic_scissor_count = state->vp->scissor_count;
+         for (uint32_t scissor_index = 0; scissor_index < state->vp->scissor_count;
+              ++scissor_index) {
+            terakan_state_translate_window_rect_unpacked(
+               &state->vp->scissors[scissor_index],
+               pipeline->pre_rasterization.pa_sc_vport_generic_scissor_tl_br_xy[scissor_index][0]);
+         }
+         BITSET_SET(pipeline->static_state,
+                    TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SC_VPORT_GENERIC_SCISSOR);
+      }
    }
 
    /* TERAKAN_PIPELINE_GRAPHICS_STATE_PA_CL_CLIP_CNTL */
    pipeline->pre_rasterization.pa_cl_clip_cntl_clear = UINT32_MAX;
    pipeline->pre_rasterization.pa_cl_clip_cntl = 0;
-   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_VP_DEPTH_CLIP_NEGATIVE_ONE_TO_ONE)) {
-      pipeline->pre_rasterization.pa_cl_clip_cntl_clear &= C_028810_DX_CLIP_SPACE_DEF;
-      pipeline->pre_rasterization.pa_cl_clip_cntl |=
-         S_028810_DX_CLIP_SPACE_DEF(!state->vp->depth_clip_negative_one_to_one);
+   if (state->vp != NULL) {
+      if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_VP_DEPTH_CLIP_NEGATIVE_ONE_TO_ONE)) {
+         pipeline->pre_rasterization.pa_cl_clip_cntl_clear &= C_028810_DX_CLIP_SPACE_DEF;
+         pipeline->pre_rasterization.pa_cl_clip_cntl |=
+            S_028810_DX_CLIP_SPACE_DEF(!state->vp->depth_clip_negative_one_to_one);
+      }
    }
-   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_RS_RASTERIZER_DISCARD_ENABLE)) {
-      pipeline->pre_rasterization.pa_cl_clip_cntl_clear &=
-         TERAKAN_STATE_DRAW_RASTERIZER_DISCARD_ENABLE_PA_CL_CLIP_CNTL_CLEAR;
-      pipeline->pre_rasterization.pa_cl_clip_cntl |=
-         terakan_state_draw_rasterizer_discard_enable_pa_cl_clip_cntl(
-            state->rs->rasterizer_discard_enable);
+   if (state->rs != NULL) {
+      if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_RS_RASTERIZER_DISCARD_ENABLE)) {
+         pipeline->pre_rasterization.pa_cl_clip_cntl_clear &=
+            TERAKAN_STATE_DRAW_RASTERIZER_DISCARD_ENABLE_PA_CL_CLIP_CNTL_CLEAR;
+         pipeline->pre_rasterization.pa_cl_clip_cntl |=
+            terakan_state_draw_rasterizer_discard_enable_pa_cl_clip_cntl(
+               state->rs->rasterizer_discard_enable);
+      }
    }
    pipeline->pre_rasterization.cmd_set_depth_clamp_enable_sets_depth_clip_enable = false;
-   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_RS_DEPTH_CLIP_ENABLE)) {
-      if (state->rs->depth_clip_enable == VK_MESA_DEPTH_CLIP_ENABLE_NOT_CLAMP) {
-         pipeline->pre_rasterization.cmd_set_depth_clamp_enable_sets_depth_clip_enable = true;
-         if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_RS_DEPTH_CLAMP_ENABLE)) {
+   if (state->rs != NULL) {
+      if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_RS_DEPTH_CLIP_ENABLE)) {
+         if (state->rs->depth_clip_enable == VK_MESA_DEPTH_CLIP_ENABLE_NOT_CLAMP) {
+            pipeline->pre_rasterization.cmd_set_depth_clamp_enable_sets_depth_clip_enable = true;
+            if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_RS_DEPTH_CLAMP_ENABLE)) {
+               pipeline->pre_rasterization.pa_cl_clip_cntl_clear &=
+                  TERAKAN_STATE_DRAW_DEPTH_CLIP_ENABLE_PA_CL_CLIP_CNTL_CLEAR;
+               pipeline->pre_rasterization.pa_cl_clip_cntl |=
+                  terakan_state_draw_depth_clip_enable_pa_cl_clip_cntl(
+                     !state->rs->depth_clamp_enable);
+            }
+         } else {
             pipeline->pre_rasterization.pa_cl_clip_cntl_clear &=
                TERAKAN_STATE_DRAW_DEPTH_CLIP_ENABLE_PA_CL_CLIP_CNTL_CLEAR;
             pipeline->pre_rasterization.pa_cl_clip_cntl |=
-               terakan_state_draw_depth_clip_enable_pa_cl_clip_cntl(!state->rs->depth_clamp_enable);
+               terakan_state_draw_depth_clip_enable_pa_cl_clip_cntl(state->rs->depth_clip_enable ==
+                                                                    VK_MESA_DEPTH_CLIP_ENABLE_TRUE);
          }
-      } else {
-         pipeline->pre_rasterization.pa_cl_clip_cntl_clear &=
-            TERAKAN_STATE_DRAW_DEPTH_CLIP_ENABLE_PA_CL_CLIP_CNTL_CLEAR;
-         pipeline->pre_rasterization.pa_cl_clip_cntl |=
-            terakan_state_draw_depth_clip_enable_pa_cl_clip_cntl(state->rs->depth_clip_enable ==
-                                                                 VK_MESA_DEPTH_CLIP_ENABLE_TRUE);
       }
    }
    assert(!(pipeline->pre_rasterization.pa_cl_clip_cntl &
@@ -776,43 +790,46 @@ terakan_pipeline_graphics_pre_rasterization_init(
       BITSET_SET(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_PA_CL_CLIP_CNTL);
    }
 
-   /* TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SU_SC_MODE_CNTL */
-   pipeline->pre_rasterization.pa_su_sc_mode_cntl_clear = UINT32_MAX;
-   pipeline->pre_rasterization.pa_su_sc_mode_cntl = 0;
-   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_RS_POLYGON_MODE)) {
-      pipeline->pre_rasterization.pa_su_sc_mode_cntl_clear &=
-         TERAKAN_STATE_DRAW_POLYGON_MODE_PA_SU_SC_MODE_CNTL_CLEAR;
-      pipeline->pre_rasterization.pa_su_sc_mode_cntl |=
-         terakan_state_draw_polygon_mode_pa_su_sc_mode_cntl(state->rs->polygon_mode);
-   }
-   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_RS_CULL_MODE)) {
-      pipeline->pre_rasterization.pa_su_sc_mode_cntl_clear &=
-         TERAKAN_STATE_DRAW_CULL_MODE_PA_SU_SC_MODE_CNTL_CLEAR;
-      pipeline->pre_rasterization.pa_su_sc_mode_cntl |=
-         terakan_state_draw_cull_mode_pa_su_sc_mode_cntl(state->rs->cull_mode);
-   }
-   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_RS_FRONT_FACE)) {
-      pipeline->pre_rasterization.pa_su_sc_mode_cntl_clear &=
-         TERAKAN_STATE_DRAW_FRONT_FACE_PA_SU_SC_MODE_CNTL_CLEAR;
-      pipeline->pre_rasterization.pa_su_sc_mode_cntl |=
-         terakan_state_draw_front_face_pa_su_sc_mode_cntl(state->rs->front_face);
-   }
-   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_RS_PROVOKING_VERTEX)) {
-      pipeline->pre_rasterization.pa_su_sc_mode_cntl_clear &=
-         TERAKAN_STATE_DRAW_PROVOKING_VERTEX_MODE_PA_SU_SC_MODE_CNTL_CLEAR;
-      pipeline->pre_rasterization.pa_su_sc_mode_cntl |=
-         terakan_state_draw_provoking_vertex_mode_pa_su_sc_mode_cntl(state->rs->provoking_vertex);
-   }
-   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_RS_DEPTH_BIAS_ENABLE)) {
-      pipeline->pre_rasterization.pa_su_sc_mode_cntl_clear &=
-         TERAKAN_STATE_DRAW_DEPTH_BIAS_ENABLE_PA_SU_SC_MODE_CNTL_CLEAR;
-      pipeline->pre_rasterization.pa_su_sc_mode_cntl |=
-         terakan_state_draw_depth_bias_enable_pa_su_sc_mode_cntl(state->rs->depth_bias.enable);
-   }
-   assert(!(pipeline->pre_rasterization.pa_su_sc_mode_cntl &
-            pipeline->pre_rasterization.pa_su_sc_mode_cntl_clear));
-   if (pipeline->pre_rasterization.pa_su_sc_mode_cntl_clear != UINT32_MAX) {
-      BITSET_SET(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SU_SC_MODE_CNTL);
+   if (state->rs != NULL) {
+      /* TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SU_SC_MODE_CNTL */
+      pipeline->pre_rasterization.pa_su_sc_mode_cntl_clear = UINT32_MAX;
+      pipeline->pre_rasterization.pa_su_sc_mode_cntl = 0;
+      if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_RS_POLYGON_MODE)) {
+         pipeline->pre_rasterization.pa_su_sc_mode_cntl_clear &=
+            TERAKAN_STATE_DRAW_POLYGON_MODE_PA_SU_SC_MODE_CNTL_CLEAR;
+         pipeline->pre_rasterization.pa_su_sc_mode_cntl |=
+            terakan_state_draw_polygon_mode_pa_su_sc_mode_cntl(state->rs->polygon_mode);
+      }
+      if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_RS_CULL_MODE)) {
+         pipeline->pre_rasterization.pa_su_sc_mode_cntl_clear &=
+            TERAKAN_STATE_DRAW_CULL_MODE_PA_SU_SC_MODE_CNTL_CLEAR;
+         pipeline->pre_rasterization.pa_su_sc_mode_cntl |=
+            terakan_state_draw_cull_mode_pa_su_sc_mode_cntl(state->rs->cull_mode);
+      }
+      if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_RS_FRONT_FACE)) {
+         pipeline->pre_rasterization.pa_su_sc_mode_cntl_clear &=
+            TERAKAN_STATE_DRAW_FRONT_FACE_PA_SU_SC_MODE_CNTL_CLEAR;
+         pipeline->pre_rasterization.pa_su_sc_mode_cntl |=
+            terakan_state_draw_front_face_pa_su_sc_mode_cntl(state->rs->front_face);
+      }
+      if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_RS_PROVOKING_VERTEX)) {
+         pipeline->pre_rasterization.pa_su_sc_mode_cntl_clear &=
+            TERAKAN_STATE_DRAW_PROVOKING_VERTEX_MODE_PA_SU_SC_MODE_CNTL_CLEAR;
+         pipeline->pre_rasterization.pa_su_sc_mode_cntl |=
+            terakan_state_draw_provoking_vertex_mode_pa_su_sc_mode_cntl(
+               state->rs->provoking_vertex);
+      }
+      if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_RS_DEPTH_BIAS_ENABLE)) {
+         pipeline->pre_rasterization.pa_su_sc_mode_cntl_clear &=
+            TERAKAN_STATE_DRAW_DEPTH_BIAS_ENABLE_PA_SU_SC_MODE_CNTL_CLEAR;
+         pipeline->pre_rasterization.pa_su_sc_mode_cntl |=
+            terakan_state_draw_depth_bias_enable_pa_su_sc_mode_cntl(state->rs->depth_bias.enable);
+      }
+      assert(!(pipeline->pre_rasterization.pa_su_sc_mode_cntl &
+               pipeline->pre_rasterization.pa_su_sc_mode_cntl_clear));
+      if (pipeline->pre_rasterization.pa_su_sc_mode_cntl_clear != UINT32_MAX) {
+         BITSET_SET(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SU_SC_MODE_CNTL);
+      }
    }
 }
 
@@ -820,10 +837,12 @@ static void
 terakan_pipeline_graphics_multisample_init(struct terakan_pipeline_graphics * const pipeline,
                                            struct vk_graphics_pipeline_state const * const state)
 {
-   /* TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SC_AA_MASK */
-   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_MS_SAMPLE_MASK)) {
-      pipeline->multisample.pa_sc_aa_mask = (uint16_t)state->ms->sample_mask;
-      BITSET_SET(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SC_AA_MASK);
+   if (state->ms != NULL) {
+      /* TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SC_AA_MASK */
+      if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_MS_SAMPLE_MASK)) {
+         pipeline->multisample.pa_sc_aa_mask = (uint16_t)state->ms->sample_mask;
+         BITSET_SET(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SC_AA_MASK);
+      }
    }
 }
 
@@ -832,82 +851,85 @@ terakan_pipeline_graphics_fragment_shader_state_init(
    struct terakan_pipeline_graphics * const pipeline,
    struct vk_graphics_pipeline_state const * const state)
 {
-   /* TERAKAN_PIPELINE_GRAPHICS_STATE_DB_STENCILREFMASK */
-   if (BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_DS_STENCIL_TEST_ENABLE) ||
-       state->ds->stencil.test_enable) {
-      pipeline->fragment_shader.db_stencilrefmask_clear = UINT32_MAX;
-      memset(pipeline->fragment_shader.db_stencilrefmask_front_back, 0,
-             sizeof(pipeline->fragment_shader.db_stencilrefmask_front_back));
-      if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_DS_STENCIL_COMPARE_MASK)) {
-         pipeline->fragment_shader.db_stencilrefmask_clear &= C_028430_STENCILMASK;
-         pipeline->fragment_shader.db_stencilrefmask_front_back[0] |=
-            S_028430_STENCILMASK(state->ds->stencil.front.compare_mask);
-         pipeline->fragment_shader.db_stencilrefmask_front_back[1] |=
-            S_028430_STENCILMASK(state->ds->stencil.back.compare_mask);
+   if (state->ds != NULL) {
+      /* TERAKAN_PIPELINE_GRAPHICS_STATE_DB_STENCILREFMASK */
+      if (BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_DS_STENCIL_TEST_ENABLE) ||
+          state->ds->stencil.test_enable) {
+         pipeline->fragment_shader.db_stencilrefmask_clear = UINT32_MAX;
+         memset(pipeline->fragment_shader.db_stencilrefmask_front_back, 0,
+                sizeof(pipeline->fragment_shader.db_stencilrefmask_front_back));
+         if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_DS_STENCIL_COMPARE_MASK)) {
+            pipeline->fragment_shader.db_stencilrefmask_clear &= C_028430_STENCILMASK;
+            pipeline->fragment_shader.db_stencilrefmask_front_back[0] |=
+               S_028430_STENCILMASK(state->ds->stencil.front.compare_mask);
+            pipeline->fragment_shader.db_stencilrefmask_front_back[1] |=
+               S_028430_STENCILMASK(state->ds->stencil.back.compare_mask);
+         }
+         if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_DS_STENCIL_WRITE_MASK)) {
+            pipeline->fragment_shader.db_stencilrefmask_clear &= C_028430_STENCILWRITEMASK;
+            pipeline->fragment_shader.db_stencilrefmask_front_back[0] |=
+               S_028430_STENCILWRITEMASK(state->ds->stencil.front.write_mask);
+            pipeline->fragment_shader.db_stencilrefmask_front_back[1] |=
+               S_028430_STENCILWRITEMASK(state->ds->stencil.back.write_mask);
+         }
+         if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_DS_STENCIL_REFERENCE)) {
+            pipeline->fragment_shader.db_stencilrefmask_clear &= C_028430_STENCILREF;
+            pipeline->fragment_shader.db_stencilrefmask_front_back[0] |=
+               S_028430_STENCILREF(state->ds->stencil.front.reference);
+            pipeline->fragment_shader.db_stencilrefmask_front_back[1] |=
+               S_028430_STENCILREF(state->ds->stencil.back.reference);
+         }
+         assert(!((pipeline->fragment_shader.db_stencilrefmask_front_back[0] |
+                   pipeline->fragment_shader.db_stencilrefmask_front_back[1]) &
+                  pipeline->fragment_shader.db_stencilrefmask_clear));
+         if (pipeline->fragment_shader.db_stencilrefmask_clear != UINT32_MAX) {
+            BITSET_SET(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_DB_STENCILREFMASK);
+         }
       }
-      if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_DS_STENCIL_WRITE_MASK)) {
-         pipeline->fragment_shader.db_stencilrefmask_clear &= C_028430_STENCILWRITEMASK;
-         pipeline->fragment_shader.db_stencilrefmask_front_back[0] |=
-            S_028430_STENCILWRITEMASK(state->ds->stencil.front.write_mask);
-         pipeline->fragment_shader.db_stencilrefmask_front_back[1] |=
-            S_028430_STENCILWRITEMASK(state->ds->stencil.back.write_mask);
-      }
-      if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_DS_STENCIL_REFERENCE)) {
-         pipeline->fragment_shader.db_stencilrefmask_clear &= C_028430_STENCILREF;
-         pipeline->fragment_shader.db_stencilrefmask_front_back[0] |=
-            S_028430_STENCILREF(state->ds->stencil.front.reference);
-         pipeline->fragment_shader.db_stencilrefmask_front_back[1] |=
-            S_028430_STENCILREF(state->ds->stencil.back.reference);
-      }
-      assert(!((pipeline->fragment_shader.db_stencilrefmask_front_back[0] |
-                pipeline->fragment_shader.db_stencilrefmask_front_back[1]) &
-               pipeline->fragment_shader.db_stencilrefmask_clear));
-      if (pipeline->fragment_shader.db_stencilrefmask_clear != UINT32_MAX) {
-         BITSET_SET(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_DB_STENCILREFMASK);
-      }
-   }
 
-   /* TERAKAN_PIPELINE_GRAPHICS_STATE_DB_DEPTH_CONTROL */
-   pipeline->fragment_shader.db_depth_control_clear = UINT32_MAX;
-   pipeline->fragment_shader.db_depth_control = 0;
-   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_DS_DEPTH_TEST_ENABLE)) {
-      pipeline->fragment_shader.db_depth_control_clear &= C_028800_Z_ENABLE;
-      pipeline->fragment_shader.db_depth_control |= S_028800_Z_ENABLE(state->ds->depth.test_enable);
-   }
-   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_DS_DEPTH_WRITE_ENABLE)) {
-      pipeline->fragment_shader.db_depth_control_clear &= C_028800_Z_WRITE_ENABLE;
-      pipeline->fragment_shader.db_depth_control |=
-         S_028800_Z_WRITE_ENABLE(state->ds->depth.write_enable);
-   }
-   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_DS_DEPTH_COMPARE_OP)) {
-      pipeline->fragment_shader.db_depth_control_clear &= C_028800_ZFUNC;
-      pipeline->fragment_shader.db_depth_control |=
-         S_028800_ZFUNC((uint32_t)state->ds->depth.compare_op);
-   }
-   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_DS_STENCIL_TEST_ENABLE)) {
-      pipeline->fragment_shader.db_depth_control_clear &= C_028800_STENCIL_ENABLE;
-      pipeline->fragment_shader.db_depth_control |=
-         S_028800_STENCIL_ENABLE(state->ds->stencil.test_enable);
-   }
-   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_DS_STENCIL_OP)) {
-      pipeline->fragment_shader.db_depth_control_clear &=
-         C_028800_STENCILFAIL & C_028800_STENCILZPASS & C_028800_STENCILZFAIL &
-         C_028800_STENCILFUNC & C_028800_STENCILFAIL_BF & C_028800_STENCILZPASS_BF &
-         C_028800_STENCILZFAIL_BF & C_028800_STENCILFUNC_BF;
-      pipeline->fragment_shader.db_depth_control |=
-         S_028800_STENCILFAIL((uint32_t)state->ds->stencil.front.op.fail) |
-         S_028800_STENCILZPASS((uint32_t)state->ds->stencil.front.op.pass) |
-         S_028800_STENCILZFAIL((uint32_t)state->ds->stencil.front.op.depth_fail) |
-         S_028800_STENCILFUNC((uint32_t)state->ds->stencil.front.op.compare) |
-         S_028800_STENCILFAIL_BF((uint32_t)state->ds->stencil.back.op.fail) |
-         S_028800_STENCILZPASS_BF((uint32_t)state->ds->stencil.back.op.pass) |
-         S_028800_STENCILZFAIL_BF((uint32_t)state->ds->stencil.back.op.depth_fail) |
-         S_028800_STENCILFUNC_BF((uint32_t)state->ds->stencil.back.op.compare);
-   }
-   assert(!(pipeline->fragment_shader.db_depth_control &
-            pipeline->fragment_shader.db_depth_control_clear));
-   if (pipeline->fragment_shader.db_depth_control_clear != UINT32_MAX) {
-      BITSET_SET(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_DB_DEPTH_CONTROL);
+      /* TERAKAN_PIPELINE_GRAPHICS_STATE_DB_DEPTH_CONTROL */
+      pipeline->fragment_shader.db_depth_control_clear = UINT32_MAX;
+      pipeline->fragment_shader.db_depth_control = 0;
+      if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_DS_DEPTH_TEST_ENABLE)) {
+         pipeline->fragment_shader.db_depth_control_clear &= C_028800_Z_ENABLE;
+         pipeline->fragment_shader.db_depth_control |=
+            S_028800_Z_ENABLE(state->ds->depth.test_enable);
+      }
+      if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_DS_DEPTH_WRITE_ENABLE)) {
+         pipeline->fragment_shader.db_depth_control_clear &= C_028800_Z_WRITE_ENABLE;
+         pipeline->fragment_shader.db_depth_control |=
+            S_028800_Z_WRITE_ENABLE(state->ds->depth.write_enable);
+      }
+      if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_DS_DEPTH_COMPARE_OP)) {
+         pipeline->fragment_shader.db_depth_control_clear &= C_028800_ZFUNC;
+         pipeline->fragment_shader.db_depth_control |=
+            S_028800_ZFUNC((uint32_t)state->ds->depth.compare_op);
+      }
+      if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_DS_STENCIL_TEST_ENABLE)) {
+         pipeline->fragment_shader.db_depth_control_clear &= C_028800_STENCIL_ENABLE;
+         pipeline->fragment_shader.db_depth_control |=
+            S_028800_STENCIL_ENABLE(state->ds->stencil.test_enable);
+      }
+      if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_DS_STENCIL_OP)) {
+         pipeline->fragment_shader.db_depth_control_clear &=
+            C_028800_STENCILFAIL & C_028800_STENCILZPASS & C_028800_STENCILZFAIL &
+            C_028800_STENCILFUNC & C_028800_STENCILFAIL_BF & C_028800_STENCILZPASS_BF &
+            C_028800_STENCILZFAIL_BF & C_028800_STENCILFUNC_BF;
+         pipeline->fragment_shader.db_depth_control |=
+            S_028800_STENCILFAIL((uint32_t)state->ds->stencil.front.op.fail) |
+            S_028800_STENCILZPASS((uint32_t)state->ds->stencil.front.op.pass) |
+            S_028800_STENCILZFAIL((uint32_t)state->ds->stencil.front.op.depth_fail) |
+            S_028800_STENCILFUNC((uint32_t)state->ds->stencil.front.op.compare) |
+            S_028800_STENCILFAIL_BF((uint32_t)state->ds->stencil.back.op.fail) |
+            S_028800_STENCILZPASS_BF((uint32_t)state->ds->stencil.back.op.pass) |
+            S_028800_STENCILZFAIL_BF((uint32_t)state->ds->stencil.back.op.depth_fail) |
+            S_028800_STENCILFUNC_BF((uint32_t)state->ds->stencil.back.op.compare);
+      }
+      assert(!(pipeline->fragment_shader.db_depth_control &
+               pipeline->fragment_shader.db_depth_control_clear));
+      if (pipeline->fragment_shader.db_depth_control_clear != UINT32_MAX) {
+         BITSET_SET(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_DB_DEPTH_CONTROL);
+      }
    }
 }
 
@@ -915,103 +937,108 @@ static void
 terakan_pipeline_graphics_fragment_output_init(struct terakan_pipeline_graphics * const pipeline,
                                                struct vk_graphics_pipeline_state const * const state)
 {
-   /* TERAKAN_PIPELINE_GRAPHICS_STATE_LOGIC_OP_ENABLE */
-   bool logic_op_potentially_enabled = true;
-   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_LOGIC_OP_ENABLE)) {
-      bool const logic_op_enable = state->cb->logic_op_enable;
-      pipeline->fragment_output.logic_op_enable = logic_op_enable;
-      BITSET_SET(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_LOGIC_OP_ENABLE);
-      logic_op_potentially_enabled = logic_op_enable;
-   }
-
-   /* TERAKAN_PIPELINE_GRAPHICS_STATE_LOGIC_OP_ROP3
-    * Optimize out if the logical operation is known to be disabled.
-    */
-   if (logic_op_potentially_enabled && !BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_LOGIC_OP)) {
-      pipeline->fragment_output.logic_op_rop3 =
-         terakan_state_draw_logic_op_rop3((VkLogicOp)state->cb->logic_op);
-      BITSET_SET(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_LOGIC_OP_ROP3);
-   }
-
-   /* TERAKAN_PIPELINE_GRAPHICS_STATE_CB_BLEND_RGBA */
-   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_BLEND_CONSTANTS)) {
-      memcpy(pipeline->fragment_output.cb_blend_rgba, state->cb->blend_constants,
-             sizeof(float) * 4);
-      BITSET_SET(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_CB_BLEND_RGBA);
-   }
-
-   /* Must be ignored if all states using it are dynamic, don't insert assertions unless it's
-    * actually used.
-    */
-   pipeline->fragment_output.color_blend_attachment_count = state->cb->attachment_count;
-
-   memset(pipeline->fragment_output.cb_blend_control, 0,
-          sizeof(pipeline->fragment_output.cb_blend_control));
-
-   /* TERAKAN_PIPELINE_GRAPHICS_STATE_CB_BLEND_CONTROL_ENABLE */
-   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_BLEND_ENABLES)) {
-      for (uint32_t attachment_index = 0;
-           attachment_index < pipeline->fragment_output.color_blend_attachment_count;
-           ++attachment_index) {
-         pipeline->fragment_output.cb_blend_control[attachment_index] |=
-            S_028780_BLEND_CONTROL_ENABLE(state->cb->attachments[attachment_index].blend_enable);
+   if (state->cb != NULL) {
+      /* TERAKAN_PIPELINE_GRAPHICS_STATE_LOGIC_OP_ENABLE */
+      bool logic_op_potentially_enabled = true;
+      if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_LOGIC_OP_ENABLE)) {
+         bool const logic_op_enable = state->cb->logic_op_enable;
+         pipeline->fragment_output.logic_op_enable = logic_op_enable;
+         BITSET_SET(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_LOGIC_OP_ENABLE);
+         logic_op_potentially_enabled = logic_op_enable;
       }
-      BITSET_SET(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_CB_BLEND_CONTROL_ENABLE);
-   }
 
-   /* TERAKAN_PIPELINE_GRAPHICS_STATE_CB_BLEND_CONTROL_EQUATION */
-   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_BLEND_EQUATIONS)) {
-      for (uint32_t attachment_index = 0;
-           attachment_index < pipeline->fragment_output.color_blend_attachment_count;
-           ++attachment_index) {
-         struct vk_color_blend_attachment_state const * const attachment =
-            &state->cb->attachments[attachment_index];
-         bool const allow_dual_source = attachment_index == 0;
-         /* According to VkPipelineColorBlendAttachmentState VUIDs, all factors and operations must
-          * be valid values regardless of blendEnable, so there's no need to handle blendEnable
-          * being static here.
-          */
-         pipeline->fragment_output.cb_blend_control[attachment_index] |=
-            S_028780_COLOR_SRCBLEND(terakan_state_draw_blend_factor_translate(
-               attachment->src_color_blend_factor, allow_dual_source)) |
-            S_028780_COLOR_DESTBLEND(terakan_state_draw_blend_factor_translate(
-               attachment->dst_color_blend_factor, allow_dual_source)) |
-            S_028780_COLOR_COMB_FCN(
-               terakan_state_draw_blend_op_translate(attachment->color_blend_op));
-         if (attachment->src_alpha_blend_factor != attachment->src_color_blend_factor ||
-             attachment->dst_alpha_blend_factor != attachment->dst_color_blend_factor ||
-             attachment->alpha_blend_op != attachment->color_blend_op) {
+      /* TERAKAN_PIPELINE_GRAPHICS_STATE_LOGIC_OP_ROP3
+       * Optimize out if the logical operation is known to be disabled.
+       */
+      if (logic_op_potentially_enabled &&
+          !BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_LOGIC_OP)) {
+         pipeline->fragment_output.logic_op_rop3 =
+            terakan_state_draw_logic_op_rop3((VkLogicOp)state->cb->logic_op);
+         BITSET_SET(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_LOGIC_OP_ROP3);
+      }
+
+      /* TERAKAN_PIPELINE_GRAPHICS_STATE_CB_BLEND_RGBA */
+      if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_BLEND_CONSTANTS)) {
+         memcpy(pipeline->fragment_output.cb_blend_rgba, state->cb->blend_constants,
+                sizeof(float) * 4);
+         BITSET_SET(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_CB_BLEND_RGBA);
+      }
+
+      /* Must be ignored if all states using it are dynamic, don't insert assertions unless it's
+       * actually used.
+       */
+      pipeline->fragment_output.color_blend_attachment_count = state->cb->attachment_count;
+
+      memset(pipeline->fragment_output.cb_blend_control, 0,
+             sizeof(pipeline->fragment_output.cb_blend_control));
+
+      /* TERAKAN_PIPELINE_GRAPHICS_STATE_CB_BLEND_CONTROL_ENABLE */
+      if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_BLEND_ENABLES)) {
+         for (uint32_t attachment_index = 0;
+              attachment_index < pipeline->fragment_output.color_blend_attachment_count;
+              ++attachment_index) {
             pipeline->fragment_output.cb_blend_control[attachment_index] |=
-               S_028780_SEPARATE_ALPHA_BLEND(1) |
-               S_028780_ALPHA_SRCBLEND(terakan_state_draw_blend_factor_translate(
-                  attachment->src_alpha_blend_factor, allow_dual_source)) |
-               S_028780_ALPHA_DESTBLEND(terakan_state_draw_blend_factor_translate(
-                  attachment->dst_alpha_blend_factor, allow_dual_source)) |
-               S_028780_ALPHA_COMB_FCN(
-                  terakan_state_draw_blend_op_translate(attachment->alpha_blend_op));
+               S_028780_BLEND_CONTROL_ENABLE(state->cb->attachments[attachment_index].blend_enable);
          }
+         BITSET_SET(pipeline->static_state,
+                    TERAKAN_PIPELINE_GRAPHICS_STATE_CB_BLEND_CONTROL_ENABLE);
       }
-      BITSET_SET(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_CB_BLEND_CONTROL_EQUATION);
-   }
 
-   /* TERAKAN_PIPELINE_GRAPHICS_STATE_COLOR_ATTACHMENT_WRITE_MASK */
-   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_WRITE_MASKS)) {
-      for (uint32_t attachment_index = 0;
-           attachment_index < pipeline->fragment_output.color_blend_attachment_count;
-           ++attachment_index) {
-         pipeline->fragment_output.color_attachment_write_masks[attachment_index] =
-            state->cb->attachments[attachment_index].write_mask & 0b1111;
+      /* TERAKAN_PIPELINE_GRAPHICS_STATE_CB_BLEND_CONTROL_EQUATION */
+      if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_BLEND_EQUATIONS)) {
+         for (uint32_t attachment_index = 0;
+              attachment_index < pipeline->fragment_output.color_blend_attachment_count;
+              ++attachment_index) {
+            struct vk_color_blend_attachment_state const * const attachment =
+               &state->cb->attachments[attachment_index];
+            bool const allow_dual_source = attachment_index == 0;
+            /* According to VkPipelineColorBlendAttachmentState VUIDs, all factors and operations
+             * must be valid values regardless of blendEnable, so there's no need to handle
+             * blendEnable being static here.
+             */
+            pipeline->fragment_output.cb_blend_control[attachment_index] |=
+               S_028780_COLOR_SRCBLEND(terakan_state_draw_blend_factor_translate(
+                  attachment->src_color_blend_factor, allow_dual_source)) |
+               S_028780_COLOR_DESTBLEND(terakan_state_draw_blend_factor_translate(
+                  attachment->dst_color_blend_factor, allow_dual_source)) |
+               S_028780_COLOR_COMB_FCN(
+                  terakan_state_draw_blend_op_translate(attachment->color_blend_op));
+            if (attachment->src_alpha_blend_factor != attachment->src_color_blend_factor ||
+                attachment->dst_alpha_blend_factor != attachment->dst_color_blend_factor ||
+                attachment->alpha_blend_op != attachment->color_blend_op) {
+               pipeline->fragment_output.cb_blend_control[attachment_index] |=
+                  S_028780_SEPARATE_ALPHA_BLEND(1) |
+                  S_028780_ALPHA_SRCBLEND(terakan_state_draw_blend_factor_translate(
+                     attachment->src_alpha_blend_factor, allow_dual_source)) |
+                  S_028780_ALPHA_DESTBLEND(terakan_state_draw_blend_factor_translate(
+                     attachment->dst_alpha_blend_factor, allow_dual_source)) |
+                  S_028780_ALPHA_COMB_FCN(
+                     terakan_state_draw_blend_op_translate(attachment->alpha_blend_op));
+            }
+         }
+         BITSET_SET(pipeline->static_state,
+                    TERAKAN_PIPELINE_GRAPHICS_STATE_CB_BLEND_CONTROL_EQUATION);
       }
-      BITSET_SET(pipeline->static_state,
-                 TERAKAN_PIPELINE_GRAPHICS_STATE_COLOR_ATTACHMENT_WRITE_MASK);
-   }
 
-   /* TERAKAN_PIPELINE_GRAPHICS_STATE_COLOR_ATTACHMENT_WRITE_ENABLE */
-   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_COLOR_WRITE_ENABLES)) {
-      pipeline->fragment_output.color_attachment_write_enable =
-         state->cb->color_write_enables & BITFIELD_MASK(TERAKAN_COLOR_HW_RTV_COUNT);
-      BITSET_SET(pipeline->static_state,
-                 TERAKAN_PIPELINE_GRAPHICS_STATE_COLOR_ATTACHMENT_WRITE_ENABLE);
+      /* TERAKAN_PIPELINE_GRAPHICS_STATE_COLOR_ATTACHMENT_WRITE_MASK */
+      if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_WRITE_MASKS)) {
+         for (uint32_t attachment_index = 0;
+              attachment_index < pipeline->fragment_output.color_blend_attachment_count;
+              ++attachment_index) {
+            pipeline->fragment_output.color_attachment_write_masks[attachment_index] =
+               state->cb->attachments[attachment_index].write_mask & 0b1111;
+         }
+         BITSET_SET(pipeline->static_state,
+                    TERAKAN_PIPELINE_GRAPHICS_STATE_COLOR_ATTACHMENT_WRITE_MASK);
+      }
+
+      /* TERAKAN_PIPELINE_GRAPHICS_STATE_COLOR_ATTACHMENT_WRITE_ENABLE */
+      if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_COLOR_WRITE_ENABLES)) {
+         pipeline->fragment_output.color_attachment_write_enable =
+            state->cb->color_write_enables & BITFIELD_MASK(TERAKAN_COLOR_HW_RTV_COUNT);
+         BITSET_SET(pipeline->static_state,
+                    TERAKAN_PIPELINE_GRAPHICS_STATE_COLOR_ATTACHMENT_WRITE_ENABLE);
+      }
    }
 }
 
