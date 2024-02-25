@@ -2592,7 +2592,7 @@ terakan_hw_state_draw_emit_all(struct terakan_gfx_command_writer * const command
    BITSET_ZERO(state->state_modified);
 
    /* Make sure the viewport emission callback emits the state for all viewports. */
-   state->viewports_modified = (uint16_t)((uint32_t)1 << state->viewport_count_ever_written);
+   state->viewports_modified = (uint16_t)BITFIELD_MASK(state->viewport_count_ever_written);
    for (uint32_t viewport_index = 0; viewport_index < state->viewport_count_ever_written;
         ++viewport_index) {
       BITSET_ONES(state->viewports[viewport_index].state_modified);
