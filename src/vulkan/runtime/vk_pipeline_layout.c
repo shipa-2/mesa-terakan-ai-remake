@@ -29,21 +29,51 @@
 #include "vk_device.h"
 #include "vk_log.h"
 
+#include <stdbool.h>
+#include "util/macros.h"
 #include "util/mesa-sha1.h"
 
-static void
+static bool
 vk_pipeline_layout_init(struct vk_device *device,
                         struct vk_pipeline_layout *layout,
                         const VkPipelineLayoutCreateInfo *pCreateInfo)
 {
    assert(pCreateInfo->sType == VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO);
-   assert(pCreateInfo->setLayoutCount <= MESA_VK_MAX_DESCRIPTOR_SETS);
+
+   struct vk_descriptor_set_layout **set_layouts = NULL;
+   uint32_t *dynamic_descriptor_offset = NULL;
+   if (pCreateInfo->setLayoutCount != 0) {
+      /* maxBoundDescriptorSets may be high in some drivers, especially in ones
+       * targeting GPUs with flat fixed binding slots as they favor granular
+       * binding changes over large sets, so the descriptor set layout array
+       * needs to be allocated dynamically.
+       */
+      set_layouts = vk_alloc(&device->alloc,
+                             pCreateInfo->setLayoutCount *
+                                sizeof(struct vk_descriptor_set_layout *),
+                             alignof(struct vk_descriptor_set_layout *),
+                             VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
+      if (set_layouts == NULL) {
+         return false;
+      }
+      dynamic_descriptor_offset = vk_alloc(&device->alloc,
+                                           pCreateInfo->setLayoutCount *
+                                              sizeof(uint32_t),
+                                           alignof(uint32_t),
+                                           VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
+      if (dynamic_descriptor_offset == NULL) {
+         vk_free(&device->alloc, set_layouts);
+         return false;
+      }
+   }
 
    vk_object_base_init(device, &layout->base, VK_OBJECT_TYPE_PIPELINE_LAYOUT);
 
    layout->ref_cnt = 1;
    layout->create_flags = pCreateInfo->flags;
    layout->set_count = pCreateInfo->setLayoutCount;
+   layout->set_layouts = set_layouts;
+   layout->dynamic_descriptor_offset = dynamic_descriptor_offset;
    layout->push_descriptor_idx = UINT32_MAX;
    layout->destroy = vk_pipeline_layout_destroy;
 
@@ -71,6 +101,8 @@ vk_pipeline_layout_init(struct vk_device *device,
    layout->push_range_count = pCreateInfo->pushConstantRangeCount;
    for (uint32_t r = 0; r < pCreateInfo->pushConstantRangeCount; r++)
       layout->push_ranges[r] = pCreateInfo->pPushConstantRanges[r];
+
+   return true;
 }
 
 void *
@@ -86,7 +118,11 @@ vk_pipeline_layout_zalloc(struct vk_device *device, size_t size,
    if (layout == NULL)
       return NULL;
 
-   vk_pipeline_layout_init(device, layout, pCreateInfo);
+   if (!vk_pipeline_layout_init(device, layout, pCreateInfo)) {
+      vk_free(&device->alloc, layout);
+      return NULL;
+   }
+
    return layout;
 }
 
@@ -101,7 +137,11 @@ vk_pipeline_layout_multizalloc(struct vk_device *device,
    if (layout == NULL)
       return NULL;
 
-   vk_pipeline_layout_init(device, layout, pCreateInfo);
+   if (!vk_pipeline_layout_init(device, layout, pCreateInfo)) {
+      vk_free(&device->alloc, layout);
+      return NULL;
+   }
+
    return layout;
 }
 
@@ -135,6 +175,9 @@ vk_pipeline_layout_destroy(struct vk_device *device,
       if (layout->set_layouts[s] != NULL)
          vk_descriptor_set_layout_unref(device, layout->set_layouts[s]);
    }
+
+   vk_free(&device->alloc, layout->dynamic_descriptor_offset);
+   vk_free(&device->alloc, layout->set_layouts);
 
    vk_object_free(device, NULL, layout);
 }
