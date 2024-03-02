@@ -302,32 +302,32 @@ terakan_CmdClearAttachments(VkCommandBuffer const commandBuffer, uint32_t const 
             depth_stencil_clear_value.depth = 0.0f;
          }
 
-         terakan_hw_state_draw_ensure_viewport_count(&command_writer->hw_state_draw, 1);
+         terakan_state_draw_set_pending(&command_writer->state_draw,
+                                        TERAKAN_STATE_DRAW_INDEX_VIEWPORT);
          struct terakan_hw_state_draw_viewport * const viewport =
             &command_writer->hw_state_draw.viewports[0];
-
-         if (memcmp(&viewport->pa_cl_vport_z_scale_offset[1], &depth_stencil_clear_value.depth,
+         bool viewport_z_modified = false;
+         if (memcmp(&viewport->pa_cl_vport_xyz_scale_offset[2][1], &depth_stencil_clear_value.depth,
                     sizeof(float)) != 0) {
-            terakan_state_draw_set_pending(&command_writer->state_draw,
-                                           TERAKAN_STATE_DRAW_INDEX_PA_CL_VPORT_Z_SCALE_OFFSET);
-            viewport->pa_cl_vport_z_scale_offset[1] = depth_stencil_clear_value.depth;
-            terakan_hw_state_draw_viewport_modified(
-               &command_writer->hw_state_draw, 0,
-               TERAKAN_HW_STATE_DRAW_VIEWPORT_PA_CL_VPORT_Z_SCALE_OFFSET);
+            command_writer->state_draw.viewport.viewports_pending.pa_cl_vport_z_scale_offset |=
+               BITFIELD_BIT(0);
+            viewport_z_modified = true;
+            viewport->pa_cl_vport_xyz_scale_offset[2][1] = depth_stencil_clear_value.depth;
          }
-
          if (memcmp(&viewport->pa_sc_vport_z_min_max[0], &depth_stencil_clear_value.depth,
                     sizeof(float)) != 0 ||
              memcmp(&viewport->pa_sc_vport_z_min_max[1], &depth_stencil_clear_value.depth,
                     sizeof(float)) != 0) {
-            terakan_state_draw_set_pending(&command_writer->state_draw,
-                                           TERAKAN_STATE_DRAW_INDEX_PA_SC_VPORT_Z_MIN_MAX);
+            command_writer->state_draw.viewport.viewports_pending.pa_sc_vport_z_min_max |=
+               BITFIELD_BIT(0);
+            viewport_z_modified = true;
             viewport->pa_sc_vport_z_min_max[0] = depth_stencil_clear_value.depth;
             viewport->pa_sc_vport_z_min_max[1] = depth_stencil_clear_value.depth;
-            terakan_hw_state_draw_viewport_modified(
-               &command_writer->hw_state_draw, 0,
-               TERAKAN_HW_STATE_DRAW_VIEWPORT_PA_SC_VPORT_Z_MIN_MAX);
          }
+         terakan_hw_state_draw_update_viewports(
+            &command_writer->hw_state_draw, 1,
+            viewport_z_modified ? 0 : ARRAY_SIZE(command_writer->hw_state_draw.viewports),
+            ARRAY_SIZE(command_writer->hw_state_draw.viewports));
 
          db_depth_control |= S_028800_Z_ENABLE(1) | S_028800_Z_WRITE_ENABLE(1) |
                              S_028800_ZFUNC((uint32_t)VK_COMPARE_OP_ALWAYS);

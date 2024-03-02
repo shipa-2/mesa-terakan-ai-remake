@@ -345,8 +345,9 @@ terakan_hw_state_draw_emit_pa_cl_gb(struct terakan_gfx_command_writer * const co
    if (unlikely(packet == NULL)) {
       return;
    }
-   /* According to the Gallium R600 and RadeonSI drivers, if any guard band register is changed, all
-    * must be emitted.
+   /* According to the Gallium R600 and RadeonSI drivers and to PAL's Pm4Optimizer, all the four
+    * guard band discard / clip adjust registers are a single register "vector", and if any value in
+    * the vector is changed, the hardware requires that the entire vector is emitted.
     */
    *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 4, 0);
    *packet++ = TERAKAN_CONTEXT_REG_OFFSET(
@@ -694,74 +695,78 @@ terakan_hw_state_draw_emit_viewport(struct terakan_gfx_command_writer * const co
 {
    struct terakan_hw_state_draw * const state = &command_writer->hw_state_draw;
 
+   if (unlikely(state->viewport_counts.needed == 0)) {
+      return;
+   }
+
+   /* According to RadeonSI and to PAL's Pm4Optimizer, PA_CL_VPORT_X/Y/ZSCALE/OFFSET,
+    * PA_SC_VPORT_SCISSOR and PA_SC_VPORT_ZMIN/MAX are "vector" registers, and if any value in the
+    * vector is changed, the hardware requires that the entire vector, for all viewports that are
+    * used, is emitted.
+    *
+    * This applies to TeraScale too. Particularly, during the development of Terakan, there was
+    * incorrect rendering on Barts when the Z scale/offset was changed and emitted independently of
+    * the XY scales/offsets - that was triggered in Sascha Willems's bloom example by implementing
+    * depth clear as a draw that has the Z offset set to the clear value, while not modifying the XY
+    * transform and not emitting it alongside the updated Z transform, which caused some of the
+    * passes to be rendered with incorrect coordinates sometimes, and also occasionally the drawn
+    * mesh to have incorrect depth and thus not properly functioning depth test.
+    *
+    * It's safe to update PA_SC_VPORT_SCISSOR at a frequency different from the rest of the viewport
+    * state according to other drivers.
+    *
+    * Whether PA_CL_VPORT_X/Y/ZSCALE/OFFSET and PA_SC_VPORT_ZMIN/MAX can be updated separately from
+    * each other is untested, and no precedent of that has been found in other drivers as of this
+    * writing, so for safety, always emitting them together.
+    */
+
    uint32_t * packet;
 
-   while (state->viewports_modified) {
-      uint32_t const viewport_index = (uint32_t)ffs((int)state->viewports_modified) - 1;
-      assert(viewport_index < state->viewport_count_ever_written);
-      struct terakan_hw_state_draw_viewport * const viewport = &state->viewports[viewport_index];
-
-      bool const scale_offset_xy_modified = BITSET_TEST(
-         viewport->state_modified, TERAKAN_HW_STATE_DRAW_VIEWPORT_PA_CL_VPORT_XY_SCALE_OFFSET);
-      bool const scale_offset_z_modified = BITSET_TEST(
-         viewport->state_modified, TERAKAN_HW_STATE_DRAW_VIEWPORT_PA_CL_VPORT_Z_SCALE_OFFSET);
-      if (scale_offset_xy_modified || scale_offset_z_modified) {
-         uint32_t const scale_offset_emit_dwords =
-            (scale_offset_xy_modified ? 4 : 0) + (scale_offset_z_modified ? 2 : 0);
-         packet = terakan_gfx_command_writer_emit(command_writer, 2 + scale_offset_emit_dwords, 0,
-                                                  0, true);
-         if (unlikely(packet == NULL)) {
-            return;
-         }
-         *packet++ = PKT3(PKT3_SET_CONTEXT_REG, scale_offset_emit_dwords, 0);
-         *packet++ =
-            TERAKAN_CONTEXT_REG_OFFSET(scale_offset_xy_modified ? R_02843C_PA_CL_VPORT_XSCALE_0
-                                                                : R_02844C_PA_CL_VPORT_ZSCALE_0) +
-            6 * viewport_index;
-         if (scale_offset_xy_modified) {
-            memcpy(packet, viewport->pa_cl_vport_xy_scale_offset, sizeof(float) * 4);
-            packet += 4;
-         }
-         if (scale_offset_z_modified) {
-            memcpy(packet, viewport->pa_cl_vport_z_scale_offset, sizeof(float) * 2);
-            packet += 2;
-         }
-         terakan_gfx_command_writer_emit_done(command_writer, packet);
+   if (state->viewport_counts.scale_offset_z_min_max_emitted < state->viewport_counts.needed) {
+      packet = terakan_gfx_command_writer_emit(
+         command_writer, (2 * 2) + (2 * 3 + 2) * state->viewport_counts.needed, 0, 0, true);
+      if (unlikely(packet == NULL)) {
+         return;
       }
 
-      if (BITSET_TEST(viewport->state_modified,
-                      TERAKAN_HW_STATE_DRAW_VIEWPORT_PA_SC_VPORT_SCISSOR)) {
-         packet = terakan_gfx_command_writer_emit(command_writer, 2 + 2, 0, 0, true);
-         if (unlikely(packet == NULL)) {
-            return;
-         }
-         *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 2, 0);
-         *packet++ =
-            TERAKAN_CONTEXT_REG_OFFSET(R_028250_PA_SC_VPORT_SCISSOR_0_TL) + 2 * viewport_index;
-         memcpy(packet, viewport->pa_sc_vport_scissor, sizeof(uint32_t) * 2);
+      *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 2 * 3 * state->viewport_counts.needed, 0);
+      *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_02843C_PA_CL_VPORT_XSCALE_0);
+      for (uint8_t viewport_index = 0; viewport_index < state->viewport_counts.needed;
+           ++viewport_index) {
+         memcpy(packet, state->viewports[viewport_index].pa_cl_vport_xyz_scale_offset,
+                sizeof(float) * 2 * 3);
+         packet += 2 * 3;
+      }
+
+      *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 2 * state->viewport_counts.needed, 0);
+      *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_0282D0_PA_SC_VPORT_ZMIN_0);
+      for (uint8_t viewport_index = 0; viewport_index < state->viewport_counts.needed;
+           ++viewport_index) {
+         memcpy(packet, state->viewports[viewport_index].pa_sc_vport_z_min_max, sizeof(float) * 2);
          packet += 2;
-         terakan_gfx_command_writer_emit_done(command_writer, packet);
       }
 
-      if (BITSET_TEST(viewport->state_modified,
-                      TERAKAN_HW_STATE_DRAW_VIEWPORT_PA_SC_VPORT_Z_MIN_MAX)) {
-         packet = terakan_gfx_command_writer_emit(command_writer, 2 + 2, 0, 0, true);
-         if (unlikely(packet == NULL)) {
-            return;
-         }
-         *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 2, 0);
-         *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_0282D0_PA_SC_VPORT_ZMIN_0) + 2 * viewport_index;
-         memcpy(packet, viewport->pa_sc_vport_z_min_max, sizeof(float) * 2);
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
+      state->viewport_counts.scale_offset_z_min_max_emitted = state->viewport_counts.needed;
+   }
+
+   if (state->viewport_counts.scissor_emitted < state->viewport_counts.needed) {
+      packet = terakan_gfx_command_writer_emit(command_writer,
+                                               2 + 2 * state->viewport_counts.needed, 0, 0, true);
+      if (unlikely(packet == NULL)) {
+         return;
+      }
+
+      *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 2 * state->viewport_counts.needed, 0);
+      *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028250_PA_SC_VPORT_SCISSOR_0_TL);
+      for (uint8_t viewport_index = 0; viewport_index < state->viewport_counts.needed;
+           ++viewport_index) {
+         memcpy(packet, state->viewports[viewport_index].pa_sc_vport_scissor, sizeof(uint32_t) * 2);
          packet += 2;
-         terakan_gfx_command_writer_emit_done(command_writer, packet);
       }
 
-      /* Keep state_modified of each viewport zero if the bit isn't set in viewports_modified so
-       * terakan_hw_state_draw_viewport_modified doesn't have to check if the bit in
-       * viewports_modified isn't set and clear state_modified.
-       */
-      BITSET_ZERO(viewport->state_modified);
-      state->viewports_modified &= ~((uint16_t)1 << viewport_index);
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
+      state->viewport_counts.scissor_emitted = state->viewport_counts.needed;
    }
 }
 
@@ -1885,41 +1890,6 @@ static terakan_hw_state_draw_emit_function const
          terakan_hw_state_draw_emit_sq_sampler_border_colors_fs,
 };
 
-void
-terakan_hw_state_draw_ensure_viewport_count(struct terakan_hw_state_draw * const state,
-                                            uint32_t const viewport_count)
-{
-   assert(viewport_count <= ARRAY_SIZE(state->viewports));
-
-   uint32_t const old_viewport_count = state->viewport_count_ever_written;
-   if (viewport_count <= old_viewport_count) {
-      return;
-   }
-   uint32_t const viewports_added = viewport_count - old_viewport_count;
-
-   /* There's no (and no need for because everything is mostly always applicable) tracking of
-    * whether each individual part of the state of a viewport has ever been written, so clear it to
-    * something safe.
-    */
-   memset(state->viewports + old_viewport_count, 0, sizeof(*state->viewports) * viewports_added);
-
-   /* Mark everything in the new viewports as modified, as state->viewports has been initialized,
-    * but the state on the GPU is still undefined, and thus an equality comparison can't be used to
-    * check if a new value of some viewport state is still the same as what has already been
-    * emitted.
-    */
-   for (uint32_t viewport_index = old_viewport_count; viewport_index < viewport_count;
-        ++viewport_index) {
-      BITSET_ONES(state->viewports[viewport_index].state_modified);
-   }
-   state->viewports_modified |= (uint16_t)(((uint32_t)1 << viewports_added) - 1)
-                                << old_viewport_count;
-
-   state->viewport_count_ever_written = viewport_count;
-
-   BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_VIEWPORT);
-}
-
 static void
 terakan_hw_state_draw_set_cb_color_impl(struct terakan_hw_state_draw * const state,
                                         uint32_t const color_index,
@@ -2591,13 +2561,9 @@ terakan_hw_state_draw_emit_all(struct terakan_gfx_command_writer * const command
 
    BITSET_ZERO(state->state_modified);
 
-   /* Make sure the viewport emission callback emits the state for all viewports. */
-   state->viewports_modified = (uint16_t)BITFIELD_MASK(state->viewport_count_ever_written);
-   for (uint32_t viewport_index = 0; viewport_index < state->viewport_count_ever_written;
-        ++viewport_index) {
-      BITSET_ONES(state->viewports[viewport_index].state_modified);
-   }
-
+   /* Make sure emission callbacks with additional modification tracking emit everything needed. */
+   state->viewport_counts.scale_offset_z_min_max_emitted = 0;
+   state->viewport_counts.scissor_emitted = 0;
    state->cb_color.modified = state->cb_color.ever_written;
 
    unsigned state_index;
@@ -2612,9 +2578,12 @@ terakan_hw_state_draw_reset(struct terakan_hw_state_draw * const state)
    BITSET_ZERO(state->state_ever_written);
    BITSET_ZERO(state->state_modified);
 
-   state->viewport_count_ever_written = 0;
-   state->viewports_modified = 0;
-   /* For simplicity, consider the viewport state always valid (starting from 0 viewports). */
+   memset(&state->viewport_counts, 0, sizeof(state->viewport_counts));
+   /* Viewport state fields may be modified at different frequencies, initialize all to safe values.
+    */
+   memset(&state->viewports, 0, sizeof(state->viewports));
+   /* For simplicity, consider the viewport state always valid (starting from 0 viewports needed).
+    */
    BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_INDEX_VIEWPORT);
 
    state->cb_blend_control.ever_written = 0;

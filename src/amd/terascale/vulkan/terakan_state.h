@@ -32,6 +32,7 @@
 #include "terakan_vertex_input.h"
 
 #include "util/bitset.h"
+#include "util/macros.h"
 
 #include <assert.h>
 #include <stdbool.h>
@@ -66,13 +67,10 @@ enum terakan_state_draw_index {
 
    TERAKAN_STATE_DRAW_INDEX_SQ_PGM_PS,
 
-   TERAKAN_STATE_DRAW_INDEX_PA_CL_VPORT_XY_SCALE_OFFSET,
-   TERAKAN_STATE_DRAW_INDEX_PA_CL_VPORT_Z_SCALE_OFFSET,
-   TERAKAN_STATE_DRAW_INDEX_PA_CL_GB,
-   TERAKAN_STATE_DRAW_INDEX_PA_SC_VPORT_SCISSOR,
-   TERAKAN_STATE_DRAW_INDEX_PA_SC_VPORT_Z_MIN_MAX,
-
    TERAKAN_STATE_DRAW_INDEX_PA_CL_CLIP_CNTL,
+
+   /* Depends on TERAKAN_STATE_DRAW_INDEX_PA_CL_CLIP_CNTL. */
+   TERAKAN_STATE_DRAW_INDEX_VIEWPORT,
 
    TERAKAN_STATE_DRAW_INDEX_PA_SU_SC_MODE_CNTL,
 
@@ -215,36 +213,54 @@ struct terakan_state_draw {
       struct terakan_shader_impl const * fs;
    } sq_pgm_ps;
 
-   /* Set via terakan_state_draw_set_viewport_count. */
-   uint32_t viewport_count;
-
-   /* TERAKAN_STATE_DRAW_INDEX_PA_CL_VPORT_XY_SCALE_OFFSET:
-    * - pa_cl_vport_xy_scale_offset
-    * TERAKAN_STATE_DRAW_INDEX_PA_CL_VPORT_Z_SCALE_OFFSET:
-    * - pa_cl_vport_z_gl_dx_scale_offset
-    * TERAKAN_STATE_DRAW_INDEX_PA_CL_GB:
-    * - pa_cl_gb_vert_horz_clip_adj
-    * TERAKAN_STATE_DRAW_INDEX_PA_SC_VPORT_SCISSOR:
-    * - pa_sc_vport_scissor_tl_br_xy
-    * - pa_sc_vport_generic_scissor_tl_br_xy
-    * TERAKAN_STATE_DRAW_INDEX_PA_SC_VPORT_Z_MIN_MAX:
-    * - pa_sc_vport_z_min_max
-    * - pa_sc_vport_z_min_0_max_1
-    */
-   struct terakan_state_draw_viewport viewports[TERAKAN_HW_STATE_DRAW_MAX_VIEWPORTS];
-   uint16_t pa_sc_vport_generic_scissor_tl_br_xy[TERAKAN_HW_STATE_DRAW_MAX_VIEWPORTS][2][2];
-   /* Whether PA_SC_VPORT_ZMIN / ZMAX must be 0 to 1 regardless of the values in the viewport.
-    * According to PAL, for optimal performance, depth clamping should be enabled, so without
-    * unrestricted depth range, the preferred way to disable depth clamping is to clamp depth to
-    * 0 to 1 instead of not clamping it completely by setting DISABLE_VIEWPORT_CLAMP in
-    * DB_RENDER_OVERRIDE.
-    */
-   bool pa_sc_vport_z_min_0_max_1;
-
-   /* All: TERAKAN_STATE_DRAW_INDEX_PA_CL_CLIP_CNTL
-    * DX_CLIP_SPACE_DEF: additionally TERAKAN_STATE_DRAW_INDEX_PA_CL_VPORT_Z_SCALE_OFFSET
-    */
+   /* TERAKAN_STATE_DRAW_INDEX_PA_CL_CLIP_CNTL */
    uint32_t pa_cl_clip_cntl;
+
+   /* TERAKAN_STATE_DRAW_INDEX_VIEWPORT */
+   struct {
+      uint8_t count;
+
+      /* viewports_pending contains bits indicating whether each viewport state item is pending for
+       * each of the viewports (one bit per viewport).
+       *
+       * Note that these pending flags (both per-viewport and global) must not be cleared without
+       * actually applying the state first if they are set, as they may be set from meta draws
+       * changing the viewport state in hw_state_draw, making it out of sync with state_draw.
+       */
+      struct {
+         /* pa_cl_vport_xy_scale_offset pending. */
+         uint16_t pa_cl_vport_xy_scale_offset;
+         /* pa_cl_vport_z_gl_dx_scale_offset, dx_clip_space_def pending. */
+         uint16_t pa_cl_vport_z_scale_offset;
+         /* pa_sc_vport_scissor_tl_br_xy, pa_sc_vport_generic_scissor_tl_br_xy pending. */
+         uint16_t pa_sc_vport_scissor;
+         /* pa_sc_vport_z_min_max, pa_sc_vport_z_min_0_max_1 pending. */
+         uint16_t pa_sc_vport_z_min_max;
+      } viewports_pending;
+      /* pa_cl_gb_vert_horz_clip_adj pending. */
+      bool pa_cl_gb_pending;
+
+      struct {
+         /* If changing, make pa_cl_vport_z_scale_offset pending for all `ARRAY_SIZE(viewports)`
+          * viewports.
+          */
+         bool dx_clip_space_def;
+      } from_apply_pa_cl_clip_cntl;
+
+      /* Whether PA_SC_VPORT_ZMIN/MAX must be 0 to 1 regardless of the values in the viewport.
+       * According to PAL, for optimal performance, depth clamping should be enabled, so without
+       * unrestricted depth range, the preferred way to disable depth clamping is to clamp depth to
+       * 0 to 1 instead of not clamping it completely by setting DISABLE_VIEWPORT_CLAMP in
+       * DB_RENDER_OVERRIDE.
+       *
+       * If changing, make pa_sc_vport_z_min_max pending for all `ARRAY_SIZE(viewports)` viewports.
+       */
+      bool pa_sc_vport_z_min_0_max_1;
+
+      struct terakan_state_draw_viewport viewports[TERAKAN_HW_STATE_DRAW_MAX_VIEWPORTS];
+
+      uint16_t pa_sc_vport_generic_scissor_tl_br_xy[TERAKAN_HW_STATE_DRAW_MAX_VIEWPORTS][2][2];
+   } viewport;
 
    /* TERAKAN_STATE_DRAW_INDEX_PA_SU_SC_MODE_CNTL */
    uint32_t pa_su_sc_mode_cntl;
@@ -373,8 +389,18 @@ terakan_state_draw_replace_fields(struct terakan_state_draw * const state,
    terakan_state_draw_set_pending(state, state_index);
 }
 
-void terakan_state_draw_set_viewport_count(struct terakan_state_draw * state,
-                                           uint32_t viewport_count);
+static inline void
+terakan_state_draw_set_viewport_count(struct terakan_state_draw * const state,
+                                      uint32_t const viewport_count)
+{
+   assert(viewport_count <= ARRAY_SIZE(state->viewport.viewports));
+   if (state->viewport.count == viewport_count) {
+      return;
+   }
+   state->viewport.count = viewport_count;
+   state->viewport.pa_cl_gb_pending = true;
+   terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_INDEX_VIEWPORT);
+}
 
 struct terakan_gfx_command_writer;
 

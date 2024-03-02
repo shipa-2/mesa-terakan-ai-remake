@@ -30,6 +30,7 @@
 
 #include "compiler/shader_enums.h"
 #include "util/bitset.h"
+#include "util/macros.h"
 #include "vk_limits.h"
 
 #include <assert.h>
@@ -79,26 +80,10 @@ struct terakan_hw_state_draw_vertex_constant_bits {
 
 #define TERAKAN_HW_STATE_DRAW_MAX_VIEWPORTS 16
 
-enum terakan_hw_state_draw_viewport_state_index {
-   TERAKAN_HW_STATE_DRAW_VIEWPORT_PA_CL_VPORT_XY_SCALE_OFFSET,
-   TERAKAN_HW_STATE_DRAW_VIEWPORT_PA_CL_VPORT_Z_SCALE_OFFSET,
-   TERAKAN_HW_STATE_DRAW_VIEWPORT_PA_SC_VPORT_SCISSOR,
-   TERAKAN_HW_STATE_DRAW_VIEWPORT_PA_SC_VPORT_Z_MIN_MAX,
-
-   TERAKAN_HW_STATE_DRAW_VIEWPORT_STATE_COUNT,
-};
-
 struct terakan_hw_state_draw_viewport {
-   BITSET_DECLARE(state_modified, TERAKAN_HW_STATE_DRAW_VIEWPORT_STATE_COUNT);
-
-   /* TERAKAN_HW_STATE_DRAW_VIEWPORT_PA_CL_VPORT_XY_SCALE_OFFSET */
-   float pa_cl_vport_xy_scale_offset[2][2];
-   /* TERAKAN_HW_STATE_DRAW_VIEWPORT_PA_CL_VPORT_Z_SCALE_OFFSET */
-   float pa_cl_vport_z_scale_offset[2];
-   /* TERAKAN_HW_STATE_DRAW_VIEWPORT_PA_SC_VPORT_SCISSOR */
-   uint32_t pa_sc_vport_scissor[2];
-   /* TERAKAN_HW_STATE_DRAW_VIEWPORT_PA_SC_VPORT_Z_MIN_MAX */
+   float pa_cl_vport_xyz_scale_offset[3][2];
    float pa_sc_vport_z_min_max[2];
+   uint32_t pa_sc_vport_scissor[2];
 };
 
 extern uint32_t const terakan_standard_sample_locs[5][16 / 4];
@@ -158,7 +143,6 @@ enum terakan_hw_state_draw_index {
     */
    TERAKAN_HW_STATE_DRAW_INDEX_SPECIAL_FIRST,
 
-   /* Set as modified if any state of any viewport is modified. */
    TERAKAN_HW_STATE_DRAW_INDEX_VIEWPORT = TERAKAN_HW_STATE_DRAW_INDEX_SPECIAL_FIRST,
 
    TERAKAN_HW_STATE_DRAW_INDEX_CB_BLEND_CONTROL,
@@ -292,15 +276,27 @@ struct terakan_hw_state_draw {
    uint32_t cb_color_control;
 
    /* TERAKAN_HW_STATE_DRAW_INDEX_VIEWPORT
-    * Don't use terakan_hw_state_draw_written, instead call
-    * terakan_hw_state_draw_ensure_viewport_count before updating the state, and
-    * terakan_hw_state_draw_viewport_modified after writing a different value.
+    * Modify `viewports` and call terakan_hw_state_draw_update_viewports (ever-written is not
+    * tracked).
+    * Don't access viewport_counts externally.
     */
-   uint32_t viewport_count_ever_written;
-   uint16_t viewports_modified;
+   struct {
+      /* Upper bound of viewports needed by the next draw. */
+      uint8_t needed;
+      /* Upper bound of viewports for which the last emitted PA_CL_VPORT_X/Y/ZSCALE/OFFSET and
+       * PA_SC_VPORT_ZMIN/MAX are currently up to date.
+       */
+      uint8_t scale_offset_z_min_max_emitted;
+      /* Upper bound of viewports for which the last emitted PA_SC_VPORT_SCISSOR is currently up to
+       * date.
+       */
+      uint8_t scissor_emitted;
+   } viewport_counts;
    struct terakan_hw_state_draw_viewport viewports[TERAKAN_HW_STATE_DRAW_MAX_VIEWPORTS];
 
-   /* TERAKAN_HW_STATE_DRAW_INDEX_CB_BLEND_CONTROL */
+   /* TERAKAN_HW_STATE_DRAW_INDEX_CB_BLEND_CONTROL
+    * Don't access externally directly, instead set via terakan_hw_state_draw_set_cb_blend_control.
+    */
    struct {
       uint8_t ever_written;
       uint8_t modified;
@@ -455,24 +451,30 @@ terakan_hw_state_draw_written(struct terakan_hw_state_draw * const state,
    }
 }
 
-/* Newly added viewports will be initialized to safe values, and all their state will be marked as
- * modified. If the caller only needs some of the viewport state for its PA and DB setup, it doesn't
- * need to handle the case of a first-time-used viewport, and can just configure the fields it
- * needs.
+/* `lowest_modified` are the lowest indices of the viewports for which the corresponding states were
+ * modified. If not modifying those states, pass ARRAY_SIZE(state->viewports).
  */
-void terakan_hw_state_draw_ensure_viewport_count(struct terakan_hw_state_draw * state,
-                                                 uint32_t viewport_count);
-
 static inline void
-terakan_hw_state_draw_viewport_modified(
-   struct terakan_hw_state_draw * const state, uint32_t const viewport_index,
-   enum terakan_hw_state_draw_viewport_state_index const state_index)
+terakan_hw_state_draw_update_viewports(struct terakan_hw_state_draw * const state,
+                                       uint8_t const viewport_count_needed,
+                                       uint8_t const scale_offset_z_min_max_lowest_modified,
+                                       uint8_t const scissor_lowest_modified)
 {
-   /* Call terakan_hw_state_draw_ensure_viewport_count before updating the state of a viewport. */
-   assert(viewport_index < state->viewport_count_ever_written);
-   BITSET_SET(state->viewports[viewport_index].state_modified, state_index);
-   state->viewports_modified |= (uint16_t)1 << viewport_index;
-   BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_VIEWPORT);
+   assert(viewport_count_needed <= ARRAY_SIZE(state->viewports));
+   state->viewport_counts.needed = viewport_count_needed;
+
+   state->viewport_counts.scale_offset_z_min_max_emitted =
+      MIN2(scale_offset_z_min_max_lowest_modified,
+           state->viewport_counts.scale_offset_z_min_max_emitted);
+   state->viewport_counts.scissor_emitted =
+      MIN2(scissor_lowest_modified, state->viewport_counts.scissor_emitted);
+
+   if (state->viewport_counts.scale_offset_z_min_max_emitted < state->viewport_counts.needed ||
+       state->viewport_counts.scissor_emitted < state->viewport_counts.needed) {
+      BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_VIEWPORT);
+   } else {
+      BITSET_CLEAR(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_VIEWPORT);
+   }
 }
 
 static inline void

@@ -309,89 +309,115 @@ terakan_state_draw_apply_sq_pgm_ps(struct terakan_gfx_command_writer * const com
 }
 
 static void
-terakan_state_draw_apply_pa_cl_vport_xy_scale_offset(
-   struct terakan_gfx_command_writer * const command_writer)
+terakan_state_draw_apply_pa_cl_clip_cntl(struct terakan_gfx_command_writer * const command_writer)
 {
-   terakan_hw_state_draw_ensure_viewport_count(&command_writer->hw_state_draw,
-                                               command_writer->state_draw.viewport_count);
-   for (uint32_t viewport_index = 0; viewport_index < command_writer->state_draw.viewport_count;
-        ++viewport_index) {
-      if (memcmp(
-             command_writer->hw_state_draw.viewports[viewport_index].pa_cl_vport_xy_scale_offset,
-             command_writer->state_draw.viewports[viewport_index].pa_cl_vport_xy_scale_offset,
-             sizeof(command_writer->state_draw.viewports[viewport_index]
-                       .pa_cl_vport_xy_scale_offset)) != 0) {
-         memcpy(
-            command_writer->hw_state_draw.viewports[viewport_index].pa_cl_vport_xy_scale_offset,
-            command_writer->state_draw.viewports[viewport_index].pa_cl_vport_xy_scale_offset,
-            sizeof(
-               command_writer->state_draw.viewports[viewport_index].pa_cl_vport_xy_scale_offset));
-         terakan_hw_state_draw_viewport_modified(
-            &command_writer->hw_state_draw, viewport_index,
-            TERAKAN_HW_STATE_DRAW_VIEWPORT_PA_CL_VPORT_XY_SCALE_OFFSET);
-      }
-   }
-}
+   bool const modified =
+      command_writer->hw_state_draw.pa_cl_clip_cntl != command_writer->state_draw.pa_cl_clip_cntl;
+   command_writer->hw_state_draw.pa_cl_clip_cntl = command_writer->state_draw.pa_cl_clip_cntl;
+   terakan_hw_state_draw_written(&command_writer->hw_state_draw,
+                                 TERAKAN_HW_STATE_DRAW_INDEX_PA_CL_CLIP_CNTL, modified);
 
-static void
-terakan_state_draw_apply_pa_cl_vport_z_scale_offset(
-   struct terakan_gfx_command_writer * const command_writer)
-{
-   terakan_hw_state_draw_ensure_viewport_count(&command_writer->hw_state_draw,
-                                               command_writer->state_draw.viewport_count);
    bool const dx_clip_space_def =
       G_028810_DX_CLIP_SPACE_DEF(command_writer->state_draw.pa_cl_clip_cntl) != 0;
-   for (uint32_t viewport_index = 0; viewport_index < command_writer->state_draw.viewport_count;
-        ++viewport_index) {
-      struct terakan_state_draw_viewport const * const viewport =
-         &command_writer->state_draw.viewports[viewport_index];
+   TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(VIEWPORT, PA_CL_CLIP_CNTL);
+   if (command_writer->state_draw.viewport.from_apply_pa_cl_clip_cntl.dx_clip_space_def !=
+       dx_clip_space_def) {
+      command_writer->state_draw.viewport.from_apply_pa_cl_clip_cntl.dx_clip_space_def =
+         dx_clip_space_def;
+      command_writer->state_draw.viewport.viewports_pending.pa_cl_vport_z_scale_offset =
+         BITFIELD_MASK(ARRAY_SIZE(command_writer->state_draw.viewport.viewports));
+      terakan_state_draw_set_pending(&command_writer->state_draw,
+                                     TERAKAN_STATE_DRAW_INDEX_VIEWPORT);
+   }
+}
+
+static void
+terakan_state_draw_apply_viewport(struct terakan_gfx_command_writer * const command_writer)
+{
+   uint8_t scale_offset_z_min_max_lowest_modified =
+      ARRAY_SIZE(command_writer->hw_state_draw.viewports);
+   uint8_t scissor_lowest_modified = ARRAY_SIZE(command_writer->hw_state_draw.viewports);
+
+   uint16_t const used_viewport_mask =
+      (uint16_t)BITFIELD_MASK(command_writer->state_draw.viewport.count);
+
+   /* PA_CL_VPORT_X/YSCALE/OFFSET */
+   u_foreach_bit (
+      viewport_index,
+      command_writer->state_draw.viewport.viewports_pending.pa_cl_vport_xy_scale_offset &
+         used_viewport_mask) {
+      if (memcmp(
+             command_writer->hw_state_draw.viewports[viewport_index].pa_cl_vport_xyz_scale_offset,
+             command_writer->state_draw.viewport.viewports[viewport_index]
+                .pa_cl_vport_xy_scale_offset,
+             sizeof(float) * 2 * 2) != 0) {
+         memcpy(
+            command_writer->hw_state_draw.viewports[viewport_index].pa_cl_vport_xyz_scale_offset,
+            command_writer->state_draw.viewport.viewports[viewport_index]
+               .pa_cl_vport_xy_scale_offset,
+            sizeof(float) * 2 * 2);
+         scale_offset_z_min_max_lowest_modified =
+            MIN2(viewport_index, scale_offset_z_min_max_lowest_modified);
+      }
+   }
+   command_writer->state_draw.viewport.viewports_pending.pa_cl_vport_xy_scale_offset &=
+      ~used_viewport_mask;
+
+   /* PA_CL_VPORT_ZSCALE/OFFSET */
+   TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(VIEWPORT, PA_CL_CLIP_CNTL);
+   bool const dx_clip_space_def =
+      command_writer->state_draw.viewport.from_apply_pa_cl_clip_cntl.dx_clip_space_def;
+   u_foreach_bit (viewport_index,
+                  command_writer->state_draw.viewport.viewports_pending.pa_cl_vport_z_scale_offset &
+                     used_viewport_mask) {
       float const * const z_scale_offset =
-         &viewport->pa_cl_vport_z_gl_dx_scale_offset[(int)dx_clip_space_def][0];
-      if (memcmp(command_writer->hw_state_draw.viewports[viewport_index].pa_cl_vport_z_scale_offset,
-                 z_scale_offset, sizeof(float) * 2) != 0) {
-         memcpy(command_writer->hw_state_draw.viewports[viewport_index].pa_cl_vport_z_scale_offset,
-                z_scale_offset, sizeof(float) * 2);
-         terakan_hw_state_draw_viewport_modified(
-            &command_writer->hw_state_draw, viewport_index,
-            TERAKAN_HW_STATE_DRAW_VIEWPORT_PA_CL_VPORT_Z_SCALE_OFFSET);
+         command_writer->state_draw.viewport.viewports[viewport_index]
+            .pa_cl_vport_z_gl_dx_scale_offset[(int)dx_clip_space_def];
+      if (memcmp(
+             command_writer->hw_state_draw.viewports[viewport_index].pa_cl_vport_xyz_scale_offset[2],
+             z_scale_offset, sizeof(float) * 2) != 0) {
+         memcpy(
+            command_writer->hw_state_draw.viewports[viewport_index].pa_cl_vport_xyz_scale_offset[2],
+            z_scale_offset, sizeof(float) * 2);
+         scale_offset_z_min_max_lowest_modified =
+            MIN2(viewport_index, scale_offset_z_min_max_lowest_modified);
       }
    }
-}
+   command_writer->state_draw.viewport.viewports_pending.pa_cl_vport_z_scale_offset &=
+      ~used_viewport_mask;
 
-static void
-terakan_state_draw_apply_pa_cl_gb(struct terakan_gfx_command_writer * const command_writer)
-{
-   float pa_cl_gb_vert_horz_clip_disc_adj[][2] = {{FLT_MAX, 1.0f}, {FLT_MAX, 1.0f}};
-   for (uint32_t viewport_index = 0; viewport_index < command_writer->state_draw.viewport_count;
-        ++viewport_index) {
-      for (int axis = 0; axis < 2; ++axis) {
-         pa_cl_gb_vert_horz_clip_disc_adj[axis][0] = MIN2(
-            command_writer->state_draw.viewports[viewport_index].pa_cl_gb_vert_horz_clip_adj[axis],
-            pa_cl_gb_vert_horz_clip_disc_adj[axis][0]);
+   /* PA_CL_GB_VERT/HORZ_CLIP/DISC_ADJ */
+   if (command_writer->state_draw.viewport.pa_cl_gb_pending) {
+      float pa_cl_gb_vert_horz_clip_disc_adj[][2] = {{FLT_MAX, 1.0f}, {FLT_MAX, 1.0f}};
+      for (uint32_t viewport_index = 0; viewport_index < command_writer->state_draw.viewport.count;
+           ++viewport_index) {
+         for (int axis = 0; axis < 2; ++axis) {
+            pa_cl_gb_vert_horz_clip_disc_adj[axis][0] =
+               MIN2(command_writer->state_draw.viewport.viewports[viewport_index]
+                       .pa_cl_gb_vert_horz_clip_adj[axis],
+                    pa_cl_gb_vert_horz_clip_disc_adj[axis][0]);
+         }
       }
+      /* TODO(Triang3l): Discard rectangle ratio for points and lines. */
+      bool const pa_cl_gb_modified =
+         memcmp(command_writer->hw_state_draw.pa_cl_gb_vert_horz_clip_disc_adj,
+                pa_cl_gb_vert_horz_clip_disc_adj, sizeof(pa_cl_gb_vert_horz_clip_disc_adj)) != 0;
+      memcpy(command_writer->hw_state_draw.pa_cl_gb_vert_horz_clip_disc_adj,
+             pa_cl_gb_vert_horz_clip_disc_adj, sizeof(pa_cl_gb_vert_horz_clip_disc_adj));
+      terakan_hw_state_draw_written(&command_writer->hw_state_draw,
+                                    TERAKAN_HW_STATE_DRAW_INDEX_PA_CL_GB, pa_cl_gb_modified);
+      command_writer->state_draw.viewport.pa_cl_gb_pending = false;
    }
-   /* TODO(Triang3l): Discard rectangle ratio for points and lines. */
-   bool const modified =
-      memcmp(command_writer->hw_state_draw.pa_cl_gb_vert_horz_clip_disc_adj,
-             pa_cl_gb_vert_horz_clip_disc_adj, sizeof(pa_cl_gb_vert_horz_clip_disc_adj)) != 0;
-   memcpy(command_writer->hw_state_draw.pa_cl_gb_vert_horz_clip_disc_adj,
-          pa_cl_gb_vert_horz_clip_disc_adj, sizeof(pa_cl_gb_vert_horz_clip_disc_adj));
-   terakan_hw_state_draw_written(&command_writer->hw_state_draw,
-                                 TERAKAN_HW_STATE_DRAW_INDEX_PA_CL_GB, modified);
-}
 
-static void
-terakan_state_draw_apply_pa_sc_vport_scissor(
-   struct terakan_gfx_command_writer * const command_writer)
-{
-   terakan_hw_state_draw_ensure_viewport_count(&command_writer->hw_state_draw,
-                                               command_writer->state_draw.viewport_count);
-   for (uint32_t viewport_index = 0; viewport_index < command_writer->state_draw.viewport_count;
-        ++viewport_index) {
+   /* PA_SC_VPORT_SCISSOR */
+   u_foreach_bit (viewport_index,
+                  command_writer->state_draw.viewport.viewports_pending.pa_sc_vport_scissor &
+                     used_viewport_mask) {
       uint16_t const * const viewport_scissor =
-         command_writer->state_draw.viewports[viewport_index].pa_sc_vport_scissor_tl_br_xy[0];
+         command_writer->state_draw.viewport.viewports[viewport_index]
+            .pa_sc_vport_scissor_tl_br_xy[0];
       uint16_t const * const generic_scissor =
-         command_writer->state_draw.pa_sc_vport_generic_scissor_tl_br_xy[viewport_index][0];
+         command_writer->state_draw.viewport.pa_sc_vport_generic_scissor_tl_br_xy[viewport_index][0];
       uint16_t scissor[] = {
          MAX2(viewport_scissor[0], generic_scissor[0]),
          MAX2(viewport_scissor[1], generic_scissor[1]),
@@ -407,57 +433,48 @@ terakan_state_draw_apply_pa_sc_vport_scissor(
                  pa_sc_vport_scissor, sizeof(pa_sc_vport_scissor)) != 0) {
          memcpy(command_writer->hw_state_draw.viewports[viewport_index].pa_sc_vport_scissor,
                 pa_sc_vport_scissor, sizeof(pa_sc_vport_scissor));
-         terakan_hw_state_draw_viewport_modified(
-            &command_writer->hw_state_draw, viewport_index,
-            TERAKAN_HW_STATE_DRAW_VIEWPORT_PA_SC_VPORT_SCISSOR);
+         scissor_lowest_modified = MIN2(viewport_index, scissor_lowest_modified);
       }
    }
-}
+   command_writer->state_draw.viewport.viewports_pending.pa_sc_vport_scissor &= ~used_viewport_mask;
 
-static void
-terakan_state_draw_apply_pa_sc_vport_z_min_max(
-   struct terakan_gfx_command_writer * const command_writer)
-{
-   terakan_hw_state_draw_ensure_viewport_count(&command_writer->hw_state_draw,
-                                               command_writer->state_draw.viewport_count);
-   if (command_writer->state_draw.pa_sc_vport_z_min_0_max_1) {
+   /* PA_SC_VPORT_ZMIN/MAX */
+   if (command_writer->state_draw.viewport.pa_sc_vport_z_min_0_max_1) {
       float const zero_one[] = {0.0f, 1.0f};
-      for (uint32_t viewport_index = 0; viewport_index < command_writer->state_draw.viewport_count;
-           ++viewport_index) {
+      u_foreach_bit (viewport_index,
+                     command_writer->state_draw.viewport.viewports_pending.pa_sc_vport_z_min_max &
+                        used_viewport_mask) {
          if (memcmp(command_writer->hw_state_draw.viewports[viewport_index].pa_sc_vport_z_min_max,
-                    &zero_one, sizeof(float) * 2) != 0) {
+                    zero_one, sizeof(float) * 2) != 0) {
             memcpy(command_writer->hw_state_draw.viewports[viewport_index].pa_sc_vport_z_min_max,
-                   &zero_one, sizeof(float) * 2);
-            terakan_hw_state_draw_viewport_modified(
-               &command_writer->hw_state_draw, viewport_index,
-               TERAKAN_HW_STATE_DRAW_VIEWPORT_PA_SC_VPORT_Z_MIN_MAX);
+                   zero_one, sizeof(float) * 2);
+            scale_offset_z_min_max_lowest_modified =
+               MIN2(viewport_index, scale_offset_z_min_max_lowest_modified);
          }
       }
    } else {
-      for (uint32_t viewport_index = 0; viewport_index < command_writer->state_draw.viewport_count;
-           ++viewport_index) {
-         if (memcmp(command_writer->hw_state_draw.viewports[viewport_index].pa_sc_vport_z_min_max,
-                    command_writer->state_draw.viewports[viewport_index].pa_sc_vport_z_min_max,
-                    sizeof(float) * 2) != 0) {
-            memcpy(command_writer->hw_state_draw.viewports[viewport_index].pa_sc_vport_z_min_max,
-                   command_writer->state_draw.viewports[viewport_index].pa_sc_vport_z_min_max,
-                   sizeof(float) * 2);
-            terakan_hw_state_draw_viewport_modified(
-               &command_writer->hw_state_draw, viewport_index,
-               TERAKAN_HW_STATE_DRAW_VIEWPORT_PA_SC_VPORT_Z_MIN_MAX);
+      u_foreach_bit (viewport_index,
+                     command_writer->state_draw.viewport.viewports_pending.pa_sc_vport_z_min_max &
+                        used_viewport_mask) {
+         if (memcmp(
+                command_writer->hw_state_draw.viewports[viewport_index].pa_sc_vport_z_min_max,
+                command_writer->state_draw.viewport.viewports[viewport_index].pa_sc_vport_z_min_max,
+                sizeof(float) * 2) != 0) {
+            memcpy(
+               command_writer->hw_state_draw.viewports[viewport_index].pa_sc_vport_z_min_max,
+               command_writer->state_draw.viewport.viewports[viewport_index].pa_sc_vport_z_min_max,
+               sizeof(float) * 2);
+            scale_offset_z_min_max_lowest_modified =
+               MIN2(viewport_index, scale_offset_z_min_max_lowest_modified);
          }
       }
    }
-}
+   command_writer->state_draw.viewport.viewports_pending.pa_sc_vport_z_min_max &=
+      ~used_viewport_mask;
 
-static void
-terakan_state_draw_apply_pa_cl_clip_cntl(struct terakan_gfx_command_writer * const command_writer)
-{
-   bool const modified =
-      command_writer->hw_state_draw.pa_cl_clip_cntl != command_writer->state_draw.pa_cl_clip_cntl;
-   command_writer->hw_state_draw.pa_cl_clip_cntl = command_writer->state_draw.pa_cl_clip_cntl;
-   terakan_hw_state_draw_written(&command_writer->hw_state_draw,
-                                 TERAKAN_HW_STATE_DRAW_INDEX_PA_CL_CLIP_CNTL, modified);
+   terakan_hw_state_draw_update_viewports(
+      &command_writer->hw_state_draw, command_writer->state_draw.viewport.count,
+      scale_offset_z_min_max_lowest_modified, scissor_lowest_modified);
 }
 
 static void
@@ -912,15 +929,8 @@ static terakan_state_draw_apply_function const
       [TERAKAN_STATE_DRAW_INDEX_SQ_PGM_FS] = terakan_state_draw_apply_sq_pgm_fs,
       [TERAKAN_STATE_DRAW_INDEX_SQ_RESOURCES_FS] = terakan_state_draw_apply_sq_resources_fs,
       [TERAKAN_STATE_DRAW_INDEX_SQ_PGM_PS] = terakan_state_draw_apply_sq_pgm_ps,
-      [TERAKAN_STATE_DRAW_INDEX_PA_CL_VPORT_XY_SCALE_OFFSET] =
-         terakan_state_draw_apply_pa_cl_vport_xy_scale_offset,
-      [TERAKAN_STATE_DRAW_INDEX_PA_CL_VPORT_Z_SCALE_OFFSET] =
-         terakan_state_draw_apply_pa_cl_vport_z_scale_offset,
-      [TERAKAN_STATE_DRAW_INDEX_PA_CL_GB] = terakan_state_draw_apply_pa_cl_gb,
-      [TERAKAN_STATE_DRAW_INDEX_PA_SC_VPORT_SCISSOR] = terakan_state_draw_apply_pa_sc_vport_scissor,
-      [TERAKAN_STATE_DRAW_INDEX_PA_SC_VPORT_Z_MIN_MAX] =
-         terakan_state_draw_apply_pa_sc_vport_z_min_max,
       [TERAKAN_STATE_DRAW_INDEX_PA_CL_CLIP_CNTL] = terakan_state_draw_apply_pa_cl_clip_cntl,
+      [TERAKAN_STATE_DRAW_INDEX_VIEWPORT] = terakan_state_draw_apply_viewport,
       [TERAKAN_STATE_DRAW_INDEX_PA_SU_SC_MODE_CNTL] = terakan_state_draw_apply_pa_su_sc_mode_cntl,
       [TERAKAN_STATE_DRAW_INDEX_PA_CL_VTE_CNTL] = terakan_state_draw_apply_pa_cl_vte_cntl,
       [TERAKAN_STATE_DRAW_INDEX_PA_SC_MODE_CNTL_0] = terakan_state_draw_apply_pa_sc_mode_cntl_0,
@@ -1025,19 +1035,6 @@ terakan_state_draw_reset(struct terakan_state_draw * const state,
 
    state->sq_pgm_ps.fs = NULL;
 
-   state->viewport_count = 0;
-   memset(state->viewports, 0, sizeof(state->viewports));
-   memset(state->pa_sc_vport_generic_scissor_tl_br_xy, 0,
-          sizeof(state->pa_sc_vport_generic_scissor_tl_br_xy));
-
-   /* depthClampEnable = VK_FALSE, must be initialized accurately because depthClamp is an optional
-    * feature, when it's disabled, VK_FALSE must be assumed if never set by the application.
-    */
-   bool const depth_range_unrestricted = device->vk.enabled_extensions.EXT_depth_range_unrestricted;
-   state->pa_sc_vport_z_min_0_max_1 = !depth_range_unrestricted;
-   /* depthClampEnable = VK_FALSE */
-   state->db_render_override = S_02800C_DISABLE_VIEWPORT_CLAMP(depth_range_unrestricted);
-
    state->pa_cl_clip_cntl =
       /* negativeOneToOne = VK_FALSE */
       S_028810_DX_CLIP_SPACE_DEF(1) |
@@ -1047,6 +1044,27 @@ terakan_state_draw_reset(struct terakan_state_draw * const state,
       S_028810_DX_LINEAR_ATTR_CLIP_ENA(1) |
       /* depthClampEnable = VK_FALSE, no VkPipelineRasterizationDepthClipStateCreateInfoEXT */
       S_028810_ZCLIP_NEAR_DISABLE(0) | S_028810_ZCLIP_FAR_DISABLE(0);
+
+   /* State for depthClampEnable must be initialized accurately because depthClamp is an optional
+    * feature, when the feature is disabled, depthClampEnable = VK_FALSE must be assumed if never
+    * set by the application.
+    */
+   bool const depth_range_unrestricted = device->vk.enabled_extensions.EXT_depth_range_unrestricted;
+
+   state->viewport.count = 0;
+   uint16_t const all_viewports_pending = BITFIELD_MASK(ARRAY_SIZE(state->viewport.viewports));
+   state->viewport.viewports_pending.pa_cl_vport_xy_scale_offset = all_viewports_pending;
+   state->viewport.viewports_pending.pa_cl_vport_z_scale_offset = all_viewports_pending;
+   state->viewport.viewports_pending.pa_sc_vport_scissor = all_viewports_pending;
+   state->viewport.viewports_pending.pa_sc_vport_z_min_max = all_viewports_pending;
+   state->viewport.pa_cl_gb_pending = true;
+   /* depthClampEnable = VK_FALSE */
+   state->viewport.pa_sc_vport_z_min_0_max_1 = !depth_range_unrestricted;
+   /* negativeOneToOne = VK_FALSE */
+   state->viewport.from_apply_pa_cl_clip_cntl.dx_clip_space_def = true;
+   memset(state->viewport.viewports, 0, sizeof(state->viewport.viewports));
+   memset(state->viewport.pa_sc_vport_generic_scissor_tl_br_xy, 0,
+          sizeof(state->viewport.pa_sc_vport_generic_scissor_tl_br_xy));
 
    state->pa_su_sc_mode_cntl =
       /* cullMode = VK_CULL_MODE_NONE */
@@ -1070,6 +1088,9 @@ terakan_state_draw_reset(struct terakan_state_draw * const state,
     * pStencilAttachment = NULL
     */
    state->db_depth_stencil_buffer.bo = NULL;
+
+   /* depthClampEnable = VK_FALSE */
+   state->db_render_override = S_02800C_DISABLE_VIEWPORT_CLAMP(depth_range_unrestricted);
 
    /* depthTestEnable = VK_FALSE
     * depthWriteEnable = VK_FALSE

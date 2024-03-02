@@ -147,7 +147,7 @@ struct terakan_pipeline_graphics_pre_rasterization {
    bool pa_sc_vport_z_min_0_max_1;
 
    /* TERAKAN_PIPELINE_GRAPHICS_STATE_VIEWPORT_COUNT and TERAKAN_PIPELINE_GRAPHICS_STATE_VIEWPORT */
-   uint32_t viewport_count;
+   uint8_t viewport_count;
    /* TERAKAN_PIPELINE_GRAPHICS_STATE_VIEWPORT */
    struct terakan_state_draw_viewport viewports[TERAKAN_HW_STATE_DRAW_MAX_VIEWPORTS];
 

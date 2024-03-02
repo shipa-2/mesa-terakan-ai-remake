@@ -135,12 +135,14 @@ terakan_pipeline_graphics_apply_pa_sc_vport_z_min_0_max_1(
    struct terakan_gfx_command_writer * const command_writer,
    struct terakan_pipeline_graphics const * const pipeline)
 {
-   if (command_writer->state_draw.pa_sc_vport_z_min_0_max_1 !=
+   if (command_writer->state_draw.viewport.pa_sc_vport_z_min_0_max_1 !=
        pipeline->pre_rasterization.pa_sc_vport_z_min_0_max_1) {
-      command_writer->state_draw.pa_sc_vport_z_min_0_max_1 =
+      command_writer->state_draw.viewport.pa_sc_vport_z_min_0_max_1 =
          pipeline->pre_rasterization.pa_sc_vport_z_min_0_max_1;
+      command_writer->state_draw.viewport.viewports_pending.pa_sc_vport_z_min_max =
+         BITFIELD_MASK(ARRAY_SIZE(command_writer->state_draw.viewport.viewports));
       terakan_state_draw_set_pending(&command_writer->state_draw,
-                                     TERAKAN_STATE_DRAW_INDEX_PA_SC_VPORT_Z_MIN_MAX);
+                                     TERAKAN_STATE_DRAW_INDEX_VIEWPORT);
    }
 }
 
@@ -158,38 +160,48 @@ terakan_pipeline_graphics_apply_viewport(struct terakan_gfx_command_writer * con
                                          struct terakan_pipeline_graphics const * const pipeline)
 {
    struct terakan_state_draw * const state = &command_writer->state_draw;
-   for (uint32_t viewport_index = 0; viewport_index < pipeline->pre_rasterization.viewport_count;
+   bool any_pending = false;
+   for (uint8_t viewport_index = 0; viewport_index < pipeline->pre_rasterization.viewport_count;
         ++viewport_index) {
-      struct terakan_state_draw_viewport * const state_viewport = &state->viewports[viewport_index];
+      struct terakan_state_draw_viewport * const state_viewport =
+         &state->viewport.viewports[viewport_index];
       struct terakan_state_draw_viewport const * const pipeline_viewport =
          &pipeline->pre_rasterization.viewports[viewport_index];
+      uint16_t const viewport_bit = (uint16_t)BITFIELD_BIT(viewport_index);
       if (memcmp(state_viewport->pa_cl_vport_xy_scale_offset,
                  pipeline_viewport->pa_cl_vport_xy_scale_offset,
                  sizeof(state_viewport->pa_cl_vport_xy_scale_offset)) != 0) {
-         terakan_state_draw_set_pending(state,
-                                        TERAKAN_STATE_DRAW_INDEX_PA_CL_VPORT_XY_SCALE_OFFSET);
+         any_pending = true;
+         state->viewport.viewports_pending.pa_cl_vport_xy_scale_offset |= viewport_bit;
       }
       if (memcmp(state_viewport->pa_cl_vport_z_gl_dx_scale_offset,
                  pipeline_viewport->pa_cl_vport_z_gl_dx_scale_offset,
                  sizeof(state_viewport->pa_cl_vport_z_gl_dx_scale_offset)) != 0) {
-         terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_INDEX_PA_CL_VPORT_Z_SCALE_OFFSET);
+         any_pending = true;
+         state->viewport.viewports_pending.pa_cl_vport_z_scale_offset |= viewport_bit;
       }
       if (memcmp(state_viewport->pa_cl_gb_vert_horz_clip_adj,
                  pipeline_viewport->pa_cl_gb_vert_horz_clip_adj,
                  sizeof(state_viewport->pa_cl_gb_vert_horz_clip_adj)) != 0) {
-         terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_INDEX_PA_CL_GB);
+         any_pending = true;
+         state->viewport.pa_cl_gb_pending = true;
       }
       if (memcmp(state_viewport->pa_sc_vport_scissor_tl_br_xy,
                  pipeline_viewport->pa_sc_vport_scissor_tl_br_xy,
                  sizeof(state_viewport->pa_sc_vport_scissor_tl_br_xy)) != 0) {
-         terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_INDEX_PA_SC_VPORT_SCISSOR);
+         any_pending = true;
+         state->viewport.viewports_pending.pa_sc_vport_scissor |= viewport_bit;
       }
       if (memcmp(state_viewport->pa_sc_vport_z_min_max, pipeline_viewport->pa_sc_vport_z_min_max,
                  sizeof(state_viewport->pa_sc_vport_z_min_max)) != 0 &&
-          !state->pa_sc_vport_z_min_0_max_1) {
-         terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_INDEX_PA_SC_VPORT_Z_MIN_MAX);
+          !state->viewport.pa_sc_vport_z_min_0_max_1) {
+         any_pending = true;
+         state->viewport.viewports_pending.pa_sc_vport_z_min_max |= viewport_bit;
       }
       *state_viewport = *pipeline_viewport;
+   }
+   if (any_pending) {
+      terakan_state_draw_set_pending(state, TERAKAN_STATE_DRAW_INDEX_VIEWPORT);
    }
 }
 
@@ -198,19 +210,21 @@ terakan_pipeline_graphics_apply_pa_sc_vport_generic_scissor(
    struct terakan_gfx_command_writer * const command_writer,
    struct terakan_pipeline_graphics const * const pipeline)
 {
-   if (!terakan_state_draw_is_pending(&command_writer->state_draw,
-                                      TERAKAN_STATE_DRAW_INDEX_PA_SC_VPORT_SCISSOR) &&
-       memcmp(command_writer->state_draw.pa_sc_vport_generic_scissor_tl_br_xy,
-              pipeline->pre_rasterization.pa_sc_vport_generic_scissor_tl_br_xy,
-              sizeof(uint16_t) * 4 *
-                 MIN2(command_writer->state_draw.viewport_count,
-                      pipeline->pre_rasterization.pa_sc_vport_generic_scissor_count)) != 0) {
-      terakan_state_draw_set_pending(&command_writer->state_draw,
-                                     TERAKAN_STATE_DRAW_INDEX_PA_SC_VPORT_SCISSOR);
+   for (uint32_t scissor_index = 0;
+        scissor_index < pipeline->pre_rasterization.pa_sc_vport_generic_scissor_count;
+        ++scissor_index) {
+      uint16_t * const viewport_scissor =
+         command_writer->state_draw.viewport.pa_sc_vport_generic_scissor_tl_br_xy[scissor_index][0];
+      uint16_t const * const pipeline_scissor =
+         pipeline->pre_rasterization.pa_sc_vport_generic_scissor_tl_br_xy[scissor_index][0];
+      if (memcmp(viewport_scissor, pipeline_scissor, sizeof(uint16_t) * 4) != 0) {
+         memcpy(viewport_scissor, pipeline_scissor, sizeof(uint16_t) * 4);
+         command_writer->state_draw.viewport.viewports_pending.pa_sc_vport_scissor |=
+            (uint16_t)BITFIELD_BIT(scissor_index);
+         terakan_state_draw_set_pending(&command_writer->state_draw,
+                                        TERAKAN_STATE_DRAW_INDEX_VIEWPORT);
+      }
    }
-   memcpy(command_writer->state_draw.pa_sc_vport_generic_scissor_tl_br_xy,
-          pipeline->pre_rasterization.pa_sc_vport_generic_scissor_tl_br_xy,
-          sizeof(uint16_t) * 4 * pipeline->pre_rasterization.pa_sc_vport_generic_scissor_count);
 }
 
 static void
@@ -218,18 +232,11 @@ terakan_pipeline_graphics_apply_pa_cl_clip_cntl(
    struct terakan_gfx_command_writer * const command_writer,
    struct terakan_pipeline_graphics const * const pipeline)
 {
-   uint32_t const old_pa_cl_clip_cntl = command_writer->state_draw.pa_cl_clip_cntl;
    terakan_state_draw_replace_fields(&command_writer->state_draw,
                                      TERAKAN_STATE_DRAW_INDEX_PA_CL_CLIP_CNTL,
                                      &command_writer->state_draw.pa_cl_clip_cntl,
                                      pipeline->pre_rasterization.pa_cl_clip_cntl_clear,
                                      pipeline->pre_rasterization.pa_cl_clip_cntl);
-   uint32_t const new_pa_cl_clip_cntl = command_writer->state_draw.pa_cl_clip_cntl;
-   if (G_028810_DX_CLIP_SPACE_DEF(old_pa_cl_clip_cntl) !=
-       G_028810_DX_CLIP_SPACE_DEF(new_pa_cl_clip_cntl)) {
-      terakan_state_draw_set_pending(&command_writer->state_draw,
-                                     TERAKAN_STATE_DRAW_INDEX_PA_CL_VPORT_Z_SCALE_OFFSET);
-   }
 }
 
 static void
@@ -714,12 +721,12 @@ terakan_pipeline_graphics_pre_rasterization_init(
       /* TERAKAN_PIPELINE_GRAPHICS_STATE_VIEWPORT_COUNT */
       if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_VP_VIEWPORT_COUNT)) {
          assert(state->vp->viewport_count <= ARRAY_SIZE(pipeline->pre_rasterization.viewports));
-         pipeline->pre_rasterization.viewport_count = state->vp->viewport_count;
+         pipeline->pre_rasterization.viewport_count = (uint8_t)state->vp->viewport_count;
          BITSET_SET(pipeline->static_state, TERAKAN_PIPELINE_GRAPHICS_STATE_VIEWPORT_COUNT);
          /* TERAKAN_PIPELINE_GRAPHICS_STATE_VIEWPORT */
          if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_VP_VIEWPORTS)) {
-            for (uint32_t viewport_index = 0; viewport_index < state->vp->viewport_count;
-                 ++viewport_index) {
+            for (uint8_t viewport_index = 0;
+                 viewport_index < pipeline->pre_rasterization.viewport_count; ++viewport_index) {
                terakan_state_draw_viewport_translate(
                   &state->vp->viewports[viewport_index],
                   &pipeline->pre_rasterization.viewports[viewport_index]);
