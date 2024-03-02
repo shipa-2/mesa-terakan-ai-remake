@@ -779,7 +779,7 @@ terakan_hw_state_draw_emit_cb_blend_control(struct terakan_gfx_command_writer * 
    while (state->cb_blend_control.modified) {
       uint32_t const range_start = (uint32_t)ffs((int)state->cb_blend_control.modified) - 1;
       uint32_t const range_end =
-         (uint32_t)ffs((int)(~state->cb_blend_control.modified & BITFIELD_MASK(range_start)) |
+         (uint32_t)ffs((int)(~state->cb_blend_control.modified & ~BITFIELD_MASK(range_start)) |
                        (1 << TERAKAN_COLOR_HW_RTV_COUNT)) -
          1;
       uint32_t const range_length = range_end - range_start;
