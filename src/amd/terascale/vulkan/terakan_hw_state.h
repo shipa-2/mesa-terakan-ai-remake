@@ -86,6 +86,12 @@ struct terakan_hw_state_draw_viewport {
    uint32_t pa_sc_vport_scissor[2];
 };
 
+/* PA_SU_POLY_OFFSET_FRONT/BACK_SCALE is applied to the slope between subpixels that is computed by
+ * the hardware. To convert a pixel slope scale from Vulkan to a subpixel slope scale in the
+ * registers, multiply it by TERAKAN_HW_STATE_DRAW_POLY_OFFSET_SLOPE_SUBPIXELS_IN_PIXEL.
+ */
+#define TERAKAN_HW_STATE_DRAW_POLY_OFFSET_SLOPE_SUBPIXELS_IN_PIXEL 16.0f
+
 extern uint32_t const terakan_standard_sample_locs[5][16 / 4];
 extern uint32_t const terakan_standard_sample_max_dists[5];
 
@@ -115,6 +121,10 @@ enum terakan_hw_state_draw_index {
    TERAKAN_HW_STATE_DRAW_INDEX_PA_CL_VTE_CNTL,
 
    TERAKAN_HW_STATE_DRAW_INDEX_PA_SC_MODE_CNTL_0,
+
+   TERAKAN_HW_STATE_DRAW_INDEX_PA_SU_POLY_OFFSET_DB_FMT_CNTL,
+
+   TERAKAN_HW_STATE_DRAW_INDEX_PA_SU_POLY_OFFSET_CLAMP_SCALE_OFFSET,
 
    TERAKAN_HW_STATE_DRAW_INDEX_PA_CL_GB,
 
@@ -235,6 +245,14 @@ struct terakan_hw_state_draw {
 
    /* TERAKAN_HW_STATE_DRAW_INDEX_PA_SC_MODE_CNTL_0 */
    uint32_t pa_sc_mode_cntl_0;
+
+   /* TERAKAN_HW_STATE_DRAW_INDEX_PA_SU_POLY_OFFSET_DB_FMT_CNTL */
+   uint32_t pa_su_poly_offset_db_fmt_cntl;
+
+   /* TERAKAN_HW_STATE_DRAW_INDEX_PA_SU_POLY_OFFSET_CLAMP_SCALE_OFFSET */
+   float pa_su_poly_offset_clamp;
+   float pa_su_poly_offset_subpixel_slope_scale;
+   float pa_su_poly_offset_offset;
 
    /* TERAKAN_HW_STATE_DRAW_INDEX_PA_CL_GB */
    float pa_cl_gb_vert_horz_clip_disc_adj[2][2];

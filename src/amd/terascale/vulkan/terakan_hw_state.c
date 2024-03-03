@@ -339,6 +339,47 @@ terakan_hw_state_draw_emit_pa_sc_mode_cntl_0(
 }
 
 static void
+terakan_hw_state_draw_emit_pa_su_poly_offset_db_fmt_cntl(
+   struct terakan_gfx_command_writer * const command_writer)
+{
+   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, 0, 0, true);
+   if (unlikely(packet == NULL)) {
+      return;
+   }
+   *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
+   *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028B78_PA_SU_POLY_OFFSET_DB_FMT_CNTL);
+   *packet++ = command_writer->hw_state_draw.pa_su_poly_offset_db_fmt_cntl;
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
+}
+
+static void
+terakan_hw_state_draw_emit_pa_su_poly_offset_clamp_scale_offset(
+   struct terakan_gfx_command_writer * const command_writer)
+{
+   uint32_t const register_count =
+      (R_028B8C_PA_SU_POLY_OFFSET_BACK_OFFSET - R_028B7C_PA_SU_POLY_OFFSET_CLAMP) /
+         sizeof(uint32_t) +
+      1;
+   uint32_t * packet =
+      terakan_gfx_command_writer_emit(command_writer, 2 + register_count, 0, 0, true);
+   if (unlikely(packet == NULL)) {
+      return;
+   }
+   *packet++ = PKT3(PKT3_SET_CONTEXT_REG, register_count, 0);
+   *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028B7C_PA_SU_POLY_OFFSET_CLAMP);
+   memcpy(packet++, &command_writer->hw_state_draw.pa_su_poly_offset_clamp, sizeof(float));
+   /* Front face. */
+   memcpy(packet++, &command_writer->hw_state_draw.pa_su_poly_offset_subpixel_slope_scale,
+          sizeof(float));
+   memcpy(packet++, &command_writer->hw_state_draw.pa_su_poly_offset_offset, sizeof(float));
+   /* Back face. */
+   memcpy(packet++, &command_writer->hw_state_draw.pa_su_poly_offset_subpixel_slope_scale,
+          sizeof(float));
+   memcpy(packet++, &command_writer->hw_state_draw.pa_su_poly_offset_offset, sizeof(float));
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
+}
+
+static void
 terakan_hw_state_draw_emit_pa_cl_gb(struct terakan_gfx_command_writer * const command_writer)
 {
    uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 4, 0, 0, true);
@@ -1844,6 +1885,10 @@ static terakan_hw_state_draw_emit_function const
       [TERAKAN_HW_STATE_DRAW_INDEX_PA_CL_VTE_CNTL] = terakan_hw_state_draw_emit_pa_cl_vte_cntl,
       [TERAKAN_HW_STATE_DRAW_INDEX_PA_SC_MODE_CNTL_0] =
          terakan_hw_state_draw_emit_pa_sc_mode_cntl_0,
+      [TERAKAN_HW_STATE_DRAW_INDEX_PA_SU_POLY_OFFSET_DB_FMT_CNTL] =
+         terakan_hw_state_draw_emit_pa_su_poly_offset_db_fmt_cntl,
+      [TERAKAN_HW_STATE_DRAW_INDEX_PA_SU_POLY_OFFSET_CLAMP_SCALE_OFFSET] =
+         terakan_hw_state_draw_emit_pa_su_poly_offset_clamp_scale_offset,
       [TERAKAN_HW_STATE_DRAW_INDEX_PA_CL_GB] = terakan_hw_state_draw_emit_pa_cl_gb,
       [TERAKAN_HW_STATE_DRAW_INDEX_PA_SC_AA_SAMPLES] = terakan_hw_state_draw_emit_pa_sc_aa_samples,
       [TERAKAN_HW_STATE_DRAW_INDEX_PA_SC_AA_MASK] = terakan_hw_state_draw_emit_pa_sc_aa_mask,

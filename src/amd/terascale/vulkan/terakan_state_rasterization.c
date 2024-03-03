@@ -31,10 +31,12 @@
 #include "util/macros.h"
 #include "util/u_math.h"
 #include "vk_device.h"
+#include "vk_util.h"
 
 #include <assert.h>
 #include <math.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -301,4 +303,47 @@ terakan_CmdSetDepthBiasEnable(VkCommandBuffer const commandBuffer, VkBool32 cons
       state_draw, TERAKAN_STATE_DRAW_INDEX_PA_SU_SC_MODE_CNTL, &state_draw->pa_su_sc_mode_cntl,
       TERAKAN_STATE_DRAW_DEPTH_BIAS_ENABLE_PA_SU_SC_MODE_CNTL_CLEAR,
       terakan_state_draw_depth_bias_enable_pa_su_sc_mode_cntl(depthBiasEnable));
+}
+
+VKAPI_ATTR void VKAPI_CALL
+terakan_CmdSetDepthBias2EXT(VkCommandBuffer const commandBuffer,
+                            VkDepthBiasInfoEXT const * const pDepthBiasInfo)
+{
+   struct terakan_gfx_command_writer * const command_writer =
+      terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx;
+
+   float const subpixel_slope_scale = TERAKAN_HW_STATE_DRAW_POLY_OFFSET_SLOPE_SUBPIXELS_IN_PIXEL *
+                                      pDepthBiasInfo->depthBiasSlopeFactor;
+   /* These values are not needed by internal draws, modify hw_state_draw directly. */
+   bool const clamp_scale_offset_modified =
+      memcmp(&command_writer->hw_state_draw.pa_su_poly_offset_clamp,
+             &pDepthBiasInfo->depthBiasClamp, sizeof(float)) != 0 ||
+      memcmp(&command_writer->hw_state_draw.pa_su_poly_offset_subpixel_slope_scale,
+             &subpixel_slope_scale, sizeof(float)) != 0 ||
+      memcmp(&command_writer->hw_state_draw.pa_su_poly_offset_offset,
+             &pDepthBiasInfo->depthBiasConstantFactor, sizeof(float)) != 0;
+   command_writer->hw_state_draw.pa_su_poly_offset_clamp = pDepthBiasInfo->depthBiasClamp;
+   command_writer->hw_state_draw.pa_su_poly_offset_subpixel_slope_scale = subpixel_slope_scale;
+   command_writer->hw_state_draw.pa_su_poly_offset_offset = pDepthBiasInfo->depthBiasConstantFactor;
+   terakan_hw_state_draw_written(&command_writer->hw_state_draw,
+                                 TERAKAN_HW_STATE_DRAW_INDEX_PA_SU_POLY_OFFSET_CLAMP_SCALE_OFFSET,
+                                 clamp_scale_offset_modified);
+
+   VkDepthBiasRepresentationInfoEXT const * const representation_info =
+      vk_find_struct_const(pDepthBiasInfo->pNext, DEPTH_BIAS_REPRESENTATION_INFO_EXT);
+   VkDepthBiasRepresentationEXT const representation =
+      representation_info != NULL
+         ? representation_info->depthBiasRepresentation
+         : VK_DEPTH_BIAS_REPRESENTATION_LEAST_REPRESENTABLE_VALUE_FORMAT_EXT;
+   bool const representation_exact =
+      representation_info != NULL && representation_info->depthBiasExact != VK_FALSE;
+   if (command_writer->state_draw.pa_su_poly_offset_db_fmt_cntl.representation != representation ||
+       command_writer->state_draw.pa_su_poly_offset_db_fmt_cntl.representation_exact !=
+          representation_exact) {
+      command_writer->state_draw.pa_su_poly_offset_db_fmt_cntl.representation = representation;
+      command_writer->state_draw.pa_su_poly_offset_db_fmt_cntl.representation_exact =
+         representation_exact;
+      terakan_state_draw_set_pending(&command_writer->state_draw,
+                                     TERAKAN_STATE_DRAW_INDEX_PA_SU_POLY_OFFSET_DB_FMT_CNTL);
+   }
 }

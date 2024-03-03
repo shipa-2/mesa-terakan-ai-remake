@@ -219,7 +219,7 @@ terakan_physical_device_get_capabilities(
    /* TODO(Triang3l): multiDrawIndirect. */
    /* TODO(Triang3l): drawIndirectFirstInstance. */
    features_out->depthClamp = true;
-   /* TODO(Triang3l): depthBiasClamp. */
+   features_out->depthBiasClamp = true;
    features_out->fillModeNonSolid = true;
    /* TODO(Triang3l): wideLines. */
    /* TODO(Triang3l): largePoints. */
@@ -511,6 +511,13 @@ terakan_physical_device_get_capabilities(
    /* Vertex fetch. */
    properties_out->uniformTexelBufferOffsetAlignmentBytes = sizeof(uint32_t);
    properties_out->uniformTexelBufferOffsetSingleTexelAlignment = VK_TRUE;
+
+   /* VK_EXT_depth_bias_control (#284). */
+   extensions_out->EXT_depth_bias_control = true;
+   features_out->depthBiasControl = true;
+   features_out->leastRepresentableValueForceUnormRepresentation = true;
+   features_out->floatRepresentation = true;
+   features_out->depthBiasExact = true;
 
    /* TODO(Triang3l): Research border color formats with regard to VK_EXT_custom_border_color (#288)
     * and VK_EXT_border_color_swizzle (#412).

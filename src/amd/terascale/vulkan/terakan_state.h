@@ -82,6 +82,9 @@ enum terakan_state_draw_index {
 
    TERAKAN_STATE_DRAW_INDEX_DB_DEPTH_STENCIL_BUFFER,
 
+   /* Depends on TERAKAN_STATE_DRAW_INDEX_DB_DEPTH_STENCIL_BUFFER. */
+   TERAKAN_STATE_DRAW_INDEX_PA_SU_POLY_OFFSET_DB_FMT_CNTL,
+
    TERAKAN_STATE_DRAW_INDEX_DB_RENDER_OVERRIDE,
 
    TERAKAN_STATE_DRAW_INDEX_DB_STENCILREFMASK,
@@ -274,6 +277,19 @@ struct terakan_state_draw {
       /* The descriptor is undefined if the BO is NULL. */
       struct terakan_depth_stencil_descriptor descriptor;
    } db_depth_stencil_buffer;
+
+   /* TERAKAN_STATE_DRAW_INDEX_PA_SU_POLY_OFFSET_DB_FMT_CNTL */
+   struct {
+      VkDepthBiasRepresentationEXT representation;
+      bool representation_exact;
+      struct {
+         /* A S_028040_FORMAT value. V_028040_Z_INVALID is not allowed, specify
+          * TERAKAN_STATE_DRAW_PA_SU_POLY_OFFSET_DB_FMT_CNTL_NO_ATTACHMENT_FORMAT when a depth
+          * attachment is not present instead.
+          */
+         uint32_t poly_offset_z_format;
+      } from_apply_db_depth_stencil_buffer;
+   } pa_su_poly_offset_db_fmt_cntl;
 
    /* TERAKAN_STATE_DRAW_INDEX_DB_RENDER_OVERRIDE */
    uint32_t db_render_override;

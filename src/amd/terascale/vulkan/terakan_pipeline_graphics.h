@@ -74,6 +74,8 @@ enum terakan_pipeline_graphics_state_index {
 
    TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SU_SC_MODE_CNTL,
 
+   TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SU_POLY_OFFSET,
+
    TERAKAN_PIPELINE_GRAPHICS_STATE_DB_RENDER_OVERRIDE_PRE_RASTERIZATION,
 
    TERAKAN_PIPELINE_GRAPHICS_STATE_PRE_RASTERIZATION_END,
@@ -162,6 +164,15 @@ struct terakan_pipeline_graphics_pre_rasterization {
    /* TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SU_SC_MODE_CNTL */
    uint32_t pa_su_sc_mode_cntl_clear;
    uint32_t pa_su_sc_mode_cntl;
+
+   /* TERAKAN_PIPELINE_GRAPHICS_STATE_PA_SU_POLY_OFFSET */
+   struct {
+      float clamp;
+      float subpixel_slope_scale;
+      float offset;
+      VkDepthBiasRepresentationEXT representation;
+      bool representation_exact;
+   } pa_su_poly_offset;
 
    /* TERAKAN_PIPELINE_GRAPHICS_STATE_DB_RENDER_OVERRIDE_PRE_RASTERIZATION */
    uint32_t db_render_override_clear;

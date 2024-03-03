@@ -65,6 +65,18 @@ terakan_state_translate_window_rect_unpacked(VkRect2D const * const rect, uint16
       CLAMP(rect->offset.y + rect->extent.height, 0, TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES);
 }
 
+/* Section 28.12.3. "Depth Bias" of the Vulkan 1.3.279 specification says:
+ *
+ *    "r is the minimum resolvable difference that depends on the depth attachment representation."
+ *
+ *    "If no depth attachment is present, r is undefined."
+ *
+ * To simplify handling of an unused depth attachment, treat it as 32-bit floating-point.
+ * This fallback specifically is chosen because without a depth attachment, the depth bias is still
+ * visible to applications via gl_FragCoord.z, and it's a 32-bit floating-point number.
+ */
+#define TERAKAN_STATE_DRAW_PA_SU_POLY_OFFSET_DB_FMT_CNTL_NO_ATTACHMENT_FORMAT V_028040_Z_32_FLOAT
+
 typedef void (*terakan_state_draw_apply_function)(
    struct terakan_gfx_command_writer * command_writer);
 
@@ -529,6 +541,9 @@ terakan_state_draw_apply_db_depth_stencil_buffer(
                    command_writer->state_draw.db_depth_stencil_buffer.bo;
    command_writer->hw_state_draw.db_depth_stencil_buffer.bo =
       command_writer->state_draw.db_depth_stencil_buffer.bo;
+
+   uint32_t poly_offset_z_format = V_028040_Z_INVALID;
+
    if (command_writer->state_draw.db_depth_stencil_buffer.bo != NULL) {
       modified =
          modified || memcmp(&command_writer->hw_state_draw.db_depth_stencil_buffer.descriptor,
@@ -536,9 +551,112 @@ terakan_state_draw_apply_db_depth_stencil_buffer(
                             sizeof(struct terakan_depth_stencil_descriptor)) != 0;
       command_writer->hw_state_draw.db_depth_stencil_buffer.descriptor =
          command_writer->state_draw.db_depth_stencil_buffer.descriptor;
+
+      poly_offset_z_format =
+         G_028040_FORMAT(command_writer->state_draw.db_depth_stencil_buffer.descriptor.z_info);
    }
+
    terakan_hw_state_draw_written(&command_writer->hw_state_draw,
                                  TERAKAN_HW_STATE_DRAW_INDEX_DB_DEPTH_STENCIL_BUFFER, modified);
+
+   if (poly_offset_z_format == V_028040_Z_INVALID) {
+      poly_offset_z_format = TERAKAN_STATE_DRAW_PA_SU_POLY_OFFSET_DB_FMT_CNTL_NO_ATTACHMENT_FORMAT;
+   }
+   TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(PA_SU_POLY_OFFSET_DB_FMT_CNTL, DB_DEPTH_STENCIL_BUFFER);
+   if (command_writer->state_draw.pa_su_poly_offset_db_fmt_cntl.from_apply_db_depth_stencil_buffer
+          .poly_offset_z_format != poly_offset_z_format) {
+      command_writer->state_draw.pa_su_poly_offset_db_fmt_cntl.from_apply_db_depth_stencil_buffer
+         .poly_offset_z_format = poly_offset_z_format;
+      terakan_state_draw_set_pending(&command_writer->state_draw,
+                                     TERAKAN_STATE_DRAW_INDEX_PA_SU_POLY_OFFSET_DB_FMT_CNTL);
+   }
+}
+
+static void
+terakan_state_draw_apply_pa_su_poly_offset_db_fmt_cntl(
+   struct terakan_gfx_command_writer * const command_writer)
+{
+   uint32_t pa_su_poly_offset_db_fmt_cntl;
+   if (command_writer->state_draw.pa_su_poly_offset_db_fmt_cntl.representation ==
+       VK_DEPTH_BIAS_REPRESENTATION_FLOAT_EXT) {
+      pa_su_poly_offset_db_fmt_cntl = S_028B78_POLY_OFFSET_NEG_NUM_DB_BITS(0);
+   } else {
+      TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(PA_SU_POLY_OFFSET_DB_FMT_CNTL, DB_DEPTH_STENCIL_BUFFER);
+      uint32_t const z_format = command_writer->state_draw.pa_su_poly_offset_db_fmt_cntl
+                                   .from_apply_db_depth_stencil_buffer.poly_offset_z_format;
+      switch (z_format) {
+      case V_028040_Z_16:
+         pa_su_poly_offset_db_fmt_cntl = S_028B78_POLY_OFFSET_NEG_NUM_DB_BITS(-16);
+         break;
+      case V_028040_Z_24:
+         pa_su_poly_offset_db_fmt_cntl = S_028B78_POLY_OFFSET_NEG_NUM_DB_BITS(-24);
+         break;
+      default:
+         assert(z_format == V_028040_Z_32_FLOAT);
+         if (command_writer->state_draw.pa_su_poly_offset_db_fmt_cntl.representation ==
+             VK_DEPTH_BIAS_REPRESENTATION_LEAST_REPRESENTABLE_VALUE_FORCE_UNORM_EXT) {
+            /* Number of mantissa bits plus one as defined in the specification, also matching the
+             * unorm24 depth bias formula as the use case described in the VK_EXT_depth_bias_control
+             * proposal is emulation of unorm24 depth using float32.
+             */
+            pa_su_poly_offset_db_fmt_cntl = S_028B78_POLY_OFFSET_NEG_NUM_DB_BITS(-24);
+         } else {
+            pa_su_poly_offset_db_fmt_cntl =
+               S_028B78_POLY_OFFSET_NEG_NUM_DB_BITS(-23) | S_028B78_POLY_OFFSET_DB_IS_FLOAT_FMT(1);
+         }
+         break;
+      }
+      if (!G_028B78_POLY_OFFSET_DB_IS_FLOAT_FMT(pa_su_poly_offset_db_fmt_cntl) &&
+          !command_writer->state_draw.pa_su_poly_offset_db_fmt_cntl.representation_exact) {
+         /* According to testing done on Barts by drawing a primitive at Z = 0 with a
+          * DB_IS_FLOAT_FMT(0) constant depth bias and reading gl_FragCoord.z, the hardware simply
+          * exponent-biases the constant depth bias for unorm formats - that is, the bias ends up
+          * being scaled by 1/(2^n), where n is -NEG_NUM_DB_BITS, or 1/0x10000 for unorm16 and
+          * 1/0x1000000 for unorm24 if NEG_NUM_DB_BITS is minus the number of bits in the format.
+          *
+          * However, in a unorm format with n bits, the distance between adjacent values is
+          * 1/(2^n - 1), or 1/0xFFFF for unorm16 and 1/0xFFFFFF for unorm24.
+          *
+          * Because of that, a depth bias of 1, if simply exponent-biased by minus the number of
+          * bits, may be insufficient to separate overlapping primitives.
+          *
+          * For example, if the format is unorm16, and the incoming depth is 1.5 / 0xFFFF, applying
+          * a bias of 1 / 0x10000 results in 2.4999... / 0xFFFF - and both 1.5 and 2.4999... end up
+          * rounded to 2 in the unorm conversion.
+          *
+          * This issue is also described in the PA_SU_POLY_OFFSET_DB_FMT_CNTL setup comment in PAL:
+          * https://github.com/GPUOpen-Drivers/pal/blob/abb22ae22308954cd9ce76b526c2f805e2dec1ba/src/core/hw/gfxip/gfx9/gfx9DepthStencilView.cpp#L254
+          *
+          * Vulkan provides two options for controlling this for a unorm depth bias representation:
+          * - depthBiasExact = VK_TRUE: The bias is scaled by 2^-n, where n is the number of bits
+          *   in the depth attachment if it's fixed-point. This is the hardware behavior when
+          *   NEG_NUM_DB_BITS is minus the number of depth format bits.
+          * - depthBiasExact = VK_FALSE: The bias is scaled by "the smallest difference in
+          *   framebuffer coordinate z values that is guaranteed to remain distinct throughout
+          *   polygon rasterization and in the depth attachment" which is an
+          *   implementation-dependent value that must be at most 2 * 2^-n.
+          *
+          * To ensure separation in the case described above, implement depthBiasExact = VK_FALSE by
+          * scaling the bias by 2 * 2^-n.
+          *
+          * Note that it's not possible to implement depthBiasExact = VK_FALSE with a perfectly
+          * precise scale via adjusting PA_SU_POLY_OFFSET_FRONT/BACK_OFFSET, as unlike 0xFFFFFF
+          * itself, 1/0xFFFFFF doesn't have a float32 representation distinguishable from
+          * 1/0x1000000 or 1/0xFFFFFE, and multiplying an integer by 1/0x1000000 and then by
+          * 0xFFFFFF and rounding produces a different value for half of the 0 to 1 range.
+          */
+         pa_su_poly_offset_db_fmt_cntl =
+            (pa_su_poly_offset_db_fmt_cntl & C_028B78_POLY_OFFSET_NEG_NUM_DB_BITS) |
+            S_028B78_POLY_OFFSET_NEG_NUM_DB_BITS(
+               G_028B78_POLY_OFFSET_NEG_NUM_DB_BITS(pa_su_poly_offset_db_fmt_cntl) + 1);
+      }
+   }
+   bool const modified =
+      command_writer->hw_state_draw.pa_su_poly_offset_db_fmt_cntl != pa_su_poly_offset_db_fmt_cntl;
+   command_writer->hw_state_draw.pa_su_poly_offset_db_fmt_cntl = pa_su_poly_offset_db_fmt_cntl;
+   terakan_hw_state_draw_written(&command_writer->hw_state_draw,
+                                 TERAKAN_HW_STATE_DRAW_INDEX_PA_SU_POLY_OFFSET_DB_FMT_CNTL,
+                                 modified);
 }
 
 static void
@@ -937,6 +1055,8 @@ static terakan_state_draw_apply_function const
       [TERAKAN_STATE_DRAW_INDEX_PA_SC_AA_MASK] = terakan_state_draw_apply_pa_sc_aa_mask,
       [TERAKAN_STATE_DRAW_INDEX_DB_DEPTH_STENCIL_BUFFER] =
          terakan_state_draw_apply_db_depth_stencil_buffer,
+      [TERAKAN_STATE_DRAW_INDEX_PA_SU_POLY_OFFSET_DB_FMT_CNTL] =
+         terakan_state_draw_apply_pa_su_poly_offset_db_fmt_cntl,
       [TERAKAN_STATE_DRAW_INDEX_DB_RENDER_OVERRIDE] = terakan_state_draw_apply_db_render_override,
       [TERAKAN_STATE_DRAW_INDEX_DB_STENCILREFMASK] = terakan_state_draw_apply_db_stencilrefmask,
       [TERAKAN_STATE_DRAW_INDEX_DB_DEPTH_CONTROL] = terakan_state_draw_apply_db_depth_control,
@@ -1088,6 +1208,13 @@ terakan_state_draw_reset(struct terakan_state_draw * const state,
     * pStencilAttachment = NULL
     */
    state->db_depth_stencil_buffer.bo = NULL;
+   state->pa_su_poly_offset_db_fmt_cntl.from_apply_db_depth_stencil_buffer.poly_offset_z_format =
+      TERAKAN_STATE_DRAW_PA_SU_POLY_OFFSET_DB_FMT_CNTL_NO_ATTACHMENT_FORMAT;
+
+   /* No VkDepthBiasRepresentationInfoEXT */
+   state->pa_su_poly_offset_db_fmt_cntl.representation =
+      VK_DEPTH_BIAS_REPRESENTATION_LEAST_REPRESENTABLE_VALUE_FORMAT_EXT;
+   state->pa_su_poly_offset_db_fmt_cntl.representation_exact = false;
 
    /* depthClampEnable = VK_FALSE */
    state->db_render_override = S_02800C_DISABLE_VIEWPORT_CLAMP(depth_range_unrestricted);
