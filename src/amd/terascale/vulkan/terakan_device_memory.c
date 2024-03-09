@@ -144,7 +144,7 @@ terakan_MapMemory2KHR(VkDevice const deviceHandle, VkMemoryMapInfoKHR const * co
       return vk_error(terakan_device_from_handle(deviceHandle), VK_ERROR_MEMORY_MAP_FAILED);
    }
 
-   *ppData = mapping;
+   *ppData = (char *)mapping + pMemoryMapInfo->offset;
    return VK_SUCCESS;
 }
 
