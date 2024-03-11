@@ -177,7 +177,7 @@ terakan_format_color_get_format(VkFormat const format)
       return V_028C70_COLOR_INVALID;
    }
 
-   /* Not a plain format.*/
+   /* Not a plain format. */
    if (format == VK_FORMAT_B10G11R11_UFLOAT_PACK32) {
       return V_028C70_COLOR_10_11_11_FLOAT;
    }
@@ -285,7 +285,7 @@ terakan_format_color_get_format(VkFormat const format)
 uint32_t
 terakan_format_color_get_number_type(VkFormat const format)
 {
-   /* Not a plain format.*/
+   /* Not a plain format. */
    if (format == VK_FORMAT_B10G11R11_UFLOAT_PACK32) {
       return V_028C70_NUMBER_FLOAT;
    }
@@ -337,7 +337,7 @@ terakan_format_color_get_number_type(VkFormat const format)
 uint32_t
 terakan_format_color_get_swap(VkFormat const format)
 {
-   /* Not a plain format.*/
+   /* Not a plain format. */
    if (format == VK_FORMAT_B10G11R11_UFLOAT_PACK32) {
       return V_028C70_SWAP_STD;
    }
