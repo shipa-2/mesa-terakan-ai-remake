@@ -243,7 +243,7 @@ terakan_command_buffer_allocate_push_constants(struct terakan_command_buffer * c
    return new_buffer->bo->mapping;
 }
 
-static struct terakan_command_buffer_submission_indirect_buffer *
+static struct terakan_command_buffer_indirect_buffer *
 terakan_command_buffer_new_indirect_buffer(struct terakan_command_buffer * const command_buffer)
 {
    if (vk_command_buffer_has_error(&command_buffer->vk)) {
@@ -253,23 +253,19 @@ terakan_command_buffer_new_indirect_buffer(struct terakan_command_buffer * const
    struct terakan_command_pool * const command_pool =
       container_of(command_buffer->vk.pool, struct terakan_command_pool, vk);
 
-   struct terakan_command_buffer_submission_indirect_buffer * indirect_buffer;
+   struct terakan_command_buffer_indirect_buffer * indirect_buffer;
    if (!list_is_empty(&command_pool->indirect_buffers_free)) {
-      indirect_buffer =
-         list_first_entry(&command_pool->indirect_buffers_free,
-                          struct terakan_command_buffer_submission_indirect_buffer, free_link);
-      list_del(&indirect_buffer->free_link);
+      indirect_buffer = list_first_entry(&command_pool->indirect_buffers_free,
+                                         struct terakan_command_buffer_indirect_buffer, link);
+      list_del(&indirect_buffer->link);
    } else {
-      indirect_buffer = vk_alloc(&command_pool->vk.alloc,
-                                 sizeof(struct terakan_command_buffer_submission_indirect_buffer),
-                                 alignof(struct terakan_command_buffer_submission_indirect_buffer),
-                                 VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+      indirect_buffer = vk_alloc(
+         &command_pool->vk.alloc, sizeof(struct terakan_command_buffer_indirect_buffer),
+         alignof(struct terakan_command_buffer_indirect_buffer), VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
       if (indirect_buffer == NULL) {
          vk_command_buffer_set_error(&command_buffer->vk, VK_ERROR_OUT_OF_HOST_MEMORY);
          return NULL;
       }
-
-      indirect_buffer->base.is_secondary_execution = false;
 
       struct terakan_device const * const device = terakan_command_buffer_device(command_buffer);
 
@@ -297,8 +293,7 @@ terakan_command_buffer_new_indirect_buffer(struct terakan_command_buffer * const
    indirect_buffer->bo_reference_count = 0;
    indirect_buffer->indirect_buffer_size_dwords = 0;
 
-   list_addtail(&indirect_buffer->base.command_buffer_submission_link,
-                &command_buffer->submissions);
+   list_addtail(&indirect_buffer->link, &command_buffer->indirect_buffers);
 
    return indirect_buffer;
 }
@@ -315,19 +310,9 @@ terakan_command_buffer_release_resources(struct terakan_command_buffer * const c
       command_buffer->command_writer.gfx = NULL;
    }
 
-   list_for_each_entry_safe (struct terakan_command_buffer_submission, submission_base,
-                             &command_buffer->submissions, command_buffer_submission_link) {
-      list_del(&submission_base->command_buffer_submission_link);
-      if (submission_base->is_secondary_execution) {
-         struct terakan_command_buffer_submission_secondary_execution * const submission =
-            container_of(submission_base,
-                         struct terakan_command_buffer_submission_secondary_execution, base);
-         list_add(&submission->free_link, &command_pool->secondary_executions_free);
-      } else {
-         struct terakan_command_buffer_submission_indirect_buffer * const submission = container_of(
-            submission_base, struct terakan_command_buffer_submission_indirect_buffer, base);
-         list_add(&submission->free_link, &command_pool->indirect_buffers_free);
-      }
+   list_for_each_entry_safe (struct terakan_command_buffer_indirect_buffer, indirect_buffer,
+                             &command_buffer->indirect_buffers, link) {
+      list_move_to(&indirect_buffer->link, &command_pool->indirect_buffers_free);
    }
 
    list_splice(&command_buffer->push_constant_buffers_full,
@@ -387,7 +372,7 @@ terakan_command_buffer_create(struct vk_command_pool * const command_pool,
    list_inithead(&command_buffer->push_constant_buffers_with_free_space);
    list_inithead(&command_buffer->push_constant_buffers_full);
 
-   list_inithead(&command_buffer->submissions);
+   list_inithead(&command_buffer->indirect_buffers);
 
    command_buffer->command_writer.gfx = NULL;
 
@@ -1251,17 +1236,11 @@ terakan_command_pool_trim_resources(struct terakan_command_pool * const command_
    }
    list_inithead(&command_pool->command_writers_free);
 
-   list_for_each_entry_safe (struct terakan_command_buffer_submission_secondary_execution,
-                             submission, &command_pool->secondary_executions_free, free_link) {
-      vk_free(&command_pool->vk.alloc, submission);
-   }
-   list_inithead(&command_pool->secondary_executions_free);
-
-   list_for_each_entry_safe (struct terakan_command_buffer_submission_indirect_buffer, submission,
-                             &command_pool->indirect_buffers_free, free_link) {
-      vk_free(&command_pool->vk.alloc, submission->indirect_buffer);
-      vk_free(&command_pool->vk.alloc, submission->bo_references);
-      vk_free(&command_pool->vk.alloc, submission);
+   list_for_each_entry_safe (struct terakan_command_buffer_indirect_buffer, indirect_buffer,
+                             &command_pool->indirect_buffers_free, link) {
+      vk_free(&command_pool->vk.alloc, indirect_buffer->indirect_buffer);
+      vk_free(&command_pool->vk.alloc, indirect_buffer->bo_references);
+      vk_free(&command_pool->vk.alloc, indirect_buffer);
    }
    list_inithead(&command_pool->indirect_buffers_free);
 
@@ -1327,8 +1306,6 @@ terakan_CreateCommandPool(VkDevice const deviceHandle,
    list_inithead(&command_pool->push_constant_buffers_free);
 
    list_inithead(&command_pool->indirect_buffers_free);
-
-   list_inithead(&command_pool->secondary_executions_free);
 
    list_inithead(&command_pool->command_writers_free);
 

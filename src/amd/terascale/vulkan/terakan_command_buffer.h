@@ -124,33 +124,17 @@ struct terakan_push_constant_buffer {
    struct list_head link;
 };
 
-struct terakan_command_buffer_submission {
-   bool is_secondary_execution;
-
-   /* Within terakan_command_buffer::submissions. */
-   struct list_head command_buffer_submission_link;
-};
-
-struct terakan_command_buffer_submission_indirect_buffer {
-   struct terakan_command_buffer_submission base;
-
-   /* Within terakan_command_pool::indirect_buffers_free. */
-   struct list_head free_link;
+struct terakan_command_buffer_indirect_buffer {
+   /* If owned, within terakan_command_buffer::indirect_buffers.
+    * If free, within terakan_command_pool::indirect_buffers_free.
+    */
+   struct list_head link;
 
    uint32_t bo_reference_count;
    void * bo_references;
 
    uint32_t indirect_buffer_size_dwords;
    uint32_t * indirect_buffer;
-};
-
-struct terakan_command_buffer_submission_secondary_execution {
-   struct terakan_command_buffer_submission base;
-
-   /* Within terakan_command_pool::secondary_executions_free. */
-   struct list_head free_link;
-
-   struct terakan_command_buffer_submission_indirect_buffer const * indirect_buffer;
 };
 
 struct terakan_gfx_command_writer;
@@ -161,7 +145,7 @@ struct terakan_command_buffer {
    struct list_head push_constant_buffers_with_free_space;
    struct list_head push_constant_buffers_full;
 
-   struct list_head submissions;
+   struct list_head indirect_buffers;
 
    union {
       struct terakan_gfx_command_writer * gfx;
@@ -215,7 +199,7 @@ void * terakan_command_writer_allocate_among_push_constants(
 struct terakan_gfx_command_writer {
    struct terakan_command_writer base;
 
-   struct terakan_command_buffer_submission_indirect_buffer * indirect_buffer;
+   struct terakan_command_buffer_indirect_buffer * indirect_buffer;
 
    bool indirect_buffer_ever_begun;
 
@@ -309,8 +293,6 @@ struct terakan_command_pool {
    struct list_head push_constant_buffers_free;
 
    struct list_head indirect_buffers_free;
-
-   struct list_head secondary_executions_free;
 
    struct list_head command_writers_free;
 };

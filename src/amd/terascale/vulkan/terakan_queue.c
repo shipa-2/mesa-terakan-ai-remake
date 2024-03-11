@@ -243,67 +243,13 @@ terakan_queue_submit(struct vk_queue * const queue_base, struct vk_queue_submit 
 
    /* Submit the command buffers. */
 
-   /* TODO(Triang3l): Implement inheritance in secondary command buffers.
-    *
-    * Instead of writing dwords with the real register values and relocations to the secondary
-    * indirect buffers for inherited bindings, write dword-sized substitution tokens in place of the
-    * real indirect buffer dwords that form a linked list inside the indirect buffer submission.
-    *
-    * A substitution token should contain:
-    * - The value of which field (including relocations) of which view the dword should be replaced
-    *   with.
-    * - The attachment number within the subpass the value needs to be taken from (for color
-    *   targets, it may be different from the CB_COLOR# index due to RTV and UAV indices being
-    *   compacted skipping those not used in the fragment shader).
-    * - Offset to the next substitution token. It can be stored in 16 bits since 2^16 dwords is
-    *   essentially the maximum indirect buffer size on DRM Radeon 2.50.0 (when using virtual
-    *   memory), and in this case to make sure the dword 0xFFFF can be addressed too, an offset
-    *   relative to the current dword can be stored, so that 0 will be the terminator.
-    *
-    * During queue submission, the secondary indirect buffer should be copied to a temporary
-    * indirect buffer in the queue (take threaded submission in Mesa into account though), and
-    * references to inherited BOs also need to be added to the submission.
-    *
-    * It must be guaranteed that during submission, there will be free space for all the attachment
-    * references in the BO list - either more space needs to be allocated in the temporary BO list,
-    * or some needs to be reserved in the secondary indirect buffer submission (however, BO
-    * references from the secondary command buffer still must be copied into the temporary buffer,
-    * because reading / writing flags and priorities of _existing_ BO references in the secondary
-    * command buffer may be touched too by the execution depending on whether the secondary indirect
-    * buffer already references something that's inherited but possibly in a different way, and that
-    * depends on the location where it's executed, and in general a secondary command buffer can be
-    * executed in any queue and thus without external synchronization, it just happens that at the
-    * moment this comment is written Terakan has only one queue per type).
-    *
-    * Because some BOs that may be inherited at the execution location may also happen to be
-    * referenced by the secondary indirect buffer itself directly and possibly with different
-    * reading / writing flags and priority, the BO reference hash map also needs to be preserved or
-    * reconstructed for secondary indirect buffers referencing any inherited BOs.
-    *
-    * Note that if virtual memory is used, there won't be relocations, so BO references need to be
-    * created not only by substitution tokens for relocations, but also by tokens that will be
-    * replaced with virtual addresses.
-    */
-
    for (uint32_t command_buffer_index = 0; command_buffer_index < submit->command_buffer_count;
         ++command_buffer_index) {
       struct terakan_command_buffer const * const command_buffer = container_of(
          submit->command_buffers[command_buffer_index], struct terakan_command_buffer const, vk);
-      list_for_each_entry (struct terakan_command_buffer_submission, command_buffer_submission_base,
-                           &command_buffer->submissions, command_buffer_submission_link) {
-         struct terakan_command_buffer_submission_indirect_buffer const *
-            command_buffer_indirect_buffer;
-         if (command_buffer_submission_base->is_secondary_execution) {
-            struct terakan_command_buffer_submission_secondary_execution const *
-               command_buffer_submission = container_of(
-                  command_buffer_submission_base,
-                  struct terakan_command_buffer_submission_secondary_execution const, base);
-            command_buffer_indirect_buffer = command_buffer_submission->indirect_buffer;
-         } else {
-            command_buffer_indirect_buffer =
-               container_of(command_buffer_submission_base,
-                            struct terakan_command_buffer_submission_indirect_buffer const, base);
-         }
+      list_for_each_entry (struct terakan_command_buffer_indirect_buffer,
+                           command_buffer_indirect_buffer, &command_buffer->indirect_buffers,
+                           link) {
          /* The winsys may not support empty indirect buffers. */
          assert(command_buffer_indirect_buffer->indirect_buffer_size_dwords != 0);
          VkResult const command_buffer_submit_result = device->winsys_fn->queue->submit(
