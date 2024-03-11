@@ -60,6 +60,8 @@ struct terakan_device_winsys_fn {
 struct terakan_device {
    struct vk_device vk;
 
+   struct vk_device_dispatch_table command_dispatch_table;
+
    struct terakan_device_winsys_fn const * winsys_fn;
 
    size_t bo_reference_size;

@@ -34,6 +34,8 @@
 #include "util/macros.h"
 #include "util/u_math.h"
 #include "vk_alloc.h"
+#include "vk_cmd_enqueue_entrypoints.h"
+#include "vk_common_entrypoints.h"
 #include "vk_log.h"
 #include "wsi_common.h"
 
@@ -85,7 +87,19 @@ terakan_device_init(struct terakan_device * const device,
    VkResult result;
 
    struct vk_device_dispatch_table dispatch_table;
-   vk_device_dispatch_table_from_entrypoints(&dispatch_table, &terakan_device_entrypoints, true);
+   /* For secondary command buffer support, overwrite any command entrypoints in the main
+    * device-level dispatch table with vk_cmd_enqueue_unless_primary_Cmd*.
+    *
+    * With no kernel support for chained indirect buffers (and thus having to re-emit all state
+    * including up to 1024 resource bindings one by one), and with the need to merge address
+    * relocations if inserting one indirect buffer into another, encoding secondary command buffers
+    * into hardware packets wouldn't be a viable approach. Also, serializing vkCmdBindDescriptorSets
+    * calls themselves may be a more compact way of representing them compared to expanding them
+    * into updates of each individual binding register.
+    */
+   vk_device_dispatch_table_from_entrypoints(
+      &dispatch_table, &vk_cmd_enqueue_unless_primary_device_entrypoints, true);
+   vk_device_dispatch_table_from_entrypoints(&dispatch_table, &terakan_device_entrypoints, false);
    vk_device_dispatch_table_from_entrypoints(&dispatch_table, &wsi_device_entrypoints, false);
 
    result =
@@ -93,6 +107,13 @@ terakan_device_init(struct terakan_device * const device,
    if (result != VK_SUCCESS) {
       return result;
    }
+
+   /* Populate the command dispatch table for secondary command buffer emulation. */
+   vk_device_dispatch_table_from_entrypoints(&device->command_dispatch_table,
+                                             &terakan_device_entrypoints, true);
+   vk_device_dispatch_table_from_entrypoints(&device->command_dispatch_table,
+                                             &vk_common_device_entrypoints, false);
+   device->vk.command_dispatch_table = &device->command_dispatch_table;
 
    device->vk.command_buffer_ops = &terakan_command_buffer_ops;
 
