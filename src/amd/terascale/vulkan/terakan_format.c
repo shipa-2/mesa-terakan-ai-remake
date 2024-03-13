@@ -910,8 +910,11 @@ terakan_GetPhysicalDeviceFormatProperties2(VkPhysicalDevice const physicalDevice
             VK_FORMAT_FEATURE_2_STORAGE_WRITE_WITHOUT_FORMAT_BIT;
          /* According to R800 AddrLib, "Tex2D UAV on cypress will fail/hang if tile mode is
           * linear".
+          * Hemlock is a variant of Cypress, and AddrLib doesn't distinguish between the two, for
+          * safety, assume the bug is present on Hemlock too.
           */
-         if (device->chip_family_info.chip_family == CHIP_CYPRESS) {
+         if (device->chip_family_info.chip_family == CHIP_CYPRESS ||
+             device->chip_family_info.chip_family == CHIP_HEMLOCK) {
             image_optimal_only_features |= storage_image_features;
          } else {
             image_features |= storage_image_features;
