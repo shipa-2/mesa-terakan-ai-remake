@@ -456,6 +456,54 @@
 #define   C_00913C_VTX_DONE_DELAY(x)                0xFFFFFFF0
 
 
+/* Set up by the kernel. */
+#define R_0098F8_GB_ADDR_CONFIG                       0x000098F8
+#define   S_0098F8_NUM_PIPES(x)                        (((unsigned)(x) & 0x7) << 0)
+#define   G_0098F8_NUM_PIPES(x)                        (((x) >> 0) & 0x7)
+#define   C_0098F8_NUM_PIPES                           0xFFFFFFF8
+#define     V_0098F8_1_PIPE                            0x00000000
+#define     V_0098F8_2_PIPE                            0x00000001
+#define     V_0098F8_4_PIPE                            0x00000002
+#define     V_0098F8_8_PIPE                            0x00000003
+#define   S_0098F8_PIPE_INTERLEAVE_SIZE(x)             (((unsigned)(x) & 0x7) << 4)
+#define   G_0098F8_PIPE_INTERLEAVE_SIZE(x)             (((x) >> 4) & 0x7)
+#define   C_0098F8_PIPE_INTERLEAVE_SIZE                0xFFFFFF8F
+#define     V_0098F8_PIPE_INTERLEAVE_256B              0x00000000
+#define     V_0098F8_PIPE_INTERLEAVE_512B              0x00000001
+#define   S_0098F8_BANK_INTERLEAVE_SIZE(x)             (((unsigned)(x) & 0x7) << 8)
+#define   G_0098F8_BANK_INTERLEAVE_SIZE(x)             (((x) >> 8) & 0x7)
+#define   C_0098F8_BANK_INTERLEAVE_SIZE                0xFFFFF8FF
+#define     V_0098F8_BANK_INTERLEAVE_1                 0x00000000
+#define     V_0098F8_BANK_INTERLEAVE_2                 0x00000001
+#define     V_0098F8_BANK_INTERLEAVE_4                 0x00000002
+#define     V_0098F8_BANK_INTERLEAVE_8                 0x00000003
+#define   S_0098F8_NUM_SHADER_ENGINES(x)               (((unsigned)(x) & 0x3) << 12)
+#define   G_0098F8_NUM_SHADER_ENGINES(x)               (((x) >> 12) & 0x3)
+#define   C_0098F8_NUM_SHADER_ENGINES                  0xFFFFCFFF
+#define     V_0098F8_1_SHADER_ENGINE                   0x00000000
+#define     V_0098F8_2_SHADER_ENGINE                   0x00000001
+#define   S_0098F8_SHADER_ENGINE_TILE_SIZE(x)          (((unsigned)(x) & 0x7) << 16)
+#define   G_0098F8_SHADER_ENGINE_TILE_SIZE(x)          (((x) >> 16) & 0x7)
+#define   C_0098F8_SHADER_ENGINE_TILE_SIZE             0xFFF8FFFF
+#define     V_0098F8_SE_TILE_16                        0x00000000
+#define     V_0098F8_SE_TILE_32                        0x00000001
+#define   S_0098F8_NUM_GPUS(x)                         (((unsigned)(x) & 0x7) << 20)
+#define   G_0098F8_NUM_GPUS(x)                         (((x) >> 20) & 0x7)
+#define   C_0098F8_NUM_GPUS                            0xFF8FFFFF
+#define   S_0098F8_MULTI_GPU_TILE_SIZE(x)              (((unsigned)(x) & 0x3) << 24)
+#define   G_0098F8_MULTI_GPU_TILE_SIZE(x)              (((x) >> 24) & 0x3)
+#define   C_0098F8_MULTI_GPU_TILE_SIZE                 0xFCFFFFFF
+#define   S_0098F8_ROW_SIZE(x)                         (((unsigned)(x) & 0x3) << 28)
+#define   G_0098F8_ROW_SIZE(x)                         (((x) >> 28) & 0x3)
+#define   C_0098F8_ROW_SIZE                            0xCFFFFFFF
+#define     V_0098F8_1KB_ROW                           0x00000000
+#define     V_0098F8_2KB_ROW                           0x00000001
+#define     V_0098F8_4KB_ROW                           0x00000002
+#define   S_0098F8_NUM_LOWER_PIPES(x)                  (((unsigned)(x) & 0x1) << 30) /* cayman only */
+#define   G_0098F8_NUM_LOWER_PIPES(x)                  (((x) >> 30) & 0x1) /* cayman only */
+#define   C_0098F8_NUM_LOWER_PIPES                     0xBFFFFFFF /* cayman only */
+
+
 #define R_028C64_CB_COLOR0_PITCH                      0x028C64
 #define   S_028C64_PITCH_TILE_MAX(x)                   (((unsigned)(x) & 0x7FF) << 0)
 #define   G_028C64_PITCH_TILE_MAX(x)                   (((x) >> 0) & 0x7FF)
