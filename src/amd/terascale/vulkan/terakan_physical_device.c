@@ -91,10 +91,13 @@ terakan_physical_device_chip_family_name(enum radeon_family const chip_family)
       return "Hemlock";
    case CHIP_PALM:
       return "Palm";
+   /* sumo_id.h DEVICE_ID_SUMO_SUPER_* correspond to CHIP_SUMO, non-SUPER are CHIP_SUMO2.
+    * SUMO also has more SIMDs, render backends and contexts.
+    */
    case CHIP_SUMO:
-      return "Sumo";
-   case CHIP_SUMO2:
       return "SuperSumo";
+   case CHIP_SUMO2:
+      return "Sumo";
    case CHIP_BARTS:
       return "Barts";
    case CHIP_TURKS:
