@@ -118,7 +118,6 @@ if not with_platform_windows
     'winsys/drm_radeon/terakan_bo_drm_radeon.h',
     'winsys/drm_radeon/terakan_device_drm_radeon.c',
     'winsys/drm_radeon/terakan_device_drm_radeon.h',
-    'winsys/drm_radeon/terakan_image_drm_radeon.c',
     'winsys/drm_radeon/terakan_physical_device_drm_radeon.c',
     'winsys/drm_radeon/terakan_physical_device_drm_radeon.h',
     'winsys/drm_radeon/terakan_queue_drm_radeon.c',

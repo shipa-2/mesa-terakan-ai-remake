@@ -30,14 +30,9 @@
 #include "c11/threads.h"
 #include "util/hash_table.h"
 
-#include <xf86drm.h>
-#include <radeon_surface.h>
-
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-extern struct terakan_image_winsys_fn const terakan_image_drm_radeon_fn;
 
 extern struct terakan_queue_winsys_fn const terakan_queue_drm_radeon_fn;
 
@@ -45,8 +40,6 @@ struct terakan_device_drm_radeon {
    struct terakan_device base;
 
    int render_node_fd;
-
-   struct radeon_surface_manager * surface_manager;
 
    /* Implementing reference counting for shared BO handles, since drmPrimeFDToHandle returns the
     * same handle when importing the same BO multiple times even with different file descriptors,

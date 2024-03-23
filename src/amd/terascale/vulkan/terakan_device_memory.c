@@ -247,10 +247,35 @@ terakan_AllocateMemory(VkDevice const deviceHandle,
       if (dedicated_info != NULL) {
          struct terakan_image const * const dedicated_image =
             terakan_image_from_handle(dedicated_info->image);
-         if (dedicated_image != NULL && !device->winsys_fn->bo->set_tiling_for_surface(
-                                           device_memory->bo, &dedicated_image->surface)) {
-            result = vk_error(device, VK_ERROR_UNKNOWN);
-            goto fail_bo;
+         if (dedicated_image != NULL) {
+            struct terakan_image_surface_plane const * const dedicated_image_main_plane =
+               &dedicated_image->surface.planes[0];
+            struct terakan_bo_tiling const bo_tiling = {
+               .pitch_bytes =
+                  dedicated_image_main_plane->bytes_per_block *
+                  (uint32_t)dedicated_image_main_plane->levels[0].aligned_extent_blocks[0],
+               .array_mode = dedicated_image_main_plane->levels[0].array_mode,
+               /* If the image is stencil-only, pass the stencil tile split as both main aspect tile
+                * split and stencil tile split so it doesn't matter which field the receiving end
+                * will take it from.
+                */
+               .attrib_tile_split = dedicated_image_main_plane->tiling.attrib_tile_split,
+               .attrib_stencil_tile_split =
+                  vk_format_has_stencil(dedicated_image->vk.format)
+                     ? dedicated_image->surface
+                          .planes[terakan_image_surface_aspect_plane(dedicated_image->vk.format,
+                                                                     VK_IMAGE_ASPECT_STENCIL_BIT)]
+                          .tiling.attrib_tile_split
+                     : 0,
+               .attrib_bank_width = dedicated_image_main_plane->tiling.attrib_bank_width,
+               .attrib_bank_height = dedicated_image_main_plane->tiling.attrib_bank_height,
+               .attrib_macro_tile_aspect =
+                  dedicated_image_main_plane->tiling.attrib_macro_tile_aspect,
+            };
+            if (!device->winsys_fn->bo->set_tiling(device_memory->bo, &bo_tiling)) {
+               result = vk_error(device, VK_ERROR_UNKNOWN);
+               goto fail_bo;
+            }
          }
       }
    }

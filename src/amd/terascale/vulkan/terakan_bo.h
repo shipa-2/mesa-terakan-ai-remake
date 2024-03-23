@@ -24,8 +24,6 @@
 #ifndef TERAKAN_BO_H
 #define TERAKAN_BO_H
 
-#include "ac_surface.h"
-
 #include <stdbool.h>
 #include <stdint.h>
 #include <vulkan/vulkan_core.h>
@@ -80,6 +78,19 @@ enum terakan_bo_relocation_type {
 
 struct terakan_device;
 
+struct terakan_bo_tiling {
+   uint32_t pitch_bytes;
+
+   uint8_t array_mode;
+
+   /* ATTRIB register field values (log2, some being exponent-biased). */
+   uint8_t attrib_tile_split;         /* 0 = 2^6 bytes. */
+   uint8_t attrib_stencil_tile_split; /* 0 = 2^6 bytes. */
+   uint8_t attrib_bank_width;
+   uint8_t attrib_bank_height;
+   uint8_t attrib_macro_tile_aspect;
+};
+
 /* Partially implemented by the winsys. */
 struct terakan_bo {
    struct terakan_device * device;
@@ -109,7 +120,7 @@ void terakan_bo_init(struct terakan_bo * bo, struct terakan_device * device);
 /* Non-`impl` functions are public. */
 struct terakan_bo_winsys_fn {
    /* Returns whether setting was successful. */
-   bool (*set_tiling_for_surface)(struct terakan_bo * bo, struct radeon_surf const * surface);
+   bool (*set_tiling)(struct terakan_bo * bo, struct terakan_bo_tiling const * tiling);
 
    /* Only needed if the winsys supports VK_KHR_external_memory_fd. */
    int (*export_fd)(struct terakan_bo * bo, bool writable);

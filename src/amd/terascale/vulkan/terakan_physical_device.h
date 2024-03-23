@@ -79,6 +79,7 @@ struct terakan_physical_device_tiling_info {
    uint8_t pipes_log2;
    uint8_t banks_log2;
    uint8_t pipe_interleave_bytes_log2;
+   uint8_t bank_interleave_log2;
    uint8_t row_bytes_log2;
 };
 

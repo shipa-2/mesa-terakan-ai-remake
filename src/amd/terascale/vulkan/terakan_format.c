@@ -75,13 +75,15 @@ terakan_format_is_linear_only(VkFormat const format)
    /* According to the R800 AddrLib:
     * "Special format such as FMT_1 and FMT_32_32_32 can be linear only".
     *
+    * Vulkan as of 1.3.281 doesn't expose R1, though it would need a special check beyond the block
+    * bits because PIPE_FORMAT_R1_UNORM has 8x1 blocks.
+    *
     * In Terakan specifically, copying to tiled images is done via a color texture target with the
     * same number of bits per element - and they're supported only for power-of-two formats.
     * Copying to linear images is done using a buffer random access target, to which the three
     * components can be written separately.
     */
-   unsigned const block_size_bits = vk_format_get_blocksizebits(format);
-   if (block_size_bits < 8 || !util_is_power_of_two_or_zero(block_size_bits)) {
+   if (!IS_POT(vk_format_get_blocksizebits(format))) {
       return true;
    }
 
@@ -98,14 +100,10 @@ terakan_format_is_linear_only(VkFormat const format)
 bool
 terakan_format_is_tiled_only(VkFormat const format)
 {
-   /* Combined depth and stencil images are always tiled, libdrm_radeon forces tiling for
-    * RADEON_SURF_ZBUFFER or RADEON_SURF_SBUFFER (which both must be specified so the stencil layout
-    * is computed, so can't omit them if depth / stencil attachment usage is not needed) even when a
-    * linear array mode is requested.
-    * According to the Gallium R600 driver, compressed textures must always be tiled.
+   /* According to the R800 AddrLib and to the Gallium R600 driver, block-compressed images must
+    * always be tiled.
     */
-   if ((vk_format_has_depth(format) && vk_format_has_stencil(format)) ||
-       vk_format_is_block_compressed(format)) {
+   if (vk_format_is_block_compressed(format)) {
       return true;
    }
 

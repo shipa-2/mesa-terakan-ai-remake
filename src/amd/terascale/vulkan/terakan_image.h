@@ -30,7 +30,6 @@
 #include "gallium/drivers/r600/evergreend.h"
 #include "util/bitscan.h"
 #include "util/u_math.h"
-#include "ac_surface.h"
 #include "vk_format.h"
 #include "vk_image.h"
 
@@ -50,64 +49,79 @@ extern "C" {
 #define TERAKAN_IMAGE_MAX_TARGET_SLICES_LOG2   11
 #define TERAKAN_IMAGE_MAX_TARGET_SLICES        (1 << TERAKAN_IMAGE_MAX_TARGET_SLICES_LOG2)
 
-static inline uint32_t
-terakan_image_array_mode_ac_to_hw(enum radeon_surf_mode const mode)
-{
-   switch ((uint32_t)mode) {
-   default:
-   case 0: /* RADEON_SURF_MODE_LINEAR declared in radeon_drm.h. */
-      return V_028C70_ARRAY_LINEAR_GENERAL;
-   case RADEON_SURF_MODE_LINEAR_ALIGNED:
-      return V_028C70_ARRAY_LINEAR_ALIGNED;
-   case RADEON_SURF_MODE_1D:
-      return V_028C70_ARRAY_1D_TILED_THIN1;
-   case RADEON_SURF_MODE_2D:
-      return V_028C70_ARRAY_2D_TILED_THIN1;
-   }
-}
+struct terakan_image_surface_level {
+   uint32_t offset_in_memory_bytes_shr8;
+   uint32_t slice_size_bytes_shr8;
+   /* [2] is depth for 3D, array layers otherwise. */
+   uint16_t aligned_extent_blocks[3];
+   /* 2D is degraded to 1D for small mips. */
+   uint8_t array_mode;
+};
+
+struct terakan_image_surface_tiling {
+   /* ATTRIB register field values (log2, some being exponent-biased). */
+   uint8_t attrib_tile_split; /* 0 = 2^6 bytes. */
+   uint8_t attrib_bank_width;
+   uint8_t attrib_bank_height;
+   uint8_t attrib_macro_tile_aspect;
+
+   /* Not including NUM_BANKS, assuming it's the same for all images on the device, because it can't
+    * be changed in a useful way on DRM Radeon as of 2.50.0.
+    *
+    * In most cases, the R800 AddrLib uses the logical bank count, which is the number of banks
+    * multiplied by the number of ranks from MC_ARB_RAMCFG. One exception is that under some other
+    * conditions, for large micro-tiles and large numbers of logical banks, it can divide NUM_BANKS
+    * by 2.
+    * However, DRM Radeon 2.50.0 doesn't provide the number of ranks (only the number of banks) to
+    * applications, and also it doesn't expose a field for setting NUM_BANKS in BO metadata.
+    */
+
+   /* CB non-display tiling = TC non-display tiling || array mode is linear. */
+   bool tc_non_display;
+};
+
+struct terakan_image_surface_plane {
+   uint32_t alignment_bytes_shr8;
+   uint32_t offset_in_memory_bytes_shr8;
+   uint32_t size_bytes_shr8;
+
+   uint8_t bytes_per_block;
+
+   struct terakan_image_surface_tiling tiling;
+
+   struct terakan_image_surface_level levels[TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES + 1];
+};
+
+struct terakan_image_surface {
+   uint32_t alignment_bytes_shr8;
+   uint32_t size_bytes_shr8;
+
+   /* For depth / stencil images, stencil is plane 1 if depth is present, or 0 otherwise.
+    * If the image has a combined depth and stencil format and has DB usage enabled, DB register
+    * fields shared between depth and stencil are the same for the two planes.
+    */
+   struct terakan_image_surface_plane planes[3];
+};
 
 static inline unsigned
-terakan_image_tile_split_bytes_to_hw(uint32_t const tile_split)
+terakan_image_surface_aspect_plane(VkFormat const image_format, VkImageAspectFlagBits const aspect)
 {
-   assert(tile_split >= ((uint32_t)1 << 6) && tile_split <= ((uint32_t)1 << 12) &&
-          util_is_power_of_two_or_zero(tile_split));
-   return util_logbase2(tile_split) - 6;
+   if (aspect == VK_IMAGE_ASPECT_STENCIL_BIT) {
+      return vk_format_has_depth(image_format) ? 1 : 0;
+   }
+   return 0;
 }
-
-uint32_t terakan_image_get_optimal_tiling_array_mode(VkImageCreateInfo const * image_create_info);
 
 struct terakan_image {
    struct vk_image vk;
 
-   /* Bytes per element (bpe) is:
-    * - For depth / stencil, for the depth aspect (2 for 16_UNORM, 4 for 24_UNORM / 32_SFLOAT).
-    *   If depth and stencil are combined, stencil BPE must be assumed to be 1 (not explicitly
-    *   stored).
-    * - 1 for S8.
-    * - 3 for R8G8B8, 6 for R16G16B16, 9 for R32G32B32.
-    *
-    * 1 and 1_REVERSED are completely unsupported (as of May 2023, Vulkan doesn't have any 1-bit
-    * formats).
-    *
-    * The stencil fields are valid only if has_stencil is true.
-    *
-    * u.legacy.num_banks may be zero - use terakan_physical_device_tiling_info::banks_log2 instead.
-    */
-   struct radeon_surf surface;
+   struct terakan_image_surface surface;
 
    struct terakan_bo const * bo;
    VkDeviceSize va;
 };
 
 VK_DEFINE_NONDISP_HANDLE_CASTS(terakan_image, vk.base, VkImage, VK_OBJECT_TYPE_IMAGE)
-
-struct terakan_image_non_display_tiling {
-   bool tc;
-   bool cb;
-};
-
-struct terakan_image_non_display_tiling
-terakan_image_get_non_display_tiling(bool is_r9xx, VkFormat image_format, bool level_is_linear);
 
 /* For transfer purposes, VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT and
  * VK_IMAGE_CREATE_BLOCK_TEXEL_VIEW_COMPATIBLE_BIT are assumed to be always enabled for all images
@@ -137,14 +151,6 @@ uint32_t terakan_image_create_color_descriptor(
 bool terakan_image_create_depth_stencil_descriptor(
    VkImageViewCreateInfo const * image_view_create_info,
    struct terakan_depth_stencil_descriptor * descriptor_out);
-
-struct terakan_device;
-
-struct terakan_image_winsys_fn {
-   bool (*get_surface_info)(struct terakan_device const * device,
-                            VkImageCreateInfo const * image_create_info,
-                            struct radeon_surf * surface_out);
-};
 
 struct terakan_image_view {
    struct vk_image_view vk;

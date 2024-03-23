@@ -26,7 +26,6 @@
 
 #include "meta/terakan_meta.h"
 #include "terakan_bo.h"
-#include "terakan_image.h"
 #include "terakan_physical_device.h"
 #include "terakan_queue.h"
 #include "terakan_shader.h"
@@ -34,7 +33,6 @@
 
 #include "c11/threads.h"
 #include "util/macros.h"
-#include "ac_surface.h"
 #include "amd_family.h"
 #include "vk_device.h"
 
@@ -47,8 +45,6 @@ extern "C" {
 #endif
 
 struct terakan_device_winsys_fn {
-   struct terakan_image_winsys_fn const * image;
-
    struct terakan_bo_winsys_fn const * bo;
 
    struct terakan_queue_winsys_fn const * queue;

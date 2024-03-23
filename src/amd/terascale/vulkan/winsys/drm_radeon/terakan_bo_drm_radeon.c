@@ -32,6 +32,7 @@
 #include "terakan_image.h"
 #include "terakan_physical_device.h"
 
+#include "gallium/drivers/r600/evergreend.h"
 #include "util/macros.h"
 #include "util/os_mman.h"
 #include "util/u_math.h"
@@ -48,8 +49,8 @@
 #include <radeon_drm.h>
 
 static bool
-terakan_bo_drm_radeon_set_tiling_for_surface(struct terakan_bo * const bo_base,
-                                             struct radeon_surf const * const surface)
+terakan_bo_drm_radeon_set_tiling(struct terakan_bo * const bo_base,
+                                 struct terakan_bo_tiling const * const tiling)
 {
    struct terakan_bo_drm_radeon const * const bo =
       container_of(bo_base, struct terakan_bo_drm_radeon const, base);
@@ -59,18 +60,15 @@ terakan_bo_drm_radeon_set_tiling_for_surface(struct terakan_bo * const bo_base,
    struct drm_radeon_gem_set_tiling set_tiling_arguments = {
       .handle = bo->handle,
       .tiling_flags =
-         (surface->u.legacy.level[0].mode >= RADEON_SURF_MODE_2D ? RADEON_TILING_MACRO : 0) |
-         (surface->u.legacy.level[0].mode >= RADEON_SURF_MODE_1D ? RADEON_TILING_MICRO : 0) |
-         (__u32)surface->u.legacy.bankw << RADEON_TILING_EG_BANKW_SHIFT |
-         (__u32)surface->u.legacy.bankh << RADEON_TILING_EG_BANKH_SHIFT |
-         (__u32)surface->u.legacy.mtilea << RADEON_TILING_EG_MACRO_TILE_ASPECT_SHIFT |
-         terakan_image_tile_split_bytes_to_hw(surface->u.legacy.tile_split)
-            << RADEON_TILING_EG_TILE_SPLIT_SHIFT |
-         (surface->has_stencil
-             ? terakan_image_tile_split_bytes_to_hw(surface->u.legacy.stencil_tile_split)
-                  << RADEON_TILING_EG_STENCIL_TILE_SPLIT_SHIFT
-             : 0),
-      .pitch = surface->bpe * (__u32)surface->u.legacy.level[0].nblk_x,
+         (tiling->array_mode >= V_028C70_ARRAY_2D_TILED_THIN1 ? RADEON_TILING_MACRO : 0) |
+         (tiling->array_mode >= V_028C70_ARRAY_1D_TILED_THIN1 ? RADEON_TILING_MICRO : 0) |
+         (((__u32)1 << tiling->attrib_bank_width) << RADEON_TILING_EG_BANKW_SHIFT) |
+         (((__u32)1 << tiling->attrib_bank_height) << RADEON_TILING_EG_BANKH_SHIFT) |
+         (((__u32)1 << tiling->attrib_macro_tile_aspect)
+          << RADEON_TILING_EG_MACRO_TILE_ASPECT_SHIFT) |
+         (tiling->attrib_tile_split << RADEON_TILING_EG_TILE_SPLIT_SHIFT) |
+         (tiling->attrib_stencil_tile_split << RADEON_TILING_EG_STENCIL_TILE_SPLIT_SHIFT),
+      .pitch = tiling->pitch_bytes,
    };
    return drmCommandWriteRead(device->render_node_fd, DRM_RADEON_GEM_SET_TILING,
                               &set_tiling_arguments, sizeof(set_tiling_arguments)) == 0;
@@ -435,7 +433,7 @@ terakan_bo_drm_radeon_import_fd(struct terakan_device * const device_base, int c
 }
 
 struct terakan_bo_winsys_fn const terakan_bo_drm_radeon_fn = {
-   .set_tiling_for_surface = terakan_bo_drm_radeon_set_tiling_for_surface,
+   .set_tiling = terakan_bo_drm_radeon_set_tiling,
    .export_fd = terakan_bo_drm_radeon_export_fd,
    .map_impl = terakan_bo_drm_radeon_map_impl,
    .unmap_impl = terakan_bo_drm_radeon_unmap_impl,

@@ -35,6 +35,7 @@
 #include "gallium/drivers/r600/evergreend.h"
 #include "gallium/drivers/r600/r600_opcodes.h"
 #include "util/macros.h"
+#include "vk_format.h"
 
 #include <assert.h>
 #include <stdbool.h>
@@ -795,25 +796,28 @@ terakan_meta_copy_buffer_image_pitches_and_rect(struct terakan_image const * con
                                                 uint32_t * const buffer_z_pitch_out,
                                                 VkRect2D * const rect_out)
 {
+   unsigned const block_width = vk_format_get_blockwidth(image->vk.format);
+   unsigned const block_height = vk_format_get_blockheight(image->vk.format);
+
    /* Buffer row length and image height must be block-aligned. However, safer to assume the
     * intention of rounding up in case of invalid (like simply copying imageExtent) usage.
     */
    uint32_t const buffer_y_pitch = DIV_ROUND_UP(
       region->bufferRowLength != 0 ? region->bufferRowLength : region->imageExtent.width,
-      image->surface.blk_w);
+      block_width);
    *buffer_y_pitch_out = buffer_y_pitch;
    *buffer_z_pitch_out =
       buffer_y_pitch * DIV_ROUND_UP(region->bufferImageHeight != 0 ? region->bufferImageHeight
                                                                    : region->imageExtent.height,
-                                    image->surface.blk_h);
+                                    block_height);
 
    /* The offset must be block-aligned, but offset + extent is limited to the extent of the
     * subresource, which is not block-aligned.
     */
-   rect_out->offset.x = region->imageOffset.x / image->surface.blk_w;
-   rect_out->offset.y = region->imageOffset.y / image->surface.blk_h;
-   rect_out->extent.width = DIV_ROUND_UP(region->imageExtent.width, image->surface.blk_w);
-   rect_out->extent.height = DIV_ROUND_UP(region->imageExtent.height, image->surface.blk_h);
+   rect_out->offset.x = region->imageOffset.x / block_width;
+   rect_out->offset.y = region->imageOffset.y / block_height;
+   rect_out->extent.width = DIV_ROUND_UP(region->imageExtent.width, block_width);
+   rect_out->extent.height = DIV_ROUND_UP(region->imageExtent.height, block_height);
 }
 
 static void
@@ -842,8 +846,6 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
       terakan_image_from_handle(pCopyBufferToImageInfo->dstImage);
 
    /* TODO(Triang3l): Path for linear 8_8_8, 16_16_16 and 32_32_32 as buffer to buffer. */
-
-   VkFormat const transfer_format = terakan_meta_transfer_image_block_format(image->surface.bpe);
 
    VkImageViewCreateInfo image_view_create_info = {
       .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -918,17 +920,20 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
             push_constants_bo, push_constants_va_lines);
       }
 
-      bool const is_stencil = region->imageSubresource.aspectMask == VK_IMAGE_ASPECT_STENCIL_BIT;
+      unsigned const region_bytes_per_block =
+         image->surface
+            .planes[terakan_image_surface_aspect_plane(image->vk.format,
+                                                       region->imageSubresource.aspectMask)]
+            .bytes_per_block;
 
-      VkFormat const region_transfer_format = is_stencil ? VK_FORMAT_R8_UINT : transfer_format;
+      VkFormat const region_transfer_format =
+         terakan_meta_transfer_image_block_format(region_bytes_per_block);
       image_view_create_info.format = region_transfer_format;
 
       terakan_meta_copy_buffer_image_image_view_subresource_range(
          image, region, &image_view_create_info.subresourceRange);
 
       uint64_t buffer_va = buffer->va + region->bufferOffset;
-
-      uint32_t const bpe = is_stencil ? 1 : image->surface.bpe;
 
       while (image_view_create_info.subresourceRange.layerCount > 0) {
          struct terakan_color_descriptor color_descriptor;
@@ -950,9 +955,9 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
             (color_descriptor_layer_count - 1) * buffer_z_pitch +
             (rect.extent.height - 1) * buffer_y_pitch + rect.extent.width;
          buffer_resource[0] = (uint32_t)buffer_va;
-         buffer_resource[1] = (uint32_t)(bpe * buffer_size_elements - 1);
+         buffer_resource[1] = (uint32_t)(region_bytes_per_block * buffer_size_elements - 1);
          buffer_resource[2] =
-            S_030008_BASE_ADDRESS_HI(buffer_va >> 32) | S_030008_STRIDE(bpe) |
+            S_030008_BASE_ADDRESS_HI(buffer_va >> 32) | S_030008_STRIDE(region_bytes_per_block) |
             S_030008_DATA_FORMAT(terakan_format_vertex_get_format(region_transfer_format)) |
             S_030008_NUM_FORMAT_ALL(terakan_format_data_get_number_format(region_transfer_format));
          buffer_resource[4] = (uint32_t)buffer_size_elements;
@@ -965,7 +970,8 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
 
          image_view_create_info.subresourceRange.baseArrayLayer += color_descriptor_layer_count;
          image_view_create_info.subresourceRange.layerCount -= color_descriptor_layer_count;
-         buffer_va += bpe * (VkDeviceSize)buffer_z_pitch * color_descriptor_layer_count;
+         buffer_va +=
+            region_bytes_per_block * (VkDeviceSize)buffer_z_pitch * color_descriptor_layer_count;
       }
    }
 }
@@ -978,8 +984,6 @@ terakan_CmdCopyImageToBuffer2(VkCommandBuffer const commandBuffer,
       terakan_image_from_handle(pCopyImageToBufferInfo->srcImage);
 
    /* TODO(Triang3l): Path for linear 8_8_8, 16_16_16 and 32_32_32 as buffer to buffer. */
-
-   VkFormat const transfer_format = terakan_meta_transfer_image_block_format(image->surface.bpe);
 
    VkImageViewCreateInfo image_view_create_info = {
       .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -1038,17 +1042,21 @@ terakan_CmdCopyImageToBuffer2(VkCommandBuffer const commandBuffer,
       terakan_meta_copy_buffer_image_pitches_and_rect(image, region, &buffer_y_pitch,
                                                       &buffer_z_pitch, &rect);
 
-      bool const is_stencil = region->imageSubresource.aspectMask == VK_IMAGE_ASPECT_STENCIL_BIT;
-
       terakan_meta_copy_buffer_image_image_view_subresource_range(
          image, region, &image_view_create_info.subresourceRange);
+
+      unsigned const region_bytes_per_block =
+         image->surface
+            .planes[terakan_image_surface_aspect_plane(image->vk.format,
+                                                       region->imageSubresource.aspectMask)]
+            .bytes_per_block;
 
       uint32_t buffer_uav_alignment_offset_elements;
       terakan_color_descriptor_calculate_buffer_base_pitch_dim_offset(
          &buffer_uav, buffer->va + region->bufferOffset,
          (image_view_create_info.subresourceRange.layerCount - 1) * buffer_z_pitch +
             (rect.extent.height - 1) * buffer_y_pitch + rect.extent.width,
-         is_stencil ? 1 : image->surface.bpe, tile_pipe_interleave_bytes_log2,
+         region_bytes_per_block, tile_pipe_interleave_bytes_log2,
          &buffer_uav_alignment_offset_elements);
 
       int32_t const image_offset_x_minus_buffer_offset =
@@ -1079,7 +1087,8 @@ terakan_CmdCopyImageToBuffer2(VkCommandBuffer const commandBuffer,
             push_constants_bo, push_constants_va_lines);
       }
 
-      VkFormat const region_transfer_format = is_stencil ? VK_FORMAT_R8_UINT : transfer_format;
+      VkFormat const region_transfer_format =
+         terakan_meta_transfer_image_block_format(region_bytes_per_block);
 
       buffer_uav.info =
          S_028C70_FORMAT(terakan_format_color_get_format(region_transfer_format)) |

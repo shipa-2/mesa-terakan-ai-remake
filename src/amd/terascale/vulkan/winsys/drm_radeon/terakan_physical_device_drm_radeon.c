@@ -225,6 +225,10 @@ terakan_physical_device_drm_radeon_try_create(struct vk_instance * const instanc
       .pipes_log2 = tiling_config & 0xF,
       .banks_log2 = 2 + ((tiling_config >> 4) & 0xF),
       .pipe_interleave_bytes_log2 = 8 + ((tiling_config >> 8) & 0xF),
+      /* As of 2.50.0, DRM Radeon doesn't expose the bank interleave, but has log2(1) for it in the
+       * "golden" GB_ADDR_CONFIG values for all R8xx/R9xx chips.
+       */
+      .bank_interleave_log2 = 0,
       .row_bytes_log2 = 10 + ((tiling_config >> 12) & 0xF),
    };
 
