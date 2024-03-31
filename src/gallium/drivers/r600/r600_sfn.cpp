@@ -143,7 +143,7 @@ r600_shader_from_nir(struct r600_context *rctx,
 
    r600::Assembler afs(&pipeshader->shader, *key);
    if (!afs.lower(scheduled_shader)) {
-      R600_ERR("%s: Lowering to assembly failed\n", __func__);
+      R600_ERR_F("%s: Lowering to assembly failed\n", __func__);
 
       scheduled_shader->print(std::cerr);
       /* For now crash if the shader could not be generated */
