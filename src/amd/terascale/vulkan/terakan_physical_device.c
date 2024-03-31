@@ -258,10 +258,10 @@ terakan_physical_device_get_capabilities(
             terakan_physical_device_chip_family_name(chip_family_info->chip_family));
    /* TODO(Triang3l): pipelineCacheUUID when pipeline cache is implemented. */
 
-   properties_out->maxImageDimension1D = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES;
-   properties_out->maxImageDimension2D = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES;
+   properties_out->maxImageDimension1D = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT;
+   properties_out->maxImageDimension2D = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT;
    properties_out->maxImageDimension3D = TERAKAN_IMAGE_MAX_TARGET_SLICES;
-   properties_out->maxImageDimensionCube = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES;
+   properties_out->maxImageDimensionCube = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT;
    properties_out->maxImageArrayLayers = TERAKAN_IMAGE_MAX_TARGET_SLICES;
 
    /* Vertex fetch constants have 32-bit size minus one in bytes.
@@ -383,8 +383,8 @@ terakan_physical_device_get_capabilities(
    properties_out->maxSamplerAnisotropy = 0x1.0p4f;
 
    properties_out->maxViewports = TERAKAN_HW_STATE_DRAW_MAX_VIEWPORTS;
-   properties_out->maxViewportDimensions[0] = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES;
-   properties_out->maxViewportDimensions[1] = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES;
+   properties_out->maxViewportDimensions[0] = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT;
+   properties_out->maxViewportDimensions[1] = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT;
    properties_out->viewportBoundsRange[0] = (float)INT16_MIN;
    properties_out->viewportBoundsRange[1] = (float)INT16_MAX;
    properties_out->viewportSubPixelBits = 8;
@@ -407,8 +407,8 @@ terakan_physical_device_get_capabilities(
 
    /* TODO(Triang3l): Interpolation offset properties when sample-rate shading is enabled. */
 
-   properties_out->maxFramebufferWidth = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES;
-   properties_out->maxFramebufferHeight = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES;
+   properties_out->maxFramebufferWidth = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT;
+   properties_out->maxFramebufferHeight = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT;
    properties_out->maxFramebufferLayers = TERAKAN_IMAGE_MAX_TARGET_SLICES;
 
    VkSampleCountFlags const sample_counts =

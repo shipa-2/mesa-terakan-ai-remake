@@ -76,21 +76,20 @@ terakan_state_draw_viewport_translate(VkViewport const * const viewport,
     * with both its bounds rounded towards negative infinity).
     */
    hw_viewport_out->pa_sc_vport_scissor_tl_br_xy[0][0] =
-      (uint16_t)CLAMP(viewport->x, 0.0f, (float)TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES);
+      (uint16_t)CLAMP(viewport->x, 0.0f, (float)TERAKAN_IMAGE_MAX_WIDTH_HEIGHT);
    hw_viewport_out->pa_sc_vport_scissor_tl_br_xy[0][1] =
-      (uint16_t)CLAMP(top, 0.0f, (float)TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES);
-   if (unlikely(hw_viewport_out->pa_sc_vport_scissor_tl_br_xy[0][0] >=
-                   TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES ||
-                hw_viewport_out->pa_sc_vport_scissor_tl_br_xy[0][1] >=
-                   TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES)) {
+      (uint16_t)CLAMP(top, 0.0f, (float)TERAKAN_IMAGE_MAX_WIDTH_HEIGHT);
+   if (unlikely(
+          hw_viewport_out->pa_sc_vport_scissor_tl_br_xy[0][0] >= TERAKAN_IMAGE_MAX_WIDTH_HEIGHT ||
+          hw_viewport_out->pa_sc_vport_scissor_tl_br_xy[0][1] >= TERAKAN_IMAGE_MAX_WIDTH_HEIGHT)) {
       /* For top-left, the maximum value in the register is 2^n-1, not 2^n. */
       memset(hw_viewport_out->pa_sc_vport_scissor_tl_br_xy, 0,
              sizeof(hw_viewport_out->pa_sc_vport_scissor_tl_br_xy));
    } else {
       hw_viewport_out->pa_sc_vport_scissor_tl_br_xy[1][0] =
-         (uint16_t)CLAMP(ceilf(right), 0.0f, (float)TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES);
+         (uint16_t)CLAMP(ceilf(right), 0.0f, (float)TERAKAN_IMAGE_MAX_WIDTH_HEIGHT);
       hw_viewport_out->pa_sc_vport_scissor_tl_br_xy[1][1] =
-         (uint16_t)CLAMP(ceilf(bottom), 0.0f, (float)TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES);
+         (uint16_t)CLAMP(ceilf(bottom), 0.0f, (float)TERAKAN_IMAGE_MAX_WIDTH_HEIGHT);
    }
 
    hw_viewport_out->pa_sc_vport_z_min_max[0] = MIN2(viewport->minDepth, viewport->maxDepth);

@@ -1034,33 +1034,33 @@ terakan_GetPhysicalDeviceImageFormatProperties2(
       (pImageFormatInfo->usage & (VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
                                   VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)) != 0;
 
-   image_format_properties.maxExtent.width = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES;
+   image_format_properties.maxExtent.width = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT;
    switch (pImageFormatInfo->type) {
    case VK_IMAGE_TYPE_1D:
       image_format_properties.maxExtent.height = 1;
       image_format_properties.maxExtent.depth = 1;
       image_format_properties.maxArrayLayers =
-         is_target ? TERAKAN_IMAGE_MAX_TARGET_SLICES : TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES;
+         is_target ? TERAKAN_IMAGE_MAX_TARGET_SLICES : TERAKAN_IMAGE_MAX_SLICES;
       break;
    case VK_IMAGE_TYPE_2D:
-      image_format_properties.maxExtent.height = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES;
+      image_format_properties.maxExtent.height = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT;
       image_format_properties.maxExtent.depth = 1;
       image_format_properties.maxArrayLayers =
-         is_target ? TERAKAN_IMAGE_MAX_TARGET_SLICES : TERAKAN_IMAGE_MAX_DEPTH_2D_SLICES;
+         is_target ? TERAKAN_IMAGE_MAX_TARGET_SLICES : TERAKAN_IMAGE_MAX_SLICES;
       break;
    case VK_IMAGE_TYPE_3D:
-      image_format_properties.maxExtent.height = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES;
+      image_format_properties.maxExtent.height = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT;
       image_format_properties.maxExtent.depth =
          (pImageFormatInfo->usage & VK_IMAGE_USAGE_STORAGE_BIT) ||
                (is_target && (pImageFormatInfo->flags & VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT))
             ? TERAKAN_IMAGE_MAX_TARGET_SLICES
-            : TERAKAN_IMAGE_MAX_DEPTH_2D_SLICES;
+            : TERAKAN_IMAGE_MAX_SLICES;
       image_format_properties.maxArrayLayers = 1;
       break;
    default:
       return VK_ERROR_FORMAT_NOT_SUPPORTED;
    }
-   image_format_properties.maxMipLevels = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES_LOG2 + 1;
+   image_format_properties.maxMipLevels = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_LOG2 + 1;
 
    image_format_properties.sampleCounts = VK_SAMPLE_COUNT_1_BIT;
    /* Multisampled images must be 2D-tiled.

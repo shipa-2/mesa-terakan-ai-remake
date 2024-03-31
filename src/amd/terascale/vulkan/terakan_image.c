@@ -1356,7 +1356,7 @@ terakan_image_create_depth_stencil_descriptor(
 
    /* With VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, limiting the number of array layers in the
     * image to TERAKAN_IMAGE_MAX_TARGET_SLICES, so no need to handle the entire
-    * TERAKAN_IMAGE_MAX_DEPTH_2D_SLICES range.
+    * TERAKAN_IMAGE_MAX_SLICES range.
     */
    descriptor_out->view =
       S_028008_SLICE_START(image_view_create_info->subresourceRange.baseArrayLayer) |

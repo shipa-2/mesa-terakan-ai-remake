@@ -41,13 +41,18 @@
 extern "C" {
 #endif
 
-#define TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES_LOG2 14
-#define TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES                                                   \
-   (1 << TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES_LOG2)
-#define TERAKAN_IMAGE_MAX_DEPTH_2D_SLICES_LOG2 13
-#define TERAKAN_IMAGE_MAX_DEPTH_2D_SLICES      (1 << TERAKAN_IMAGE_MAX_DEPTH_2D_SLICES_LOG2)
-#define TERAKAN_IMAGE_MAX_TARGET_SLICES_LOG2   11
-#define TERAKAN_IMAGE_MAX_TARGET_SLICES        (1 << TERAKAN_IMAGE_MAX_TARGET_SLICES_LOG2)
+#define TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_LOG2 14
+#define TERAKAN_IMAGE_MAX_WIDTH_HEIGHT      (1 << TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_LOG2)
+/* Maximum depth or array layer count supported by TC. */
+#define TERAKAN_IMAGE_MAX_SLICES_LOG2 13
+#define TERAKAN_IMAGE_MAX_SLICES      (1 << TERAKAN_IMAGE_MAX_SLICES_LOG2)
+/* Maximum depth or array layer count supported by CB and DB.
+ * In Terakan, images can use more than this (up to TERAKAN_IMAGE_MAX_SLICES) if they can't
+ * potentially be accessed by the application through image views referencing arbitrary Z or array
+ * layer ranges that'd require CB or DB access.
+ */
+#define TERAKAN_IMAGE_MAX_TARGET_SLICES_LOG2 11
+#define TERAKAN_IMAGE_MAX_TARGET_SLICES      (1 << TERAKAN_IMAGE_MAX_TARGET_SLICES_LOG2)
 
 struct terakan_image_surface_level {
    uint32_t offset_in_memory_bytes_shr8;
@@ -89,7 +94,7 @@ struct terakan_image_surface_plane {
 
    struct terakan_image_surface_tiling tiling;
 
-   struct terakan_image_surface_level levels[TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_1D_SLICES + 1];
+   struct terakan_image_surface_level levels[TERAKAN_IMAGE_MAX_WIDTH_HEIGHT + 1];
 };
 
 struct terakan_image_surface {
