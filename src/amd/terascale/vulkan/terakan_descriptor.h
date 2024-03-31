@@ -264,12 +264,12 @@ struct terakan_color_meta_descriptor {
 static inline struct terakan_color_meta_descriptor
 terakan_color_meta_descriptor_create_disabled(struct terakan_color_descriptor const * const color)
 {
-   return (struct terakan_color_meta_descriptor){
-      .cmask = color->base,
-      .cmask_slice = S_028C80_TILE_MAX(0),
-      .fmask = color->base,
-      .fmask_slice = S_028C88_TILE_MAX(G_028C68_SLICE_TILE_MAX(color->slice)),
-   };
+   struct terakan_color_meta_descriptor descriptor;
+   descriptor.cmask = color->base;
+   descriptor.cmask_slice = S_028C80_TILE_MAX(0);
+   descriptor.fmask = color->base;
+   descriptor.fmask_slice = S_028C88_TILE_MAX(G_028C68_SLICE_TILE_MAX(color->slice));
+   return descriptor;
 }
 
 struct terakan_depth_stencil_descriptor {

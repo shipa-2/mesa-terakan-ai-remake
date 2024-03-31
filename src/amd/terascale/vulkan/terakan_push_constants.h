@@ -77,10 +77,10 @@ static inline struct terakan_push_constants_usage
 terakan_push_constants_usage_union(struct terakan_push_constants_usage const a,
                                    struct terakan_push_constants_usage const b)
 {
-   return (struct terakan_push_constants_usage){
-      .driver_constants = a.driver_constants | b.driver_constants,
-      .app_extent_bytes = MAX2(a.app_extent_bytes, b.app_extent_bytes),
-   };
+   struct terakan_push_constants_usage usage;
+   usage.driver_constants = a.driver_constants | b.driver_constants;
+   usage.app_extent_bytes = MAX2(a.app_extent_bytes, b.app_extent_bytes);
+   return usage;
 }
 
 struct terakan_push_constants_state {
