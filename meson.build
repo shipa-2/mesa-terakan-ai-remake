@@ -591,13 +591,17 @@ if with_dri
 endif
 
 dep_dxheaders = null_dep
-if with_gallium_d3d12 or with_microsoft_clc or with_microsoft_vk or with_gfxstream_vk and host_machine.system() == 'windows'
+if (with_gallium_d3d12 or
+    with_microsoft_clc or
+    with_microsoft_vk or
+    with_gfxstream_vk and host_machine.system() == 'windows' or
+    with_amd_terascale_vk and with_platform_windows)
   dep_dxheaders = dependency('directx-headers', required : false)
   if not dep_dxheaders.found()
     dep_dxheaders = dependency('DirectX-Headers',
       version : '>= 1.614.1',
       fallback : ['DirectX-Headers', 'dep_dxheaders'],
-      required : with_gallium_d3d12 or with_microsoft_vk
+      required : with_gallium_d3d12 or with_microsoft_vk or with_amd_terascale_vk and with_platform_windows
     )
   endif
 endif
