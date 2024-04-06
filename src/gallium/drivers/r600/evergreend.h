@@ -456,6 +456,32 @@
 #define   C_00913C_VTX_DONE_DELAY(x)                0xFFFFFFF0
 
 
+#define R_002760_MC_ARB_RAMCFG                        0x00002760
+#define   S_002760_NOOFBANK(x)                         (((unsigned)(x) & 0x3) << 0)
+#define   G_002760_NOOFBANK(x)                         (((x) >> 0) & 0x3)
+#define   C_002760_NOOFBANK                            0xFFFFFFFC
+#define   S_002760_NOOFRANK(x)                         (((unsigned)(x) & 0x1) << 2)
+#define   G_002760_NOOFRANK(x)                         (((x) >> 2) & 0x1)
+#define   C_002760_NOOFRANK                            0xFFFFFFFB
+#define   S_002760_NOOFROWS(x)                         (((unsigned)(x) & 0x7) << 3)
+#define   G_002760_NOOFROWS(x)                         (((x) >> 3) & 0x7)
+#define   C_002760_NOOFROWS                            0xFFFFFFC7
+#define   S_002760_NOOFCOLS(x)                         (((unsigned)(x) & 0x3) << 6)
+#define   G_002760_NOOFCOLS(x)                         (((x) >> 6) & 0x3)
+#define   C_002760_NOOFCOLS                            0xFFFFFF3F
+#define   S_002760_CHANSIZE(x)                         (((unsigned)(x) & 0x1) << 8)
+#define   G_002760_CHANSIZE(x)                         (((x) >> 8) & 0x1)
+#define   C_002760_CHANSIZE                            0xFFFFFEFF
+#define   S_002760_BURSTLENGTH(x)                      (((unsigned)(x) & 0x1) << 9)
+#define   G_002760_BURSTLENGTH(x)                      (((x) >> 9) & 0x1)
+#define   C_002760_BURSTLENGTH                         0xFFFFFDFF
+#define   S_002760_CHANSIZE_OVERRIDE(x)                (((unsigned)(x) & 0x1) << 11)
+#define   G_002760_CHANSIZE_OVERRIDE(x)                (((x) >> 11) & 0x1)
+#define   C_002760_CHANSIZE_OVERRIDE                   0xFFFFF7FF
+/* R_002760_MC_ARB_RAMCFG's address on CHIP_PALM, CHIP_SUMO and CHIP_SUMO2. */
+#define FUS_R_002768_MC_ARB_RAMCFG                    0x00002768
+
+
 /* Set up by the kernel. */
 #define R_0098F8_GB_ADDR_CONFIG                       0x000098F8
 #define   S_0098F8_NUM_PIPES(x)                        (((unsigned)(x) & 0x7) << 0)
