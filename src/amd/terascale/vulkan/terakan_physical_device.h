@@ -42,7 +42,9 @@
 extern "C" {
 #endif
 
-#if !defined(_WIN32)
+#if defined(_WIN32)
+#define TERAKAN_PHYSICAL_DEVICE_HAS_WINSYS_WDDM
+#else
 #define TERAKAN_PHYSICAL_DEVICE_HAS_WINSYS_DRM_RADEON
 #endif
 

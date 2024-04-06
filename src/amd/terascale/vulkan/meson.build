@@ -112,7 +112,31 @@ libterakan_files = files(
   'terakan_wsi.h',
 )
 
-if not with_platform_windows
+libterakan_deps = [
+  dep_libdrm,
+  dep_thread,
+  dep_dl,
+  dep_m,
+  idep_amd_terascale_common,
+  idep_amd_terascale_compiler,
+  idep_mesautil,
+  idep_nir,
+  idep_vulkan_util,
+  idep_vulkan_wsi,
+  idep_vulkan_runtime,
+  idep_xmlconfig,
+]
+
+if with_platform_windows
+  libterakan_files += files(
+    'winsys/wddm/terakan_physical_device_wddm.c',
+    'winsys/wddm/terakan_physical_device_wddm.h',
+  )
+  libterakan_deps += [
+    cc.find_library('dxgi'),
+    cc.find_library('gdi32'),
+  ]
+elif system_has_kms_drm
   libterakan_files += files(
     'winsys/drm_radeon/terakan_bo_drm_radeon.c',
     'winsys/drm_radeon/terakan_bo_drm_radeon.h',
@@ -144,20 +168,7 @@ libvulkan_terascale = shared_library(
     inc_compiler,
     inc_util,
   ],
-  dependencies : [
-    dep_libdrm,
-    dep_thread,
-    dep_dl,
-    dep_m,
-    idep_amd_terascale_common,
-    idep_amd_terascale_compiler,
-    idep_mesautil,
-    idep_nir,
-    idep_vulkan_util,
-    idep_vulkan_wsi,
-    idep_vulkan_runtime,
-    idep_xmlconfig,
-  ],
+  dependencies : libterakan_deps,
   c_args : [
     no_override_init_args,
     c_msvc_compat_args,

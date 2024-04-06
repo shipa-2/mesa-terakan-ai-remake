@@ -41,6 +41,8 @@
 
 #if defined(TERAKAN_PHYSICAL_DEVICE_HAS_WINSYS_DRM_RADEON)
 #include "winsys/drm_radeon/terakan_physical_device_drm_radeon.h"
+#elif defined(TERAKAN_PHYSICAL_DEVICE_HAS_WINSYS_WDDM)
+#include "winsys/wddm/terakan_physical_device_wddm.h"
 #endif
 
 static struct debug_control const terakan_debug_options[] = {{"startup", TERAKAN_DEBUG_STARTUP},
@@ -195,6 +197,8 @@ terakan_CreateInstance(VkInstanceCreateInfo const * const pCreateInfo,
 
 #if defined(TERAKAN_PHYSICAL_DEVICE_HAS_WINSYS_DRM_RADEON)
    instance->vk.physical_devices.try_create_for_drm = terakan_physical_device_drm_radeon_try_create;
+#elif defined(TERAKAN_PHYSICAL_DEVICE_HAS_WINSYS_WDDM)
+   instance->vk.physical_devices.enumerate = terakan_physical_device_wddm_enumerate;
 #else
 #error "No physical device enumeration function for the target platform"
 #endif
