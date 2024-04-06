@@ -131,6 +131,7 @@ if with_platform_windows
   libterakan_files += files(
     'winsys/wddm/terakan_physical_device_wddm.c',
     'winsys/wddm/terakan_physical_device_wddm.h',
+    'winsys/wddm/terakan_wddm_d3dkmthk.h',
   )
   libterakan_deps += [
     cc.find_library('dxgi'),

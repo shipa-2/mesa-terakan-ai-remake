@@ -21,26 +21,15 @@
  * IN THE SOFTWARE.
  */
 
-#ifndef TERAKAN_PHYSICAL_DEVICE_WDDM_H
-#define TERAKAN_PHYSICAL_DEVICE_WDDM_H
+#ifndef TERAKAN_WDDM_D3DKMTHK_H
+#define TERAKAN_WDDM_D3DKMTHK_H
 
-#include "terakan_physical_device.h"
-#include "terakan_wddm_d3dkmthk.h"
+/* In this specific order - d3dkmthk.h requires both. */
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+#include <windows.h>
 
-struct terakan_physical_device_wddm {
-   struct terakan_physical_device base;
+#include <winternl.h>
 
-   D3DKMT_HANDLE d3dkmt_adapter;
-};
+#include <d3dkmthk.h>
 
-VkResult terakan_physical_device_wddm_enumerate(struct vk_instance * instance);
-
-#ifdef __cplusplus
-}
-#endif
-
-#endif /* TERAKAN_PHYSICAL_DEVICE_WDDM_H */
+#endif /* TERAKAN_WDDM_D3DKMTHK_H */

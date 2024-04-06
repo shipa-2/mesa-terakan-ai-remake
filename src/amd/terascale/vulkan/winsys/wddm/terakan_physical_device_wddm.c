@@ -24,18 +24,36 @@
 #include "terakan_physical_device_wddm.h"
 
 #include "terakan_instance.h"
+#include "terakan_wddm_d3dkmthk.h"
 
 #include "util/list.h"
 #include "util/macros.h"
+#include "vk_alloc.h"
 #include "vk_log.h"
 
 #include <dxgi.h>
+
+static void
+terakan_physical_device_wddm_destroy(struct terakan_physical_device * const device_base)
+{
+   struct terakan_physical_device_wddm * const device =
+      container_of(device_base, struct terakan_physical_device_wddm, base);
+
+   D3DKMT_CLOSEADAPTER const close_adapter_arguments = {.hAdapter = device->d3dkmt_adapter};
+   D3DKMTCloseAdapter(&close_adapter_arguments);
+
+   terakan_physical_device_finish(&device->base);
+
+   vk_free(&device->base.vk.instance->alloc, device);
+}
 
 static VkResult
 terakan_physical_device_wddm_try_create(struct terakan_instance * const instance,
                                         IDXGIAdapter * const dxgi_adapter,
                                         struct terakan_physical_device ** const device_out)
 {
+   VkResult result;
+
    DXGI_ADAPTER_DESC adapter_desc;
    HRESULT const adapter_get_desc_result =
       dxgi_adapter->lpVtbl->GetDesc(dxgi_adapter, &adapter_desc);
@@ -69,9 +87,41 @@ terakan_physical_device_wddm_try_create(struct terakan_instance * const instance
       break;
    }
 
-   /* TODO(Triang3l): Create the physical device. */
+   struct terakan_physical_device_wddm * const device =
+      vk_alloc(&instance->vk.alloc, sizeof(struct terakan_physical_device_wddm),
+               alignof(struct terakan_physical_device_wddm), VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE);
+   if (device == NULL) {
+      return vk_error(instance, VK_ERROR_OUT_OF_HOST_MEMORY);
+   }
 
-   return VK_ERROR_INCOMPATIBLE_DRIVER;
+   D3DKMT_OPENADAPTERFROMLUID open_adapter_from_luid_arguments = {
+      .AdapterLuid = adapter_desc.AdapterLuid,
+   };
+   NTSTATUS const open_adapter_from_luid_status =
+      D3DKMTOpenAdapterFromLuid(&open_adapter_from_luid_arguments);
+   if (!NT_SUCCESS(open_adapter_from_luid_status)) {
+      result = vk_errorf(instance, VK_ERROR_INCOMPATIBLE_DRIVER,
+                         "Failed to open the D3DKMT adapter, status 0x%08lX",
+                         open_adapter_from_luid_status);
+      goto fail_alloc;
+   }
+   device->d3dkmt_adapter = open_adapter_from_luid_arguments.hAdapter;
+
+   /* TODO(Triang3l): Remove test quitting. */
+   result = VK_ERROR_INCOMPATIBLE_DRIVER;
+   goto fail_d3dkmt_adapter;
+
+#if 0
+   *device_out = &device->base.vk;
+   return VK_SUCCESS;
+#endif
+
+fail_d3dkmt_adapter:
+   D3DKMT_CLOSEADAPTER const close_adapter_arguments = {.hAdapter = device->d3dkmt_adapter};
+   D3DKMTCloseAdapter(&close_adapter_arguments);
+fail_alloc:
+   vk_free(&instance->vk.alloc, device);
+   return result;
 }
 
 VkResult
