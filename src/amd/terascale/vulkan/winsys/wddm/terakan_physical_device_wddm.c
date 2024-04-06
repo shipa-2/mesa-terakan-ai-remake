@@ -26,12 +26,14 @@
 #include "terakan_instance.h"
 #include "terakan_wddm_d3dkmthk.h"
 
+#include "gallium/drivers/r600/evergreend.h"
 #include "util/list.h"
 #include "util/macros.h"
 #include "vk_alloc.h"
 #include "vk_log.h"
 
 #include <dxgi.h>
+#include <stdint.h>
 
 static void
 terakan_physical_device_wddm_destroy(struct terakan_physical_device * const device_base)
@@ -106,6 +108,37 @@ terakan_physical_device_wddm_try_create(struct terakan_instance * const instance
       goto fail_alloc;
    }
    device->d3dkmt_adapter = open_adapter_from_luid_arguments.hAdapter;
+
+   uint32_t adapter_driver_private_data[0x10D8] = {};
+   D3DKMT_QUERYADAPTERINFO const adapter_driver_private_data_query = {
+      .hAdapter = device->d3dkmt_adapter,
+      .Type = KMTQAITYPE_UMDRIVERPRIVATE,
+      .pPrivateDriverData = adapter_driver_private_data,
+      .PrivateDriverDataSize = sizeof(adapter_driver_private_data),
+   };
+   NTSTATUS const adapter_driver_private_data_query_status =
+      D3DKMTQueryAdapterInfo(&adapter_driver_private_data_query);
+   if (!NT_SUCCESS(adapter_driver_private_data_query_status)) {
+      result = vk_errorf(instance, VK_ERROR_INCOMPATIBLE_DRIVER,
+                         "Failed to query D3DKMT adapter driver private data, status 0x%08lX",
+                         adapter_driver_private_data_query_status);
+      goto fail_d3dkmt_adapter;
+   }
+
+   uint32_t const mc_arb_ramcfg = adapter_driver_private_data[0x558];
+   uint32_t const gb_addr_config = adapter_driver_private_data[0x559];
+   /* Also GB_BACKEND_MAP = adapter_driver_private_data[0x55A]. */
+   /* TODO(Triang3l): Remove UNUSED when the base initialization method is called. */
+   UNUSED struct terakan_physical_device_tiling_info const tiling_info = {
+      .pipes_log2 = G_0098F8_NUM_PIPES(gb_addr_config),
+      .banks_log2 = 2 + G_002760_NOOFBANK(mc_arb_ramcfg),
+      /* TODO(Triang3l): Handle MC_ARB_RAMCFG::NOOFRANK in image surface logic and pass it because
+       * it's not exposed by DRM Radeon 2.50.0, but is available on Windows.
+       */
+      .pipe_interleave_bytes_log2 = 8 + G_0098F8_PIPE_INTERLEAVE_SIZE(gb_addr_config),
+      .bank_interleave_log2 = G_0098F8_BANK_INTERLEAVE_SIZE(gb_addr_config),
+      .row_bytes_log2 = 10 + G_0098F8_ROW_SIZE(gb_addr_config),
+   };
 
    /* TODO(Triang3l): Remove test quitting. */
    result = VK_ERROR_INCOMPATIBLE_DRIVER;
