@@ -607,8 +607,8 @@ terakan_physical_device_supported_external_memory_types(
 
 static void
 terakan_physical_device_init_memory_properties(
-   bool const has_dedicated_vram, VkDeviceSize const gtt_page_size, VkDeviceSize const gtt_size,
-   VkDeviceSize const vram_size, VkDeviceSize const vram_visible,
+   bool const has_dedicated_vram, VkDeviceSize const gtt_allocation_granularity,
+   VkDeviceSize const gtt_size, VkDeviceSize const vram_size, VkDeviceSize const vram_visible,
    VkPhysicalDeviceMemoryProperties * const memory_properties_out)
 {
    /* Based on radv_physical_device_init_mem_types. */
@@ -628,7 +628,7 @@ terakan_physical_device_init_memory_properties(
        * entire system memory is VRAM and occupy it like it doesn't affect memory available to the
        * CPU).
        */
-      vram_visible_size = ALIGN_POT((total_size * 2) / 3, gtt_page_size);
+      vram_visible_size = ALIGN_POT((total_size * 2) / 3, gtt_allocation_granularity);
       gtt_heap_size = total_size - vram_visible_size;
       vram_not_visible_size = 0;
    }
@@ -784,8 +784,8 @@ VkResult
 terakan_physical_device_init(
    struct terakan_physical_device * const device, struct terakan_instance * const instance,
    struct terakan_physical_device_winsys_fn const * const winsys_fn_static,
-   uint32_t const pci_device_id, VkDeviceSize const gtt_page_size, VkDeviceSize const gtt_size,
-   VkDeviceSize const vram_size, VkDeviceSize const vram_visible,
+   uint32_t const pci_device_id, VkDeviceSize const gtt_allocation_granularity,
+   VkDeviceSize const gtt_size, VkDeviceSize const vram_size, VkDeviceSize const vram_visible,
    VkDeviceSize const max_memory_allocation_size, VkDeviceSize const min_memory_map_alignment,
    struct terakan_physical_device_tiling_info const * const tiling_info,
    enum terakan_bo_relocation_type const gfx_bo_relocation_type,
@@ -979,8 +979,8 @@ terakan_physical_device_init(
    device->vk.supported_sync_types = supported_sync_types_static;
 
    terakan_physical_device_init_memory_properties(device->chip_family_info.has_dedicated_vram,
-                                                  gtt_page_size, gtt_size, vram_size, vram_visible,
-                                                  &device->memory_properties);
+                                                  gtt_allocation_granularity, gtt_size, vram_size,
+                                                  vram_visible, &device->memory_properties);
 
    /* Initialize WSI after everything else as it's a layer on top of the Vulkan physical device. */
    result = terakan_wsi_init(device);

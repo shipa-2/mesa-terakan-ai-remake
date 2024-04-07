@@ -160,7 +160,7 @@ void terakan_physical_device_destroy(struct vk_physical_device * device);
 VkResult terakan_physical_device_init(
    struct terakan_physical_device * device, struct terakan_instance * instance,
    struct terakan_physical_device_winsys_fn const * winsys_fn_static, uint32_t pci_device_id,
-   VkDeviceSize gtt_page_size, VkDeviceSize gtt_size, VkDeviceSize vram_size,
+   VkDeviceSize gtt_allocation_granularity, VkDeviceSize gtt_size, VkDeviceSize vram_size,
    VkDeviceSize vram_visible, VkDeviceSize max_memory_allocation_size,
    VkDeviceSize min_memory_map_alignment,
    struct terakan_physical_device_tiling_info const * tiling_info,

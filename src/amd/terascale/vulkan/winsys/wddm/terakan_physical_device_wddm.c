@@ -23,7 +23,9 @@
 
 #include "terakan_physical_device_wddm.h"
 
+#include "terakan_device_wddm.h"
 #include "terakan_instance.h"
+#include "terakan_sync_completion.h"
 #include "terakan_wddm_d3dkmthk.h"
 
 #include "gallium/drivers/r600/evergreend.h"
@@ -35,6 +37,43 @@
 #include <assert.h>
 #include <dxgi.h>
 #include <stdint.h>
+#include <string.h>
+#include <windows.h>
+
+static void
+terakan_physical_device_wddm_get_winsys_extensions(
+   struct terakan_physical_device const * const device_base,
+   struct vk_device_extension_table * const extensions, UNUSED struct vk_features * const features,
+   struct vk_properties * const properties)
+{
+   struct terakan_physical_device_wddm const * const device =
+      container_of(device_base, struct terakan_physical_device_wddm const, base);
+
+   uint32_t const pci_domain = 0;
+
+   /* VK_KHR_external_memory_capabilities (#72, Vulkan 1.1, instance). */
+   /* Same as ac_compute_device_uuid as of July 2023. */
+   uint32_t const device_uuid_u32[] = {
+      pci_domain,
+      device->adapter_address.BusNumber,
+      device->adapter_address.DeviceNumber,
+      device->adapter_address.FunctionNumber,
+   };
+   static_assert(sizeof(device_uuid_u32) <= sizeof(properties->deviceUUID),
+                 "Computed device UUID must fit into the Vulkan UUID field.");
+   memcpy(properties->deviceUUID, device_uuid_u32, sizeof(device_uuid_u32));
+   static_assert(
+      sizeof(LUID) == VK_LUID_SIZE,
+      "Using memcpy to copy the adapter LUID, the size must match between WDDM and Vulkan.");
+   memcpy(properties->deviceLUID, &device->adapter_luid, VK_LUID_SIZE);
+
+   /* VK_EXT_pci_bus_info (#213). */
+   extensions->EXT_pci_bus_info = true;
+   properties->pciDomain = pci_domain;
+   properties->pciBus = device->adapter_address.BusNumber;
+   properties->pciDevice = device->adapter_address.DeviceNumber;
+   properties->pciFunction = device->adapter_address.FunctionNumber;
+}
 
 static void
 terakan_physical_device_wddm_destroy(struct terakan_physical_device * const device_base)
@@ -50,10 +89,16 @@ terakan_physical_device_wddm_destroy(struct terakan_physical_device * const devi
    vk_free(&device->base.vk.instance->alloc, device);
 }
 
+static struct terakan_physical_device_winsys_fn const terakan_physical_device_wddm_fn = {
+   .get_winsys_extensions = terakan_physical_device_wddm_get_winsys_extensions,
+   .create_device = terakan_device_wddm_create,
+   .destroy = terakan_physical_device_wddm_destroy,
+};
+
 static VkResult
 terakan_physical_device_wddm_try_create(struct terakan_instance * const instance,
                                         IDXGIAdapter * const dxgi_adapter,
-                                        struct terakan_physical_device ** const device_out)
+                                        struct terakan_physical_device_wddm ** const device_out)
 {
    VkResult result;
 
@@ -97,6 +142,8 @@ terakan_physical_device_wddm_try_create(struct terakan_instance * const instance
       return vk_error(instance, VK_ERROR_OUT_OF_HOST_MEMORY);
    }
 
+   device->adapter_luid = adapter_desc.AdapterLuid;
+
    D3DKMT_OPENADAPTERFROMLUID open_adapter_from_luid_arguments = {
       .AdapterLuid = adapter_desc.AdapterLuid,
    };
@@ -110,6 +157,20 @@ terakan_physical_device_wddm_try_create(struct terakan_instance * const instance
    }
    device->d3dkmt_adapter = open_adapter_from_luid_arguments.hAdapter;
 
+   D3DKMT_QUERYADAPTERINFO const adapter_address_query = {
+      .hAdapter = device->d3dkmt_adapter,
+      .Type = KMTQAITYPE_ADAPTERADDRESS,
+      .pPrivateDriverData = &device->adapter_address,
+      .PrivateDriverDataSize = sizeof(device->adapter_address),
+   };
+   NTSTATUS const adapter_address_query_status = D3DKMTQueryAdapterInfo(&adapter_address_query);
+   if (!NT_SUCCESS(adapter_address_query_status)) {
+      result = vk_errorf(instance, VK_ERROR_INCOMPATIBLE_DRIVER,
+                         "Failed to query the D3DKMT adapter PCI address, status 0x%08lX",
+                         adapter_address_query_status);
+      goto fail_d3dkmt_adapter;
+   }
+
    uint32_t adapter_driver_private_data[0x10D8] = {};
    D3DKMT_QUERYADAPTERINFO const adapter_driver_private_data_query = {
       .hAdapter = device->d3dkmt_adapter,
@@ -121,19 +182,21 @@ terakan_physical_device_wddm_try_create(struct terakan_instance * const instance
       D3DKMTQueryAdapterInfo(&adapter_driver_private_data_query);
    if (!NT_SUCCESS(adapter_driver_private_data_query_status)) {
       result = vk_errorf(instance, VK_ERROR_INCOMPATIBLE_DRIVER,
-                         "Failed to query D3DKMT adapter driver private data, status 0x%08lX",
+                         "Failed to query the D3DKMT adapter driver private data, status 0x%08lX",
                          adapter_driver_private_data_query_status);
       goto fail_d3dkmt_adapter;
    }
 
+   /* TODO(Triang3l): Verify the memory amounts on linked physical adapters and multi-GPU graphics
+    * cards.
+    */
    UINT const vram_host_visible_offset_dwords = 0x4E4;
    UINT const vram_non_host_visible_offset_dwords = 0x4E6;
    VkDeviceSize const vram_host_visible_bytes =
       (VkDeviceSize)(adapter_driver_private_data[vram_host_visible_offset_dwords] |
                      ((uint64_t)adapter_driver_private_data[vram_host_visible_offset_dwords + 1]
                       << 32));
-   /* TODO(Triang3l): Remove ASSERTED when the base initialization method is called. */
-   ASSERTED VkDeviceSize const vram_bytes =
+   VkDeviceSize const vram_bytes =
       vram_host_visible_bytes +
       (VkDeviceSize)(adapter_driver_private_data[vram_non_host_visible_offset_dwords] |
                      ((uint64_t)adapter_driver_private_data[vram_non_host_visible_offset_dwords + 1]
@@ -143,8 +206,7 @@ terakan_physical_device_wddm_try_create(struct terakan_instance * const instance
    uint32_t const mc_arb_ramcfg = adapter_driver_private_data[0x558];
    uint32_t const gb_addr_config = adapter_driver_private_data[0x559];
    /* Also GB_BACKEND_MAP = adapter_driver_private_data[0x55A]. */
-   /* TODO(Triang3l): Remove UNUSED when the base initialization method is called. */
-   UNUSED struct terakan_physical_device_tiling_info const tiling_info = {
+   struct terakan_physical_device_tiling_info const tiling_info = {
       .pipes_log2 = G_0098F8_NUM_PIPES(gb_addr_config),
       .banks_log2 = 2 + G_002760_NOOFBANK(mc_arb_ramcfg),
       /* TODO(Triang3l): Handle MC_ARB_RAMCFG::NOOFRANK in image surface logic and pass it because
@@ -155,17 +217,32 @@ terakan_physical_device_wddm_try_create(struct terakan_instance * const instance
       .row_bytes_log2 = 10 + G_0098F8_ROW_SIZE(gb_addr_config),
    };
 
-   /* TODO(Triang3l): Remove UNUSED when the base initialization method is called. */
-   UNUSED uint32_t const clock_crystal_frequency_hz = adapter_driver_private_data[0x4E1];
+   uint32_t const clock_crystal_frequency_hz = adapter_driver_private_data[0x4E1];
 
-   /* TODO(Triang3l): Remove test quitting. */
-   result = VK_ERROR_INCOMPATIBLE_DRIVER;
-   goto fail_d3dkmt_adapter;
+   size_t sync_type_count = 0;
+   assert(sync_type_count < ARRAY_SIZE(device->sync_types));
+   device->sync_types[sync_type_count++] = &terakan_sync_completion_type;
+   device->sync_type_binary = vk_sync_binary_get_type(&terakan_sync_completion_type);
+   assert(sync_type_count < ARRAY_SIZE(device->sync_types));
+   device->sync_types[sync_type_count++] = &device->sync_type_binary.sync;
+   assert(sync_type_count < ARRAY_SIZE(device->sync_types));
+   device->sync_types[sync_type_count++] = NULL;
 
-#if 0
-   *device_out = &device->base.vk;
+   SYSTEM_INFO system_info;
+   GetSystemInfo(&system_info);
+   result = terakan_physical_device_init(
+      &device->base, instance, &terakan_physical_device_wddm_fn, adapter_desc.DeviceId,
+      system_info.dwAllocationGranularity, (VkDeviceSize)adapter_desc.SharedSystemMemory,
+      vram_bytes, vram_host_visible_bytes, UINT32_MAX & ~(system_info.dwAllocationGranularity - 1),
+      system_info.dwAllocationGranularity, &tiling_info,
+      TERAKAN_BO_RELOCATION_TYPE_WDDM_PATCH_LOCATION, clock_crystal_frequency_hz,
+      device->sync_types);
+   if (result != VK_SUCCESS) {
+      goto fail_d3dkmt_adapter;
+   }
+
+   *device_out = device;
    return VK_SUCCESS;
-#endif
 
 fail_d3dkmt_adapter:
    D3DKMT_CLOSEADAPTER const close_adapter_arguments = {.hAdapter = device->d3dkmt_adapter};
@@ -202,7 +279,7 @@ terakan_physical_device_wddm_enumerate(struct vk_instance * const instance_base)
    for (UINT adapter_index = 0;
         SUCCEEDED(dxgi_factory->lpVtbl->EnumAdapters(dxgi_factory, adapter_index, &dxgi_adapter));
         ++adapter_index) {
-      struct terakan_physical_device * physical_device;
+      struct terakan_physical_device_wddm * physical_device;
       result = terakan_physical_device_wddm_try_create(instance, dxgi_adapter, &physical_device);
       dxgi_adapter->lpVtbl->Release(dxgi_adapter);
       if (result == VK_ERROR_INCOMPATIBLE_DRIVER) {
@@ -214,7 +291,7 @@ terakan_physical_device_wddm_enumerate(struct vk_instance * const instance_base)
          /* Error creating the physical device, report the error. */
          break;
       }
-      list_addtail(&physical_device->vk.link, &instance->vk.physical_devices.list);
+      list_addtail(&physical_device->base.vk.link, &instance->vk.physical_devices.list);
    }
 
    dxgi_factory->lpVtbl->Release(dxgi_factory);

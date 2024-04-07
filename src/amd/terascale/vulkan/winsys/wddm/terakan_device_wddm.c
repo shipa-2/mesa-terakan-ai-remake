@@ -21,36 +21,16 @@
  * IN THE SOFTWARE.
  */
 
-#ifndef TERAKAN_PHYSICAL_DEVICE_WDDM_H
-#define TERAKAN_PHYSICAL_DEVICE_WDDM_H
+#include "terakan_device_wddm.h"
 
-#include "terakan_physical_device.h"
-#include "terakan_wddm_d3dkmthk.h"
+#include "util/macros.h"
 
-#include "vk_sync.h"
-#include "vk_sync_binary.h"
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-struct terakan_physical_device_wddm {
-   struct terakan_physical_device base;
-
-   LUID adapter_luid;
-
-   D3DKMT_HANDLE d3dkmt_adapter;
-
-   D3DKMT_ADAPTERADDRESS adapter_address;
-
-   struct vk_sync_binary_type sync_type_binary;
-   struct vk_sync_type const * sync_types[3];
-};
-
-VkResult terakan_physical_device_wddm_enumerate(struct vk_instance * instance);
-
-#ifdef __cplusplus
+VkResult
+terakan_device_wddm_create(UNUSED struct terakan_physical_device * const physical_device,
+                           UNUSED VkDeviceCreateInfo const * const create_info,
+                           UNUSED VkAllocationCallbacks const * const allocator,
+                           UNUSED struct terakan_device ** const device_out)
+{
+   /* TODO(Triang3l): Create the device. */
+   return VK_ERROR_INITIALIZATION_FAILED;
 }
-#endif
-
-#endif /* TERAKAN_PHYSICAL_DEVICE_WDDM_H */

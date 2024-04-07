@@ -74,6 +74,7 @@ enum terakan_bo_priority {
 enum terakan_bo_relocation_type {
    TERAKAN_BO_RELOCATION_TYPE_NONE,
    TERAKAN_BO_RELOCATION_TYPE_DRM_NOP,
+   TERAKAN_BO_RELOCATION_TYPE_WDDM_PATCH_LOCATION,
 };
 
 struct terakan_device;
