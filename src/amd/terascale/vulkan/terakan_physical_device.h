@@ -154,7 +154,7 @@ void terakan_physical_device_finish(struct terakan_physical_device * device);
 void terakan_physical_device_destroy(struct vk_physical_device * device);
 
 /* vram_visible is included in vram_size.
- * clock_crystal_frequency can be 0 if not available, in this case timestamp queries will be
+ * clock_crystal_frequency_hz can be 0 if not available, in this case timestamp queries will be
  * disabled.
  */
 VkResult terakan_physical_device_init(
@@ -164,7 +164,7 @@ VkResult terakan_physical_device_init(
    VkDeviceSize vram_visible, VkDeviceSize max_memory_allocation_size,
    VkDeviceSize min_memory_map_alignment,
    struct terakan_physical_device_tiling_info const * tiling_info,
-   enum terakan_bo_relocation_type gfx_bo_relocation_type, uint32_t clock_crystal_frequency,
+   enum terakan_bo_relocation_type gfx_bo_relocation_type, uint32_t clock_crystal_frequency_hz,
    struct vk_sync_type const * const * supported_sync_types_static);
 
 #ifdef __cplusplus

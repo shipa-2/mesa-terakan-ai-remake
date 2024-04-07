@@ -200,7 +200,7 @@ terakan_physical_device_get_capabilities(
    struct terakan_instance const * const instance, uint32_t const pci_device_id,
    struct terakan_physical_device_chip_family_info const * const chip_family_info,
    unsigned const tile_pipe_interleave_bytes_log2, VkDeviceSize const min_memory_map_alignment,
-   uint32_t const clock_crystal_frequency, VkDeviceSize const max_memory_allocation_size,
+   uint32_t const clock_crystal_frequency_hz, VkDeviceSize const max_memory_allocation_size,
    struct vk_device_extension_table * const extensions_out, struct vk_features * const features_out,
    struct vk_properties * const properties_out)
 {
@@ -431,9 +431,9 @@ terakan_physical_device_get_capabilities(
 
    properties_out->maxSampleMaskWords = 1;
 
-   if (clock_crystal_frequency != 0) {
+   if (clock_crystal_frequency_hz != 0) {
       properties_out->timestampComputeAndGraphics = VK_TRUE;
-      properties_out->timestampPeriod = (float)(1000000.0 / (double)clock_crystal_frequency);
+      properties_out->timestampPeriod = (float)(1e9 / (double)clock_crystal_frequency_hz);
    }
 
    /* TODO(Triang3l): Maximum clip and cull distances when enabled. */
@@ -789,7 +789,7 @@ terakan_physical_device_init(
    VkDeviceSize const max_memory_allocation_size, VkDeviceSize const min_memory_map_alignment,
    struct terakan_physical_device_tiling_info const * const tiling_info,
    enum terakan_bo_relocation_type const gfx_bo_relocation_type,
-   uint32_t const clock_crystal_frequency,
+   uint32_t const clock_crystal_frequency_hz,
    struct vk_sync_type const * const * const supported_sync_types_static)
 {
    VkResult result;
@@ -961,7 +961,7 @@ terakan_physical_device_init(
    terakan_physical_device_get_capabilities(
       instance, device->pci_device_id, &device->chip_family_info,
       device->tiling_info.pipe_interleave_bytes_log2, min_memory_map_alignment,
-      clock_crystal_frequency, max_memory_allocation_size, &extensions, &features, &properties);
+      clock_crystal_frequency_hz, max_memory_allocation_size, &extensions, &features, &properties);
    device->winsys_fn->get_winsys_extensions(device, &extensions, &features, &properties);
 
    struct vk_physical_device_dispatch_table dispatch_table;

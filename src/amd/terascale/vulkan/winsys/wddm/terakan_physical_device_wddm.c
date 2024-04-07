@@ -155,6 +155,9 @@ terakan_physical_device_wddm_try_create(struct terakan_instance * const instance
       .row_bytes_log2 = 10 + G_0098F8_ROW_SIZE(gb_addr_config),
    };
 
+   /* TODO(Triang3l): Remove UNUSED when the base initialization method is called. */
+   UNUSED uint32_t const clock_crystal_frequency_hz = adapter_driver_private_data[0x4E1];
+
    /* TODO(Triang3l): Remove test quitting. */
    result = VK_ERROR_INCOMPATIBLE_DRIVER;
    goto fail_d3dkmt_adapter;

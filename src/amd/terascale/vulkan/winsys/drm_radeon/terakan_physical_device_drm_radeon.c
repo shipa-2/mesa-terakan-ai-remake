@@ -232,15 +232,15 @@ terakan_physical_device_drm_radeon_try_create(struct vk_instance * const instanc
       .row_bytes_log2 = 10 + ((tiling_config >> 12) & 0xF),
    };
 
-   __u32 clock_crystal_frequency;
+   __u32 clock_crystal_frequency_khz;
    struct drm_radeon_info clock_crystal_frequency_info_arguments = {
       .request = RADEON_INFO_CLOCK_CRYSTAL_FREQ,
-      .value = (__u64)(void *)&clock_crystal_frequency,
+      .value = (__u64)(void *)&clock_crystal_frequency_khz,
    };
    if (drmCommandWriteRead(render_node_fd, DRM_RADEON_INFO, &clock_crystal_frequency_info_arguments,
                            sizeof(clock_crystal_frequency_info_arguments)) != 0) {
       /* Disable timestamp queries in case of failure. */
-      clock_crystal_frequency = 0;
+      clock_crystal_frequency_khz = 0;
    }
 
    /* Initialize the physical device object. */
@@ -301,7 +301,7 @@ terakan_physical_device_drm_radeon_try_create(struct vk_instance * const instanc
       drm_device->deviceinfo.pci->device_id, page_size, (VkDeviceSize)gem_info.gart_size,
       (VkDeviceSize)gem_info.vram_size, (VkDeviceSize)gem_info.vram_visible,
       UINT32_MAX & ~(page_size - 1), page_size, &tiling_info, TERAKAN_BO_RELOCATION_TYPE_DRM_NOP,
-      clock_crystal_frequency, device->sync_types);
+      1000 * clock_crystal_frequency_khz, device->sync_types);
    if (result != VK_SUCCESS) {
       goto fail_render_node_path;
    }
