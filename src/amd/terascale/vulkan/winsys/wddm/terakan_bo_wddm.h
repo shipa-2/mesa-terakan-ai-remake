@@ -21,32 +21,26 @@
  * IN THE SOFTWARE.
  */
 
-#ifndef TERAKAN_DEVICE_WDDM_H
-#define TERAKAN_DEVICE_WDDM_H
+#ifndef TERAKAN_BO_WDDM_H
+#define TERAKAN_BO_WDDM_H
 
-#include "terakan_device.h"
-#include "terakan_physical_device.h"
+#include "terakan_bo.h"
 #include "terakan_wddm_d3dkmthk.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-extern struct terakan_queue_winsys_fn const terakan_queue_wddm_fn;
+struct terakan_bo_wddm {
+   struct terakan_bo base;
 
-struct terakan_device_wddm {
-   struct terakan_device base;
-
-   D3DKMT_HANDLE d3dkmt_device;
+   D3DKMT_HANDLE allocation;
 };
 
-VkResult terakan_device_wddm_create(struct terakan_physical_device * physical_device,
-                                    VkDeviceCreateInfo const * create_info,
-                                    VkAllocationCallbacks const * allocator,
-                                    struct terakan_device ** device_out);
+extern struct terakan_bo_winsys_fn const terakan_bo_wddm_fn;
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* TERAKAN_DEVICE_WDDM_H */
+#endif /* TERAKAN_BO_WDDM_H */
