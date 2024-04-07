@@ -32,6 +32,7 @@
 #include "vk_alloc.h"
 #include "vk_log.h"
 
+#include <assert.h>
 #include <dxgi.h>
 #include <stdint.h>
 
@@ -124,6 +125,20 @@ terakan_physical_device_wddm_try_create(struct terakan_instance * const instance
                          adapter_driver_private_data_query_status);
       goto fail_d3dkmt_adapter;
    }
+
+   UINT const vram_host_visible_offset_dwords = 0x4E4;
+   UINT const vram_non_host_visible_offset_dwords = 0x4E6;
+   VkDeviceSize const vram_host_visible_bytes =
+      (VkDeviceSize)(adapter_driver_private_data[vram_host_visible_offset_dwords] |
+                     ((uint64_t)adapter_driver_private_data[vram_host_visible_offset_dwords + 1]
+                      << 32));
+   /* TODO(Triang3l): Remove ASSERTED when the base initialization method is called. */
+   ASSERTED VkDeviceSize const vram_bytes =
+      vram_host_visible_bytes +
+      (VkDeviceSize)(adapter_driver_private_data[vram_non_host_visible_offset_dwords] |
+                     ((uint64_t)adapter_driver_private_data[vram_non_host_visible_offset_dwords + 1]
+                      << 32));
+   assert(vram_bytes == adapter_desc.DedicatedVideoMemory);
 
    uint32_t const mc_arb_ramcfg = adapter_driver_private_data[0x558];
    uint32_t const gb_addr_config = adapter_driver_private_data[0x559];
