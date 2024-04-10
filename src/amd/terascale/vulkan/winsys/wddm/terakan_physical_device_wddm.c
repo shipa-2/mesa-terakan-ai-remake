@@ -25,6 +25,7 @@
 
 #include "terakan_device_wddm.h"
 #include "terakan_instance.h"
+#include "terakan_queue_wddm.h"
 #include "terakan_sync_completion.h"
 #include "terakan_wddm_d3dkmthk.h"
 
@@ -217,6 +218,19 @@ terakan_physical_device_wddm_try_create(struct terakan_instance * const instance
       .row_bytes_log2 = 10 + G_0098F8_ROW_SIZE(gb_addr_config),
    };
 
+   struct terakan_physical_device_submission_info_gfx const submission_info_gfx = {
+      .base =
+         {
+            .relocation_type = TERAKAN_QUEUE_RELOCATION_TYPE_WDDM_PATCH,
+            .submission_outer_reserved_amount =
+               {
+                  .bo_references = TERAKAN_QUEUE_WDDM_SUBMISSION_RESERVED_BO_REFERENCES,
+                  .relocations = TERAKAN_QUEUE_WDDM_SUBMISSION_RESERVED_RELOCATIONS,
+               },
+         },
+      .need_sq_alu_const_mode_control = true,
+   };
+
    uint32_t const clock_crystal_frequency_hz = adapter_driver_private_data[0x4E1];
 
    size_t sync_type_count = 0;
@@ -234,9 +248,8 @@ terakan_physical_device_wddm_try_create(struct terakan_instance * const instance
       &device->base, instance, &terakan_physical_device_wddm_fn, adapter_desc.DeviceId,
       system_info.dwAllocationGranularity, (VkDeviceSize)adapter_desc.SharedSystemMemory,
       vram_bytes, vram_host_visible_bytes, UINT32_MAX & ~(system_info.dwAllocationGranularity - 1),
-      system_info.dwAllocationGranularity, &tiling_info,
-      TERAKAN_BO_RELOCATION_TYPE_WDDM_PATCH_LOCATION, clock_crystal_frequency_hz,
-      device->sync_types);
+      system_info.dwAllocationGranularity, &tiling_info, &submission_info_gfx,
+      clock_crystal_frequency_hz, device->sync_types);
    if (result != VK_SUCCESS) {
       goto fail_d3dkmt_adapter;
    }

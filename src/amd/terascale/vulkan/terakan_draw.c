@@ -140,7 +140,7 @@ terakan_CmdDraw(VkCommandBuffer const commandBuffer, uint32_t const vertexCount,
 
    terakan_before_draw(command_writer);
 
-   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 3, 0, 0, false);
+   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 3, false);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -173,7 +173,7 @@ terakan_CmdDrawIndexed(VkCommandBuffer const commandBuffer, uint32_t const index
 
    terakan_before_draw(command_writer);
 
-   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 4, 0, 0, false);
+   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 4, false);
    if (unlikely(packet == NULL)) {
       return;
    }

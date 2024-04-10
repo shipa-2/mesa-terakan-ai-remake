@@ -26,6 +26,7 @@
 
 #include "terakan_device.h"
 #include "terakan_physical_device_drm_radeon.h"
+#include "terakan_queue_drm_radeon.h"
 
 #include "c11/threads.h"
 #include "util/hash_table.h"
@@ -33,8 +34,6 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-extern struct terakan_queue_winsys_fn const terakan_queue_drm_radeon_fn;
 
 struct terakan_device_drm_radeon {
    struct terakan_device base;
@@ -49,6 +48,8 @@ struct terakan_device_drm_radeon {
     */
    mtx_t shared_bo_mutex;
    struct hash_table * shared_bo_reference_counts;
+
+   struct terakan_queue_submission_context_drm_radeon gfx_submission_context;
 };
 
 VkResult terakan_device_drm_radeon_create(struct terakan_physical_device * physical_device,

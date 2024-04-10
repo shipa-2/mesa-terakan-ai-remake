@@ -24,8 +24,8 @@
 #ifndef TERAKAN_PHYSICAL_DEVICE_H
 #define TERAKAN_PHYSICAL_DEVICE_H
 
-#include "terakan_bo.h"
 #include "terakan_instance.h"
+#include "terakan_queue.h"
 #include "wsi_common.h"
 
 #include "gallium/drivers/r600/r600_isa.h"
@@ -95,6 +95,24 @@ terakan_physical_device_tiling_info_equal(
           a->row_bytes_log2 == b->row_bytes_log2;
 }
 
+struct terakan_physical_device_submission_info {
+   enum terakan_queue_relocation_type relocation_type;
+   /* Maximum amount of additional data that may be added to submissions in the queue `submit`
+    * function by the winsys, but that doesn't need to be reserved inside the `submit` arguments
+    * themselves.
+    */
+   struct terakan_queue_submission_size submission_outer_reserved_amount;
+};
+
+struct terakan_physical_device_submission_info_gfx {
+   struct terakan_physical_device_submission_info base;
+
+   /* Whether submissions referencing kcache buffers need to reset the constants mode to DX10 using
+    * the MODE_CONTROL packet beforehand.
+    */
+   bool need_sq_alu_const_mode_control;
+};
+
 struct terakan_physical_device;
 struct terakan_device;
 
@@ -131,7 +149,7 @@ struct terakan_physical_device {
    struct terakan_physical_device_tiling_info tiling_info;
    VkDeviceSize buffer_image_bo_alignment;
 
-   enum terakan_bo_relocation_type gfx_bo_relocation_type;
+   struct terakan_physical_device_submission_info_gfx submission_info_gfx;
 
    /* nir_shader_compiler_options's lifetime must be at least as long as that of any NIR shader. */
    nir_shader_compiler_options nir_options_non_fs;
@@ -164,7 +182,8 @@ VkResult terakan_physical_device_init(
    VkDeviceSize vram_visible, VkDeviceSize max_memory_allocation_size,
    VkDeviceSize min_memory_map_alignment,
    struct terakan_physical_device_tiling_info const * tiling_info,
-   enum terakan_bo_relocation_type gfx_bo_relocation_type, uint32_t clock_crystal_frequency_hz,
+   struct terakan_physical_device_submission_info_gfx const * submission_info_gfx,
+   uint32_t clock_crystal_frequency_hz,
    struct vk_sync_type const * const * supported_sync_types_static);
 
 #ifdef __cplusplus

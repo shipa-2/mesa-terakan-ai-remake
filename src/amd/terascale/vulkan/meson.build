@@ -136,6 +136,7 @@ if with_platform_windows
     'winsys/wddm/terakan_physical_device_wddm.c',
     'winsys/wddm/terakan_physical_device_wddm.h',
     'winsys/wddm/terakan_queue_wddm.c',
+    'winsys/wddm/terakan_queue_wddm.h',
     'winsys/wddm/terakan_wddm_d3dkmthk.h',
   )
   libterakan_deps += [
@@ -151,6 +152,7 @@ elif system_has_kms_drm
     'winsys/drm_radeon/terakan_physical_device_drm_radeon.c',
     'winsys/drm_radeon/terakan_physical_device_drm_radeon.h',
     'winsys/drm_radeon/terakan_queue_drm_radeon.c',
+    'winsys/drm_radeon/terakan_queue_drm_radeon.h',
   )
 endif
 

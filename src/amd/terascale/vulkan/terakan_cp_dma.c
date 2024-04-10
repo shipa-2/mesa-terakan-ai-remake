@@ -28,6 +28,7 @@
 #include "terakan_device.h"
 #include "terakan_entrypoints.h"
 
+#include "amd/terascale/common/terascale_wddm.h"
 #include "gallium/drivers/r600/evergreend.h"
 #include "gallium/drivers/r600/r600d_common.h"
 #include "util/macros.h"
@@ -45,7 +46,8 @@
 void
 terakan_cp_dma_sync_cp_me(struct terakan_gfx_command_writer * const command_writer)
 {
-   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 1 + 5, 1, 2, false);
+   uint32_t * packet =
+      terakan_gfx_command_writer_emit_with_bo(command_writer, 1 + 5, false, 1, 0, 2);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -53,8 +55,10 @@ terakan_cp_dma_sync_cp_me(struct terakan_gfx_command_writer * const command_writ
       terakan_gfx_command_writer_device(command_writer)->gfx_discard_bo;
    uint64_t const discard_dest_va = gfx_discard_bo->va + TERAKAN_CP_DMA_COPY_OPTIMAL_ALIGNMENT;
    *packet++ = PKT3(PKT3_CP_DMA, 5 - 1, 0);
+   uint32_t const * const packet_src = packet;
    *packet++ = (uint32_t)gfx_discard_bo->va;
    *packet++ = ((gfx_discard_bo->va >> 32) & 0xFF) | PKT3_CP_DMA_CP_SYNC;
+   uint32_t const * const packet_dst = packet;
    *packet++ = (uint32_t)discard_dest_va;
    *packet++ = (discard_dest_va >> 32) & 0xFF;
    /* The size must not be zero, otherwise nothing would happen (tested on Barts with the firmware
@@ -64,10 +68,12 @@ terakan_cp_dma_sync_cp_me(struct terakan_gfx_command_writer * const command_writ
    uint32_t const discard_bo_reference = terakan_bo_reference_writer_add_reference(
       &command_writer->base.bo_reference_writer, gfx_discard_bo, true, true,
       TERAKAN_BO_PRIORITY_SYNC);
-   /* Source. */
-   terakan_gfx_command_writer_add_bo_relocation(command_writer, &packet, discard_bo_reference);
-   /* Destination. */
-   terakan_gfx_command_writer_add_bo_relocation(command_writer, &packet, discard_bo_reference);
+   terakan_gfx_command_writer_add_relocation_for_40_bits(
+      command_writer, &packet, packet_src, packet_src + 1, TERASCALE_WDDM_PATCH_IDS_CP_DMA_SRC_LO,
+      TERASCALE_WDDM_PATCH_IDS_CP_DMA_SRC_HI, discard_bo_reference);
+   terakan_gfx_command_writer_add_relocation_for_40_bits(
+      command_writer, &packet, packet_dst, packet_dst + 1, TERASCALE_WDDM_PATCH_IDS_CP_DMA_DST_LO,
+      TERASCALE_WDDM_PATCH_IDS_CP_DMA_DST_HI, discard_bo_reference);
    terakan_gfx_command_writer_emit_done(command_writer, packet);
 }
 
@@ -78,8 +84,8 @@ terakan_cp_dma_prepare(struct terakan_gfx_command_writer * const command_writer)
 }
 
 /* Important reminder: If the entire operation has to be split into multiple commands, BO references
- * must be reacquired after every terakan_gfx_command_writer_emit call, as the new part may end up
- * in a different indirect buffer submission with a fresh list of BO references.
+ * must be reacquired after every terakan_gfx_command_writer_emit_with_bo call, as the new part may
+ * end up in a different indirect buffer submission with a fresh list of BO references.
  */
 
 void
@@ -105,22 +111,26 @@ terakan_cp_dma_copy(struct terakan_gfx_command_writer * const command_writer,
    while (src_aligned_size_remaining != 0) {
       uint32_t const command_copy_size =
          (uint32_t)MIN2(src_aligned_size_remaining, TERAKAN_CP_DMA_MAX_ALIGNED_COPY_BYTE_COUNT);
-      packet = terakan_gfx_command_writer_emit(command_writer, 1 + 5, 2, 2, false);
+      packet = terakan_gfx_command_writer_emit_with_bo(command_writer, 1 + 5, false, 2, 0, 2);
       if (unlikely(packet == NULL)) {
          return;
       }
       *packet++ = PKT3(PKT3_CP_DMA, 5 - 1, 0);
+      uint32_t const * const packet_src = packet;
       *packet++ = (uint32_t)current_src_va_aligned;
       *packet++ = (current_src_va_aligned >> 32) & 0xFF;
+      uint32_t const * const packet_dst = packet;
       *packet++ = (uint32_t)current_dst_va_src_aligned;
       *packet++ = (current_dst_va_src_aligned >> 32) & 0xFF;
       *packet++ = command_copy_size;
-      terakan_gfx_command_writer_add_bo_relocation(
-         command_writer, &packet,
+      terakan_gfx_command_writer_add_relocation_for_40_bits(
+         command_writer, &packet, packet_src, packet_src + 1,
+         TERASCALE_WDDM_PATCH_IDS_CP_DMA_SRC_LO, TERASCALE_WDDM_PATCH_IDS_CP_DMA_SRC_HI,
          terakan_bo_reference_writer_add_reference(&command_writer->base.bo_reference_writer,
                                                    src_bo, true, false, src_bo_priority));
-      terakan_gfx_command_writer_add_bo_relocation(
-         command_writer, &packet,
+      terakan_gfx_command_writer_add_relocation_for_40_bits(
+         command_writer, &packet, packet_dst, packet_dst + 1,
+         TERASCALE_WDDM_PATCH_IDS_CP_DMA_DST_LO, TERASCALE_WDDM_PATCH_IDS_CP_DMA_DST_HI,
          terakan_bo_reference_writer_add_reference(&command_writer->base.bo_reference_writer,
                                                    dst_bo, false, true, dst_bo_priority));
       terakan_gfx_command_writer_emit_done(command_writer, packet);
@@ -130,22 +140,26 @@ terakan_cp_dma_copy(struct terakan_gfx_command_writer * const command_writer,
    }
 
    if (src_misaligned_head_size != 0) {
-      packet = terakan_gfx_command_writer_emit(command_writer, 1 + 5, 2, 2, false);
+      packet = terakan_gfx_command_writer_emit_with_bo(command_writer, 1 + 5, false, 2, 0, 2);
       if (unlikely(packet == NULL)) {
          return;
       }
       *packet++ = PKT3(PKT3_CP_DMA, 5 - 1, 0);
+      uint32_t const * const packet_src = packet;
       *packet++ = (uint32_t)src_va;
       *packet++ = (src_va >> 32) & 0xFF;
+      uint32_t const * const packet_dst = packet;
       *packet++ = (uint32_t)dst_va;
       *packet++ = (dst_va >> 32) & 0xFF;
       *packet++ = (uint32_t)src_misaligned_head_size;
-      terakan_gfx_command_writer_add_bo_relocation(
-         command_writer, &packet,
+      terakan_gfx_command_writer_add_relocation_for_40_bits(
+         command_writer, &packet, packet_src, packet_src + 1,
+         TERASCALE_WDDM_PATCH_IDS_CP_DMA_SRC_LO, TERASCALE_WDDM_PATCH_IDS_CP_DMA_SRC_HI,
          terakan_bo_reference_writer_add_reference(&command_writer->base.bo_reference_writer,
                                                    src_bo, true, false, src_bo_priority));
-      terakan_gfx_command_writer_add_bo_relocation(
-         command_writer, &packet,
+      terakan_gfx_command_writer_add_relocation_for_40_bits(
+         command_writer, &packet, packet_dst, packet_dst + 1,
+         TERASCALE_WDDM_PATCH_IDS_CP_DMA_DST_LO, TERASCALE_WDDM_PATCH_IDS_CP_DMA_DST_HI,
          terakan_bo_reference_writer_add_reference(&command_writer->base.bo_reference_writer,
                                                    dst_bo, false, true, dst_bo_priority));
       terakan_gfx_command_writer_emit_done(command_writer, packet);
@@ -154,7 +168,7 @@ terakan_cp_dma_copy(struct terakan_gfx_command_writer * const command_writer,
    /* Align the internal total amount counter. */
    VkDeviceSize const size_misalignment = size & (TERAKAN_CP_DMA_COPY_OPTIMAL_ALIGNMENT - 1);
    if (size_misalignment != 0) {
-      packet = terakan_gfx_command_writer_emit(command_writer, 1 + 5, 1, 2, false);
+      packet = terakan_gfx_command_writer_emit_with_bo(command_writer, 1 + 5, false, 1, 0, 2);
       if (unlikely(packet == NULL)) {
          return;
       }
@@ -162,18 +176,24 @@ terakan_cp_dma_copy(struct terakan_gfx_command_writer * const command_writer,
          terakan_gfx_command_writer_device(command_writer)->gfx_discard_bo;
       uint64_t const discard_dest_va = gfx_discard_bo->va + TERAKAN_CP_DMA_COPY_OPTIMAL_ALIGNMENT;
       *packet++ = PKT3(PKT3_CP_DMA, 5 - 1, 0);
+      uint32_t const * const packet_src = packet;
       *packet++ = (uint32_t)gfx_discard_bo->va;
       *packet++ = (gfx_discard_bo->va >> 32) & 0xFF;
+      uint32_t const * const packet_dst = packet;
       *packet++ = (uint32_t)discard_dest_va;
       *packet++ = (discard_dest_va >> 32) & 0xFF;
       *packet++ = (uint32_t)(TERAKAN_CP_DMA_COPY_OPTIMAL_ALIGNMENT - size_misalignment);
       uint32_t const discard_bo_reference = terakan_bo_reference_writer_add_reference(
          &command_writer->base.bo_reference_writer, gfx_discard_bo, true, true,
          TERAKAN_BO_PRIORITY_SYNC);
-      /* Source. */
-      terakan_gfx_command_writer_add_bo_relocation(command_writer, &packet, discard_bo_reference);
-      /* Destination. */
-      terakan_gfx_command_writer_add_bo_relocation(command_writer, &packet, discard_bo_reference);
+      terakan_gfx_command_writer_add_relocation_for_40_bits(
+         command_writer, &packet, packet_src, packet_src + 1,
+         TERASCALE_WDDM_PATCH_IDS_CP_DMA_SRC_LO, TERASCALE_WDDM_PATCH_IDS_CP_DMA_SRC_HI,
+         discard_bo_reference);
+      terakan_gfx_command_writer_add_relocation_for_40_bits(
+         command_writer, &packet, packet_dst, packet_dst + 1,
+         TERASCALE_WDDM_PATCH_IDS_CP_DMA_DST_LO, TERASCALE_WDDM_PATCH_IDS_CP_DMA_DST_HI,
+         discard_bo_reference);
       terakan_gfx_command_writer_emit_done(command_writer, packet);
    }
 }

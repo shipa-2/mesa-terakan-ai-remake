@@ -89,6 +89,11 @@ struct terakan_device {
     */
    bool completion_lost;
 
+   /* Optimal command buffer submission sizes clamped to the maximum sizes for queues in their
+    * families and aligned to the size alignment requirements.
+    */
+   struct terakan_queue_submission_size command_buffer_submission_size_gfx;
+
    /* Each queue is optional, if requested by the application. */
    struct terakan_queue * queue_graphics;
 };

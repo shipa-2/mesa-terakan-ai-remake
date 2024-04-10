@@ -27,6 +27,7 @@
 #include "terakan_device.h"
 #include "terakan_draw.h"
 
+#include "amd/terascale/common/terascale_wddm.h"
 #include "gallium/drivers/r600/eg_sq.h"
 #include "gallium/drivers/r600/evergreend.h"
 #include "gallium/drivers/r600/r600_opcodes.h"
@@ -532,7 +533,7 @@ terakan_meta_emit_rect_3_vertices_draw(struct terakan_gfx_command_writer * const
       /* terakan_meta_begin_index_immediate_32 sets VGT_INDEX_TYPE to non-endian-swapped. */
       util_memcpy_cpu_to_le32(index_buffer_mapping, vertices, sizeof(vertices));
 
-      packet = terakan_gfx_command_writer_emit(command_writer, 2 + 5, 1, 1, false);
+      packet = terakan_gfx_command_writer_emit_with_bo(command_writer, 2 + 5, false, 1, 0, 1);
       if (unlikely(packet == NULL)) {
          return;
       }
@@ -542,12 +543,17 @@ terakan_meta_emit_rect_3_vertices_draw(struct terakan_gfx_command_writer * const
       *packet++ = instance_count;
 
       *packet++ = PKT3(PKT3_DRAW_INDEX, 5 - 2, 0);
+      uint32_t const * const packet_index_base = packet;
       *packet++ = (uint32_t)index_buffer_va;
       *packet++ = (index_buffer_va >> 32) & 0xFF;
       *packet++ = ARRAY_SIZE(vertices);
       *packet++ = S_0287F0_SOURCE_SELECT(V_0287F0_DI_SRC_SEL_DMA);
-      terakan_gfx_command_writer_add_bo_relocation(
-         command_writer, &packet,
+      /* The exact WDDM patch location for PKT3_DRAW_INDEX isn't known, so reusing the one for
+       * PKT3_INDEX_BASE.
+       */
+      terakan_gfx_command_writer_add_relocation_for_40_bits(
+         command_writer, &packet, packet_index_base, packet_index_base + 1,
+         TERASCALE_WDDM_PATCH_IDS_INDEX_BASE_LO, TERASCALE_WDDM_PATCH_IDS_INDEX_BASE_HI,
          terakan_bo_reference_writer_add_reference(&command_writer->base.bo_reference_writer,
                                                    index_buffer_bo, true, false,
                                                    TERAKAN_BO_PRIORITY_INDEX_BUFFER));
@@ -557,8 +563,7 @@ terakan_meta_emit_rect_3_vertices_draw(struct terakan_gfx_command_writer * const
       return;
    }
 
-   packet =
-      terakan_gfx_command_writer_emit(command_writer, 2 + 3 + ARRAY_SIZE(vertices), 0, 0, false);
+   packet = terakan_gfx_command_writer_emit(command_writer, 2 + 3 + ARRAY_SIZE(vertices), false);
    if (unlikely(packet == NULL)) {
       return;
    }

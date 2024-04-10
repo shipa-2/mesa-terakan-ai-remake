@@ -256,7 +256,7 @@ static void
 terakan_barrier_emit_event_write(struct terakan_gfx_command_writer * const command_writer,
                                  uint32_t event)
 {
-   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2, 0, 0, false);
+   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2, false);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -386,8 +386,7 @@ terakan_barrier_emit_pending_actions(struct terakan_gfx_command_writer * const c
 
    cp_coher_cntl |= cp_coher_cntl_cb_db_dest_base_ena;
    if (cp_coher_cntl) {
-      uint32_t * surface_sync_packet =
-         terakan_gfx_command_writer_emit(command_writer, 5, 0, 0, false);
+      uint32_t * surface_sync_packet = terakan_gfx_command_writer_emit(command_writer, 5, false);
       if (unlikely(surface_sync_packet == NULL)) {
          return;
       }
@@ -404,8 +403,7 @@ terakan_barrier_emit_pending_actions(struct terakan_gfx_command_writer * const c
     */
 
    if (actions & TERAKAN_BARRIER_ACTION_SYNC_PFP_TO_ME) {
-      uint32_t * pfp_sync_me_packet =
-         terakan_gfx_command_writer_emit(command_writer, 2, 0, 0, false);
+      uint32_t * pfp_sync_me_packet = terakan_gfx_command_writer_emit(command_writer, 2, false);
       if (unlikely(pfp_sync_me_packet == NULL)) {
          return;
       }

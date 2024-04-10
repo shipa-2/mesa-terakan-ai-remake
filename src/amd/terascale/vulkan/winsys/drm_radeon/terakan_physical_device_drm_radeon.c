@@ -277,6 +277,13 @@ terakan_physical_device_drm_radeon_try_create(struct vk_instance * const instanc
 
    device->render_node_validation_fd = render_node_fd;
 
+   struct terakan_physical_device_submission_info_gfx const submission_info_gfx = {
+      .base =
+         {
+            .relocation_type = TERAKAN_QUEUE_RELOCATION_TYPE_DRM_NOP,
+         },
+   };
+
    size_t sync_type_count = 0;
    assert(sync_type_count < ARRAY_SIZE(device->sync_types));
    device->sync_types[sync_type_count++] = &terakan_sync_completion_type;
@@ -300,7 +307,7 @@ terakan_physical_device_drm_radeon_try_create(struct vk_instance * const instanc
       &device->base, instance, &terakan_physical_device_drm_radeon_fn,
       drm_device->deviceinfo.pci->device_id, page_size, (VkDeviceSize)gem_info.gart_size,
       (VkDeviceSize)gem_info.vram_size, (VkDeviceSize)gem_info.vram_visible,
-      UINT32_MAX & ~(page_size - 1), page_size, &tiling_info, TERAKAN_BO_RELOCATION_TYPE_DRM_NOP,
+      UINT32_MAX & ~(page_size - 1), page_size, &tiling_info, &submission_info_gfx,
       1000 * clock_crystal_frequency_khz, device->sync_types);
    if (result != VK_SUCCESS) {
       goto fail_render_node_path;

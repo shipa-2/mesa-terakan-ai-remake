@@ -257,6 +257,7 @@ terakan_color_descriptor_image_view_to_storage_image(
 struct terakan_color_meta_descriptor {
    uint32_t cmask;
    uint32_t cmask_slice;
+   /* For single-sampled images, FMASK must be equal to BASE. */
    uint32_t fmask;
    uint32_t fmask_slice;
 };

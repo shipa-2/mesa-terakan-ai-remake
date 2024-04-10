@@ -41,34 +41,108 @@
 #include <xf86drm.h>
 #include <radeon_drm.h>
 
+static void
+terakan_queue_drm_radeon_create_bo_reference(void * const bo_reference_ptr,
+                                             struct terakan_bo const * const bo_base,
+                                             bool const is_reading, bool const is_writing,
+                                             enum terakan_bo_priority const priority)
+{
+   struct drm_radeon_cs_reloc * const bo_reference = (struct drm_radeon_cs_reloc *)bo_reference_ptr;
+
+   struct terakan_bo_drm_radeon const * const bo =
+      container_of(bo_base, struct terakan_bo_drm_radeon const, base);
+
+   bo_reference->handle = bo->handle;
+
+   bo_reference->read_domains = is_reading ? bo->domains : 0;
+   bo_reference->write_domain = is_writing ? bo->domains : 0;
+
+   assert(((__u32)priority & ~(__u32)RADEON_RELOC_PRIO_MASK) == 0);
+   bo_reference->flags = (__u32)priority;
+}
+
+static void
+terakan_queue_drm_radeon_update_bo_reference(void * const bo_reference_ptr,
+                                             struct terakan_bo const * const bo_base,
+                                             bool const is_reading, bool const is_writing,
+                                             enum terakan_bo_priority const priority)
+{
+   struct drm_radeon_cs_reloc * const bo_reference = (struct drm_radeon_cs_reloc *)bo_reference_ptr;
+
+   struct terakan_bo_drm_radeon const * const bo =
+      container_of(bo_base, struct terakan_bo_drm_radeon const, base);
+
+   assert(bo_reference->handle == bo->handle);
+
+   if (is_reading) {
+      bo_reference->read_domains |= bo->domains;
+   }
+   if (is_writing) {
+      bo_reference->write_domain |= bo->domains;
+   }
+
+   assert(((__u32)priority & ~(__u32)RADEON_RELOC_PRIO_MASK) == 0);
+   /* The flags only contain the priority. */
+   bo_reference->flags = MAX2((__u32)priority, bo_reference->flags);
+}
+
+static void
+terakan_queue_drm_radeon_release_submission_context(
+   UNUSED struct terakan_queue_submission_context * const submission_context_base)
+{
+   /* Contexts are singletons within a device, no need to do anything. */
+}
+
 static VkResult
-terakan_queue_drm_radeon_submit(struct terakan_device * const device_base,
-                                enum amd_ip_type const ip_type, uint32_t const bo_reference_count,
-                                void const * const bo_references,
-                                uint32_t const indirect_buffer_size_dwords,
-                                uint32_t const * const indirect_buffer)
+terakan_queue_drm_radeon_acquire_submission_context(
+   struct terakan_device * const device_base, enum amd_ip_type const ip_type,
+   UNUSED struct terakan_queue_submission_size const desired_submission_size,
+   struct terakan_queue_submission_context ** const submission_context_out)
+{
+   struct terakan_device_drm_radeon * const device =
+      container_of(device_base, struct terakan_device_drm_radeon, base);
+
+   /* DRM Radeon receives submissions directly through the render device file descriptor without a
+    * context, using per-device singletons.
+    */
+
+   switch (ip_type) {
+   case AMD_IP_GFX:
+      *submission_context_out = &device->gfx_submission_context.base;
+      return VK_SUCCESS;
+   default:
+      assert(!"Unsupported queue type");
+      return VK_ERROR_INITIALIZATION_FAILED;
+   }
+}
+
+static VkResult
+terakan_queue_drm_radeon_submit(
+   struct terakan_queue_submission_context * const submission_context_base,
+   uint32_t const bo_reference_count, void const * const bo_references,
+   uint32_t const indirect_buffer_size_dwords, uint32_t const * const indirect_buffer,
+   UNUSED uint32_t const relocation_count, UNUSED void const * const relocations)
 {
    /* The kernel driver returns -EINVAL for zero-length indirect buffers, so even if a submission is
     * needed only for BO fence purposes, it still must not be empty.
     */
    assert(indirect_buffer_size_dwords != 0);
 
+   struct terakan_queue_submission_context_drm_radeon const * const submission_context =
+      container_of(submission_context_base,
+                   struct terakan_queue_submission_context_drm_radeon const, base);
+   struct terakan_device_drm_radeon const * const device = submission_context->device;
+
    /* Flags, ring, priority. */
-   __u32 flags[3] = {};
+   __u32 flags[3] = {
+      [1] = submission_context->ring,
+   };
 
-   switch (ip_type) {
-   case AMD_IP_GFX:
-      /* CP fetch requires 8 dword alignment, the provided indirect buffer must be padded with NOPs
-       * externally if needed.
-       */
-      assert((indirect_buffer_size_dwords & 7) == 0);
-      flags[0] = RADEON_CS_KEEP_TILING_FLAGS;
-      flags[1] = RADEON_CS_RING_GFX;
-      break;
-
-   default:
-      assert(!"Unsupported queue type");
-      return VK_ERROR_UNKNOWN;
+   if (submission_context->ring == RADEON_CS_RING_GFX) {
+      /* The size alignment requirement is not handled by the kernel driver. */
+      assert(!(indirect_buffer_size_dwords &
+               (TERAKAN_QUEUE_INDIRECT_BUFFER_SIZE_ALIGNMENT_DWORDS_GFX - 1)));
+      flags[0] |= RADEON_CS_KEEP_TILING_FLAGS;
    }
 
    struct drm_radeon_cs_chunk relocations_chunk = {
@@ -101,9 +175,6 @@ terakan_queue_drm_radeon_submit(struct terakan_device * const device_base,
       .chunks = (__u64)(void const *)chunks,
    };
 
-   struct terakan_device_drm_radeon const * const device =
-      container_of(device_base, struct terakan_device_drm_radeon const, base);
-
    int const cs_result = drmCommandWriteRead(device->render_node_fd, DRM_RADEON_CS, &cs_arguments,
                                              sizeof(cs_arguments));
 
@@ -131,12 +202,6 @@ terakan_queue_drm_radeon_submit(struct terakan_device * const device_base,
    return VK_SUCCESS;
 }
 
-struct terakan_queue_completion_submission_drm_radeon {
-   struct terakan_queue_completion_submission base;
-
-   struct terakan_bo_drm_radeon * bo;
-};
-
 static VkResult
 terakan_queue_completion_submission_drm_radeon_submit(
    struct terakan_queue_completion_submission * const submission_base,
@@ -149,11 +214,11 @@ terakan_queue_completion_submission_drm_radeon_submit(
 
    /* Make the BO not idle until the GPU has completed the submission. */
    void * const signal_bo_reference = alloca(device->bo_reference_size);
-   device->winsys_fn->bo->create_reference(signal_bo_reference, &submission->bo->base, false, true,
-                                           TERAKAN_BO_PRIORITY_SYNC);
-   return device->winsys_fn->queue->submit(device, submission->base.queue->ip_type, 1,
+   device->winsys_fn->queue->create_bo_reference(signal_bo_reference, &submission->bo->base, false,
+                                                 true, TERAKAN_BO_PRIORITY_SYNC);
+   return device->winsys_fn->queue->submit(submission->base.queue->submission_context, 1,
                                            signal_bo_reference, signal_indirect_buffer_size_dwords,
-                                           signal_indirect_buffer);
+                                           signal_indirect_buffer, 0, NULL);
 }
 
 static bool
@@ -219,6 +284,10 @@ terakan_queue_completion_submission_drm_radeon_alloc_and_init_winsys(
 }
 
 struct terakan_queue_winsys_fn const terakan_queue_drm_radeon_fn = {
+   .create_bo_reference = terakan_queue_drm_radeon_create_bo_reference,
+   .update_bo_reference = terakan_queue_drm_radeon_update_bo_reference,
+   .release_submission_context = terakan_queue_drm_radeon_release_submission_context,
+   .acquire_submission_context = terakan_queue_drm_radeon_acquire_submission_context,
    .submit = terakan_queue_drm_radeon_submit,
    .completion_submission_submit = terakan_queue_completion_submission_drm_radeon_submit,
    .completion_submission_await = terakan_queue_completion_submission_drm_radeon_await,

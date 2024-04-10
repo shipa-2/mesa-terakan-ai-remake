@@ -112,6 +112,11 @@ terakan_queue_completion_thread_func(void * queue_ptr)
 }
 
 #define TERAKAN_QUEUE_SIGNAL_INDIRECT_BUFFER_MAX_DWORDS ((uint32_t)1 << 5)
+static_assert(
+   TERAKAN_QUEUE_SIGNAL_INDIRECT_BUFFER_MAX_DWORDS >=
+      TERAKAN_QUEUE_INDIRECT_BUFFER_SIZE_ALIGNMENT_DWORDS_GFX,
+   "Signal indirect buffer size upper bound must be high enough to fit all GFX indirect buffer "
+   "size alignment padding.");
 
 static uint32_t
 terakan_queue_get_graphics_signal_indirect_buffer(
@@ -119,6 +124,17 @@ terakan_queue_get_graphics_signal_indirect_buffer(
    uint32_t indirect_buffer[TERAKAN_QUEUE_SIGNAL_INDIRECT_BUFFER_MAX_DWORDS])
 {
    uint32_t indirect_buffer_size_dwords = 0;
+
+   /* Disable register shadowing before executing any packets that may set registers (not clear if
+    * CP_COHER_CNTL setting in SURFACE_SYNC interacts with it, but for safety it's preferable to do
+    * this for all submissions).
+    */
+   assert(TERAKAN_QUEUE_SIGNAL_INDIRECT_BUFFER_MAX_DWORDS - indirect_buffer_size_dwords >= 3);
+   indirect_buffer[indirect_buffer_size_dwords++] = PKT3(PKT3_CONTEXT_CONTROL, 1, 0);
+   /* CC0_UPDATE_LOAD_ENABLES(1) */
+   indirect_buffer[indirect_buffer_size_dwords++] = (uint32_t)1 << 31;
+   /* CC1_UPDATE_SHADOW_ENABLES(1) */
+   indirect_buffer[indirect_buffer_size_dwords++] = (uint32_t)1 << 31;
 
    uint32_t cp_coher_cntl_cb_db_dest_base_ena = 0;
    uint32_t cp_coher_cntl = 0;
@@ -221,11 +237,13 @@ terakan_queue_get_graphics_signal_indirect_buffer(
       indirect_buffer[indirect_buffer_size_dwords++] = 10;         /* POLL_INTERVAL */
    }
 
-   /* Pad the GFX ring indirect buffer to a multiple of 8 dwords with NOPs, and also prevent the
-    * submission from being empty as it's still needed for the completion signal, but an empty one
-    * may be rejected by the winsys.
+   /* Pad the GFX ring indirect buffer to the size alignment requirement with NOPs, and also prevent
+    * the submission from being empty as it's still needed for the completion signal, but an empty
+    * one may be rejected by the winsys.
     */
-   while ((indirect_buffer_size_dwords & 7) != 0 || indirect_buffer_size_dwords == 0) {
+   while ((indirect_buffer_size_dwords &
+           (TERAKAN_QUEUE_INDIRECT_BUFFER_SIZE_ALIGNMENT_DWORDS_GFX - 1)) ||
+          indirect_buffer_size_dwords == 0) {
       assert(TERAKAN_QUEUE_SIGNAL_INDIRECT_BUFFER_MAX_DWORDS - indirect_buffer_size_dwords >= 1);
       indirect_buffer[indirect_buffer_size_dwords++] = PKT_TYPE_S(2);
    }
@@ -253,10 +271,12 @@ terakan_queue_submit(struct vk_queue * const queue_base, struct vk_queue_submit 
          /* The winsys may not support empty indirect buffers. */
          assert(command_buffer_indirect_buffer->indirect_buffer_size_dwords != 0);
          VkResult const command_buffer_submit_result = device->winsys_fn->queue->submit(
-            device, queue->ip_type, command_buffer_indirect_buffer->bo_reference_count,
+            queue->submission_context, command_buffer_indirect_buffer->bo_reference_count,
             command_buffer_indirect_buffer->bo_references,
             command_buffer_indirect_buffer->indirect_buffer_size_dwords,
-            command_buffer_indirect_buffer->indirect_buffer);
+            command_buffer_indirect_buffer->indirect_buffer,
+            command_buffer_indirect_buffer->relocation_count,
+            command_buffer_indirect_buffer->relocations);
          if (command_buffer_submit_result != VK_SUCCESS) {
             /* Lose the device as the submission might have been done partially already, don't leave
              * it in an indeterminate state.
@@ -459,6 +479,8 @@ terakan_queue_destroy(struct terakan_queue * const queue)
       vk_free(&device->vk.alloc, completion_signal);
    }
 
+   device->winsys_fn->queue->release_submission_context(queue->submission_context);
+
    vk_queue_finish(&queue->vk);
 
    vk_free(&queue->vk.base.device->alloc, queue);
@@ -480,11 +502,25 @@ terakan_queue_create(struct terakan_device * const device,
 
    result = vk_queue_init(&queue->vk, &device->vk, create_info, index_in_family);
    if (result != VK_SUCCESS) {
-      vk_free(&device->vk.alloc, queue);
-      return result;
+      goto fail_alloc;
    }
 
-   queue->ip_type = AMD_IP_GFX;
+   struct terakan_physical_device const * const physical_device =
+      terakan_device_physical_device(device);
+
+   struct terakan_queue_submission_size desired_submission_size =
+      terakan_command_buffer_optimal_submission_size_gfx(
+         &physical_device->submission_info_gfx.base);
+   desired_submission_size.indirect_buffer_dwords =
+      MAX2(desired_submission_size.indirect_buffer_dwords,
+           TERAKAN_QUEUE_SIGNAL_INDIRECT_BUFFER_MAX_DWORDS);
+
+   result = device->winsys_fn->queue->acquire_submission_context(
+      device, AMD_IP_GFX, desired_submission_size, &queue->submission_context);
+   if (result != VK_SUCCESS) {
+      result = vk_error(device, result);
+      goto fail_queue;
+   }
 
    list_inithead(&queue->completion_signals_free);
    list_inithead(&queue->completion_submissions_free);
@@ -495,14 +531,21 @@ terakan_queue_create(struct terakan_device * const device,
 
    if (thrd_create(&queue->completion_thread, terakan_queue_completion_thread_func, queue) !=
        thrd_success) {
-      vk_queue_finish(&queue->vk);
-      vk_free(&device->vk.alloc, queue);
-      return vk_errorf(device, VK_ERROR_OUT_OF_HOST_MEMORY,
-                       "Failed to create the submission completion thread");
+      result = vk_errorf(device, VK_ERROR_OUT_OF_HOST_MEMORY,
+                         "Failed to create the submission completion thread");
+      goto fail_submission_context;
    }
 
    queue->vk.driver_submit = terakan_queue_submit;
 
    *queue_out = queue;
    return VK_SUCCESS;
+
+fail_submission_context:
+   device->winsys_fn->queue->release_submission_context(queue->submission_context);
+fail_queue:
+   vk_queue_finish(&queue->vk);
+fail_alloc:
+   vk_free(&device->vk.alloc, queue);
+   return result;
 }

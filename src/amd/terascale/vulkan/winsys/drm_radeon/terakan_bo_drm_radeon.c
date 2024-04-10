@@ -139,51 +139,6 @@ terakan_bo_drm_radeon_unmap_impl(struct terakan_bo * const bo_base)
 }
 
 static void
-terakan_bo_drm_radeon_create_reference(void * const bo_reference_ptr,
-                                       struct terakan_bo const * const bo_base,
-                                       bool const is_reading, bool const is_writing,
-                                       enum terakan_bo_priority const priority)
-{
-   struct drm_radeon_cs_reloc * const bo_reference = (struct drm_radeon_cs_reloc *)bo_reference_ptr;
-
-   struct terakan_bo_drm_radeon const * const bo =
-      container_of(bo_base, struct terakan_bo_drm_radeon const, base);
-
-   bo_reference->handle = bo->handle;
-
-   bo_reference->read_domains = is_reading ? bo->domains : 0;
-   bo_reference->write_domain = is_writing ? bo->domains : 0;
-
-   assert(((__u32)priority & ~(__u32)RADEON_RELOC_PRIO_MASK) == 0);
-   bo_reference->flags = (__u32)priority;
-}
-
-static void
-terakan_bo_drm_radeon_update_reference(void * const bo_reference_ptr,
-                                       struct terakan_bo const * const bo_base,
-                                       bool const is_reading, bool const is_writing,
-                                       enum terakan_bo_priority const priority)
-{
-   struct drm_radeon_cs_reloc * const bo_reference = (struct drm_radeon_cs_reloc *)bo_reference_ptr;
-
-   struct terakan_bo_drm_radeon const * const bo =
-      container_of(bo_base, struct terakan_bo_drm_radeon const, base);
-
-   assert(bo_reference->handle == bo->handle);
-
-   if (is_reading) {
-      bo_reference->read_domains |= bo->domains;
-   }
-   if (is_writing) {
-      bo_reference->write_domain |= bo->domains;
-   }
-
-   assert(((__u32)priority & ~(__u32)RADEON_RELOC_PRIO_MASK) == 0);
-   /* The flags only contain the priority. */
-   bo_reference->flags = MAX2((__u32)priority, bo_reference->flags);
-}
-
-static void
 terakan_bo_drm_radeon_free_impl(struct terakan_bo * const bo_base,
                                 VkAllocationCallbacks const * const allocator)
 {
@@ -437,8 +392,6 @@ struct terakan_bo_winsys_fn const terakan_bo_drm_radeon_fn = {
    .export_fd = terakan_bo_drm_radeon_export_fd,
    .map_impl = terakan_bo_drm_radeon_map_impl,
    .unmap_impl = terakan_bo_drm_radeon_unmap_impl,
-   .create_reference = terakan_bo_drm_radeon_create_reference,
-   .update_reference = terakan_bo_drm_radeon_update_reference,
    .free_impl = terakan_bo_drm_radeon_free_impl,
    .allocate_device_memory = terakan_bo_drm_radeon_allocate_device_memory,
    .get_fd_vram_preference = terakan_bo_drm_radeon_get_fd_vram_preference,

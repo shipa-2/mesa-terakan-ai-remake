@@ -788,7 +788,7 @@ terakan_physical_device_init(
    VkDeviceSize const gtt_size, VkDeviceSize const vram_size, VkDeviceSize const vram_visible,
    VkDeviceSize const max_memory_allocation_size, VkDeviceSize const min_memory_map_alignment,
    struct terakan_physical_device_tiling_info const * const tiling_info,
-   enum terakan_bo_relocation_type const gfx_bo_relocation_type,
+   struct terakan_physical_device_submission_info_gfx const * const submission_info_gfx,
    uint32_t const clock_crystal_frequency_hz,
    struct vk_sync_type const * const * const supported_sync_types_static)
 {
@@ -820,7 +820,7 @@ terakan_physical_device_init(
       (VkDeviceSize)1 << (MIN2(device->tiling_info.row_bytes_log2, 3 + 3 + 3 + 4) +
                           device->tiling_info.banks_log2 + device->tiling_info.pipes_log2);
 
-   device->gfx_bo_relocation_type = gfx_bo_relocation_type;
+   device->submission_info_gfx = *submission_info_gfx;
 
    device->nir_options_non_fs = (nir_shader_compiler_options){
       .lower_fdiv = true,

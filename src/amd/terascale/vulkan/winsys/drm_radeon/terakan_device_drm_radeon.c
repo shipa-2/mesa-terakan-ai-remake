@@ -24,6 +24,7 @@
 #include "terakan_device_drm_radeon.h"
 
 #include "terakan_bo_drm_radeon.h"
+#include "terakan_queue_drm_radeon.h"
 
 #include "util/macros.h"
 #include "vk_alloc.h"
@@ -32,6 +33,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <radeon_drm.h>
 
 static void
@@ -117,6 +119,19 @@ terakan_device_drm_radeon_create(struct terakan_physical_device * const physical
                          "Failed to create the shared buffer reference count table");
       goto fail_shared_bo_mutex;
    }
+
+   /* TODO(Triang3l): With virtual memory, query RADEON_INFO_IB_VM_MAX_SIZE for the maximum indirect
+    * buffer size in dwords.
+    */
+   terakan_queue_submission_context_init(
+      &device->gfx_submission_context.base,
+      (struct terakan_queue_submission_size){
+         /* DRM Radeon accepts BO reference offsets in dwords in relocations. */
+         .bo_references = UINT32_MAX / (sizeof(struct drm_radeon_cs_reloc) / sizeof(__u32)),
+         .indirect_buffer_dwords = UINT32_MAX,
+      });
+   device->gfx_submission_context.device = device;
+   device->gfx_submission_context.ring = RADEON_CS_RING_GFX;
 
    result = terakan_device_init(&device->base, &physical_device->base, create_info, allocator,
                                 &terakan_device_drm_radeon_fn, sizeof(struct drm_radeon_cs_reloc),

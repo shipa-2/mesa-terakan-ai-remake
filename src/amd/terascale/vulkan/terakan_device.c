@@ -39,6 +39,7 @@
 #include "vk_log.h"
 #include "wsi_common.h"
 
+#include <assert.h>
 #include <stdbool.h>
 #include <stddef.h>
 
@@ -218,6 +219,14 @@ terakan_device_init(struct terakan_device * const device,
 
    device->completion_lost = false;
 
+   device->command_buffer_submission_size_gfx = terakan_command_buffer_optimal_submission_size_gfx(
+      &physical_device->submission_info_gfx.base);
+   /* If the optimal sizes are above hard limits, they can't be considered optimal as they'd
+    * possibly result in allocating unused memory.
+    */
+   assert(device->command_buffer_submission_size_gfx.bo_references <=
+          TERAKAN_BO_REFERENCE_WRITER_REFERENCE_COUNT);
+
    device->queue_graphics = NULL;
    for (uint32_t queue_create_info_index = 0;
         queue_create_info_index < create_info->queueCreateInfoCount; ++queue_create_info_index) {
@@ -233,12 +242,18 @@ terakan_device_init(struct terakan_device * const device,
          if (result != VK_SUCCESS) {
             goto fail_queues;
          }
+         device->command_buffer_submission_size_gfx = terakan_queue_submission_size_min(
+            device->queue_graphics->submission_context->max_submission_size,
+            device->command_buffer_submission_size_gfx);
       } else {
          result = vk_errorf(physical_device->vk.instance, VK_ERROR_INITIALIZATION_FAILED,
                             "Unknown queue family requested");
          goto fail_queues;
       }
    }
+
+   device->command_buffer_submission_size_gfx.indirect_buffer_dwords &=
+      ~(uint32_t)(TERAKAN_QUEUE_INDIRECT_BUFFER_SIZE_ALIGNMENT_DWORDS_GFX - 1);
 
    return VK_SUCCESS;
 

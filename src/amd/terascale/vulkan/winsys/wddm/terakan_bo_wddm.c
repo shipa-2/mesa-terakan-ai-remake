@@ -26,6 +26,7 @@
 #include "terakan_device_wddm.h"
 #include "terakan_wddm_d3dkmthk.h"
 
+#include "amd/terascale/common/terascale_wddm.h"
 #include "util/macros.h"
 #include "vk_alloc.h"
 #include "vk_log.h"
@@ -33,14 +34,6 @@
 #include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
-
-enum {
-   TERAKAN_BO_WDDM_MEMORY_TYPE_NONE = 0,
-   TERAKAN_BO_WDDM_MEMORY_TYPE_DEVICE_HOST_VISIBLE = 1,
-   TERAKAN_BO_WDDM_MEMORY_TYPE_DEVICE_NON_HOST_VISIBLE = 2,
-   TERAKAN_BO_WDDM_MEMORY_TYPE_HOST_WRITE_COMBINED = 3,
-   TERAKAN_BO_WDDM_MEMORY_TYPE_HOST_CACHED = 4,
-};
 
 static bool
 terakan_bo_wddm_set_tiling(UNUSED struct terakan_bo * const bo_base,
@@ -98,39 +91,6 @@ terakan_bo_wddm_unmap_impl(struct terakan_bo * const bo_base)
 }
 
 static void
-terakan_bo_wddm_create_reference(void * const bo_reference_ptr,
-                                 struct terakan_bo const * const bo_base,
-                                 UNUSED bool const is_reading, bool const is_writing,
-                                 UNUSED enum terakan_bo_priority const priority)
-{
-   struct terakan_bo_wddm const * const bo =
-      container_of(bo_base, struct terakan_bo_wddm const, base);
-
-   *(D3DDDI_ALLOCATIONLIST *)bo_reference_ptr = (D3DDDI_ALLOCATIONLIST){
-      .hAllocation = bo->allocation,
-      .WriteOperation = (UINT)is_writing,
-   };
-}
-
-static void
-terakan_bo_wddm_update_reference(void * const bo_reference_ptr,
-                                 struct terakan_bo const * const bo_base,
-                                 UNUSED bool const is_reading, bool const is_writing,
-                                 UNUSED enum terakan_bo_priority const priority)
-{
-   D3DDDI_ALLOCATIONLIST * const bo_reference = (D3DDDI_ALLOCATIONLIST *)bo_reference_ptr;
-
-   struct terakan_bo_wddm const * const bo =
-      container_of(bo_base, struct terakan_bo_wddm const, base);
-
-   assert(bo_reference->hAllocation == bo->allocation);
-
-   if (is_writing) {
-      bo_reference->WriteOperation = 1;
-   }
-}
-
-static void
 terakan_bo_wddm_free_impl(struct terakan_bo * const bo_base,
                           VkAllocationCallbacks const * const allocator)
 {
@@ -147,82 +107,6 @@ terakan_bo_wddm_free_impl(struct terakan_bo * const bo_base,
 
    vk_free2(&device->base.vk.alloc, allocator, bo);
 }
-
-/* Can't be used with TERAKAN_BO_WDDM_MEMORY_TYPE_DEVICE_NON_HOST_VISIBLE among the allocation's
- * memory types.
- */
-#define TERAKAN_BO_WDDM_ALLOCATION_PRIVATE_DATA_MEMORY_TYPE_FLAG_HOST_VISIBLE ((uint32_t)1 << 29)
-
-struct terakan_bo_wddm_allocation_private_data_header {
-   uint32_t private_data_size_bytes;
-
-   /* 0x1 with only the header and terakan_bo_wddm_allocation_private_data_unknown_struct in
-    * the end.
-    * 0x1 | 0xC for private data with some additional data (possibly Direct3D 11 resource
-    * information) in between.
-    */
-   uint32_t flags;
-
-   uint32_t unknown_0x8_0x80;
-   uint32_t unknown_0xC_0;
-
-   /* The lower bits are OR of (1 << (each memory type - 1)), not including unused (0) memory types.
-    * May include TERAKAN_BO_WDDM_ALLOCATION_PRIVATE_DATA_MEMORY_TYPE_FLAG_HOST_VISIBLE.
-    */
-   uint32_t memory_type_flags;
-
-   uint32_t unknown_0x14_0;
-
-   uint32_t alignment_bytes;
-
-   /* 0x5 for the basic header + unknown_struct.
-    * See terakan_bo_wddm_allocation_private_data comments for additional bits.
-    */
-   uint32_t struct_flags;
-
-   uint8_t memory_type_priority[4];
-   uint32_t preferred_memory_type;
-
-   uint32_t unknown_0x28_0[0x10];
-
-   /* Not aligned to the allocation alignment, although in Direct3D 11 may be padded to the
-    * resource's size requirement (just like naturally in Vulkan).
-    */
-   uint32_t size_bytes;
-
-   /* For basic header + unknown_struct private data, zeros, but contains some values for private
-    * data with other structures.
-    */
-   uint32_t unknown_0x6C[0x11];
-
-   uint32_t unknown_struct_offset_bytes;
-
-   uint32_t unknown_0xB4_0[0x4];
-};
-
-static_assert(
-   sizeof(struct terakan_bo_wddm_allocation_private_data_header) == 0xC4,
-   "The sizes of private data structures must match those expected by the kernel-mode driver.");
-
-struct terakan_bo_wddm_allocation_private_data_unknown_struct {
-   uint32_t struct_size_bytes;
-
-   uint32_t unknown_0x4_0[0x44];
-};
-
-static_assert(
-   sizeof(struct terakan_bo_wddm_allocation_private_data_unknown_struct) == 0x114,
-   "The sizes of private data structures must match those expected by the kernel-mode driver.");
-
-struct terakan_bo_wddm_create_allocation_private_driver_data {
-   uint32_t unknown_0x0_0[0x3];
-   uint32_t unknown_0xC_0x78;
-   uint32_t unknown_0x10_0[0xC];
-};
-
-static_assert(
-   sizeof(struct terakan_bo_wddm_create_allocation_private_driver_data) == 0x40,
-   "The sizes of private data structures must match those expected by the kernel-mode driver.");
 
 static VkResult
 terakan_bo_wddm_allocate_device_memory(
@@ -243,104 +127,64 @@ terakan_bo_wddm_allocate_device_memory(
    }
 
    alignas(uint32_t) char
-      allocation_private_data[sizeof(struct terakan_bo_wddm_allocation_private_data_header) +
-                              sizeof(struct terakan_bo_wddm_allocation_private_data_unknown_struct)];
+      allocation_private_data[sizeof(struct terascale_wddm_allocation_private_data_header) +
+                              sizeof(struct terascale_wddm_allocation_private_data_unknown_struct)];
    uint32_t allocation_private_data_size_bytes = 0;
 
    assert(sizeof(allocation_private_data) - allocation_private_data_size_bytes >=
-          sizeof(struct terakan_bo_wddm_allocation_private_data_header));
-   struct terakan_bo_wddm_allocation_private_data_header * const allocation_private_data_header =
-      (struct terakan_bo_wddm_allocation_private_data_header *)(allocation_private_data +
-                                                                allocation_private_data_size_bytes);
+          sizeof(struct terascale_wddm_allocation_private_data_header));
+   struct terascale_wddm_allocation_private_data_header * const allocation_private_data_header =
+      (struct terascale_wddm_allocation_private_data_header *)(allocation_private_data +
+                                                               allocation_private_data_size_bytes);
    allocation_private_data_size_bytes +=
-      sizeof(struct terakan_bo_wddm_allocation_private_data_header);
+      sizeof(struct terascale_wddm_allocation_private_data_header);
 
-   *allocation_private_data_header = (struct terakan_bo_wddm_allocation_private_data_header){
-      .flags = 0b1,
-      .unknown_0x8_0x80 = 0x80,
-      .alignment_bytes = (uint32_t)alignment,
-      .struct_flags = 0x5,
-      .size_bytes = (uint32_t)size,
-   };
+   terascale_wddm_allocation_private_data_header_clear(allocation_private_data_header);
+   allocation_private_data_header->alignment_bytes = (uint32_t)alignment;
+   allocation_private_data_header->size_bytes = (uint32_t)size;
 
-   if (flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
-      allocation_private_data_header->memory_type_flags |=
-         TERAKAN_BO_WDDM_ALLOCATION_PRIVATE_DATA_MEMORY_TYPE_FLAG_HOST_VISIBLE;
+   uint8_t memory_type_priority[4] = {};
+   bool const host_visible = (flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0;
+   if (host_visible) {
       if (flags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) {
          /* Matching a D3D11_USAGE_STAGING allocation. */
-         allocation_private_data_header->memory_type_priority[0] =
-            TERAKAN_BO_WDDM_MEMORY_TYPE_HOST_CACHED;
+         memory_type_priority[0] = TERASCALE_WDDM_ALLOCATION_MEMORY_TYPE_HOST_CACHED;
       } else {
          if (flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) {
             /* Matching a small D3D11_USAGE_DYNAMIC allocation. */
-            allocation_private_data_header->memory_type_priority[0] =
-               TERAKAN_BO_WDDM_MEMORY_TYPE_DEVICE_HOST_VISIBLE;
-            allocation_private_data_header->memory_type_priority[1] =
-               TERAKAN_BO_WDDM_MEMORY_TYPE_DEVICE_HOST_VISIBLE;
-            allocation_private_data_header->memory_type_priority[2] =
-               TERAKAN_BO_WDDM_MEMORY_TYPE_HOST_WRITE_COMBINED;
-            allocation_private_data_header->memory_type_priority[3] =
-               TERAKAN_BO_WDDM_MEMORY_TYPE_HOST_CACHED;
+            memory_type_priority[0] = TERASCALE_WDDM_ALLOCATION_MEMORY_TYPE_DEVICE_HOST_VISIBLE;
+            memory_type_priority[1] = TERASCALE_WDDM_ALLOCATION_MEMORY_TYPE_DEVICE_HOST_VISIBLE;
+            memory_type_priority[2] = TERASCALE_WDDM_ALLOCATION_MEMORY_TYPE_HOST_WRITE_COMBINED;
+            memory_type_priority[3] = TERASCALE_WDDM_ALLOCATION_MEMORY_TYPE_HOST_CACHED;
          } else {
-            allocation_private_data_header->memory_type_priority[0] =
-               TERAKAN_BO_WDDM_MEMORY_TYPE_HOST_WRITE_COMBINED;
-            allocation_private_data_header->memory_type_priority[1] =
-               TERAKAN_BO_WDDM_MEMORY_TYPE_HOST_CACHED;
+            memory_type_priority[0] = TERASCALE_WDDM_ALLOCATION_MEMORY_TYPE_HOST_WRITE_COMBINED;
+            memory_type_priority[1] = TERASCALE_WDDM_ALLOCATION_MEMORY_TYPE_HOST_CACHED;
          }
       }
    } else {
       /* Matching a D3D11_USAGE_DEFAULT allocation. */
-      allocation_private_data_header->memory_type_priority[0] =
-         TERAKAN_BO_WDDM_MEMORY_TYPE_DEVICE_NON_HOST_VISIBLE;
-      allocation_private_data_header->memory_type_priority[1] =
-         TERAKAN_BO_WDDM_MEMORY_TYPE_DEVICE_HOST_VISIBLE;
-      allocation_private_data_header->memory_type_priority[2] =
-         TERAKAN_BO_WDDM_MEMORY_TYPE_HOST_WRITE_COMBINED;
-      allocation_private_data_header->memory_type_priority[3] =
-         TERAKAN_BO_WDDM_MEMORY_TYPE_HOST_CACHED;
+      memory_type_priority[0] = TERASCALE_WDDM_ALLOCATION_MEMORY_TYPE_DEVICE_NON_HOST_VISIBLE;
+      memory_type_priority[1] = TERASCALE_WDDM_ALLOCATION_MEMORY_TYPE_DEVICE_HOST_VISIBLE;
+      memory_type_priority[2] = TERASCALE_WDDM_ALLOCATION_MEMORY_TYPE_HOST_WRITE_COMBINED;
+      memory_type_priority[3] = TERASCALE_WDDM_ALLOCATION_MEMORY_TYPE_HOST_CACHED;
    }
-   uint32_t used_memory_types = 0b0;
-   for (size_t memory_type_priority_index = 0;
-        memory_type_priority_index <
-        ARRAY_SIZE(allocation_private_data_header->memory_type_priority);
-        ++memory_type_priority_index) {
-      used_memory_types |= (uint32_t)1 << allocation_private_data_header
-                                             ->memory_type_priority[memory_type_priority_index];
-   }
-   /* Flags expected by the kernel-mode driver are for memory types minus 1 (not including the
-    * unused types).
-    */
-   allocation_private_data_header->memory_type_flags |= used_memory_types >> 1;
-   allocation_private_data_header->preferred_memory_type =
-      allocation_private_data_header->memory_type_priority[0];
+   terascale_wddm_allocation_private_data_header_set_memory_types(
+      allocation_private_data_header, memory_type_priority, host_visible);
 
-   /* Direct3D 11 buffers have a 0x60-byte structure in between indicated by the structure flag
-    * 0x200.
-    * It contains the buffer size in multiple places (in some matching the allocation size that's
-    * aligned to the requirement of the bind flags, like to 256 bytes for an unordered access
-    * buffer, in some being the original size specified in the buffer description) and some unknown
-    * data.
-    * Some values near the end of the header are also nonzero with it.
-    *
-    * Direct3D 11 textures have some structure in between containing information about each mip
-    * level (appears to be 0x60 bytes per level), and some other structure flags (including 0x200)
-    * are also set for them.
-    */
+   /* TODO(Triang3l): Fill subresource data for a dedicated allocation. */
 
    allocation_private_data_header->unknown_struct_offset_bytes = allocation_private_data_size_bytes;
    assert(sizeof(allocation_private_data) - allocation_private_data_size_bytes >=
-          sizeof(struct terakan_bo_wddm_allocation_private_data_unknown_struct));
-   struct terakan_bo_wddm_allocation_private_data_unknown_struct * const
+          sizeof(struct terascale_wddm_allocation_private_data_unknown_struct));
+   struct terascale_wddm_allocation_private_data_unknown_struct * const
       allocation_private_data_unknown_struct =
-         (struct terakan_bo_wddm_allocation_private_data_unknown_struct *)(allocation_private_data +
-                                                                           allocation_private_data_size_bytes);
+         (struct terascale_wddm_allocation_private_data_unknown_struct *)(allocation_private_data +
+                                                                          allocation_private_data_size_bytes);
    allocation_private_data_size_bytes +=
-      sizeof(struct terakan_bo_wddm_allocation_private_data_unknown_struct);
+      sizeof(struct terascale_wddm_allocation_private_data_unknown_struct);
 
-   *allocation_private_data_unknown_struct =
-      (struct terakan_bo_wddm_allocation_private_data_unknown_struct){
-         .struct_size_bytes = sizeof(*allocation_private_data_unknown_struct),
-      };
+   terascale_wddm_allocation_private_data_unknown_struct_clear(
+      allocation_private_data_unknown_struct);
 
    allocation_private_data_header->private_data_size_bytes = allocation_private_data_size_bytes;
 
@@ -349,10 +193,8 @@ terakan_bo_wddm_allocate_device_memory(
       .PrivateDriverDataSize = allocation_private_data_size_bytes,
    };
 
-   struct terakan_bo_wddm_create_allocation_private_driver_data const
-      create_allocation_private_driver_data = {
-         .unknown_0xC_0x78 = 0x78,
-      };
+   struct terascale_wddm_create_allocation_private_data create_allocation_private_driver_data;
+   terascale_wddm_create_allocation_private_data_clear(&create_allocation_private_driver_data);
    D3DKMT_CREATEALLOCATION create_allocation_arguments = {
       .hDevice = device->d3dkmt_device,
       .pPrivateDriverData = &create_allocation_private_driver_data,
@@ -382,8 +224,6 @@ struct terakan_bo_winsys_fn const terakan_bo_wddm_fn = {
    .set_tiling = terakan_bo_wddm_set_tiling,
    .map_impl = terakan_bo_wddm_map_impl,
    .unmap_impl = terakan_bo_wddm_unmap_impl,
-   .create_reference = terakan_bo_wddm_create_reference,
-   .update_reference = terakan_bo_wddm_update_reference,
    .free_impl = terakan_bo_wddm_free_impl,
    .allocate_device_memory = terakan_bo_wddm_allocate_device_memory,
 };

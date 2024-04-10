@@ -25,11 +25,14 @@
 
 #include "terakan_bo_wddm.h"
 #include "terakan_physical_device_wddm.h"
+#include "terakan_queue_wddm.h"
 #include "terakan_wddm_d3dkmthk.h"
 
 #include "util/macros.h"
 #include "vk_alloc.h"
 #include "vk_log.h"
+
+#include <stddef.h>
 
 static void
 terakan_device_wddm_destroy(struct terakan_device * const device_base)

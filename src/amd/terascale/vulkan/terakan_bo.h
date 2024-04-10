@@ -71,12 +71,6 @@ enum terakan_bo_priority {
    TERAKAN_BO_PRIORITY_SCRATCH_BUFFER = 11,
 };
 
-enum terakan_bo_relocation_type {
-   TERAKAN_BO_RELOCATION_TYPE_NONE,
-   TERAKAN_BO_RELOCATION_TYPE_DRM_NOP,
-   TERAKAN_BO_RELOCATION_TYPE_WDDM_PATCH_LOCATION,
-};
-
 struct terakan_device;
 
 struct terakan_bo_tiling {
@@ -128,14 +122,6 @@ struct terakan_bo_winsys_fn {
 
    void * (*map_impl)(struct terakan_bo * bo);
    void (*unmap_impl)(struct terakan_bo * bo);
-
-   /* BO references in command submissions are winsys-specific objects whose size and alignment are
-    * terakan_device::bo_reference_size/alignment.
-    */
-   void (*create_reference)(void * bo_reference, struct terakan_bo const * bo, bool is_reading,
-                            bool is_writing, enum terakan_bo_priority priority);
-   void (*update_reference)(void * bo_reference, struct terakan_bo const * bo, bool is_reading,
-                            bool is_writing, enum terakan_bo_priority priority);
 
    void (*free_impl)(struct terakan_bo * bo, VkAllocationCallbacks const * allocator);
 
