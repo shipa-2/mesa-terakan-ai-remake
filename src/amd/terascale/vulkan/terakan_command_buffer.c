@@ -440,10 +440,9 @@ terakan_gfx_command_writer_end_indirect_buffer(
    struct terakan_gfx_command_writer * const command_writer)
 {
 #ifndef NDEBUG
-   assert(
-      !command_writer->is_emitting &&
-      "terakan_gfx_command_writer_emit_done must be called with the final append pointer after "
-      "every command emission");
+   assert(!command_writer->is_emitting &&
+          "terakan_gfx_command_writer_emit_done must be called with the final append pointer after "
+          "every command emission");
 #endif
 
    if (command_writer->indirect_buffer == NULL) {
@@ -988,10 +987,9 @@ terakan_gfx_command_writer_emit(struct terakan_gfx_command_writer * const comman
                                 uint32_t const relocation_count, bool abort_if_all_state_emitted)
 {
 #ifndef NDEBUG
-   assert(
-      !command_writer->is_emitting &&
-      "terakan_gfx_command_writer_emit_done must be called with the final append pointer after "
-      "every command emission");
+   assert(!command_writer->is_emitting &&
+          "terakan_gfx_command_writer_emit_done must be called with the final append pointer after "
+          "every command emission");
 #endif
 
    /* Empty indirect buffer submissions may not be supported by the queue, make sure indirect
@@ -1073,8 +1071,8 @@ terakan_gfx_command_writer_emit_event_write_eop_discarding_data(
    *packet++ = event;
    *packet++ = (uint32_t)gfx_discard_bo->va;      /* ADDRESS_LO */
    *packet++ = (gfx_discard_bo->va >> 32) & 0xFF; /* ADDRESS_HI, INT_SEL, DATA_SEL */
-   *packet++ = 0; /* DATA_LO */
-   *packet++ = 0; /* DATA_HI */
+   *packet++ = 0;                                 /* DATA_LO */
+   *packet++ = 0;                                 /* DATA_HI */
    terakan_gfx_command_writer_add_bo_relocation(
       command_writer, &packet,
       terakan_bo_reference_writer_add_reference(&command_writer->base.bo_reference_writer,

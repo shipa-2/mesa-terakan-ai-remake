@@ -236,9 +236,8 @@ terakan_gfx_command_writer_emit_done(ASSERTED struct terakan_gfx_command_writer 
 {
 #ifndef NDEBUG
    assert(command_writer->is_emitting);
-   assert(final_append_ptr ==
-             command_writer->indirect_buffer->indirect_buffer +
-             command_writer->indirect_buffer->indirect_buffer_size_dwords);
+   assert(final_append_ptr == command_writer->indirect_buffer->indirect_buffer +
+                                 command_writer->indirect_buffer->indirect_buffer_size_dwords);
    command_writer->is_emitting = false;
 #endif
 }

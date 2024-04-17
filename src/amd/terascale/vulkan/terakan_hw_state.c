@@ -40,9 +40,10 @@
 #include <string.h>
 
 #define TERAKAN_MAKE_SAMPLE_LOCS(s0x, s0y, s1x, s1y, s2x, s2y, s3x, s3y)                           \
-   (((uint32_t)(s0x)&0xF) | (((uint32_t)(s0y)&0xF) << 4) | (((uint32_t)(s1x)&0xF) << 8) |          \
-    (((uint32_t)(s1y)&0xF) << 12) | (((uint32_t)(s2x)&0xF) << 16) |                                \
-    (((uint32_t)(s2y)&0xF) << 20) | (((uint32_t)(s3x)&0xF) << 24) | (((uint32_t)(s3y)&0xF) << 28))
+   (((uint32_t)(s0x) & 0xF) | (((uint32_t)(s0y) & 0xF) << 4) | (((uint32_t)(s1x) & 0xF) << 8) |    \
+    (((uint32_t)(s1y) & 0xF) << 12) | (((uint32_t)(s2x) & 0xF) << 16) |                            \
+    (((uint32_t)(s2y) & 0xF) << 20) | (((uint32_t)(s3x) & 0xF) << 24) |                            \
+    (((uint32_t)(s3y) & 0xF) << 28))
 
 uint32_t const terakan_standard_sample_locs[5][16 / 4] = {
    {
