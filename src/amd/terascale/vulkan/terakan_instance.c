@@ -62,6 +62,9 @@ static struct vk_instance_extension_table const terakan_instance_extensions_supp
 #if defined(VK_USE_PLATFORM_XLIB_KHR)
    .KHR_xlib_surface = true,
 #endif
+#if defined(VK_USE_PLATFORM_WIN32_KHR)
+   .KHR_win32_surface = true,
+#endif
 #endif
 };
 
