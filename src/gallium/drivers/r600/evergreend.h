@@ -61,6 +61,7 @@
 #define PKT3_DISPATCH_DIRECT                   0x15
 #define PKT3_DISPATCH_INDIRECT                 0x16
 #define PKT3_INDIRECT_BUFFER_END               0x17
+#define PKT3_MODE_CONTROL                      0x18
 #define PKT3_SET_PREDICATION                   0x20
 #define PKT3_REG_RMW                           0x21
 #define PKT3_COND_EXEC                         0x22
