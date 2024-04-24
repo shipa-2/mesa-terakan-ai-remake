@@ -180,11 +180,12 @@ terakan_queue_drm_radeon_submit(
 
    if (cs_result != 0) {
       if (cs_result == -ENOMEM) {
-         vk_loge(VK_LOG_OBJS(device), "Not enough memory for command submission");
+         vk_loge(VK_LOG_OBJS(terakan_device_log_obj(&device->base)),
+                 "Not enough memory for command submission");
          return VK_ERROR_OUT_OF_HOST_MEMORY;
       }
 
-      vk_loge(VK_LOG_OBJS(device),
+      vk_loge(VK_LOG_OBJS(terakan_device_log_obj(&device->base)),
               "The kernel has rejected the command submission with error number %d, see dmesg for "
               "more information",
               cs_result);

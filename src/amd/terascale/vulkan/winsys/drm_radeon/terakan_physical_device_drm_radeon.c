@@ -185,7 +185,7 @@ terakan_physical_device_drm_radeon_try_create(struct vk_instance * const instanc
    struct stat primary_node_stat = {};
    bool has_primary_node = (drm_device->available_nodes & (1 << DRM_NODE_PRIMARY)) != 0;
    if (has_primary_node && stat(drm_device->nodes[DRM_NODE_PRIMARY], &primary_node_stat) != 0) {
-      vk_logw(VK_LOG_OBJS(instance), "Failed to stat the DRM primary node '%s': %m",
+      vk_logw(VK_LOG_NO_OBJS(&instance->vk), "Failed to stat the DRM primary node '%s': %m",
               drm_device->nodes[DRM_NODE_PRIMARY]);
       has_primary_node = false;
    }

@@ -119,6 +119,16 @@ terakan_device_physical_device(struct terakan_device const * const device)
       return terakan_device_physical_device(terakan_##object##_device(object));                    \
    }
 
+/* Object that can be passed to VK_LOG_OBJS during or after the creation of the device. */
+static inline struct vk_object_base const *
+terakan_device_log_obj(struct terakan_device const * const device)
+{
+   if (device->vk.base.client_visible) {
+      return &device->vk.base;
+   }
+   return &terakan_device_physical_device(device)->vk.base.instance->base;
+}
+
 void terakan_device_finish(struct terakan_device * device);
 
 VkResult terakan_device_init(struct terakan_device * device,

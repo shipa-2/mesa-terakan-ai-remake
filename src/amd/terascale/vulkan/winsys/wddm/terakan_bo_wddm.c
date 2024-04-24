@@ -67,7 +67,8 @@ terakan_bo_wddm_map_impl(struct terakan_bo * const bo_base)
 
    NTSTATUS const lock_status = D3DKMTLock(&lock_arguments);
    if (!NT_SUCCESS(lock_status)) {
-      vk_loge(VK_LOG_OBJS(device), "Failed to lock a D3DKMT memory allocation");
+      vk_loge(VK_LOG_OBJS(terakan_device_log_obj(&device->base)),
+              "Failed to lock a D3DKMT memory allocation");
       return NULL;
    }
 
@@ -205,7 +206,7 @@ terakan_bo_wddm_allocate_device_memory(
    NTSTATUS const create_allocation_status = D3DKMTCreateAllocation(&create_allocation_arguments);
    if (!NT_SUCCESS(create_allocation_status)) {
       vk_free2(&device->base.vk.alloc, allocator, bo);
-      vk_loge(VK_LOG_OBJS(device),
+      vk_loge(VK_LOG_OBJS(terakan_device_log_obj(&device->base)),
               "Failed to create a D3DKMT memory allocation, size: %" PRIu64 " bytes, "
               "alignment: %" PRIu64 " bytes, memory property flags: 0x%" PRIX32 ", status 0x%08lX",
               size, alignment, flags, create_allocation_status);

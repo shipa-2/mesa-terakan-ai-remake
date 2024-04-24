@@ -157,7 +157,7 @@ terakan_queue_wddm_acquire_submission_context(
 
    NTSTATUS const create_context_status = D3DKMTCreateContext(&create_context_arguments);
    if (!NT_SUCCESS(create_context_status)) {
-      vk_loge(VK_LOG_OBJS(device),
+      vk_loge(VK_LOG_OBJS(terakan_device_log_obj(&device->base)),
               "Failed to create the D3DKMT context for node %" PRIu32 " with %" PRIu32 " command "
               "buffer dwords, %" PRIu32 " allocations, %" PRIu32 " patch locations per submission, "
               "status 0x%08lX",
@@ -282,7 +282,7 @@ terakan_queue_wddm_submit(struct terakan_queue_submission_context * const submis
    submission_context->patch_location_list = render_arguments.pNewPatchLocationList;
 
    if (!NT_SUCCESS(render_status)) {
-      vk_loge(VK_LOG_OBJS(submission_context->device),
+      vk_loge(VK_LOG_OBJS(terakan_device_log_obj(&submission_context->device->base)),
               "Failed to submit commands to the kernel driver, status 0x%08lX", render_status);
       return VK_ERROR_UNKNOWN;
    }
@@ -312,7 +312,7 @@ terakan_queue_wddm_submit(struct terakan_queue_submission_context * const submis
           submission_context->base.max_submission_size.relocations +
              TERAKAN_QUEUE_WDDM_SUBMISSION_RESERVED_RELOCATIONS) {
       vk_loge(
-         VK_LOG_OBJS(submission_context->device),
+         VK_LOG_OBJS(terakan_device_log_obj(&submission_context->device->base)),
          "Command submission returned new D3DKMT command buffer, allocation list or patch location "
          "list memory that's smaller than the limit used for recording Vulkan command buffers, not "
          "possible to submit recorded command buffers anymore, so assuming that the device is out "
