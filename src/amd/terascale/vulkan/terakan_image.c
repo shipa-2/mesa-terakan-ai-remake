@@ -785,9 +785,6 @@ terakan_image_surface_compute(VkImageCreateInfo const * const image_create_info,
                                      surface_out->planes[1].size_bytes_shr8;
    }
 
-   /* TODO(Triang3l): Reserve BO space for the fake base level for uncompressed views of compressed
-    * mips.
-    */
    /* TODO(Triang3l): Intermediate depth surface for the largest 1D tiled mip whose pitch alignment
     * is below that of stencil. Need to be careful with maintenance4's requirement that "The size
     * memory requirement of a buffer or image is never greater than that of another buffer or image
@@ -1005,11 +1002,13 @@ terakan_image_create_resource_descriptor(VkImageViewCreateInfo const * const ima
    }
 
    /* Mips are stored differently from the base level, they're padded along each direction to the
-    * number of texels rounded to the next power of 2.
-    * Color descriptors can treat the base and the mips the same because SLICE_TILE_MAX is specified
-    * explicitly, however, there's no equivalent setting for resources.
+    * number of texels rounded up to a power of 2.
+    *
+    * Color descriptors can treat the base and the mips the same because CB_COLOR#_SLICE is
+    * specified explicitly, however, there's no equivalent setting for resources.
+    *
     * Therefore, BASE_ADDRESS must not point to non-0 mip levels within an image, as that would
-    * result in array/3D layer pitch smaller than needed.
+    * result in array/3D layer pitch being smaller than needed.
     */
 
    uint32_t resource_width = image->vk.extent.width;
@@ -1017,30 +1016,95 @@ terakan_image_create_resource_descriptor(VkImageViewCreateInfo const * const ima
    uint32_t resource_depth_or_layers =
       image->vk.image_type == VK_IMAGE_TYPE_3D ? image->vk.extent.depth : image->vk.array_layers;
 
-   uint32_t resource_base_level_index = 0;
+   uint32_t resource_surface_base_level = 0;
+
    bool const is_uncompressed_view = vk_format_is_compressed(image->vk.format) &&
                                      !vk_format_is_compressed(image_view_create_info->format);
    if (is_uncompressed_view) {
-      /* It's not possible to simply divide the size by 4 rounding up, as the mip pyramid of the
-       * uncompressed view will not contain all the pixels in the mip pyramid of the actual
-       * compressed texture:
-       * - Level 1 of a compressed 10x1 (3x1 blocks) texture is 5x1 (2x1 blocks).
-       *   However, level 1 of its 3x1 uncompressed view is 1x1.
-       * - Levels smaller than 4x4x1 in the compressed texture all become 1x1x1 in the uncompressed
-       *   view, but there can't be multiple mips with the same size.
-       * Therefore, it's not possible to access more than 1 level via an uncompressed view of a
-       * compressed texture.
-       * VUID-VkImageViewCreateInfo-image-07072: "If image was created with the
-       * VK_IMAGE_CREATE_BLOCK_TEXEL_VIEW_COMPATIBLE_BIT flag and format is a non-compressed format,
-       * the levelCount member of subresourceRange must be 1"
+      /* Compressed (block-compressed, subsampled, 1bpp) formats may have image views of
+       * size-compatible uncompressed formats created for a single mip level of them.
+       *
+       * For the base level, this is trivial - simply dividing the dimensions by the block
+       * dimensions rounding up is enough. However, mips are padded differently from the base, and
+       * unlike for CB targets, for SQ texture resources, it's only possible to provide the base
+       * level's row pitch explicitly - but the slice pitch is computed automatically from the
+       * image's height.
+       *
+       * For transfers (with the exception of blits via a floating-point format with filtering),
+       * just padding the dimensions themselves would be sufficient. However, sampled images need
+       * the correct logical size.
+       *
+       * Therefore, for mips, we need the mip to actually be bound as a mip, so texture fetching
+       * computes its storage extents the way they're calculated for mips.
+       *
+       * It's not possible to simply bind the base level as usual in this case.
+       * A 10x4-texel (3x1-block) BC texture has:
+       * - Mip 1: 2x1 blocks (5x2 texels);
+       * - Mip 2: 1x1 blocks (2x1 texels);
+       * - Mip 3: 1x1 blocks (1x1 texels).
+       * However, a 3x1-texel uncompressed texture only has:
+       * - Mip 1: 1x1.
+       *
+       * So, we can make the requested mip level the level 1 (point MIP_ADDRESS rather than
+       * BASE_ADDRESS to it), and construct a fake base level whose size produces the size of the
+       * needed mip level when minified to level 1.
+       *
+       * It's important that the memory requirement for the fake base level must not exceed that of
+       * the real base plus the first mip, so that image memory requirements don't need to be
+       * adjusted to prevent the fake base level from going out of the BO bounds, potentially making
+       * the kernel driver validation reject the submission.
+       *
+       * A mip size of 1 along an axis may be obtained from the preceding level with the size along
+       * that axis of:
+       * - 1 (if any other axis was not 1 long)
+       * - 2 (general case)
+       * - 3 (general case)
+       * For a mip size N of 2 or above along an axis, the possible options are:
+       * - 2 * N
+       * - 2 * N + 1
+       *
+       * For axes along which there's no block compression, choosing the smallest option for the
+       * fake base level (1 for 1, 2N for 2+) will always produce a value that's not greater than
+       * the size along that axis for the real previous level. But when dealing with blocks,
+       * multiplying the block count along an axis by 2 may result in an excessive amount of blocks.
+       * 5 texels require 2 blocks, but 10 texels need only 3 rather than 4.
+       *
+       * Thankfully, we can take advantage of the storage extent alignment requirements to avoid
+       * potentially reserving additional space for the fake base level in the BO.
+       *
+       * For linear images, only the storage width is aligned to pow(2, at least 3) blocks, but not
+       * the height - so an image taller by even 1 row has a larger size requirement.
+       * Fortunately, the only compressed formats that support the linear array mode have 1 texel
+       * tall blocks: 2x1 subsampled, and 1bpp with 8x1 blocks.
+       * BCn textures with 4 texels tall blocks must be tiled - thus their storage height is aligned
+       * to pow(2, at least 3) blocks. This is enough for the fake base level to always be contained
+       * within the storage extent of the actual previous level:
+       *
+       *     unsigned const block_size = 4;
+       *     unsigned const extent_alignment = TERAKAN_IMAGE_MICRO_TILE_WIDTH_HEIGHT;
+       *     for (unsigned size = 1; size <= TERAKAN_IMAGE_MAX_WIDTH_HEIGHT; ++size) {
+       *        unsigned const real_blocks = DIV_ROUND_UP(size, block_size);
+       *        unsigned const fake_blocks = DIV_ROUND_UP(2 * u_minify(size, 1), block_size);
+       *        unsigned const real_extent = DIV_ROUND_UP(real_blocks, extent_alignment);
+       *        unsigned const fake_extent = DIV_ROUND_UP(fake_blocks, extent_alignment);
+       *        assert(real_extent >= fake_extent);
+       *     }
+       *
+       * In fact, the above is true for any block size, and for any even storage extent alignment.
+       *
+       * Relevant CTS tests:
+       * dEQP-VK.api.copy_and_blit.core.image_to_buffer.2d_images.mip_copies_bc*_universal
+       * (the copy source being a block-compressed 64x192 array image with mips - assuming that the
+       * implementation of vkCmdCopyImageToBuffer reads from a size-compatible uncompressed format
+       * SQ texture resource).
+       *
+       * Don't need to handle VK_REMAINING_MIP_LEVELS due to VUID-VkImageViewCreateInfo-image-07072:
+       * "If image was created with the VK_IMAGE_CREATE_BLOCK_TEXEL_VIEW_COMPATIBLE_BIT flag and
+       * format is a non-compressed format, the levelCount member of subresourceRange must be 1".
        */
       if (image_view_create_info->subresourceRange.levelCount != 1) {
          return false;
       }
-      /* Make the uncompressed view point to the specified level with the exact needed size.
-       * Mips can have more padding than the base, however, so MIP_ADDRESS must be used to point to
-       * them instead of BASE_ADDRESS.
-       */
       unsigned const block_width = vk_format_get_blockwidth(image->vk.format);
       unsigned const block_height = vk_format_get_blockheight(image->vk.format);
       resource_width = DIV_ROUND_UP(
@@ -1050,26 +1114,20 @@ terakan_image_create_resource_descriptor(VkImageViewCreateInfo const * const ima
          u_minify(image->vk.extent.height, image_view_create_info->subresourceRange.baseMipLevel),
          block_height);
       if (image_view_create_info->subresourceRange.baseMipLevel != 0) {
-         /* Note that for 2D-tiled images, small mips switch to 1D tiling. However, the mode to use
-          * depends only on the size of the mip itself in blocks and the macro-tile size (which is
-          * calculated for the tiling configuration of the entire surface), so the tiling mode for
-          * the needed mip will be the same regardless of the levels prior to it.
-          */
-         resource_base_level_index = image_view_create_info->subresourceRange.baseMipLevel - 1;
-         /* TODO(Triang3l): Pad the value reported by vkGetDeviceImageMemoryRequirements so this
-          * doesn't cause an overflow if doubling the block count results in more blocks than
-          * doubling the pixel count.
-          */
-         /* Multiplying the width by 2 makes sure one mip is created regardless of whether other
-          * dimensions end up being scaled.
+         /* Multiply the width by 2 regardless of whether it's 1 for simplicity, to avoid handling
+          * the 1x1x1 case separately. This is always safe as verified in the comment above, because
+          * the storage width is always aligned to pow(2, at least 3) blocks regardless of the array
+          * mode.
           */
          resource_width *= 2;
          if (resource_height > 1) {
             resource_height *= 2;
          }
-         if (image->vk.image_type == VK_IMAGE_TYPE_3D) {
-            resource_depth_or_layers = u_minify(image->vk.extent.depth, resource_base_level_index);
+         if (image_view_create_info->viewType == VK_IMAGE_VIEW_TYPE_3D &&
+             resource_depth_or_layers > 1) {
+            resource_depth_or_layers *= 2;
          }
+         resource_surface_base_level = image_view_create_info->subresourceRange.baseMipLevel - 1;
       }
    }
 
@@ -1080,27 +1138,39 @@ terakan_image_create_resource_descriptor(VkImageViewCreateInfo const * const ima
    struct terakan_physical_device const * const physical_device =
       container_of(image->vk.base.device->physical, struct terakan_physical_device const, vk);
 
-   /* TODO(Triang3l): Fixup base pitch alignment with the uncompressed view scale-by-2 hack. */
-   descriptor_out[0] = S_030000_DIM(dimension) |
-                       (physical_device->chip_family_info.is_r9xx
-                           ? CM_S_030000_NON_DISP_TILING_ORDER(plane->tiling.tc_non_display)
-                           : S_030000_NON_DISP_TILING_ORDER(plane->tiling.tc_non_display)) |
-                       S_030000_PITCH(plane->levels[0].aligned_extent_blocks[0] / 8 - 1) |
-                       S_030000_TEX_WIDTH(resource_width - 1);
+   /* For the fake base level of a size-compatible uncompressed format view in a compressed mip
+    * level, it's okay to keep using the pitch of the real previous level, as the storage width of
+    * the fake one never exceeds that of the previous level.
+    */
+   descriptor_out[0] =
+      S_030000_DIM(dimension) |
+      (physical_device->chip_family_info.is_r9xx
+          ? CM_S_030000_NON_DISP_TILING_ORDER(plane->tiling.tc_non_display)
+          : S_030000_NON_DISP_TILING_ORDER(plane->tiling.tc_non_display)) |
+      S_030000_PITCH(plane->levels[resource_surface_base_level].aligned_extent_blocks[0] / 8 - 1) |
+      S_030000_TEX_WIDTH(resource_width - 1);
 
    /* For 1D arrays, the 3D Register Reference Guide incorrectly states that the number of layers is
     * in TEX_HEIGHT. It must be specified in TEX_DEPTH regardless of the dimensionality.
+    *
+    * For a size-compatible uncompressed format view of a compressed mip level, using the same array
+    * mode as for the previous level because reusing its pitch, which is aligned according the
+    * requirements of its array mode. If the needed mip is macro-tiled as compressed, it will stay
+    * macro-tiled as mip 1 of the uncompressed view, because whether degradation to 1D happens for a
+    * level depends on its logical extent in blocks, which is the same, and the storage extent
+    * alignments, which are unchanged if the number of bytes per block and the tiling attributes are
+    * the same.
     */
-   descriptor_out[1] =
-      S_030004_TEX_HEIGHT(resource_height - 1) | S_030004_TEX_DEPTH(resource_depth_or_layers - 1) |
-      S_030004_ARRAY_MODE(
-         plane
-            ->levels[is_uncompressed_view ? image_view_create_info->subresourceRange.baseMipLevel
-                                          : 0]
-            .array_mode);
+   descriptor_out[1] = S_030004_TEX_HEIGHT(resource_height - 1) |
+                       S_030004_TEX_DEPTH(resource_depth_or_layers - 1) |
+                       S_030004_ARRAY_MODE(plane->levels[resource_surface_base_level].array_mode);
 
    uint32_t const image_va_shr8 = (uint32_t)(image->va >> 8);
 
+   /* For a size-compatible uncompressed format view of a compressed mip level, the actual data at
+    * the base address will not be accessed, so adjustment to `resource_surface_base_level` is not
+    * needed.
+    */
    descriptor_out[2] = S_030008_BASE_ADDRESS(image_va_shr8 + plane->offset_in_memory_bytes_shr8);
 
    unsigned char const * const format_swizzle =
@@ -1153,13 +1223,16 @@ terakan_image_create_resource_descriptor(VkImageViewCreateInfo const * const ima
    } else {
       descriptor_out[3] = S_03000C_MIP_ADDRESS(
          image_va_shr8 +
-         plane->levels[MIN2(resource_base_level_index + 1, image->vk.mip_levels - 1)]
+         plane
+            ->levels[is_uncompressed_view ? image_view_create_info->subresourceRange.baseMipLevel
+                                          : MIN2(1, image->vk.mip_levels - 1)]
             .offset_in_memory_bytes_shr8);
 
-      descriptor_out[4] |= S_030010_BASE_LEVEL(
-         image_view_create_info->subresourceRange.baseMipLevel - resource_base_level_index);
+      uint32_t const resource_base_level =
+         image_view_create_info->subresourceRange.baseMipLevel - resource_surface_base_level;
+      descriptor_out[4] |= S_030010_BASE_LEVEL(resource_base_level);
       descriptor_out[5] |= S_030014_LAST_LEVEL(
-         image_view_create_info->subresourceRange.baseMipLevel - resource_base_level_index +
+         resource_base_level +
          vk_image_subresource_level_count(&image->vk, &image_view_create_info->subresourceRange) -
          1);
 
