@@ -982,9 +982,11 @@ terakan_image_create_resource_descriptor(VkImageViewCreateInfo const * const ima
    }
 
    uint32_t data_format, signs, number_format;
-   if (image_view_create_info->subresourceRange.aspectMask == VK_IMAGE_ASPECT_STENCIL_BIT) {
+   if (image_view_create_info->subresourceRange.aspectMask == VK_IMAGE_ASPECT_STENCIL_BIT &&
+       vk_format_has_stencil(image_view_create_info->format)) {
       /* For combined depth and stencil formats, the getters return the values for the depth aspect,
-       * not stencil.
+       * not stencil. But also checking the view format to let transfer implementations override it
+       * with another format like R8_UNORM.
        */
       data_format = FMT_8;
       number_format = V_030010_SQ_NUM_FORMAT_INT;
@@ -1249,9 +1251,11 @@ terakan_image_create_color_descriptor(
    struct terakan_color_meta_descriptor * const meta_descriptor_out_opt)
 {
    uint32_t color_format, number_type, swap;
-   if (image_view_create_info->subresourceRange.aspectMask == VK_IMAGE_ASPECT_STENCIL_BIT) {
+   if (image_view_create_info->subresourceRange.aspectMask == VK_IMAGE_ASPECT_STENCIL_BIT &&
+       vk_format_has_stencil(image_view_create_info->format)) {
       /* For combined depth and stencil formats, the getters return the values for the depth aspect,
-       * not stencil.
+       * not stencil. But also checking the view format to let transfer implementations override it
+       * with another format like R8_UNORM.
        */
       color_format = V_028C70_COLOR_8;
       number_type = V_028C70_NUMBER_UINT;
