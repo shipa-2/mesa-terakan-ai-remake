@@ -50,8 +50,10 @@ static uint32_t const terakan_meta_clear_color_ps_r8xx[] = {
 
    S_SQ_CF_WORD0_ADDR(2) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS) |
       S_SQ_CF_ALU_WORD0_KCACHE_MODE0(V_SQ_CF_KCACHE_LOCK_1),
-   S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(0) | S_SQ_CF_ALU_WORD1_COUNT(5 - 2) |
-      S_SQ_CF_ALU_WORD1_BARRIER(1) | EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
+   S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(
+      TERAKAN_KCACHE_FIELD_LINE(struct terakan_meta_clear_color_push_constants, clear_value)) |
+      S_SQ_CF_ALU_WORD1_COUNT(5 - 2) | S_SQ_CF_ALU_WORD1_BARRIER(1) |
+      EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
    /* 1: Export the color and end the program. */
 
@@ -68,28 +70,30 @@ static uint32_t const terakan_meta_clear_color_ps_r8xx[] = {
 
    /* Move the clear value from the kcache to the GPRs.
     *
-    * 2: R0.X = MOV CB[push_constants][0].X
-    * 3: R0.Y = MOV CB[push_constants][0].Y
-    * 4: R0.Z = MOV CB[push_constants][0].Z
-    * 5: R0.W = MOV CB[push_constants][0].W
+    * 2:     R0.X = MOV CB[push].clear_value.X, unused 0
+    * 3:     R0.Y = MOV CB[push].clear_value.Y, unused 0
+    * 4:     R0.Z = MOV CB[push].clear_value.Z, unused 0
+    * 5: (v) R0.W = MOV CB[push].clear_value.W, unused 0
     */
 
-   S_SQ_ALU_WORD0_SRC0_SEL(0x80) | S_SQ_ALU_WORD0_SRC0_CHAN(0) |
+   TERAKAN_KCACHE_FIELD_WORD0_SRC0(struct terakan_meta_clear_color_push_constants, clear_value[0]) |
       S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_0),
    S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(0) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MOV),
 
-   S_SQ_ALU_WORD0_SRC0_SEL(0x80) | S_SQ_ALU_WORD0_SRC0_CHAN(1) |
+   TERAKAN_KCACHE_FIELD_WORD0_SRC0(struct terakan_meta_clear_color_push_constants, clear_value[1]) |
       S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_0),
    S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(1) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MOV),
 
-   S_SQ_ALU_WORD0_SRC0_SEL(0x80) | S_SQ_ALU_WORD0_SRC0_CHAN(2) |
+   TERAKAN_KCACHE_FIELD_WORD0_SRC0(struct terakan_meta_clear_color_push_constants, clear_value[2]) |
       S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_0),
    S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(2) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MOV),
 
-   S_SQ_ALU_WORD0_LAST(1) | S_SQ_ALU_WORD0_SRC0_SEL(0x80) | S_SQ_ALU_WORD0_SRC0_CHAN(3) |
+   S_SQ_ALU_WORD0_LAST(1) |
+      TERAKAN_KCACHE_FIELD_WORD0_SRC0(struct terakan_meta_clear_color_push_constants,
+                                      clear_value[3]) |
       S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_0),
    S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(3) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MOV),
@@ -102,8 +106,10 @@ static uint32_t const terakan_meta_clear_color_ps_r9xx[] = {
 
    S_SQ_CF_WORD0_ADDR(3) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS) |
       S_SQ_CF_ALU_WORD0_KCACHE_MODE0(V_SQ_CF_KCACHE_LOCK_1),
-   S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(0) | S_SQ_CF_ALU_WORD1_COUNT(6 - 3) |
-      S_SQ_CF_ALU_WORD1_BARRIER(1) | EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
+   S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(
+      TERAKAN_KCACHE_FIELD_LINE(struct terakan_meta_clear_color_push_constants, clear_value)) |
+      S_SQ_CF_ALU_WORD1_COUNT(6 - 3) | S_SQ_CF_ALU_WORD1_BARRIER(1) |
+      EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
    /* 1: Export the color. */
 
@@ -124,28 +130,30 @@ static uint32_t const terakan_meta_clear_color_ps_r9xx[] = {
 
    /* Move the clear value from the kcache to the GPRs.
     *
-    * 3: R0.X = MOV CB[push_constants][0].X
-    * 4: R0.Y = MOV CB[push_constants][0].Y
-    * 5: R0.Z = MOV CB[push_constants][0].Z
-    * 6: R0.W = MOV CB[push_constants][0].W
+    * 3: R0.X = MOV CB[push].clear_value.X, unused 0
+    * 4: R0.Y = MOV CB[push].clear_value.Y, unused 0
+    * 5: R0.Z = MOV CB[push].clear_value.Z, unused 0
+    * 6: R0.W = MOV CB[push].clear_value.W, unused 0
     */
 
-   S_SQ_ALU_WORD0_SRC0_SEL(0x80) | S_SQ_ALU_WORD0_SRC0_CHAN(0) |
+   TERAKAN_KCACHE_FIELD_WORD0_SRC0(struct terakan_meta_clear_color_push_constants, clear_value[0]) |
       S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_0),
    S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(0) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MOV),
 
-   S_SQ_ALU_WORD0_SRC0_SEL(0x80) | S_SQ_ALU_WORD0_SRC0_CHAN(1) |
+   TERAKAN_KCACHE_FIELD_WORD0_SRC0(struct terakan_meta_clear_color_push_constants, clear_value[1]) |
       S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_0),
    S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(1) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MOV),
 
-   S_SQ_ALU_WORD0_SRC0_SEL(0x80) | S_SQ_ALU_WORD0_SRC0_CHAN(2) |
+   TERAKAN_KCACHE_FIELD_WORD0_SRC0(struct terakan_meta_clear_color_push_constants, clear_value[2]) |
       S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_0),
    S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(2) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MOV),
 
-   S_SQ_ALU_WORD0_LAST(1) | S_SQ_ALU_WORD0_SRC0_SEL(0x80) | S_SQ_ALU_WORD0_SRC0_CHAN(3) |
+   S_SQ_ALU_WORD0_LAST(1) |
+      TERAKAN_KCACHE_FIELD_WORD0_SRC0(struct terakan_meta_clear_color_push_constants,
+                                      clear_value[3]) |
       S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_0),
    S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(3) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MOV),

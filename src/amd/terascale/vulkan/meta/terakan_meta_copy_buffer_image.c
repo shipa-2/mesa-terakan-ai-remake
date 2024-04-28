@@ -299,8 +299,10 @@ static uint32_t const terakan_meta_copy_buffer_to_image_ps_r9xx[] = {
 
    S_SQ_CF_WORD0_ADDR(4) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS) |
       S_SQ_CF_ALU_WORD0_KCACHE_MODE0(V_SQ_CF_KCACHE_LOCK_1),
-   S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(0) | S_SQ_CF_ALU_WORD1_COUNT(15 - 4) |
-      S_SQ_CF_ALU_WORD1_BARRIER(1) | EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
+   S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(TERAKAN_KCACHE_FIELD_LINE(
+      struct terakan_meta_copy_buffer_image_push_constants, image_offset_x_minus_buffer_offset)) |
+      S_SQ_CF_ALU_WORD1_COUNT(15 - 4) | S_SQ_CF_ALU_WORD1_BARRIER(1) |
+      EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
    /* 1: Fetch from the source buffer. */
 
@@ -467,8 +469,10 @@ static uint32_t const terakan_meta_copy_image_to_buffer_ps_r9xx[] = {
 
    S_SQ_CF_WORD0_ADDR(10) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS) |
       S_SQ_CF_ALU_WORD0_KCACHE_MODE0(V_SQ_CF_KCACHE_LOCK_1),
-   S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(0) | S_SQ_CF_ALU_WORD1_COUNT(21 - 10) |
-      S_SQ_CF_ALU_WORD1_BARRIER(1) | EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
+   S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(TERAKAN_KCACHE_FIELD_LINE(
+      struct terakan_meta_copy_buffer_image_push_constants, image_offset_x_minus_buffer_offset)) |
+      S_SQ_CF_ALU_WORD1_COUNT(21 - 10) | S_SQ_CF_ALU_WORD1_BARRIER(1) |
+      EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
    /* 3: Write to the UAV. */
 
