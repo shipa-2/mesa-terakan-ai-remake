@@ -130,7 +130,7 @@ VK_DEFINE_NONDISP_HANDLE_CASTS(terakan_image, vk.base, VkImage, VK_OBJECT_TYPE_I
 
 /* For transfer purposes, VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT and
  * VK_IMAGE_CREATE_BLOCK_TEXEL_VIEW_COMPATIBLE_BIT are assumed to be always enabled for all images
- * they're applicable to.
+ * they're applicable to, and 2D array views of multiple layers of 3D images are supported.
  */
 bool terakan_image_create_resource_descriptor(VkImageViewCreateInfo const * image_view_create_info,
                                               uint32_t descriptor_out[8]);

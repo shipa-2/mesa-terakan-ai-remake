@@ -100,6 +100,7 @@ enum terakan_meta_shader_index {
 
    TERAKAN_META_SHADER_COPY_BUFFER_TO_IMAGE_PS,
    TERAKAN_META_SHADER_COPY_IMAGE_TO_BUFFER_PS,
+   TERAKAN_META_SHADER_COPY_IMAGE_PS,
 
    TERAKAN_META_SHADER_COUNT,
 };
@@ -109,6 +110,7 @@ extern struct terakan_meta_shader const terakan_meta_position_and_layer_from_ind
 extern struct terakan_meta_shader const terakan_meta_clear_color_ps;
 extern struct terakan_meta_shader const terakan_meta_copy_buffer_to_image_ps;
 extern struct terakan_meta_shader const terakan_meta_copy_image_to_buffer_ps;
+extern struct terakan_meta_shader const terakan_meta_copy_image_ps;
 
 extern struct terakan_meta_shader const * const terakan_meta_shaders[TERAKAN_META_SHADER_COUNT];
 
@@ -179,6 +181,13 @@ terakan_meta_begin_2d_immediate_rects(struct terakan_gfx_command_writer * const 
 
 void terakan_meta_emit_rect_3_vertices_draw(struct terakan_gfx_command_writer * command_writer,
                                             VkRect2D const * rect, uint32_t instance_count);
+
+static inline VkImageViewType
+terakan_meta_transfer_image_view_type(VkImageType const image_type)
+{
+   return image_type == VK_IMAGE_TYPE_1D ? VK_IMAGE_VIEW_TYPE_1D_ARRAY
+                                         : VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+}
 
 static inline VkFormat
 terakan_meta_transfer_image_block_format(unsigned const bpe)

@@ -927,13 +927,25 @@ terakan_image_create_resource_descriptor(VkImageViewCreateInfo const * const ima
    uint32_t dimension;
    uint32_t layer_count = 1;
    if (image->vk.image_type == VK_IMAGE_TYPE_3D) {
-      /* 2D array views of 3D images can be used only for attachments, not for sampled or storage
-       * images.
+      /* Supporting 2D array views of 3D images for VK_EXT_image_2d_view_of_3d (single slice) and
+       * for transfers (arbitrary number of slices).
        */
-      if (image_view_create_info->viewType != VK_IMAGE_VIEW_TYPE_3D) {
-         return false;
+      if (image_view_create_info->viewType == VK_IMAGE_VIEW_TYPE_3D) {
+         dimension = V_030000_SQ_TEX_DIM_3D;
+      } else {
+         uint32_t const level_depth =
+            u_minify(image->vk.extent.depth, image_view_create_info->subresourceRange.baseMipLevel);
+         dimension = level_depth > 1 ? V_030000_SQ_TEX_DIM_2D_ARRAY : V_030000_SQ_TEX_DIM_2D;
+         if (image_view_create_info->viewType == VK_IMAGE_VIEW_TYPE_2D_ARRAY) {
+            layer_count = image_view_create_info->subresourceRange.layerCount;
+            if (layer_count == VK_REMAINING_ARRAY_LAYERS) {
+               layer_count = level_depth - image_view_create_info->subresourceRange.baseArrayLayer;
+            }
+         } else if (image_view_create_info->viewType != VK_IMAGE_VIEW_TYPE_2D) {
+            assert(!"Unsupported image view type");
+            return false;
+         }
       }
-      dimension = V_030000_SQ_TEX_DIM_3D;
    } else {
       switch (image_view_create_info->viewType) {
       case VK_IMAGE_VIEW_TYPE_1D:
@@ -979,6 +991,10 @@ terakan_image_create_resource_descriptor(VkImageViewCreateInfo const * const ima
             break;
          }
       }
+      if (layer_count == VK_REMAINING_ARRAY_LAYERS) {
+         layer_count =
+            image->vk.array_layers - image_view_create_info->subresourceRange.baseArrayLayer;
+      }
    }
 
    uint32_t data_format, signs, number_format;
@@ -1020,9 +1036,12 @@ terakan_image_create_resource_descriptor(VkImageViewCreateInfo const * const ima
 
    uint32_t resource_surface_base_level = 0;
 
-   bool const is_uncompressed_view = vk_format_is_compressed(image->vk.format) &&
-                                     !vk_format_is_compressed(image_view_create_info->format);
-   if (is_uncompressed_view) {
+   bool const is_forced_single_level_view =
+      (image->vk.image_type == VK_IMAGE_TYPE_3D &&
+       image_view_create_info->viewType != VK_IMAGE_VIEW_TYPE_3D) ||
+      (vk_format_is_compressed(image->vk.format) &&
+       !vk_format_is_compressed(image_view_create_info->format));
+   if (is_forced_single_level_view) {
       /* Compressed (block-compressed, subsampled, 1bpp) formats may have image views of
        * size-compatible uncompressed formats created for a single mip level of them.
        *
@@ -1100,9 +1119,16 @@ terakan_image_create_resource_descriptor(VkImageViewCreateInfo const * const ima
        * implementation of vkCmdCopyImageToBuffer reads from a size-compatible uncompressed format
        * SQ texture resource).
        *
-       * Don't need to handle VK_REMAINING_MIP_LEVELS due to VUID-VkImageViewCreateInfo-image-07072:
-       * "If image was created with the VK_IMAGE_CREATE_BLOCK_TEXEL_VIEW_COMPATIBLE_BIT flag and
-       * format is a non-compressed format, the levelCount member of subresourceRange must be 1".
+       * 2D array views of 3D images require the same logic because minifications happens along the
+       * Z axis for 3D, but not for 2D arrays.
+       *
+       * Don't need to handle VK_REMAINING_MIP_LEVELS due to:
+       * VUID-VkImageViewCreateInfo-image-04970:
+       *     "If image was created with VK_IMAGE_TYPE_3D and viewType is VK_IMAGE_VIEW_TYPE_2D or
+       *     VK_IMAGE_VIEW_TYPE_2D_ARRAY then subresourceRange.levelCount must be 1"
+       * VUID-VkImageViewCreateInfo-image-07072:
+       *     "If image was created with the VK_IMAGE_CREATE_BLOCK_TEXEL_VIEW_COMPATIBLE_BIT flag and
+       *     format is a non-compressed format, the levelCount member of subresourceRange must be 1"
        */
       if (image_view_create_info->subresourceRange.levelCount != 1) {
          return false;
@@ -1155,13 +1181,13 @@ terakan_image_create_resource_descriptor(VkImageViewCreateInfo const * const ima
    /* For 1D arrays, the 3D Register Reference Guide incorrectly states that the number of layers is
     * in TEX_HEIGHT. It must be specified in TEX_DEPTH regardless of the dimensionality.
     *
-    * For a size-compatible uncompressed format view of a compressed mip level, using the same array
-    * mode as for the previous level because reusing its pitch, which is aligned according the
-    * requirements of its array mode. If the needed mip is macro-tiled as compressed, it will stay
-    * macro-tiled as mip 1 of the uncompressed view, because whether degradation to 1D happens for a
-    * level depends on its logical extent in blocks, which is the same, and the storage extent
-    * alignments, which are unchanged if the number of bytes per block and the tiling attributes are
-    * the same.
+    * For an `is_forced_single_level_view` mip, such as for a size-compatible uncompressed format
+    * view of a compressed mip level, using the same array mode as for the previous level because
+    * reusing its pitch, which is aligned according the requirements of its array mode. If the
+    * needed mip is macro-tiled as compressed, it will stay macro-tiled as mip 1 of the uncompressed
+    * view, because whether degradation to 1D happens for a level depends on its logical extent in
+    * blocks, which is the same, and the storage extent alignments, which are unchanged if the
+    * number of bytes per block and the tiling attributes are the same.
     */
    descriptor_out[1] = S_030004_TEX_HEIGHT(resource_height - 1) |
                        S_030004_TEX_DEPTH(resource_depth_or_layers - 1) |
@@ -1169,9 +1195,8 @@ terakan_image_create_resource_descriptor(VkImageViewCreateInfo const * const ima
 
    uint32_t const image_va_shr8 = (uint32_t)(image->va >> 8);
 
-   /* For a size-compatible uncompressed format view of a compressed mip level, the actual data at
-    * the base address will not be accessed, so adjustment to `resource_surface_base_level` is not
-    * needed.
+   /* For an `is_forced_single_level_view` mip, the actual data at the base address will not be
+    * accessed, so adjustment to `resource_surface_base_level` is not needed.
     */
    descriptor_out[2] = S_030008_BASE_ADDRESS(image_va_shr8 + plane->offset_in_memory_bytes_shr8);
 
@@ -1194,11 +1219,8 @@ terakan_image_create_resource_descriptor(VkImageViewCreateInfo const * const ima
 
    descriptor_out[5] =
       S_030014_BASE_ARRAY(image_view_create_info->subresourceRange.baseArrayLayer) |
-      S_030014_LAST_ARRAY(
-         (layer_count == VK_REMAINING_ARRAY_LAYERS
-             ? image->vk.array_layers
-             : image_view_create_info->subresourceRange.baseArrayLayer + layer_count) -
-         1);
+      S_030014_LAST_ARRAY(image_view_create_info->subresourceRange.baseArrayLayer +
+                          (layer_count - 1));
 
    descriptor_out[6] = S_030018_TILE_SPLIT(plane->tiling.attrib_tile_split);
 
@@ -1224,11 +1246,11 @@ terakan_image_create_resource_descriptor(VkImageViewCreateInfo const * const ima
       descriptor_out[5] |= S_030014_LAST_LEVEL(samples_log2);
    } else {
       descriptor_out[3] = S_03000C_MIP_ADDRESS(
-         image_va_shr8 +
-         plane
-            ->levels[is_uncompressed_view ? image_view_create_info->subresourceRange.baseMipLevel
-                                          : MIN2(1, image->vk.mip_levels - 1)]
-            .offset_in_memory_bytes_shr8);
+         image_va_shr8 + plane
+                            ->levels[is_forced_single_level_view
+                                        ? image_view_create_info->subresourceRange.baseMipLevel
+                                        : MIN2(1, image->vk.mip_levels - 1)]
+                            .offset_in_memory_bytes_shr8);
 
       uint32_t const resource_base_level =
          image_view_create_info->subresourceRange.baseMipLevel - resource_surface_base_level;
