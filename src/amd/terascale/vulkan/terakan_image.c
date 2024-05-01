@@ -1175,7 +1175,9 @@ terakan_image_create_resource_descriptor(VkImageViewCreateInfo const * const ima
       (physical_device->chip_family_info.is_r9xx
           ? CM_S_030000_NON_DISP_TILING_ORDER(plane->tiling.tc_non_display)
           : S_030000_NON_DISP_TILING_ORDER(plane->tiling.tc_non_display)) |
-      S_030000_PITCH(plane->levels[resource_surface_base_level].aligned_extent_blocks[0] / 8 - 1) |
+      S_030000_PITCH(vk_format_get_blockwidth(image_view_create_info->format) *
+                        plane->levels[resource_surface_base_level].aligned_extent_blocks[0] / 8 -
+                     1) |
       S_030000_TEX_WIDTH(resource_width - 1);
 
    /* For 1D arrays, the 3D Register Reference Guide incorrectly states that the number of layers is
