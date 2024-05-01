@@ -37,6 +37,22 @@
 extern "C" {
 #endif
 
+/* "Surfel" (surface element) here means what "element" is in AddrLib terms: a block, or, for
+ * 3x-expanded formats (8_8_8, 16_16_16, 32_32_32), a component.
+ */
+
+static inline bool
+terakan_format_is_expand_3x(unsigned const bytes_per_block)
+{
+   return bytes_per_block == 3 || bytes_per_block == (3 << 1) || bytes_per_block == (3 << 2);
+}
+
+static inline unsigned
+terakan_format_surfels_per_block(unsigned const bytes_per_block)
+{
+   return terakan_format_is_expand_3x(bytes_per_block) ? 3 : 1;
+}
+
 bool terakan_format_is_linear_only(VkFormat format);
 bool terakan_format_is_tiled_only(VkFormat format);
 

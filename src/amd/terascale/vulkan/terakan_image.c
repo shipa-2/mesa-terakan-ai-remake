@@ -155,7 +155,7 @@ terakan_image_macro_tile_aspect_ratio_single_sample_alignment_log2(
 }
 
 struct terakan_image_alignments {
-   uint32_t pitch_blocks;
+   uint32_t pitch_surfels;
    uint32_t height_blocks;
    uint32_t base_bytes;
 };
@@ -169,8 +169,10 @@ terakan_image_alignments_linear(unsigned const pipe_interleave_bytes_log2,
     * command submission validation.
     */
    uint32_t const pipe_interleave_bytes = (uint32_t)1 << pipe_interleave_bytes_log2;
+   uint32_t const surfels_per_pipe_interleave =
+      pipe_interleave_bytes / (bytes_per_block / terakan_format_surfels_per_block(bytes_per_block));
    return (struct terakan_image_alignments){
-      .pitch_blocks = MAX2(pipe_interleave_bytes / bytes_per_block, 64),
+      .pitch_surfels = MAX2(surfels_per_pipe_interleave, 64),
       .height_blocks = 1,
       .base_bytes = pipe_interleave_bytes,
    };
@@ -210,7 +212,8 @@ terakan_image_alignments_1d_thin(unsigned const pipe_interleave_bytes_log2,
       MAX2(pixels_per_pipe_interleave_log2, pixels_per_micro_tile_log2) -
       pixels_per_micro_tile_log2;
    return (struct terakan_image_alignments){
-      .pitch_blocks = TERAKAN_IMAGE_MICRO_TILE_WIDTH_HEIGHT << micro_tiles_per_pipe_interleave_log2,
+      .pitch_surfels = TERAKAN_IMAGE_MICRO_TILE_WIDTH_HEIGHT
+                       << micro_tiles_per_pipe_interleave_log2,
       .height_blocks = TERAKAN_IMAGE_MICRO_TILE_WIDTH_HEIGHT,
       .base_bytes = (uint32_t)1 << pipe_interleave_bytes_log2,
    };
@@ -231,8 +234,9 @@ terakan_image_alignments_2d_thin(
       TERAKAN_IMAGE_MICRO_TILE_WIDTH_HEIGHT_LOG2 <= 3,
       "Expecting that the micro-tile height is divisible by the maximum macro-tile aspect ratio");
    return (struct terakan_image_alignments){
-      .pitch_blocks = (uint32_t)TERAKAN_IMAGE_MICRO_TILE_WIDTH_HEIGHT
-                      << (macro_tile_aspect_ratio_log2 + bank_width_log2 + tiling_info->pipes_log2),
+      .pitch_surfels =
+         (uint32_t)TERAKAN_IMAGE_MICRO_TILE_WIDTH_HEIGHT
+         << (macro_tile_aspect_ratio_log2 + bank_width_log2 + tiling_info->pipes_log2),
       .height_blocks =
          (uint32_t)(TERAKAN_IMAGE_MICRO_TILE_WIDTH_HEIGHT >> macro_tile_aspect_ratio_log2)
          << (bank_height_log2 + tiling_info->banks_log2),
@@ -244,9 +248,9 @@ terakan_image_alignments_2d_thin(
 /* According to AddrLib's AdjustPitchAlignment, display engine hardwires lower 5 bit of GRPH_PITCH
  * to zero, which means 32 pixel alignment.
  */
-#define TERAKAN_IMAGE_SCANOUT_PITCH_ALIGNMENT_BLOCKS_LOG2 5
-#define TERAKAN_IMAGE_SCANOUT_PITCH_ALIGNMENT_BLOCKS                                               \
-   (1 << TERAKAN_IMAGE_SCANOUT_PITCH_ALIGNMENT_BLOCKS_LOG2)
+#define TERAKAN_IMAGE_SCANOUT_PITCH_ALIGNMENT_PIXELS_LOG2 5
+#define TERAKAN_IMAGE_SCANOUT_PITCH_ALIGNMENT_PIXELS                                               \
+   (1 << TERAKAN_IMAGE_SCANOUT_PITCH_ALIGNMENT_PIXELS_LOG2)
 
 /* Returns the preferred base level array mode, though it may need to be degraded from 2D to 1D
  * afterwards.
@@ -259,7 +263,6 @@ terakan_image_surface_tiling_compute(VkImageCreateInfo const * const image_creat
 {
    VkFormat const aspect_format = vk_format_get_aspect_format(image_create_info->format, aspect);
    enum pipe_format const aspect_pipe_format = vk_format_to_pipe_format(aspect_format);
-   unsigned const bytes_per_block = util_format_get_blocksize(aspect_pipe_format);
 
    uint8_t array_mode;
    if (image_create_info->tiling == VK_IMAGE_TILING_LINEAR ||
@@ -300,6 +303,7 @@ terakan_image_surface_tiling_compute(VkImageCreateInfo const * const image_creat
       /* TODO(Triang3l): Debug flag for disabling 2D tiling. */
 
       /* Assume that images with non-power-of-two numbers of bits are linear. */
+      unsigned const bytes_per_block = util_format_get_blocksize(aspect_pipe_format);
       assert(IS_POT(bytes_per_block));
       unsigned const bytes_per_block_log2 = util_logbase2(bytes_per_block);
 
@@ -532,13 +536,13 @@ terakan_image_surface_tiling_compute(VkImageCreateInfo const * const image_creat
             &physical_device->tiling_info, tile_bytes_log2, bank_extent_log2[0],
             bank_extent_log2[1], macro_tile_aspect_ratio_log2);
          if (wsi_scanout) {
-            macro_tiled_alignments.pitch_blocks = MAX2(
-               macro_tiled_alignments.pitch_blocks, TERAKAN_IMAGE_SCANOUT_PITCH_ALIGNMENT_BLOCKS);
+            macro_tiled_alignments.pitch_surfels = MAX2(
+               macro_tiled_alignments.pitch_surfels, TERAKAN_IMAGE_SCANOUT_PITCH_ALIGNMENT_PIXELS);
          }
          /* Width or height below the alignment, or aligned size > 1.5 * unaligned size. */
-         if (width_blocks < macro_tiled_alignments.pitch_blocks ||
+         if (width_blocks < macro_tiled_alignments.pitch_surfels ||
              height_blocks < macro_tiled_alignments.height_blocks ||
-             2 * ALIGN_POT(width_blocks, macro_tiled_alignments.pitch_blocks) *
+             2 * ALIGN_POT(width_blocks, macro_tiled_alignments.pitch_surfels) *
                    (uint64_t)ALIGN_POT(height_blocks, macro_tiled_alignments.height_blocks) >
                 3 * width_blocks * (uint64_t)height_blocks) {
             array_mode = V_028C70_ARRAY_1D_TILED_THIN1;
@@ -578,6 +582,8 @@ terakan_image_surface_plane_compute(VkImageCreateInfo const * const image_create
 
    unsigned const bytes_per_block = util_format_get_blocksize(aspect_pipe_format);
    plane_out->bytes_per_block = bytes_per_block;
+   unsigned const surfels_per_block = terakan_format_surfels_per_block(bytes_per_block);
+   unsigned const bytes_per_surfel = bytes_per_block / surfels_per_block;
 
    plane_out->tiling = tiling;
 
@@ -623,8 +629,16 @@ terakan_image_surface_plane_compute(VkImageCreateInfo const * const image_create
       /* Plane offset in memory will be added later. */
       level->offset_in_memory_bytes_shr8 = level_offset_in_plane_bytes_shr8;
 
-      uint32_t level_extent_compute_pixels[] = {
-         u_minify(image_create_info->extent.width, level_index),
+      /* From AddrLib's Lib::ComputeSurfaceInfo:
+       *
+       *     "For 96 bit surface, the pixelPitch returned might be an odd number, but it is okay to
+       *     program texture pitch as HW's mip calculator would multiply 3 first, then do the
+       *     appropriate paddings (linear alignment requirement and possible the nearest
+       *     power-of-two for mipmaps), which results in the original pitch."
+       */
+
+      uint32_t level_extent_compute_pixels_expand_3x[] = {
+         surfels_per_block * u_minify(image_create_info->extent.width, level_index),
          u_minify(image_create_info->extent.height, level_index),
          image_create_info->imageType == VK_IMAGE_TYPE_3D
             ? u_minify(image_create_info->extent.depth, level_index)
@@ -633,16 +647,16 @@ terakan_image_surface_plane_compute(VkImageCreateInfo const * const image_create
       /* TODO(Triang3l): Research power of two padding of the array slice count. */
       if (level_index != 0) {
          for (unsigned axis = 0; axis < mip_surface_power_of_two_axes; ++axis) {
-            level_extent_compute_pixels[axis] =
-               util_next_power_of_two(level_extent_compute_pixels[axis]);
+            level_extent_compute_pixels_expand_3x[axis] =
+               util_next_power_of_two(level_extent_compute_pixels_expand_3x[axis]);
          }
       }
 
       /* TODO(Triang3l): Accept the level 0 pitch externally, from BO metadata. */
-      uint32_t const level_width_compute_blocks =
-         DIV_ROUND_UP(level_extent_compute_pixels[0], block_width);
+      uint32_t const level_width_compute_surfels =
+         DIV_ROUND_UP(level_extent_compute_pixels_expand_3x[0], block_width);
       uint32_t const level_height_compute_blocks =
-         DIV_ROUND_UP(level_extent_compute_pixels[1], block_height);
+         DIV_ROUND_UP(level_extent_compute_pixels_expand_3x[1], block_height);
 
       if (level_index != 0) {
          if (level_array_mode == V_028C70_ARRAY_2D_TILED_THIN1) {
@@ -665,7 +679,7 @@ terakan_image_surface_plane_compute(VkImageCreateInfo const * const image_create
              * clamping to the lower bound of 1 done in alignment computations, not sure if it may
              * have an effect here).
              */
-            if (level_width_compute_blocks < level_alignments.pitch_blocks ||
+            if (level_width_compute_surfels < level_alignments.pitch_surfels ||
                 level_height_compute_blocks < level_alignments.height_blocks) {
                level_array_mode = V_028C70_ARRAY_1D_TILED_THIN1;
             }
@@ -685,28 +699,31 @@ terakan_image_surface_plane_compute(VkImageCreateInfo const * const image_create
       }
       level->array_mode = level_array_mode;
 
-      level->aligned_extent_blocks[0] =
-         (uint16_t)ALIGN_POT(level_width_compute_blocks, level_alignments.pitch_blocks);
-      level->aligned_extent_blocks[1] =
+      level->aligned_extent_surfels[0] =
+         (uint16_t)ALIGN_POT(level_width_compute_surfels, level_alignments.pitch_surfels);
+      level->aligned_extent_surfels[1] =
          (uint16_t)ALIGN_POT(level_height_compute_blocks, level_alignments.height_blocks);
-      level->aligned_extent_blocks[2] = (uint16_t)level_extent_compute_pixels[2];
+      level->aligned_extent_surfels[2] = (uint16_t)level_extent_compute_pixels_expand_3x[2];
       if (level_index == 0) {
          struct wsi_image_create_info const * const wsi_info =
             vk_find_struct_const(image_create_info->pNext, WSI_IMAGE_CREATE_INFO_MESA);
          if (wsi_info != NULL && wsi_info->scanout) {
-            level->aligned_extent_blocks[0] = ALIGN_POT(
-               level->aligned_extent_blocks[0], TERAKAN_IMAGE_SCANOUT_PITCH_ALIGNMENT_BLOCKS);
+            assert(surfels_per_block == 1);
+            assert(block_height == 1);
+            assert(block_width == 1);
+            level->aligned_extent_surfels[0] = ALIGN_POT(
+               level->aligned_extent_surfels[0], TERAKAN_IMAGE_SCANOUT_PITCH_ALIGNMENT_PIXELS);
          }
       }
 
-      uint64_t const level_slice_size_bytes = bytes_per_block * image_create_info->samples *
-                                              (uint64_t)level->aligned_extent_blocks[0] *
-                                              level->aligned_extent_blocks[1];
+      uint64_t const level_slice_size_bytes = bytes_per_surfel * image_create_info->samples *
+                                              (uint64_t)level->aligned_extent_surfels[0] *
+                                              level->aligned_extent_surfels[1];
       assert(!(level_slice_size_bytes & 0xFF));
       level->slice_size_bytes_shr8 = (uint32_t)(level_slice_size_bytes >> 8);
 
       level_offset_in_plane_bytes_shr8 +=
-         level->slice_size_bytes_shr8 * level->aligned_extent_blocks[2];
+         level->slice_size_bytes_shr8 * level->aligned_extent_surfels[2];
    }
 
    uint32_t const plane_offset_in_memory_bytes_shr8 =
@@ -897,7 +914,9 @@ terakan_GetImageSubresourceLayout(UNUSED VkDevice const device, VkImage const im
       pLayout->size *= u_minify(image->vk.extent.depth, pSubresource->mipLevel);
    }
 
-   pLayout->rowPitch = plane->bytes_per_block * (uint32_t)level->aligned_extent_blocks[0];
+   pLayout->rowPitch =
+      (plane->bytes_per_block / terakan_format_surfels_per_block(plane->bytes_per_block)) *
+      (uint32_t)level->aligned_extent_surfels[0];
 
    pLayout->arrayPitch = slice_size;
    pLayout->depthPitch = slice_size;
@@ -1169,6 +1188,25 @@ terakan_image_create_resource_descriptor(VkImageViewCreateInfo const * const ima
    /* For the fake base level of a size-compatible uncompressed format view in a compressed mip
     * level, it's okay to keep using the pitch of the real previous level, as the storage width of
     * the fake one never exceeds that of the previous level.
+    *
+    * For 3x-expanded formats, this pitch in texels may be smaller than the actual pitch. While for
+    * other formats, merely aligning the pitch in blocks to the alignment requirement of the array
+    * mode always produces a texel count that is a multiple of 8, the smallest pitch alignment for
+    * 3x-expanded formats is 64 / 3 = 21.(3) texels.
+    *
+    * However, according to AddrLib's Lib::ComputeSurfaceInfo:
+    *
+    *     "For 96 bit surface, the pixelPitch returned might be an odd number, but it is okay to
+    *     program texture pitch as HW's mip calculator would multiply 3 first, then do the
+    *     appropriate paddings (linear alignment requirement and possible the nearest power-of-two
+    *     for mipmaps), which results in the original pitch."
+    */
+   /* TODO(Triang3l): Verify that it's correct to specify a non-8-texel-aligned pitch, and that the
+    * AddrLib comment is applicable to TeraScale and not potentially only to GCN. If not, overalign
+    * the base pitch, and also use the actual base pitch rather than the previous level's one for
+    * the fake base for 3x-expanded formats (or at least if the array mode of the base, and thus the
+    * alignments, match the previous level - this will always be the case for 3x-expanded formats
+    * because they're always linear).
     */
    descriptor_out[0] =
       S_030000_DIM(dimension) |
@@ -1176,7 +1214,9 @@ terakan_image_create_resource_descriptor(VkImageViewCreateInfo const * const ima
           ? CM_S_030000_NON_DISP_TILING_ORDER(plane->tiling.tc_non_display)
           : S_030000_NON_DISP_TILING_ORDER(plane->tiling.tc_non_display)) |
       S_030000_PITCH(vk_format_get_blockwidth(image_view_create_info->format) *
-                        plane->levels[resource_surface_base_level].aligned_extent_blocks[0] / 8 -
+                        (plane->levels[resource_surface_base_level].aligned_extent_surfels[0] /
+                         terakan_format_surfels_per_block(plane->bytes_per_block)) /
+                        8 -
                      1) |
       S_030000_TEX_WIDTH(resource_width - 1);
 
@@ -1323,10 +1363,10 @@ terakan_image_create_color_descriptor(
    descriptor_out->base = (uint32_t)(image->va >> 8) + level->offset_in_memory_bytes_shr8 +
                           level->slice_size_bytes_shr8 * base_slice_start;
 
-   descriptor_out->pitch = S_028C64_PITCH_TILE_MAX(level->aligned_extent_blocks[0] / 8 - 1);
+   descriptor_out->pitch = S_028C64_PITCH_TILE_MAX(level->aligned_extent_surfels[0] / 8 - 1);
 
    descriptor_out->slice = S_028C68_SLICE_TILE_MAX(
-      (uint32_t)level->aligned_extent_blocks[0] * level->aligned_extent_blocks[1] / 64 - 1);
+      (uint32_t)level->aligned_extent_surfels[0] * level->aligned_extent_surfels[1] / 64 - 1);
 
    uint32_t const view_slice_start = create_info_slice_start - base_slice_start;
    uint32_t const create_info_slice_max =
@@ -1520,11 +1560,11 @@ terakan_image_create_depth_stencil_descriptor(
    }
 
    descriptor_out->size =
-      S_028058_PITCH_TILE_MAX(first_plane_level->aligned_extent_blocks[0] / 8 - 1) |
-      S_028058_HEIGHT_TILE_MAX(first_plane_level->aligned_extent_blocks[1] / 8 - 1);
+      S_028058_PITCH_TILE_MAX(first_plane_level->aligned_extent_surfels[0] / 8 - 1) |
+      S_028058_HEIGHT_TILE_MAX(first_plane_level->aligned_extent_surfels[1] / 8 - 1);
    descriptor_out->slice =
-      S_02805C_SLICE_TILE_MAX((uint32_t)first_plane_level->aligned_extent_blocks[0] *
-                                 first_plane_level->aligned_extent_blocks[1] / 64 -
+      S_02805C_SLICE_TILE_MAX((uint32_t)first_plane_level->aligned_extent_surfels[0] *
+                                 first_plane_level->aligned_extent_surfels[1] / 64 -
                               1);
 
    return true;

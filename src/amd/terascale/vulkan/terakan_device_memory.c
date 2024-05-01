@@ -26,6 +26,7 @@
 #include "terakan_descriptor.h"
 #include "terakan_device.h"
 #include "terakan_entrypoints.h"
+#include "terakan_format.h"
 #include "terakan_image.h"
 #include "terakan_physical_device.h"
 
@@ -252,8 +253,9 @@ terakan_AllocateMemory(VkDevice const deviceHandle,
                &dedicated_image->surface.planes[0];
             struct terakan_bo_tiling const bo_tiling = {
                .pitch_bytes =
-                  dedicated_image_main_plane->bytes_per_block *
-                  (uint32_t)dedicated_image_main_plane->levels[0].aligned_extent_blocks[0],
+                  (dedicated_image_main_plane->bytes_per_block /
+                   terakan_format_surfels_per_block(dedicated_image_main_plane->bytes_per_block)) *
+                  (uint32_t)dedicated_image_main_plane->levels[0].aligned_extent_surfels[0],
                .array_mode = dedicated_image_main_plane->levels[0].array_mode,
                /* If the image is stencil-only, pass the stencil tile split as both main aspect tile
                 * split and stencil tile split so it doesn't matter which field the receiving end
