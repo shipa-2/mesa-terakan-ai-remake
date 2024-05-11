@@ -32,6 +32,7 @@
 #include "gallium/drivers/r600/eg_sq.h"
 #include "gallium/drivers/r600/evergreend.h"
 #include "gallium/drivers/r600/r600_opcodes.h"
+#include "util/bitscan.h"
 #include "util/macros.h"
 
 #include <assert.h>
@@ -364,18 +365,6 @@ terakan_CmdCopyImage2(VkCommandBuffer const commandBuffer,
             push_constants_bo, push_constants_va_lines);
       }
 
-      src_image_view_create_info.format = terakan_meta_transfer_image_block_format(
-         src_image->surface
-            .planes[terakan_image_surface_aspect_plane(src_image->vk.format,
-                                                       region->srcSubresource.aspectMask)]
-            .bytes_per_block);
-      dst_image_view_create_info.format = terakan_meta_transfer_image_block_format(
-         dst_image->surface
-            .planes[terakan_image_surface_aspect_plane(dst_image->vk.format,
-                                                       region->dstSubresource.aspectMask)]
-            .bytes_per_block);
-
-      src_image_view_create_info.subresourceRange.aspectMask = region->srcSubresource.aspectMask;
       src_image_view_create_info.subresourceRange.baseMipLevel = region->srcSubresource.mipLevel;
       if (src_image->vk.image_type == VK_IMAGE_TYPE_3D) {
          src_image_view_create_info.subresourceRange.baseArrayLayer = (uint32_t)region->srcOffset.z;
@@ -387,47 +376,68 @@ terakan_CmdCopyImage2(VkCommandBuffer const commandBuffer,
             vk_image_subresource_layer_count(&src_image->vk, &region->srcSubresource);
       }
 
-      dst_image_view_create_info.subresourceRange.aspectMask = region->dstSubresource.aspectMask;
       dst_image_view_create_info.subresourceRange.baseMipLevel = region->dstSubresource.mipLevel;
-      dst_image_view_create_info.subresourceRange.baseArrayLayer =
-         dst_image->vk.image_type == VK_IMAGE_TYPE_3D ? (uint32_t)region->dstOffset.z
-                                                      : region->dstSubresource.baseArrayLayer;
-      dst_image_view_create_info.subresourceRange.layerCount =
-         src_image_view_create_info.subresourceRange.layerCount;
+      uint32_t const dst_base_layer = dst_image->vk.image_type == VK_IMAGE_TYPE_3D
+                                         ? (uint32_t)region->dstOffset.z
+                                         : region->dstSubresource.baseArrayLayer;
 
-      uint32_t src_resource[8];
-      if (unlikely(!terakan_image_create_resource_descriptor(&src_image_view_create_info,
-                                                             src_resource))) {
-         assert(!"Invalid source image view create info");
-         return;
-      }
+      unsigned dst_aspect_mask_remaining = (unsigned)region->dstSubresource.aspectMask;
+      u_foreach_bit (src_aspect_index, region->srcSubresource.aspectMask) {
+         src_image_view_create_info.subresourceRange.aspectMask = (VkImageAspectFlags)1
+                                                                  << src_aspect_index;
+         dst_image_view_create_info.subresourceRange.aspectMask =
+            (VkImageAspectFlags)1 << u_bit_scan(&dst_aspect_mask_remaining);
 
-      while (dst_image_view_create_info.subresourceRange.layerCount > 0) {
-         terakan_hw_state_draw_set_sq_resource_fs(
-            &command_writer->hw_state_draw, TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META,
-            src_image->bo, src_resource);
+         src_image_view_create_info.format = terakan_meta_transfer_image_block_format(
+            src_image->surface
+               .planes[terakan_image_surface_aspect_plane(
+                  src_image->vk.format, src_image_view_create_info.subresourceRange.aspectMask)]
+               .bytes_per_block);
+         dst_image_view_create_info.format = terakan_meta_transfer_image_block_format(
+            dst_image->surface
+               .planes[terakan_image_surface_aspect_plane(
+                  dst_image->vk.format, dst_image_view_create_info.subresourceRange.aspectMask)]
+               .bytes_per_block);
 
-         struct terakan_color_descriptor dst_color;
-         struct terakan_color_meta_descriptor dst_color_meta;
-         uint32_t const dst_color_layer_count = terakan_image_create_color_descriptor(
-            &dst_image_view_create_info, &dst_color, &dst_color_meta);
-         if (unlikely(dst_color_layer_count == 0)) {
-            assert(!"Invalid destination image view create info");
+         dst_image_view_create_info.subresourceRange.baseArrayLayer = dst_base_layer;
+         dst_image_view_create_info.subresourceRange.layerCount =
+            src_image_view_create_info.subresourceRange.layerCount;
+
+         uint32_t src_resource[8];
+         if (unlikely(!terakan_image_create_resource_descriptor(&src_image_view_create_info,
+                                                                src_resource))) {
+            assert(!"Invalid source image view create info");
             return;
          }
-         terakan_color_descriptor_image_view_to_color_attachment(&dst_color);
-         terakan_hw_state_draw_set_cb_color(&command_writer->hw_state_draw, 0, dst_image->bo,
-                                            &dst_color, &dst_color_meta, false);
-         terakan_meta_set_db_shader_control_with_rtv(
-            command_writer, terakan_meta_copy_image_ps.stage.ps.db_shader_control, dst_color.info);
 
-         terakan_meta_emit_rect_3_vertices_draw(command_writer, &rect, dst_color_layer_count);
+         while (dst_image_view_create_info.subresourceRange.layerCount > 0) {
+            terakan_hw_state_draw_set_sq_resource_fs(
+               &command_writer->hw_state_draw,
+               TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META, src_image->bo, src_resource);
 
-         src_resource[5] =
-            (src_resource[5] & C_030014_BASE_ARRAY) |
-            S_030014_BASE_ARRAY(G_030014_BASE_ARRAY(src_resource[5]) + dst_color_layer_count);
-         dst_image_view_create_info.subresourceRange.baseArrayLayer += dst_color_layer_count;
-         dst_image_view_create_info.subresourceRange.layerCount -= dst_color_layer_count;
+            struct terakan_color_descriptor dst_color;
+            struct terakan_color_meta_descriptor dst_color_meta;
+            uint32_t const dst_color_layer_count = terakan_image_create_color_descriptor(
+               &dst_image_view_create_info, &dst_color, &dst_color_meta);
+            if (unlikely(dst_color_layer_count == 0)) {
+               assert(!"Invalid destination image view create info");
+               return;
+            }
+            terakan_color_descriptor_image_view_to_color_attachment(&dst_color);
+            terakan_hw_state_draw_set_cb_color(&command_writer->hw_state_draw, 0, dst_image->bo,
+                                               &dst_color, &dst_color_meta, false);
+            terakan_meta_set_db_shader_control_with_rtv(
+               command_writer, terakan_meta_copy_image_ps.stage.ps.db_shader_control,
+               dst_color.info);
+
+            terakan_meta_emit_rect_3_vertices_draw(command_writer, &rect, dst_color_layer_count);
+
+            src_resource[5] =
+               (src_resource[5] & C_030014_BASE_ARRAY) |
+               S_030014_BASE_ARRAY(G_030014_BASE_ARRAY(src_resource[5]) + dst_color_layer_count);
+            dst_image_view_create_info.subresourceRange.baseArrayLayer += dst_color_layer_count;
+            dst_image_view_create_info.subresourceRange.layerCount -= dst_color_layer_count;
+         }
       }
    }
 }
