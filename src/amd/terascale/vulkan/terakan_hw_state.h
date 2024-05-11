@@ -514,6 +514,7 @@ terakan_hw_state_draw_set_cb_blend_control(struct terakan_hw_state_draw * const 
 
 /* Setting `bo` to NULL disables the color target, the descriptor pointers are ignored if `bo` is
  * NULL.
+ * If `meta` is NULL for a non-NULL target, the target will be bound without metadata.
  * Note that all unbound targets that the pixel shader exports to must be disabled explicitly, as
  * CB_COLOR# (at least INFO::SOURCE_FORMAT) also has effect on shader export.
  */

@@ -26,6 +26,7 @@
 #include "terakan_command_buffer.h"
 #include "terakan_descriptor.h"
 #include "terakan_entrypoints.h"
+#include "terakan_format.h"
 #include "terakan_image.h"
 
 #include "gallium/drivers/r600/eg_sq.h"
@@ -250,12 +251,19 @@ VKAPI_ATTR void VKAPI_CALL
 terakan_CmdCopyImage2(VkCommandBuffer const commandBuffer,
                       VkCopyImageInfo2 const * const pCopyImageInfo)
 {
+   struct terakan_gfx_command_writer * const command_writer =
+      terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx;
+
    struct terakan_image const * const src_image =
       terakan_image_from_handle(pCopyImageInfo->srcImage);
+
+   if (terakan_format_is_expand_3x(src_image->surface.planes[0].bytes_per_block)) {
+      terakan_meta_copy_expand_3x_image(command_writer, pCopyImageInfo);
+      return;
+   }
+
    struct terakan_image const * const dst_image =
       terakan_image_from_handle(pCopyImageInfo->dstImage);
-
-   /* TODO(Triang3l): Path for linear 8_8_8, 16_16_16 and 32_32_32 as buffer to buffer. */
 
    /* TODO(Triang3l): Multisampled image copying, possibly by copying fragments (directly, not via
     * coverage samples) with sample shading, and the FMask with pixel shading - and with some path
@@ -285,9 +293,6 @@ terakan_CmdCopyImage2(VkCommandBuffer const commandBuffer,
    unsigned const src_block_height = vk_format_get_blockheight(src_image->vk.format);
    unsigned const dst_block_width = vk_format_get_blockwidth(dst_image->vk.format);
    unsigned const dst_block_height = vk_format_get_blockheight(dst_image->vk.format);
-
-   struct terakan_gfx_command_writer * const command_writer =
-      terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx;
 
    command_writer->post_color_image_copy_write_barrier_actions |=
       TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RTV_DATA |

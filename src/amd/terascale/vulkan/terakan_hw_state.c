@@ -2009,13 +2009,19 @@ terakan_hw_state_draw_set_cb_color_impl(struct terakan_hw_state_draw * const sta
                                         uint32_t const color_index,
                                         struct terakan_bo const * const bo,
                                         struct terakan_color_descriptor const * const color,
-                                        struct terakan_color_meta_descriptor const * const meta,
+                                        struct terakan_color_meta_descriptor const * meta,
                                         uint32_t const unbound_info)
 {
    assert(color_index < ARRAY_SIZE(state->cb_color.color));
    uint16_t const color_bit = (uint16_t)1 << color_index;
 
    assert(G_028C70_FORMAT(unbound_info) == V_028C70_COLOR_INVALID);
+
+   struct terakan_color_meta_descriptor disabled_meta;
+   if (meta == NULL && bo != NULL) {
+      disabled_meta = terakan_color_meta_descriptor_create_disabled(color);
+      meta = &disabled_meta;
+   }
 
    bool modified =
       !(state->cb_color.ever_written & color_bit) || state->cb_color.bo[color_index] != bo;

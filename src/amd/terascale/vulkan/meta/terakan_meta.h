@@ -25,17 +25,20 @@
 #define TERAKAN_META_H
 
 #include "terakan_descriptor.h"
+#include "terakan_format.h"
 #include "terakan_hw_state.h"
 #include "terakan_shader.h"
 #include "terakan_state.h"
 
 #include "gallium/drivers/r600/evergreend.h"
+#include "gallium/drivers/r600/r600_formats.h"
 #include "util/bitset.h"
 #include "vk_format.h"
 
 #include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -101,6 +104,7 @@ enum terakan_meta_shader_index {
    TERAKAN_META_SHADER_COPY_BUFFER_TO_IMAGE_PS,
    TERAKAN_META_SHADER_COPY_IMAGE_TO_BUFFER_PS,
    TERAKAN_META_SHADER_COPY_IMAGE_PS,
+   TERAKAN_META_SHADER_COPY_EXPAND_3X_PS,
 
    TERAKAN_META_SHADER_COUNT,
 };
@@ -111,6 +115,7 @@ extern struct terakan_meta_shader const terakan_meta_clear_color_ps;
 extern struct terakan_meta_shader const terakan_meta_copy_buffer_to_image_ps;
 extern struct terakan_meta_shader const terakan_meta_copy_image_to_buffer_ps;
 extern struct terakan_meta_shader const terakan_meta_copy_image_ps;
+extern struct terakan_meta_shader const terakan_meta_copy_expand_3x_ps;
 
 extern struct terakan_meta_shader const * const terakan_meta_shaders[TERAKAN_META_SHADER_COUNT];
 
@@ -210,6 +215,87 @@ terakan_meta_transfer_image_block_format(unsigned const bpe)
       return VK_FORMAT_UNDEFINED;
    }
 }
+
+/* Creates a buffer resource descriptor (without the actual memory range) for reading the full texel
+ * of a 3x-expanded image accepting the index in surfels.
+ */
+static inline void
+terakan_meta_transfer_expand_3x_resource(unsigned const bytes_per_surfel, uint32_t resource_out[8])
+{
+   uint32_t data_format;
+   switch (bytes_per_surfel) {
+   case 1:
+      data_format = FMT_8_8_8;
+      break;
+   case 2:
+      data_format = FMT_16_16_16;
+      break;
+   case 4:
+      data_format = FMT_32_32_32;
+      break;
+   default:
+      assert(!"Unsupported 3x-expanded format surfel byte count");
+      data_format = FMT_INVALID;
+   }
+
+   memset(resource_out, 0, sizeof(uint32_t) * 8);
+   resource_out[2] = S_030008_STRIDE(bytes_per_surfel) | S_030008_DATA_FORMAT(data_format) |
+                     S_030008_NUM_FORMAT_ALL(V_030008_SQ_NUM_FORMAT_INT);
+   resource_out[3] = S_03000C_DST_SEL_X(V_03000C_SQ_SEL_X) | S_03000C_DST_SEL_Y(V_03000C_SQ_SEL_Y) |
+                     S_03000C_DST_SEL_Z(V_03000C_SQ_SEL_Z) | S_03000C_DST_SEL_W(V_03000C_SQ_SEL_1),
+   resource_out[7] = S_03001C_TYPE(V_03001C_SQ_TEX_VTX_VALID_BUFFER);
+   resource_out[TERAKAN_RESOURCE_BUFFER_PRIORITY_WORD] = TERAKAN_BO_PRIORITY_SHADER_READ_BUFFER;
+}
+
+/* Creates a buffer resource descriptor (without the actual memory range) for accessing one surfel
+ * of a 3x-expanded image.
+ */
+static inline struct terakan_color_descriptor
+terakan_meta_transfer_expand_3x_uav(unsigned const bytes_per_surfel,
+                                    unsigned const tile_pipe_interleave_bytes_log2)
+{
+   uint32_t format;
+   switch (bytes_per_surfel) {
+   case 1:
+      format = V_028C70_COLOR_8;
+      break;
+   case 2:
+      format = V_028C70_COLOR_16;
+      break;
+   case 4:
+      format = V_028C70_COLOR_32;
+      break;
+   default:
+      assert(!"Unsupported 3x-expanded format surfel byte count");
+      format = V_028C70_COLOR_INVALID;
+   }
+
+   struct terakan_color_descriptor descriptor = {};
+   /* The pitch field is ignored by the hardware for buffers and can't store large buffer sizes, but
+    * DRM Radeon 2.50.0 validates the pitch alignment regardless of whether the color surface is a
+    * buffer UAV. Provide the smallest valid pitch.
+    */
+   descriptor.pitch =
+      S_028C64_PITCH_TILE_MAX(terakan_format_pitch_alignment_linear_bytes(
+                                 bytes_per_surfel, tile_pipe_interleave_bytes_log2) /
+                                 bytes_per_surfel / 8 -
+                              1);
+   descriptor.info = S_028C70_FORMAT(format) | S_028C70_ARRAY_MODE(V_028C70_ARRAY_LINEAR_ALIGNED) |
+                     S_028C70_NUMBER_TYPE(V_028C70_NUMBER_UINT) | S_028C70_BLEND_BYPASS(1) |
+                     S_028C70_SOURCE_FORMAT(V_028C70_EXPORT_4C_32BPC) | S_028C70_RAT(1) |
+                     S_028C70_RESOURCE_TYPE(V_028C70_BUFFER);
+   descriptor.attrib = S_028C74_NON_DISP_TILING_ORDER(1);
+   return descriptor;
+}
+
+void terakan_meta_copy_expand_3x_buffer_to_image(
+   struct terakan_gfx_command_writer * command_writer,
+   VkCopyBufferToImageInfo2 const * copy_buffer_to_image_info);
+void terakan_meta_copy_expand_3x_image_to_buffer(
+   struct terakan_gfx_command_writer * command_writer,
+   VkCopyImageToBufferInfo2 const * copy_image_to_buffer_info);
+void terakan_meta_copy_expand_3x_image(struct terakan_gfx_command_writer * command_writer,
+                                       VkCopyImageInfo2 const * copy_image_info);
 
 #ifdef __cplusplus
 }

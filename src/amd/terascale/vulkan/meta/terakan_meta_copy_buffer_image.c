@@ -846,10 +846,16 @@ VKAPI_ATTR void VKAPI_CALL
 terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
                               VkCopyBufferToImageInfo2 const * const pCopyBufferToImageInfo)
 {
+   struct terakan_gfx_command_writer * const command_writer =
+      terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx;
+
    struct terakan_image const * const image =
       terakan_image_from_handle(pCopyBufferToImageInfo->dstImage);
 
-   /* TODO(Triang3l): Path for linear 8_8_8, 16_16_16 and 32_32_32 as buffer to buffer. */
+   if (terakan_format_is_expand_3x(image->surface.planes[0].bytes_per_block)) {
+      terakan_meta_copy_expand_3x_buffer_to_image(command_writer, pCopyBufferToImageInfo);
+      return;
+   }
 
    VkImageViewCreateInfo image_view_create_info = {
       .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -866,9 +872,6 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
       [7] = S_03001C_TYPE(V_03001C_SQ_TEX_VTX_VALID_BUFFER),
       [TERAKAN_RESOURCE_BUFFER_PRIORITY_WORD] = TERAKAN_BO_PRIORITY_SHADER_READ_BUFFER,
    };
-
-   struct terakan_gfx_command_writer * const command_writer =
-      terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx;
 
    command_writer->post_color_image_copy_write_barrier_actions |=
       TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RTV_DATA |
@@ -983,10 +986,16 @@ VKAPI_ATTR void VKAPI_CALL
 terakan_CmdCopyImageToBuffer2(VkCommandBuffer const commandBuffer,
                               VkCopyImageToBufferInfo2 const * const pCopyImageToBufferInfo)
 {
+   struct terakan_gfx_command_writer * const command_writer =
+      terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx;
+
    struct terakan_image const * const image =
       terakan_image_from_handle(pCopyImageToBufferInfo->srcImage);
 
-   /* TODO(Triang3l): Path for linear 8_8_8, 16_16_16 and 32_32_32 as buffer to buffer. */
+   if (terakan_format_is_expand_3x(image->surface.planes[0].bytes_per_block)) {
+      terakan_meta_copy_expand_3x_image_to_buffer(command_writer, pCopyImageToBufferInfo);
+      return;
+   }
 
    VkImageViewCreateInfo image_view_create_info = {
       .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -1000,9 +1009,6 @@ terakan_CmdCopyImageToBuffer2(VkCommandBuffer const commandBuffer,
    struct terakan_color_descriptor buffer_uav = {
       .attrib = S_028C74_NON_DISP_TILING_ORDER(1),
    };
-
-   struct terakan_gfx_command_writer * const command_writer =
-      terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx;
 
    uint32_t const tile_pipe_interleave_bytes_log2 =
       terakan_gfx_command_writer_physical_device(command_writer)
@@ -1091,10 +1097,8 @@ terakan_CmdCopyImageToBuffer2(VkCommandBuffer const commandBuffer,
          S_028C70_BLEND_BYPASS(1) | S_028C70_SOURCE_FORMAT(V_028C70_EXPORT_4C_32BPC) |
          S_028C70_RAT(1) | S_028C70_RESOURCE_TYPE(V_028C70_BUFFER);
 
-      struct terakan_color_meta_descriptor const buffer_uav_meta =
-         terakan_color_meta_descriptor_create_disabled(&buffer_uav);
       terakan_hw_state_draw_set_cb_color(&command_writer->hw_state_draw, 0, buffer->bo, &buffer_uav,
-                                         &buffer_uav_meta, true);
+                                         NULL, true);
 
       image_view_create_info.format = region_transfer_format;
 
