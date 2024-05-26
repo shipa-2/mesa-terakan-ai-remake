@@ -52,8 +52,7 @@ static uint32_t const terakan_meta_clear_color_ps_r8xx[] = {
       S_SQ_CF_ALU_WORD0_KCACHE_MODE0(V_SQ_CF_KCACHE_LOCK_1),
    S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(
       TERAKAN_KCACHE_FIELD_LINE(struct terakan_meta_clear_color_push_constants, clear_value)) |
-      S_SQ_CF_ALU_WORD1_COUNT(5 - 2) | S_SQ_CF_ALU_WORD1_BARRIER(1) |
-      EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
+      S_SQ_CF_ALU_WORD1_COUNT(5 - 2) | EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
    /* 1: Export the color and end the program. */
 
@@ -108,8 +107,7 @@ static uint32_t const terakan_meta_clear_color_ps_r9xx[] = {
       S_SQ_CF_ALU_WORD0_KCACHE_MODE0(V_SQ_CF_KCACHE_LOCK_1),
    S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(
       TERAKAN_KCACHE_FIELD_LINE(struct terakan_meta_clear_color_push_constants, clear_value)) |
-      S_SQ_CF_ALU_WORD1_COUNT(6 - 3) | S_SQ_CF_ALU_WORD1_BARRIER(1) |
-      EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
+      S_SQ_CF_ALU_WORD1_COUNT(6 - 3) | EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
    /* 1: Export the color. */
 
@@ -124,7 +122,7 @@ static uint32_t const terakan_meta_clear_color_ps_r9xx[] = {
    /* 2: End the program. */
 
    0,
-   S_SQ_CF_ALLOC_EXPORT_WORD1_BARRIER(1) | CM_V_SQ_CF_WORD1_SQ_CF_INST_END,
+   S_SQ_CF_WORD1_BARRIER(1) | CM_V_SQ_CF_WORD1_SQ_CF_INST_END,
 
    /* ALU clause. */
 

@@ -53,8 +53,7 @@ static uint32_t const terakan_meta_copy_image_ps_r8xx[] = {
       S_SQ_CF_ALU_WORD0_KCACHE_MODE0(V_SQ_CF_KCACHE_LOCK_1),
    S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(TERAKAN_KCACHE_FIELD_LINE(
       struct terakan_meta_copy_image_push_constants, texture_minus_screen_position)) |
-      S_SQ_CF_ALU_WORD1_COUNT(4 - 3) | S_SQ_CF_ALU_WORD1_BARRIER(1) |
-      EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
+      S_SQ_CF_ALU_WORD1_COUNT(4 - 3) | EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
    /* 1: Fetch from the source texture. */
 
@@ -118,8 +117,7 @@ static uint32_t const terakan_meta_copy_image_ps_r9xx[] = {
       S_SQ_CF_ALU_WORD0_KCACHE_MODE0(V_SQ_CF_KCACHE_LOCK_1),
    S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(TERAKAN_KCACHE_FIELD_LINE(
       struct terakan_meta_copy_image_push_constants, texture_minus_screen_position)) |
-      S_SQ_CF_ALU_WORD1_COUNT(5 - 4) | S_SQ_CF_ALU_WORD1_BARRIER(1) |
-      EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
+      S_SQ_CF_ALU_WORD1_COUNT(5 - 4) | EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
    /* 1: Fetch from the source texture. */
 
@@ -139,7 +137,7 @@ static uint32_t const terakan_meta_copy_image_ps_r9xx[] = {
    /* 3: End the program. */
 
    0,
-   CM_V_SQ_CF_WORD1_SQ_CF_INST_END,
+   S_SQ_CF_WORD1_BARRIER(1) | CM_V_SQ_CF_WORD1_SQ_CF_INST_END,
 
    /* ALU clause. */
 

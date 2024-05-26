@@ -66,8 +66,7 @@ static uint32_t const terakan_meta_copy_buffer_to_image_ps_r8xx[] = {
       S_SQ_CF_ALU_WORD0_KCACHE_MODE0(V_SQ_CF_KCACHE_LOCK_1),
    S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(TERAKAN_KCACHE_FIELD_LINE(
       struct terakan_meta_copy_buffer_image_push_constants, image_offset_x_minus_buffer_offset)) |
-      S_SQ_CF_ALU_WORD1_COUNT(8 - 3) | S_SQ_CF_ALU_WORD1_BARRIER(1) |
-      EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
+      S_SQ_CF_ALU_WORD1_COUNT(8 - 3) | EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
    /* 1: Fetch from the source buffer. */
 
@@ -170,8 +169,7 @@ static uint32_t const terakan_meta_copy_image_to_buffer_ps_r8xx[] = {
     */
 
    S_SQ_CF_WORD0_ADDR(5),
-   S_SQ_CF_ALU_WORD1_COUNT(5 - 5) | S_SQ_CF_ALU_WORD1_BARRIER(1) |
-      EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
+   S_SQ_CF_ALU_WORD1_COUNT(5 - 5) | EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
    /* 1: Fetch from the source texture. */
 
@@ -301,8 +299,7 @@ static uint32_t const terakan_meta_copy_buffer_to_image_ps_r9xx[] = {
       S_SQ_CF_ALU_WORD0_KCACHE_MODE0(V_SQ_CF_KCACHE_LOCK_1),
    S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(TERAKAN_KCACHE_FIELD_LINE(
       struct terakan_meta_copy_buffer_image_push_constants, image_offset_x_minus_buffer_offset)) |
-      S_SQ_CF_ALU_WORD1_COUNT(15 - 4) | S_SQ_CF_ALU_WORD1_BARRIER(1) |
-      EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
+      S_SQ_CF_ALU_WORD1_COUNT(15 - 4) | EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
    /* 1: Fetch from the source buffer. */
 
@@ -322,7 +319,7 @@ static uint32_t const terakan_meta_copy_buffer_to_image_ps_r9xx[] = {
    /* 3: End the program. */
 
    0,
-   CM_V_SQ_CF_WORD1_SQ_CF_INST_END,
+   S_SQ_CF_WORD1_BARRIER(1) | CM_V_SQ_CF_WORD1_SQ_CF_INST_END,
 
    /* ALU clause. */
 
@@ -457,8 +454,7 @@ static uint32_t const terakan_meta_copy_image_to_buffer_ps_r9xx[] = {
     */
 
    S_SQ_CF_WORD0_ADDR(6),
-   S_SQ_CF_ALU_WORD1_COUNT(6 - 6) | S_SQ_CF_ALU_WORD1_BARRIER(1) |
-      EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
+   S_SQ_CF_ALU_WORD1_COUNT(6 - 6) | EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
    /* 1: Fetch from the source texture. */
 
@@ -490,12 +486,12 @@ static uint32_t const terakan_meta_copy_image_to_buffer_ps_r9xx[] = {
       S_SQ_CF_ALLOC_EXPORT_WORD0_ARRAY_BASE(0),
    S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_X(7) | S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Y(7) |
       S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Z(7) | S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_W(7) |
-      S_SQ_CF_ALLOC_EXPORT_WORD1_BARRIER(1) | EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_EXPORT_DONE,
+      EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_EXPORT_DONE,
 
    /* 5: End the program. */
 
    0,
-   CM_V_SQ_CF_WORD1_SQ_CF_INST_END,
+   S_SQ_CF_WORD1_BARRIER(1) | CM_V_SQ_CF_WORD1_SQ_CF_INST_END,
 
    /* ALU clause. */
 
