@@ -216,7 +216,8 @@ FragmentShader::do_allocate_reserved_registers()
       add_input(input);
    }
 
-   if (m_sv_values.test(es_sample_id) || m_sv_values.test(es_sample_mask_in)) {
+   if (m_sv_values.test(es_sample_id) ||
+       (m_apply_sample_mask && m_sv_values.test(es_sample_mask_in))) {
       int sample_id_reg = next_register++;
       m_sample_id_reg = value_factory().allocate_pinned_register(sample_id_reg, 3);
       sfn_log << SfnLog::io << "Set sample id register to " << *m_sample_id_reg << "\n";
