@@ -30,6 +30,7 @@
 #include "terakan_physical_device.h"
 
 #include "compiler/glsl_types.h"
+#include "gallium/drivers/r600/sfn/sfn_nir_lower_tex.h"
 #include "spirv/nir_spirv.h"
 #include "util/bitscan.h"
 #include "util/macros.h"
@@ -226,6 +227,10 @@ terakan_shader_lower_and_optimize_post_link(
    if (nir->info.stage == MESA_SHADER_FRAGMENT) {
       nir_assign_io_var_locations(nir, nir_var_shader_out, &nir->num_outputs, nir->info.stage);
    }
+
+   /* Lower texture operations. */
+
+   NIR_PASS(_, nir, r600_nir_lower_cube_to_2darray);
 
    /* Vectorize loads that will be lowered to typed buffer load (vertex fetch) instructions. */
 
