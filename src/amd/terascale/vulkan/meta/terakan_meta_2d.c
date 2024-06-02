@@ -524,9 +524,9 @@ terakan_meta_emit_rect_3_vertices_draw(struct terakan_gfx_command_writer * const
        */
       struct terakan_bo const * index_buffer_bo;
       uint64_t index_buffer_va;
-      uint32_t * const index_buffer_mapping = terakan_command_writer_allocate_among_push_constants(
-         &command_writer->base, sizeof(vertices), sizeof(uint32_t), &index_buffer_bo,
-         &index_buffer_va);
+      uint32_t * const index_buffer_mapping =
+         terakan_push_buffer_allocate(command_writer->base.command_buffer, sizeof(vertices),
+                                      sizeof(uint32_t), &index_buffer_bo, &index_buffer_va);
       if (unlikely(index_buffer_mapping == NULL)) {
          return;
       }

@@ -94,7 +94,7 @@ terakan_push_constants_apply(struct terakan_gfx_command_writer * const command_w
    }
 
    if (state->allocation.mapping_if_up_to_date == NULL) {
-      state->allocation.mapping_if_up_to_date = terakan_command_buffer_allocate_push_constants(
+      state->allocation.mapping_if_up_to_date = terakan_push_buffer_allocate_kcache(
          command_writer->base.command_buffer, TERAKAN_KCACHE_HW_LINE_BYTES * kcache_lines_used,
          &state->allocation.bo, &state->allocation.va_kcache_lines);
       if (unlikely(state->allocation.mapping_if_up_to_date == NULL)) {

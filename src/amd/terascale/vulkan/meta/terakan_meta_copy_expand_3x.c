@@ -617,7 +617,7 @@ terakan_meta_copy_expand_3x_buffer_to_image(
          struct terakan_bo const * push_constants_bo;
          uint32_t push_constants_va_lines;
          struct terakan_meta_copy_expand_3x_push_constants * const push_constants =
-            terakan_command_buffer_allocate_push_constants(
+            terakan_push_buffer_allocate_kcache(
                command_writer->base.command_buffer,
                sizeof(struct terakan_meta_copy_expand_3x_push_constants), &push_constants_bo,
                &push_constants_va_lines);
@@ -741,7 +741,7 @@ terakan_meta_copy_expand_3x_image_to_buffer(
          }
 
          if (push_constants_bo == NULL) {
-            void * const push_constants_mapping = terakan_command_buffer_allocate_push_constants(
+            void * const push_constants_mapping = terakan_push_buffer_allocate_kcache(
                command_writer->base.command_buffer, sizeof(push_constants), &push_constants_bo,
                &push_constants_va_lines);
             if (unlikely(push_constants_mapping == NULL)) {
@@ -863,7 +863,7 @@ terakan_meta_copy_expand_3x_image(struct terakan_gfx_command_writer * const comm
          struct terakan_bo const * push_constants_bo;
          uint32_t push_constants_va_lines;
          struct terakan_meta_copy_expand_3x_push_constants * const push_constants =
-            terakan_command_buffer_allocate_push_constants(
+            terakan_push_buffer_allocate_kcache(
                command_writer->base.command_buffer,
                sizeof(struct terakan_meta_copy_expand_3x_push_constants), &push_constants_bo,
                &push_constants_va_lines);

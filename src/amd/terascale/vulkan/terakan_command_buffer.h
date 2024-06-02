@@ -26,6 +26,7 @@
 
 #include "terakan_barrier.h"
 #include "terakan_bo.h"
+#include "terakan_descriptor.h"
 #include "terakan_device.h"
 #include "terakan_hw_state.h"
 #include "terakan_physical_device.h"
@@ -43,6 +44,7 @@
 
 #include <assert.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -124,10 +126,8 @@ uint32_t terakan_bo_reference_writer_add_reference(struct terakan_bo_reference_w
                                                    bool is_writing,
                                                    enum terakan_bo_priority priority);
 
-struct terakan_push_constant_buffer {
+struct terakan_push_buffer {
    struct terakan_bo * bo;
-
-   uint32_t kcache_lines_free;
 
    struct list_head link;
 };
@@ -156,8 +156,9 @@ struct terakan_gfx_command_writer;
 struct terakan_command_buffer {
    struct vk_command_buffer vk;
 
-   struct list_head push_constant_buffers_with_free_space;
-   struct list_head push_constant_buffers_full;
+   struct list_head push_buffers;
+   /* Bytes currently used in the head of push_buffers. */
+   uint32_t current_push_buffer_used_bytes;
 
    struct list_head indirect_buffers;
 
@@ -179,12 +180,33 @@ TERAKAN_DEVICE_DEFINE_OBJECT_SHORTCUTS(command_buffer, container_of(command_buff
 struct terakan_queue_submission_size terakan_command_buffer_optimal_submission_size_gfx(
    struct terakan_physical_device_submission_info const * submission_info_gfx);
 
-/* Returns the mapping, or NULL if failed.
- * Can be used not only for push constants, but also for dynamic fetch shaders.
+/* Usable for:
+ * - Push constants.
+ * - vkCmdUpdateBuffer.
+ * - Dynamic vertex fetch shaders.
+ * - Shader direct draw parameters.
+ * - Other things within those bounds, such as small index buffers.
+ *
+ * Returns the mapping, or NULL if failed.
  */
-void * terakan_command_buffer_allocate_push_constants(
-   struct terakan_command_buffer * command_buffer, uint32_t size_bytes,
-   struct terakan_bo const ** bo_out, uint32_t * va_kcache_lines_out);
+void * terakan_push_buffer_allocate(struct terakan_command_buffer * command_buffer,
+                                    uint32_t size_bytes, uint32_t alignment_bytes,
+                                    struct terakan_bo const ** bo_out, uint64_t * va_out);
+
+static inline void *
+terakan_push_buffer_allocate_kcache(struct terakan_command_buffer * const command_buffer,
+                                    uint32_t const size_bytes,
+                                    struct terakan_bo const ** const bo_out,
+                                    uint32_t * const va_kcache_lines_out)
+{
+   uint64_t va;
+   void * const mapping = terakan_push_buffer_allocate(command_buffer, size_bytes,
+                                                       TERAKAN_KCACHE_HW_LINE_BYTES, bo_out, &va);
+   if (likely(mapping != NULL)) {
+      *va_kcache_lines_out = (uint32_t)(va >> TERAKAN_KCACHE_HW_LINE_BYTES_LOG2);
+   }
+   return mapping;
+}
 
 extern struct vk_command_buffer_ops const terakan_command_buffer_ops;
 
@@ -194,28 +216,11 @@ struct terakan_command_writer {
 
    struct terakan_command_buffer * command_buffer;
 
-   struct {
-      /* All other fields are undefined if next_mapping is NULL. */
-      char * next_mapping;
-      struct terakan_bo const * bo;
-      uint64_t next_va;
-      uint32_t remaining_bytes;
-   } allocation_among_push_constants;
-
    struct terakan_bo_reference_writer bo_reference_writer;
 };
 
 TERAKAN_DEVICE_DEFINE_OBJECT_SHORTCUTS(
    command_writer, terakan_command_buffer_device(command_writer->command_buffer))
-
-/* Returns the mapping, or NULL if failed.
- * For small amounts of data (within what can be allocated using
- * terakan_command_buffer_allocate_push_constants).
- * Alignment must not exceed the kcache line size.
- */
-void * terakan_command_writer_allocate_among_push_constants(
-   struct terakan_command_writer * command_writer, uint32_t size_bytes, uint32_t alignment_bytes,
-   struct terakan_bo const ** bo_out, uint64_t * va_out);
 
 struct terakan_gfx_command_writer {
    struct terakan_command_writer base;
@@ -347,7 +352,7 @@ void terakan_gfx_command_writer_emit_event_write_eop_discarding_data(
 struct terakan_command_pool {
    struct vk_command_pool vk;
 
-   struct list_head push_constant_buffers_free;
+   struct list_head push_buffers_free;
 
    struct list_head indirect_buffers_free;
 

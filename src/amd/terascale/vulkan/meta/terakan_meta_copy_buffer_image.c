@@ -908,7 +908,7 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
          push_constants_bo = NULL;
       }
       if (push_constants_bo == NULL) {
-         void * const push_constants_mapping = terakan_command_buffer_allocate_push_constants(
+         void * const push_constants_mapping = terakan_push_buffer_allocate_kcache(
             command_writer->base.command_buffer, sizeof(push_constants), &push_constants_bo,
             &push_constants_va_lines);
          if (unlikely(push_constants_mapping == NULL)) {
@@ -1068,7 +1068,7 @@ terakan_CmdCopyImageToBuffer2(VkCommandBuffer const commandBuffer,
          push_constants_bo = NULL;
       }
       if (push_constants_bo == NULL) {
-         void * const push_constants_mapping = terakan_command_buffer_allocate_push_constants(
+         void * const push_constants_mapping = terakan_push_buffer_allocate_kcache(
             command_writer->base.command_buffer, sizeof(push_constants), &push_constants_bo,
             &push_constants_va_lines);
          if (unlikely(push_constants_mapping == NULL)) {

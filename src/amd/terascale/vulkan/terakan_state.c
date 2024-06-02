@@ -208,15 +208,12 @@ terakan_state_draw_apply_sq_pgm_fs(struct terakan_gfx_command_writer * const com
                            : state->sq_pgm_fs.dynamic_state.instance_binding_divisors,
          bindings_with_2048_stride_workaround, &fs_alu_qword_count, fs_alu, &fs_alu_clause_count,
          fs_alu_clause_qwords, &fs_fetch_count, fs_fetch);
-      static_assert(
-         TERAKAN_SHADER_PROGRAM_ALIGNMENT_LOG2 == TERAKAN_KCACHE_HW_LINE_BYTES_LOG2,
-         "Assuming that kcache buffer and shader addresses have the same number of lower bits "
-         "dropped in the binding registers.");
-      void * const fs_mapping = terakan_command_buffer_allocate_push_constants(
-         command_writer->base.command_buffer,
-         terakan_vertex_input_fs_byte_count(fs_alu_qword_count, fs_alu_clause_count,
-                                            fs_fetch_count),
-         &program_bo, &program_va_shr8);
+      uint64_t program_va;
+      void * const fs_mapping =
+         terakan_push_buffer_allocate(command_writer->base.command_buffer,
+                                      terakan_vertex_input_fs_byte_count(
+                                         fs_alu_qword_count, fs_alu_clause_count, fs_fetch_count),
+                                      TERAKAN_SHADER_PROGRAM_ALIGNMENT, &program_bo, &program_va);
       if (unlikely(fs_mapping == NULL)) {
          /* Fall back to the empty fetch shader to avoid drawing with an uninitialized fetch shader
           * address.
@@ -225,6 +222,7 @@ terakan_state_draw_apply_sq_pgm_fs(struct terakan_gfx_command_writer * const com
          program_va_shr8 = device->empty_vertex_input.program_va_shr8;
          BITSET_ZERO(resources_needed);
       } else {
+         program_va_shr8 = (uint32_t)(program_va >> 8);
          terakan_vertex_input_create_fs_program(is_r9xx, fs_alu_qword_count, fs_alu,
                                                 fs_alu_clause_count, fs_alu_clause_qwords,
                                                 fs_fetch_count, fs_fetch, fs_mapping);

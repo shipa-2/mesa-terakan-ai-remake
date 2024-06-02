@@ -23,6 +23,7 @@
 
 #include "terakan_command_buffer.h"
 
+#include "terakan_cp_dma.h"
 #include "terakan_descriptor.h"
 #include "terakan_device.h"
 #include "terakan_entrypoints.h"
@@ -164,72 +165,68 @@ terakan_command_buffer_optimal_submission_size_gfx(
       submission_info_gfx->submission_outer_reserved_amount);
 }
 
+#define TERAKAN_PUSH_BUFFER_SIZE_BYTES                                                             \
+   ALIGN_POT(MAX2((uint32_t)1 << 16, sizeof(uint32_t) * 2 * TERAKAN_VERTEX_INPUT_FS_MAX_QWORDS),   \
+             TERAKAN_KCACHE_HW_LINE_BYTES)
+#define TERAKAN_PUSH_BUFFER_ALIGNMENT ((uint32_t)1 << 8)
+static_assert(TERAKAN_PUSH_BUFFER_SIZE_BYTES >= TERAKAN_KCACHE_HW_MAX_BUFFER_SIZE_BYTES &&
+                 TERAKAN_PUSH_BUFFER_ALIGNMENT >= TERAKAN_KCACHE_HW_LINE_BYTES,
+              "Push buffers must be usable for kcache buffers.");
+static_assert(TERAKAN_PUSH_BUFFER_SIZE_BYTES >= ((uint32_t)1 << 16) &&
+                 TERAKAN_PUSH_BUFFER_ALIGNMENT >= TERAKAN_CP_DMA_COPY_OPTIMAL_ALIGNMENT,
+              "Push buffers must be usable for vkCmdUpdateBuffer done via CP DMA.");
+static_assert(TERAKAN_PUSH_BUFFER_SIZE_BYTES >=
+                    sizeof(uint32_t) * 2 * TERAKAN_VERTEX_INPUT_FS_MAX_QWORDS &&
+                 TERAKAN_PUSH_BUFFER_ALIGNMENT >= TERAKAN_SHADER_PROGRAM_ALIGNMENT,
+              "Push buffers must be usable for dynamic vertex fetch shaders.");
+static_assert(TERAKAN_PUSH_BUFFER_SIZE_BYTES >= sizeof(uint32_t) * 3 &&
+                 TERAKAN_PUSH_BUFFER_ALIGNMENT >= sizeof(uint32_t),
+              "Push buffers must be usable for direct draw and dispatch parameters.");
+static_assert(
+   TERAKAN_PUSH_BUFFER_SIZE_BYTES >= sizeof(uint32_t) * 4 &&
+      TERAKAN_PUSH_BUFFER_ALIGNMENT >= sizeof(uint32_t),
+   "Push buffers must be usable for at least one rectangle with 16.16 coordinates packed in vertex "
+   "indices.");
+
 void *
-terakan_command_buffer_allocate_push_constants(struct terakan_command_buffer * const command_buffer,
-                                               uint32_t const size_bytes,
-                                               struct terakan_bo const ** const bo_out,
-                                               uint32_t * const va_kcache_lines_out)
+terakan_push_buffer_allocate(struct terakan_command_buffer * const command_buffer,
+                             uint32_t const size_bytes, uint32_t const alignment_bytes,
+                             struct terakan_bo const ** const bo_out, uint64_t * const va_out)
 {
-   uint32_t const size_kcache_lines = DIV_ROUND_UP(size_bytes, TERAKAN_KCACHE_HW_LINE_BYTES);
+   assert(util_is_power_of_two_nonzero(alignment_bytes));
+   assert(alignment_bytes <= TERAKAN_PUSH_BUFFER_ALIGNMENT);
 
-   /* One constant buffer of the maximum possible size.
-    * Because allocation is linear, there may be a lot of fragmentation if requested push constant
-    * amounts are large.
-    * However, it's expected that very large push constants are rare, so it's more preferable not to
-    * allocate too much memory for push constants in small command buffers instead of creating
-    * larger BOs.
-    * Fragmentation can also be filled with 1-cache-line push constants.
-    * Dynamic fetch shaders also use the push constant allocator due to matching alignment.
-    */
-   static_assert(
-      TERAKAN_SHADER_PROGRAM_ALIGNMENT_LOG2 <= TERAKAN_KCACHE_HW_LINE_BYTES_LOG2,
-      "The push constant allocator must also be usable for shaders (fetch shaders in particular).");
-   uint32_t const buffer_size_kcache_lines = DIV_ROUND_UP(
-      MAX2(TERAKAN_KCACHE_HW_MAX_BUFFER_SIZE_BYTES, 8 * TERAKAN_VERTEX_INPUT_FS_MAX_QWORDS),
-      TERAKAN_KCACHE_HW_LINE_BYTES);
-   assert(size_kcache_lines <= buffer_size_kcache_lines);
-
-   if (!list_is_empty(&command_buffer->push_constant_buffers_with_free_space) &&
-       list_first_entry(&command_buffer->push_constant_buffers_with_free_space,
-                        struct terakan_push_constant_buffer, link)
-             ->kcache_lines_free >= size_kcache_lines) {
-      /* Small buffers (not larger than 1 kcache line) are expected to be the most common, and they
-       * are allocated from the tail rather than from the head to fill the fragmentation padding.
-       */
-      struct terakan_push_constant_buffer * const existing_buffer =
-         size_kcache_lines <= 1
-            ? list_last_entry(&command_buffer->push_constant_buffers_with_free_space,
-                              struct terakan_push_constant_buffer, link)
-            : list_first_entry(&command_buffer->push_constant_buffers_with_free_space,
-                               struct terakan_push_constant_buffer, link);
-      uint32_t const existing_buffer_offset_kcache_lines =
-         buffer_size_kcache_lines - existing_buffer->kcache_lines_free;
-
-      existing_buffer->kcache_lines_free -= size_kcache_lines;
-      if (existing_buffer->kcache_lines_free == 0) {
-         list_move_to(&existing_buffer->link, &command_buffer->push_constant_buffers_full);
-      }
-
-      *bo_out = existing_buffer->bo;
-      *va_kcache_lines_out =
-         (uint32_t)(existing_buffer->bo->va >> TERAKAN_KCACHE_HW_LINE_BYTES_LOG2) +
-         existing_buffer_offset_kcache_lines;
-      return (char *)existing_buffer->bo->mapping +
-             TERAKAN_KCACHE_HW_LINE_BYTES * existing_buffer_offset_kcache_lines;
+   assert(size_bytes <= TERAKAN_PUSH_BUFFER_SIZE_BYTES);
+   if (unlikely(size_bytes > TERAKAN_PUSH_BUFFER_SIZE_BYTES)) {
+      vk_command_buffer_set_error(&command_buffer->vk, VK_ERROR_UNKNOWN);
+      return NULL;
    }
 
-   struct terakan_push_constant_buffer * new_buffer;
+   if (!list_is_empty(&command_buffer->push_buffers)) {
+      uint32_t const existing_buffer_offset_bytes =
+         ALIGN_POT(command_buffer->current_push_buffer_used_bytes, alignment_bytes);
+      uint32_t const existing_buffer_new_used_bytes = existing_buffer_offset_bytes + size_bytes;
+      if (existing_buffer_new_used_bytes <= TERAKAN_PUSH_BUFFER_SIZE_BYTES) {
+         command_buffer->current_push_buffer_used_bytes = existing_buffer_new_used_bytes;
+         struct terakan_push_buffer * const existing_buffer =
+            list_first_entry(&command_buffer->push_buffers, struct terakan_push_buffer, link);
+         *bo_out = existing_buffer->bo;
+         *va_out = existing_buffer->bo->va + existing_buffer_offset_bytes;
+         return (char *)existing_buffer->bo->mapping + existing_buffer_offset_bytes;
+      }
+   }
+
+   struct terakan_push_buffer * new_buffer;
 
    struct terakan_command_pool * const command_pool =
       container_of(command_buffer->vk.pool, struct terakan_command_pool, vk);
-   if (!list_is_empty(&command_pool->push_constant_buffers_free)) {
-      new_buffer = list_first_entry(&command_pool->push_constant_buffers_free,
-                                    struct terakan_push_constant_buffer, link);
+   if (!list_is_empty(&command_pool->push_buffers_free)) {
+      new_buffer =
+         list_first_entry(&command_pool->push_buffers_free, struct terakan_push_buffer, link);
       list_del(&new_buffer->link);
    } else {
-      new_buffer =
-         vk_alloc(&command_pool->vk.alloc, sizeof(struct terakan_push_constant_buffer),
-                  alignof(struct terakan_push_constant_buffer), VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+      new_buffer = vk_alloc(&command_pool->vk.alloc, sizeof(struct terakan_push_buffer),
+                            alignof(struct terakan_push_buffer), VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
       if (new_buffer == NULL) {
          vk_command_buffer_set_error(&command_buffer->vk, VK_ERROR_OUT_OF_HOST_MEMORY);
          return NULL;
@@ -238,8 +235,7 @@ terakan_command_buffer_allocate_push_constants(struct terakan_command_buffer * c
       struct terakan_device * const device = terakan_command_buffer_device(command_buffer);
 
       VkResult const bo_allocate_result = device->winsys_fn->bo->allocate_device_memory(
-         device, TERAKAN_KCACHE_HW_LINE_BYTES * buffer_size_kcache_lines,
-         TERAKAN_KCACHE_HW_LINE_BYTES,
+         device, TERAKAN_PUSH_BUFFER_SIZE_BYTES, TERAKAN_PUSH_BUFFER_ALIGNMENT,
          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
             VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
          0, &command_pool->vk.alloc, VK_SYSTEM_ALLOCATION_SCOPE_OBJECT, &new_buffer->bo);
@@ -257,15 +253,10 @@ terakan_command_buffer_allocate_push_constants(struct terakan_command_buffer * c
       }
    }
 
-   if (size_kcache_lines < buffer_size_kcache_lines) {
-      new_buffer->kcache_lines_free = buffer_size_kcache_lines - size_kcache_lines;
-      list_add(&new_buffer->link, &command_buffer->push_constant_buffers_with_free_space);
-   } else {
-      list_add(&new_buffer->link, &command_buffer->push_constant_buffers_full);
-   }
-
+   list_add(&new_buffer->link, &command_buffer->push_buffers);
+   command_buffer->current_push_buffer_used_bytes = size_bytes;
    *bo_out = new_buffer->bo;
-   *va_kcache_lines_out = 0;
+   *va_out = new_buffer->bo->va;
    return new_buffer->bo->mapping;
 }
 
@@ -359,12 +350,8 @@ terakan_command_buffer_release_resources(struct terakan_command_buffer * const c
       list_move_to(&indirect_buffer->link, &command_pool->indirect_buffers_free);
    }
 
-   list_splice(&command_buffer->push_constant_buffers_full,
-               &command_pool->push_constant_buffers_free);
-   list_inithead(&command_buffer->push_constant_buffers_full);
-   list_splice(&command_buffer->push_constant_buffers_with_free_space,
-               &command_pool->push_constant_buffers_free);
-   list_inithead(&command_buffer->push_constant_buffers_with_free_space);
+   list_splice(&command_buffer->push_buffers, &command_pool->push_buffers_free);
+   list_inithead(&command_buffer->push_buffers);
 }
 
 static void
@@ -413,8 +400,8 @@ terakan_command_buffer_create(struct vk_command_pool * const command_pool,
       return result;
    }
 
-   list_inithead(&command_buffer->push_constant_buffers_with_free_space);
-   list_inithead(&command_buffer->push_constant_buffers_full);
+   list_inithead(&command_buffer->push_buffers);
+   command_buffer->current_push_buffer_used_bytes = TERAKAN_PUSH_BUFFER_SIZE_BYTES;
 
    list_inithead(&command_buffer->indirect_buffers);
 
@@ -429,55 +416,6 @@ struct vk_command_buffer_ops const terakan_command_buffer_ops = {
    .reset = terakan_command_buffer_reset,
    .destroy = terakan_command_buffer_destroy,
 };
-
-void *
-terakan_command_writer_allocate_among_push_constants(
-   struct terakan_command_writer * const command_writer, uint32_t const size_bytes,
-   uint32_t const alignment_bytes, struct terakan_bo const ** const bo_out, uint64_t * const va_out)
-{
-   assert(util_is_power_of_two_nonzero(alignment_bytes));
-   assert(alignment_bytes <= TERAKAN_KCACHE_HW_LINE_BYTES);
-
-   if (command_writer->allocation_among_push_constants.next_mapping != NULL) {
-      uint64_t const existing_va_aligned = ALIGN_POT(
-         command_writer->allocation_among_push_constants.next_va, (uint64_t)alignment_bytes);
-      uint32_t const alignment_skip =
-         (uint32_t)(existing_va_aligned - command_writer->allocation_among_push_constants.next_va);
-      if (command_writer->allocation_among_push_constants.remaining_bytes >=
-          alignment_skip + size_bytes) {
-         char * const existing_mapping_aligned =
-            command_writer->allocation_among_push_constants.next_mapping + alignment_skip;
-         command_writer->allocation_among_push_constants.next_mapping =
-            existing_mapping_aligned + size_bytes;
-         command_writer->allocation_among_push_constants.next_va = existing_va_aligned + size_bytes;
-         command_writer->allocation_among_push_constants.remaining_bytes -=
-            alignment_skip + size_bytes;
-         *bo_out = command_writer->allocation_among_push_constants.bo;
-         *va_out = existing_va_aligned;
-         return existing_mapping_aligned;
-      }
-   }
-
-   uint32_t const size_bytes_kcache_line_aligned =
-      ALIGN_POT(size_bytes, TERAKAN_KCACHE_HW_LINE_BYTES);
-   struct terakan_bo const * new_bo;
-   uint32_t new_va_kcache_lines;
-   char * const new_mapping = terakan_command_buffer_allocate_push_constants(
-      command_writer->command_buffer, size_bytes_kcache_line_aligned, &new_bo,
-      &new_va_kcache_lines);
-   if (unlikely(new_mapping == NULL)) {
-      return NULL;
-   }
-   uint64_t const new_va = (uint64_t)new_va_kcache_lines << TERAKAN_KCACHE_HW_LINE_BYTES_LOG2;
-   command_writer->allocation_among_push_constants.next_mapping = new_mapping + size_bytes;
-   command_writer->allocation_among_push_constants.bo = new_bo;
-   command_writer->allocation_among_push_constants.next_va = new_va + size_bytes;
-   command_writer->allocation_among_push_constants.remaining_bytes =
-      size_bytes_kcache_line_aligned - size_bytes;
-   *bo_out = new_bo;
-   *va_out = new_va;
-   return new_mapping;
-}
 
 static void
 terakan_gfx_command_writer_end_indirect_buffer(
@@ -1288,8 +1226,6 @@ terakan_BeginCommandBuffer(VkCommandBuffer const commandBuffer,
 
    gfx_command_writer->base.command_buffer = command_buffer;
 
-   gfx_command_writer->base.allocation_among_push_constants.next_mapping = NULL;
-
    /* The first emission will request the first indirect buffer. */
    gfx_command_writer->indirect_buffer = NULL;
 
@@ -1391,12 +1327,12 @@ terakan_command_pool_trim_resources(struct terakan_command_pool * const command_
    }
    list_inithead(&command_pool->indirect_buffers_free);
 
-   list_for_each_entry_safe (struct terakan_push_constant_buffer, push_constant_buffer,
-                             &command_pool->push_constant_buffers_free, link) {
-      terakan_bo_free(push_constant_buffer->bo, &command_pool->vk.alloc);
-      vk_free(&command_pool->vk.alloc, push_constant_buffer);
+   list_for_each_entry_safe (struct terakan_push_buffer, push_buffer,
+                             &command_pool->push_buffers_free, link) {
+      terakan_bo_free(push_buffer->bo, &command_pool->vk.alloc);
+      vk_free(&command_pool->vk.alloc, push_buffer);
    }
-   list_inithead(&command_pool->push_constant_buffers_free);
+   list_inithead(&command_pool->push_buffers_free);
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -1450,7 +1386,7 @@ terakan_CreateCommandPool(VkDevice const deviceHandle,
       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
    }
 
-   list_inithead(&command_pool->push_constant_buffers_free);
+   list_inithead(&command_pool->push_buffers_free);
 
    list_inithead(&command_pool->indirect_buffers_free);
 

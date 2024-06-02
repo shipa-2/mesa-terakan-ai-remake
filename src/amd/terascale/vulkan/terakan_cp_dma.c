@@ -36,6 +36,7 @@
 #include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 /* Maximum value that can be specified in the BYTE_COUNT field of a CP DMA command. */
 #define TERAKAN_CP_DMA_MAX_BYTE_COUNT (((VkDeviceSize)1 << 21) - 1)
@@ -220,4 +221,30 @@ terakan_CmdCopyBuffer2(VkCommandBuffer const commandBuffer,
                           dst_buffer->va + region->dstOffset, TERAKAN_BO_PRIORITY_CP_DMA,
                           region->size);
    }
+}
+
+VKAPI_ATTR void VKAPI_CALL
+terakan_CmdUpdateBuffer(VkCommandBuffer const commandBuffer, VkBuffer const dstBuffer,
+                        VkDeviceSize const dstOffset, VkDeviceSize const dataSize,
+                        void const * const pData)
+{
+   struct terakan_gfx_command_writer * const command_writer =
+      terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx;
+
+   struct terakan_bo const * src_bo;
+   uint64_t src_va;
+   void * const src_mapping =
+      terakan_push_buffer_allocate(command_writer->base.command_buffer, dataSize,
+                                   TERAKAN_CP_DMA_COPY_OPTIMAL_ALIGNMENT, &src_bo, &src_va);
+   if (unlikely(src_mapping == NULL)) {
+      return;
+   }
+   memcpy(src_mapping, pData, dataSize);
+
+   struct terakan_buffer const * const dst_buffer = terakan_buffer_from_handle(dstBuffer);
+
+   command_writer->post_buffer_copy_write_barrier_actions |=
+      TERAKAN_BARRIER_ACTION_SYNC_ME_TO_CP_DMA;
+   terakan_cp_dma_copy(command_writer, src_bo, src_va, TERAKAN_BO_PRIORITY_CP_DMA, dst_buffer->bo,
+                       dst_buffer->va + dstOffset, TERAKAN_BO_PRIORITY_CP_DMA, dataSize);
 }
