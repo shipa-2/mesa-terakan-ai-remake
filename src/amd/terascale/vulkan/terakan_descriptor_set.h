@@ -31,6 +31,7 @@
 
 #include "util/macros.h"
 #include "util/u_math.h"
+#include "util/vma.h"
 #include "vk_object.h"
 
 #include <assert.h>
@@ -101,8 +102,8 @@ struct terakan_descriptor_set {
 
    /* The part accessed exclusively by allocation or freeing. */
 
-   /* UINT32_MAX if this set is the first or the last in the list it is in. */
-   uint32_t pool_prev, pool_next;
+   uint32_t pool_allocated_prev;
+   uint32_t pool_allocated_or_freed_next;
 };
 
 VK_DEFINE_NONDISP_HANDLE_CASTS(terakan_descriptor_set, base, VkDescriptorSet,
@@ -113,15 +114,16 @@ struct terakan_descriptor_pool {
 
    size_t descriptor_memory_size;
    char * descriptor_memory;
+   struct util_vma_heap descriptor_memory_heap;
+   size_t descriptor_memory_unallocated;
 
    struct terakan_descriptor_set * sets;
    uint32_t max_sets;
 
+   /* Lists are terminated with UINT32_MAX. */
+
    uint32_t sets_allocated;
-   /* Ordered by the location in the descriptor memory. Sets with zero descriptors are included.
-    * Both are UINT32_MAX if no allocated sets.
-    */
-   uint32_t allocated_sets_head, allocated_sets_tail;
+   uint32_t allocated_sets_head;
 
    uint32_t sets_freed;
    uint32_t freed_sets_head;
