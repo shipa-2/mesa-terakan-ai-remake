@@ -23,12 +23,14 @@
 #include "sfn_instr_mem.h"
 #include "sfn_instr_tex.h"
 #include "sfn_liverangeevaluator.h"
+#include "sfn_nir.h"
 #include "sfn_shader_cs.h"
 #include "sfn_shader_fs.h"
 #include "sfn_shader_gs.h"
 #include "sfn_shader_tess.h"
 #include "sfn_shader_vs.h"
 #include "util/format/u_format.h"
+#include "util/macros.h"
 #include "util/u_math.h"
 
 #include <numeric>
@@ -1669,6 +1671,8 @@ Shader::emit_load_buffer_resource(nir_intrinsic_instr *instr)
 
    RegisterVec4 dest = vf.dest_vec4(instr->def, pin_group);
 
+   const unsigned instr_flags = nir_intrinsic_flags(instr);
+
    unsigned resource_base = nir_intrinsic_id_base(instr);
    PRegister resource_offset = nullptr;
    const nir_const_value *resource_offset_const = nir_src_as_const_value(instr->src[0]);
@@ -1729,7 +1733,9 @@ Shader::emit_load_buffer_resource(nir_intrinsic_instr *instr)
                                resource_base,
                                resource_offset);
 
-   fetch->set_fetch_flag(FetchInstr::use_tc);
+   if (!(instr_flags & R600_NIR_LOAD_BUFFER_RESOURCE_FLAG_USE_VERTEX_CACHE)) {
+      fetch->set_fetch_flag(FetchInstr::use_tc);
+   }
 
    if (fetch_format != FMT_INVALID) {
       if (fetch_format_comp) {
@@ -1740,7 +1746,28 @@ Shader::emit_load_buffer_resource(nir_intrinsic_instr *instr)
    }
 
    unsigned mega_fetch_count = nir_intrinsic_mega_fetch_count_r600(instr);
-   fetch->set_mfc((mega_fetch_count != 0 ? mega_fetch_count : 16) - 1);
+   if (mega_fetch_count == 0) {
+      if (format != PIPE_FORMAT_NONE) {
+         mega_fetch_count = util_format_get_blocksize(format);
+      }
+      if (mega_fetch_count == 0) {
+         /* Format not known (specified in the fetch constant), assume dwords
+          * if the expected mega-fetch count is not specified explicitly.
+          */
+         mega_fetch_count =
+            sizeof(uint32_t) * (first_component + instr->def.num_components);
+      }
+   }
+   mega_fetch_count = CLAMP(mega_fetch_count, 1u, 64u);
+   fetch->set_mfc(mega_fetch_count - 1);
+   if (instr_flags & R600_NIR_LOAD_BUFFER_RESOURCE_FLAG_IS_MINI_FETCH) {
+      /* The mega-fetch count is still specified as the hardware may convert
+       * the instruction into a mega-fetch.
+       */
+      fetch->reset_fetch_flag(FetchInstr::is_mega_fetch);
+   } else {
+      fetch->set_fetch_flag(FetchInstr::is_mega_fetch);
+   }
 
    emit_instruction(fetch);
 

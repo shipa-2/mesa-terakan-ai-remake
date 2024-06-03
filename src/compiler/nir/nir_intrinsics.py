@@ -1678,7 +1678,9 @@ load("r600_indirect_per_vertex_input", [1, 1], [BASE, RANGE, COMPONENT, DEST_TYP
 # ID_BASE = buffer index base
 # BASE = data additional 16-bit offset in bytes
 # FORMAT = data format, or PIPE_FORMAT_NONE to use the format from the fetch constant
-load("buffer_resource_r600", src_comp=[1, 1], indices=[ACCESS, ID_BASE, BASE, COMPONENT, FORMAT, MEGA_FETCH_COUNT_R600],
+# FLAGS = R600_NIR_LOAD_BUFFER_RESOURCE_FLAG_*
+load("buffer_resource_r600", src_comp=[1, 1],
+     indices=[ACCESS, ID_BASE, BASE, COMPONENT, FORMAT, MEGA_FETCH_COUNT_R600, FLAGS],
      flags=[CAN_ELIMINATE, CAN_REORDER])
 
 # Load from a constant cache (kcache) buffer.
