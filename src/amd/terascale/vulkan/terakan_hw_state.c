@@ -2684,6 +2684,7 @@ terakan_hw_state_draw_emit_all(struct terakan_gfx_command_writer * const command
    /* Make sure emission callbacks with additional modification tracking emit everything needed. */
    state->viewport_counts.scale_offset_z_min_max_emitted = 0;
    state->viewport_counts.scissor_emitted = 0;
+   state->cb_blend_control.modified = state->cb_blend_control.ever_written;
    state->cb_color.modified = state->cb_color.ever_written;
 
    unsigned state_index;
