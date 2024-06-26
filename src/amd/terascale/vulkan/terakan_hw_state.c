@@ -26,6 +26,7 @@
 #include "terakan_command_buffer.h"
 #include "terakan_physical_device.h"
 
+#include "amd/terascale/common/terascale_format.h"
 #include "amd/terascale/common/terascale_wddm.h"
 #include "gallium/drivers/r600/evergreend.h"
 #include "gallium/drivers/r600/r600d_common.h"
@@ -961,7 +962,7 @@ terakan_hw_state_draw_emit_cb_color(struct terakan_gfx_command_writer * const co
          /* Set only the INFO of the unbound target, including the MRT 1 export format for
           * dual-source blending, to the specified value, not requiring any relocations.
           */
-         assert(G_028C70_FORMAT(descriptor->info) == V_028C70_COLOR_INVALID);
+         assert(G_028C70_FORMAT(descriptor->info) == TERASCALE_FORMAT_INDEX_INVALID);
          uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, true);
          if (unlikely(packet == NULL)) {
             return;
@@ -2015,7 +2016,7 @@ terakan_hw_state_draw_set_cb_color_impl(struct terakan_hw_state_draw * const sta
    assert(color_index < ARRAY_SIZE(state->cb_color.color));
    uint16_t const color_bit = (uint16_t)1 << color_index;
 
-   assert(G_028C70_FORMAT(unbound_info) == V_028C70_COLOR_INVALID);
+   assert(G_028C70_FORMAT(unbound_info) == TERASCALE_FORMAT_INDEX_INVALID);
 
    struct terakan_color_meta_descriptor disabled_meta;
    if (meta == NULL && bo != NULL) {

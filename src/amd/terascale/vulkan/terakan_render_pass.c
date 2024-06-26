@@ -27,6 +27,7 @@
 #include "terakan_image.h"
 #include "terakan_state.h"
 
+#include "amd/terascale/common/terascale_format.h"
 #include "util/macros.h"
 
 #include <stddef.h>
@@ -108,7 +109,8 @@ terakan_CmdBeginRendering(VkCommandBuffer const commandBuffer,
 
       struct terakan_image_view const * const color_view =
          terakan_image_view_from_handle(color_attachment->imageView);
-      if (color_view == NULL || G_028C70_FORMAT(color_view->color.info) == V_028C70_COLOR_INVALID) {
+      if (color_view == NULL ||
+          G_028C70_FORMAT(color_view->color.info) == TERASCALE_FORMAT_INDEX_INVALID) {
          continue;
       }
 

@@ -26,9 +26,12 @@
 
 #include "terakan_bo.h"
 #include "terakan_descriptor.h"
+#include "terakan_format.h"
 
 #include "gallium/drivers/r600/evergreend.h"
 #include "util/bitscan.h"
+#include "util/macros.h"
+#include "util/u_endian.h"
 #include "util/u_math.h"
 #include "vk_format.h"
 #include "vk_image.h"
@@ -85,7 +88,7 @@ struct terakan_image_surface_tiling {
    bool tc_non_display;
 };
 
-struct terakan_image_surface_plane {
+struct terakan_image_surface_aspect {
    uint32_t alignment_bytes_shr8;
    uint32_t offset_in_memory_bytes_shr8;
    uint32_t size_bytes_shr8;
@@ -101,15 +104,17 @@ struct terakan_image_surface {
    uint32_t alignment_bytes_shr8;
    uint32_t size_bytes_shr8;
 
-   /* For depth / stencil images, stencil is plane 1 if depth is present, or 0 otherwise.
-    * If the image has a combined depth and stencil format and has DB usage enabled, DB register
-    * fields shared between depth and stencil are the same for the two planes.
+   /* If the image has a combined depth and stencil format and has DB usage enabled, DB register
+    * fields shared between depth and stencil are the same for the two aspects.
     */
-   struct terakan_image_surface_plane planes[3];
+   struct terakan_image_surface_aspect aspects[TERAKAN_FORMAT_MAX_ASPECTS];
 };
 
+/* TODO(Triang3l): Replace in favor of terakan_format_aspect_index, but need to handle errors when
+ * using it, and never to use it with combined depth and stencil.
+ */
 static inline unsigned
-terakan_image_surface_aspect_plane(VkFormat const image_format, VkImageAspectFlagBits const aspect)
+terakan_image_surface_aspect_index(VkFormat const image_format, VkImageAspectFlagBits const aspect)
 {
    if (aspect == VK_IMAGE_ASPECT_STENCIL_BIT) {
       return vk_format_has_depth(image_format) ? 1 : 0;
@@ -120,6 +125,9 @@ terakan_image_surface_aspect_plane(VkFormat const image_format, VkImageAspectFla
 struct terakan_image {
    struct vk_image vk;
 
+   /* Derived from the format, but needed in many places, so stored. */
+   struct terakan_format_info format_info;
+
    struct terakan_image_surface surface;
 
    struct terakan_bo const * bo;
@@ -128,12 +136,44 @@ struct terakan_image {
 
 VK_DEFINE_NONDISP_HANDLE_CASTS(terakan_image, vk.base, VkImage, VK_OBJECT_TYPE_IMAGE)
 
-/* For transfer purposes, VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT and
- * VK_IMAGE_CREATE_BLOCK_TEXEL_VIEW_COMPATIBLE_BIT are assumed to be always enabled for all images
- * they're applicable to, and 2D array views of multiple layers of 3D images are supported.
+static inline bool
+terakan_image_is_big_endian(UNUSED struct terakan_image const * const image)
+{
+#if UTIL_ARCH_BIG_ENDIAN
+   /* DB doesn't support endian swapping, but neither does it support linear images, so the
+    * endianness doesn't matter to the host.
+    * For other cases of tiled images, however, set the endian swap because host endianness is
+    * likely to be expected when exporting the image (presentation in DRI expects it, the Gallium
+    * R600 driver also uses the host endianness).
+    */
+   return !(image->vk.usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
+#else
+   return false;
+#endif
+}
+
+struct terakan_image_descriptor_create_info {
+   struct terakan_image const * image;
+   VkImageViewType view_type;
+   struct terascale_format_info view_format;
+   bool force_little_endian;
+   unsigned image_aspect_index;
+   uint32_t base_mip_level;
+   /* Can be VK_REMAINING_MIP_LEVELS. */
+   uint32_t level_count;
+   uint32_t base_array_layer;
+   /* Can be VK_REMAINING_ARRAY_LAYERS. */
+   uint32_t layer_count;
+};
+
+/* For transfer purposes, cross-aspect reinterpretation is allowed,
+ * VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT and VK_IMAGE_CREATE_BLOCK_TEXEL_VIEW_COMPATIBLE_BIT are
+ * assumed to be always enabled for all images they're applicable to, and 2D array views of multiple
+ * layers of 3D images are supported.
  */
-bool terakan_image_create_resource_descriptor(VkImageViewCreateInfo const * image_view_create_info,
-                                              uint32_t descriptor_out[8]);
+bool terakan_image_create_resource_descriptor(
+   struct terakan_image_descriptor_create_info const * descriptor_create_info,
+   VkComponentMapping const * component_mapping, uint32_t descriptor_out[8]);
 
 /* Returns the number of array layers accessible through the descriptor as color descriptors support
  * fewer layers than texture resource descriptors.
@@ -142,14 +182,12 @@ bool terakan_image_create_resource_descriptor(VkImageViewCreateInfo const * imag
  * to baseArrayLayer, creating a new color descriptor, and performing the draw again for the next
  * subset of layers.
  *
- * On failure, returns 0.
- *
- * For transfer purposes, VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT and
- * VK_IMAGE_CREATE_BLOCK_TEXEL_VIEW_COMPATIBLE_BIT are assumed to be always enabled for all images
- * they're applicable to.
+ * For transfer purposes, cross-aspect reinterpretation is allowed, and
+ * VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT and VK_IMAGE_CREATE_BLOCK_TEXEL_VIEW_COMPATIBLE_BIT are
+ * assumed to be always enabled for all images they're applicable to.
  */
 uint32_t terakan_image_create_color_descriptor(
-   VkImageViewCreateInfo const * image_view_create_info,
+   struct terakan_image_descriptor_create_info const * descriptor_create_info,
    struct terakan_color_descriptor * descriptor_out,
    struct terakan_color_meta_descriptor * meta_descriptor_out_opt);
 

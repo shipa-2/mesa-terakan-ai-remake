@@ -246,8 +246,8 @@ terakan_state_draw_apply_sq_resources_fs(struct terakan_gfx_command_writer * con
    bool const is_r9xx =
       terakan_gfx_command_writer_physical_device(command_writer)->chip_family_info.is_r9xx;
    uint32_t resource[8] = {
-      [3] = S_03000C_DST_SEL_X(V_03000C_SQ_SEL_X) | S_03000C_DST_SEL_Y(V_03000C_SQ_SEL_Y) |
-            S_03000C_DST_SEL_Z(V_03000C_SQ_SEL_Z) | S_03000C_DST_SEL_W(V_03000C_SQ_SEL_W),
+      [3] = S_03000C_DST_SEL_X(TERASCALE_SWIZZLE_X) | S_03000C_DST_SEL_Y(TERASCALE_SWIZZLE_Y) |
+            S_03000C_DST_SEL_Z(TERASCALE_SWIZZLE_Z) | S_03000C_DST_SEL_W(TERASCALE_SWIZZLE_W),
       [7] = S_03001C_TYPE(V_03001C_SQ_TEX_VTX_VALID_BUFFER),
       [TERAKAN_RESOURCE_BUFFER_PRIORITY_WORD] = TERAKAN_BO_PRIORITY_VERTEX_BUFFER,
    };
@@ -870,9 +870,8 @@ terakan_state_draw_apply_cb_color_rtv(struct terakan_gfx_command_writer * const 
                                             false);
          if (attachment->bo != NULL) {
             attachment_format_masks |=
-               (uint32_t)(terakan_format_color_export_component_masks
-                             [terakan_format_color_component_counts[G_028C70_FORMAT(
-                                attachment->color.info)]]
+               (uint32_t)(terascale_format_cb_color_export_component_masks
+                             [terascale_format_channel_count[G_028C70_FORMAT(attachment->color.info)]]
                              [G_028C70_COMP_SWAP(attachment->color.info)])
                << (4 * attachment_index);
             cb_dual_export_allowed &=

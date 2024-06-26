@@ -40,7 +40,9 @@
 #include "util/fast_idiv_by_const.h"
 #include "util/format/u_format.h"
 #include "util/macros.h"
+#include "util/u_endian.h"
 #include "util/u_math.h"
+#include "vk_format.h"
 
 #include <assert.h>
 #include <stdbool.h>
@@ -60,31 +62,22 @@ terakan_vertex_input_attribute_translate(uint32_t const location, uint32_t const
                 binding >= TERAKAN_RESOURCE_HW_COUNT_FETCH || offset > UINT16_MAX)) {
       return false;
    }
-   uint32_t fetch_format = terakan_format_vertex_get_format(format);
-   assert(fetch_format != FMT_INVALID);
-   uint32_t const fetch_number_format = terakan_format_data_get_number_format(format);
-   assert(fetch_number_format != UINT32_MAX);
-   if (unlikely(fetch_format == FMT_INVALID || fetch_number_format == UINT32_MAX)) {
+   struct terascale_format_info const format_info =
+      terascale_format_info_r8xx[vk_format_to_pipe_format(format)];
+   if (unlikely(!format_info.supports_sq_vertex_fetch)) {
       return false;
    }
-   unsigned char const * const fetch_swizzle = terakan_format_data_get_swizzle(format);
    attribute_out->word1_dst_gpr_and_format =
-      S_SQ_VTX_WORD1_GPR_DST_GPR(1 + location) |
-      S_SQ_VTX_WORD1_DST_SEL_X(terakan_format_data_pipe_swizzle_to_dst_sel(
-         (enum pipe_swizzle)fetch_swizzle[0], PIPE_SWIZZLE_0)) |
-      S_SQ_VTX_WORD1_DST_SEL_Y(terakan_format_data_pipe_swizzle_to_dst_sel(
-         (enum pipe_swizzle)fetch_swizzle[1], PIPE_SWIZZLE_0)) |
-      S_SQ_VTX_WORD1_DST_SEL_Z(terakan_format_data_pipe_swizzle_to_dst_sel(
-         (enum pipe_swizzle)fetch_swizzle[2], PIPE_SWIZZLE_0)) |
-      S_SQ_VTX_WORD1_DST_SEL_W(terakan_format_data_pipe_swizzle_to_dst_sel(
-         (enum pipe_swizzle)fetch_swizzle[3], PIPE_SWIZZLE_1)) |
-      S_SQ_VTX_WORD1_DATA_FORMAT(fetch_format) |
-      S_SQ_VTX_WORD1_NUM_FORMAT_ALL(fetch_number_format) |
-      S_SQ_VTX_WORD1_FORMAT_COMP_ALL(terakan_format_vertex_get_sign(format));
+      S_SQ_VTX_WORD1_GPR_DST_GPR(1 + location) | S_SQ_VTX_WORD1_DST_SEL_X(format_info.swizzle_r) |
+      S_SQ_VTX_WORD1_DST_SEL_Y(format_info.swizzle_g) |
+      S_SQ_VTX_WORD1_DST_SEL_Z(format_info.swizzle_b) |
+      S_SQ_VTX_WORD1_DST_SEL_W(format_info.swizzle_a) |
+      S_SQ_VTX_WORD1_DATA_FORMAT(format_info.format) |
+      S_SQ_VTX_WORD1_NUM_FORMAT_ALL(terascale_format_get_sq_num_format(
+         (enum terascale_format_number_type)format_info.number_type)) |
+      S_SQ_VTX_WORD1_FORMAT_COMP_ALL(format_info.channels_signed != 0b0);
    attribute_out->offset = offset;
    attribute_out->buffer_id = binding;
-   /* TODO(Triang3l): Big-endian. */
-   attribute_out->endian_swap = 0;
    return true;
 }
 
@@ -1116,8 +1109,12 @@ terakan_vertex_input_create_fs_alu_and_fetches(
          S_SQ_VTX_WORD0_BUFFER_ID(binding_index) | S_SQ_VTX_WORD0_SRC_GPR(gpr_set->current_gpr) |
          S_SQ_VTX_WORD0_SRC_SEL_X(gpr_set->current_component);
       fetch_out[fetch_dword_count++] = attribute->word1_dst_gpr_and_format;
-      fetch_out[fetch_dword_count++] = S_SQ_VTX_WORD2_OFFSET(attribute->offset) |
-                                       S_SQ_VTX_WORD2_ENDIAN_SWAP(attribute->endian_swap);
+      fetch_out[fetch_dword_count++] =
+         S_SQ_VTX_WORD2_OFFSET(attribute->offset) |
+         S_SQ_VTX_WORD2_ENDIAN_SWAP(
+            UTIL_ARCH_BIG_ENDIAN ? terascale_format_big_endian_swap[G_SQ_VTX_WORD1_DATA_FORMAT(
+                                      attribute->word1_dst_gpr_and_format)]
+                                 : TERASCALE_ENDIAN_SWAP_NONE);
       fetch_out[fetch_dword_count++] = 0;
    }
    *fetch_count_out = fetch_dword_count / 4;
@@ -1133,7 +1130,7 @@ terakan_vertex_input_create_fs_alu_and_fetches(
          {
             uint32_t * const last_fetch = fetch_out + 4 * (fetch_count - 1);
             last_fetch[0] |= S_SQ_VTX_WORD0_MEGA_FETCH_COUNT(
-               terakan_format_data_block_bytes[G_SQ_VTX_WORD1_DATA_FORMAT(last_fetch[1])] - 1);
+               terascale_format_bytes_per_block[G_SQ_VTX_WORD1_DATA_FORMAT(last_fetch[1])] - 1);
             /* Make all fetches mega by default, converting to mini when coalescing with the
              * preceding mega-fetch.
              */
@@ -1144,7 +1141,7 @@ terakan_vertex_input_create_fs_alu_and_fetches(
             uint32_t * const current_fetch = fetch_out + 4 * (fetches_remaining - 1);
             uint32_t * const next_fetch = current_fetch + 4;
             unsigned char const fetch_bytes =
-               terakan_format_data_block_bytes[G_SQ_VTX_WORD1_DATA_FORMAT(current_fetch[1])];
+               terascale_format_bytes_per_block[G_SQ_VTX_WORD1_DATA_FORMAT(current_fetch[1])];
             current_fetch[0] |= S_SQ_VTX_WORD0_MEGA_FETCH_COUNT(fetch_bytes - 1);
             current_fetch[2] |= S_SQ_VTX_WORD2_MEGA_FETCH(1);
             if (G_SQ_VTX_WORD0_BUFFER_ID(current_fetch[0]) !=
@@ -1285,8 +1282,7 @@ terakan_CmdSetVertexInputEXT(
          fetch_shader_creation_needed |=
             state_attribute->word1_dst_gpr_and_format != attribute.word1_dst_gpr_and_format ||
             state_attribute->offset != attribute.offset ||
-            state_attribute->buffer_id != attribute.buffer_id ||
-            state_attribute->endian_swap != attribute.endian_swap;
+            state_attribute->buffer_id != attribute.buffer_id;
       }
       *state_attribute = attribute;
 

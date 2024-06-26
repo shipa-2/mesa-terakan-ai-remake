@@ -26,7 +26,6 @@
 #include "terakan_format.h"
 
 #include "gallium/drivers/r600/evergreend.h"
-#include "gallium/drivers/r600/r600_formats.h"
 #include "util/u_endian.h"
 #include "util/u_math.h"
 
@@ -37,8 +36,8 @@
 void
 terakan_color_descriptor_calculate_buffer_base_pitch_dim_offset(
    struct terakan_color_descriptor * const descriptor, uint64_t const va,
-   VkDeviceSize const elements, unsigned const bpe, unsigned const tile_pipe_interleave_bytes_log2,
-   uint32_t * const alignment_offset_elements_out)
+   VkDeviceSize const elements, unsigned const bytes_per_element,
+   unsigned const tile_pipe_interleave_bytes_log2, uint32_t * const alignment_offset_elements_out)
 {
    uint64_t const va_aligned = va >> tile_pipe_interleave_bytes_log2
                                         << tile_pipe_interleave_bytes_log2;
@@ -50,11 +49,13 @@ terakan_color_descriptor_calculate_buffer_base_pitch_dim_offset(
     * possible value, after the division by the pitch, DRM Radeon 2.50.0 will consider the whole
     * surface zero-size.
     */
-   descriptor->pitch = S_028C64_PITCH_TILE_MAX(
-      terakan_format_pitch_alignment_linear_bytes(bpe, tile_pipe_interleave_bytes_log2) / bpe / 8 -
-      1);
+   descriptor->pitch =
+      S_028C64_PITCH_TILE_MAX(terakan_format_pitch_alignment_linear_surfels(
+                                 bytes_per_element, tile_pipe_interleave_bytes_log2) /
+                                 8 -
+                              1);
 
-   uint32_t const alignment_elements = (va - va_aligned) / bpe;
+   uint32_t const alignment_elements = (va - va_aligned) / bytes_per_element;
    *alignment_offset_elements_out = alignment_elements;
 
    assert(elements != 0);
@@ -79,8 +80,9 @@ terakan_descriptor_create_for_uniform_buffer(struct terakan_bo const * const bo,
    resource_out[0] = (uint32_t)va;
    resource_out[1] = (uint32_t)(range_aligned - 1);
    resource_out[2] = S_030008_BASE_ADDRESS_HI(va >> 32) | S_030008_STRIDE(1);
-   resource_out[3] = S_03000C_DST_SEL_X(V_03000C_SQ_SEL_X) | S_03000C_DST_SEL_Y(V_03000C_SQ_SEL_Y) |
-                     S_03000C_DST_SEL_Z(V_03000C_SQ_SEL_Z) | S_03000C_DST_SEL_W(V_03000C_SQ_SEL_W);
+   resource_out[3] =
+      S_03000C_DST_SEL_X(TERASCALE_SWIZZLE_X) | S_03000C_DST_SEL_Y(TERASCALE_SWIZZLE_Y) |
+      S_03000C_DST_SEL_Z(TERASCALE_SWIZZLE_Z) | S_03000C_DST_SEL_W(TERASCALE_SWIZZLE_W);
    resource_out[4] = (uint32_t)(range_aligned / (sizeof(uint32_t) * 4));
    resource_out[7] = S_03001C_TYPE(V_03001C_SQ_TEX_VTX_VALID_BUFFER);
    resource_out[TERAKAN_RESOURCE_BUFFER_PRIORITY_WORD] = TERAKAN_BO_PRIORITY_UNIFORM_BUFFER;
@@ -107,14 +109,15 @@ terakan_descriptor_create_for_storage_buffer(struct terakan_bo const * const bo,
    resource_out[0] = (uint32_t)va;
    resource_out[1] = (uint32_t)(range_aligned - 1);
    resource_out[2] = S_030008_BASE_ADDRESS_HI(va >> 32) | S_030008_STRIDE(sizeof(uint32_t)) |
-                     S_030008_DATA_FORMAT(FMT_32) |
-                     S_030008_NUM_FORMAT_ALL(V_030008_SQ_NUM_FORMAT_INT) |
-                     S_030008_ENDIAN_SWAP(UTIL_ARCH_BIG_ENDIAN ? ENDIAN_8IN32 : 0);
-   /* XYZW DST_SEL to permit vertex fetches larger than FMT_32 with a different format in the fetch
-    * instruction.
+                     S_030008_DATA_FORMAT(TERASCALE_FORMAT_INDEX_32) |
+                     S_030008_NUM_FORMAT_ALL(TERASCALE_FORMAT_SQ_NUM_FORMAT_INT) |
+                     S_030008_ENDIAN_SWAP(UTIL_ARCH_BIG_ENDIAN ? TERASCALE_ENDIAN_SWAP_8IN32 : 0);
+   /* XYZW DST_SEL to permit vertex fetches larger than TERASCALE_FORMAT_INDEX_32 with a different
+    * format in the fetch instruction.
     */
-   resource_out[3] = S_03000C_DST_SEL_X(V_03000C_SQ_SEL_X) | S_03000C_DST_SEL_Y(V_03000C_SQ_SEL_Y) |
-                     S_03000C_DST_SEL_Z(V_03000C_SQ_SEL_Z) | S_03000C_DST_SEL_W(V_03000C_SQ_SEL_W);
+   resource_out[3] =
+      S_03000C_DST_SEL_X(TERASCALE_SWIZZLE_X) | S_03000C_DST_SEL_Y(TERASCALE_SWIZZLE_Y) |
+      S_03000C_DST_SEL_Z(TERASCALE_SWIZZLE_Z) | S_03000C_DST_SEL_W(TERASCALE_SWIZZLE_W);
    resource_out[4] = (uint32_t)(range_aligned / sizeof(uint32_t));
    resource_out[7] = S_03001C_TYPE(V_03001C_SQ_TEX_VTX_VALID_BUFFER);
    resource_out[TERAKAN_RESOURCE_BUFFER_PRIORITY_WORD] = TERAKAN_BO_PRIORITY_SHADER_READ_BUFFER;
@@ -122,11 +125,12 @@ terakan_descriptor_create_for_storage_buffer(struct terakan_bo const * const bo,
    terakan_color_descriptor_calculate_buffer_base_pitch_view_dim(
       color_out, va, range_aligned / sizeof(uint32_t), sizeof(uint32_t),
       tile_pipe_interleave_bytes_log2);
-   color_out->info =
-      S_028C70_FORMAT(V_028C70_COLOR_32) | S_028C70_ARRAY_MODE(V_028C70_ARRAY_LINEAR_ALIGNED) |
-      S_028C70_NUMBER_TYPE(V_028C70_NUMBER_UINT) | S_028C70_COMP_SWAP(V_028C70_SWAP_STD) |
-      S_028C70_BLEND_BYPASS(1) | S_028C70_SOURCE_FORMAT(V_028C70_EXPORT_4C_32BPC) |
-      S_028C70_RAT(1) | S_028C70_RESOURCE_TYPE(V_028C70_BUFFER);
+   color_out->info = S_028C70_FORMAT(TERASCALE_FORMAT_INDEX_32) |
+                     S_028C70_ARRAY_MODE(V_028C70_ARRAY_LINEAR_ALIGNED) |
+                     S_028C70_NUMBER_TYPE(TERASCALE_FORMAT_NUMBER_TYPE_UINT) |
+                     S_028C70_COMP_SWAP(TERASCALE_FORMAT_CB_COLOR_SWAP_STD) |
+                     S_028C70_BLEND_BYPASS(1) | S_028C70_SOURCE_FORMAT(V_028C70_EXPORT_4C_32BPC) |
+                     S_028C70_RAT(1) | S_028C70_RESOURCE_TYPE(V_028C70_BUFFER);
    color_out->attrib = S_028C74_NON_DISP_TILING_ORDER(1);
 
    return true;

@@ -64,10 +64,10 @@ static uint32_t const terakan_meta_copy_image_ps_r8xx[] = {
 
    S_SQ_CF_ALLOC_EXPORT_WORD0_TYPE(V_SQ_CF_ALLOC_EXPORT_WORD0_SQ_EXPORT_PIXEL) |
       S_SQ_CF_ALLOC_EXPORT_WORD0_ARRAY_BASE(0) | S_SQ_CF_ALLOC_EXPORT_WORD0_RW_GPR(0),
-   S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_X(V_03000C_SQ_SEL_X) |
-      S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Y(V_03000C_SQ_SEL_Y) |
-      S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Z(V_03000C_SQ_SEL_Z) |
-      S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_W(V_03000C_SQ_SEL_W) |
+   S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_X(TERASCALE_SWIZZLE_X) |
+      S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Y(TERASCALE_SWIZZLE_Y) |
+      S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Z(TERASCALE_SWIZZLE_Z) |
+      S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_W(TERASCALE_SWIZZLE_W) |
       S_SQ_CF_ALLOC_EXPORT_WORD1_BARRIER(1) | S_SQ_CF_ALLOC_EXPORT_WORD1_END_OF_PROGRAM(1) |
       EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_EXPORT_DONE,
 
@@ -100,11 +100,11 @@ static uint32_t const terakan_meta_copy_image_ps_r8xx[] = {
    S_SQ_TEX_WORD0_TEX_INST(3) |
       S_SQ_TEX_WORD0_RESOURCE_ID(TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META) |
       S_SQ_TEX_WORD0_SRC_GPR(0),
-   S_SQ_TEX_WORD1_DST_GPR(0) | S_SQ_TEX_WORD1_DST_SEL_X(V_03000C_SQ_SEL_X) |
-      S_SQ_TEX_WORD1_DST_SEL_Y(V_03000C_SQ_SEL_Y) | S_SQ_TEX_WORD1_DST_SEL_Z(V_03000C_SQ_SEL_Z) |
-      S_SQ_TEX_WORD1_DST_SEL_W(V_03000C_SQ_SEL_W),
-   S_SQ_TEX_WORD2_SRC_SEL_X(V_03000C_SQ_SEL_X) | S_SQ_TEX_WORD2_SRC_SEL_Y(V_03000C_SQ_SEL_Y) |
-      S_SQ_TEX_WORD2_SRC_SEL_Z(V_03000C_SQ_SEL_Z) | S_SQ_TEX_WORD2_SRC_SEL_W(V_03000C_SQ_SEL_0),
+   S_SQ_TEX_WORD1_DST_GPR(0) | S_SQ_TEX_WORD1_DST_SEL_X(TERASCALE_SWIZZLE_X) |
+      S_SQ_TEX_WORD1_DST_SEL_Y(TERASCALE_SWIZZLE_Y) |
+      S_SQ_TEX_WORD1_DST_SEL_Z(TERASCALE_SWIZZLE_Z) | S_SQ_TEX_WORD1_DST_SEL_W(TERASCALE_SWIZZLE_W),
+   S_SQ_TEX_WORD2_SRC_SEL_X(TERASCALE_SWIZZLE_X) | S_SQ_TEX_WORD2_SRC_SEL_Y(TERASCALE_SWIZZLE_Y) |
+      S_SQ_TEX_WORD2_SRC_SEL_Z(TERASCALE_SWIZZLE_Z) | S_SQ_TEX_WORD2_SRC_SEL_W(TERASCALE_SWIZZLE_0),
    0,
 };
 
@@ -128,10 +128,10 @@ static uint32_t const terakan_meta_copy_image_ps_r9xx[] = {
 
    S_SQ_CF_ALLOC_EXPORT_WORD0_TYPE(V_SQ_CF_ALLOC_EXPORT_WORD0_SQ_EXPORT_PIXEL) |
       S_SQ_CF_ALLOC_EXPORT_WORD0_ARRAY_BASE(0) | S_SQ_CF_ALLOC_EXPORT_WORD0_RW_GPR(0),
-   S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_X(V_03000C_SQ_SEL_X) |
-      S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Y(V_03000C_SQ_SEL_Y) |
-      S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Z(V_03000C_SQ_SEL_Z) |
-      S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_W(V_03000C_SQ_SEL_W) |
+   S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_X(TERASCALE_SWIZZLE_X) |
+      S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Y(TERASCALE_SWIZZLE_Y) |
+      S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Z(TERASCALE_SWIZZLE_Z) |
+      S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_W(TERASCALE_SWIZZLE_W) |
       S_SQ_CF_ALLOC_EXPORT_WORD1_BARRIER(1) | EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_EXPORT_DONE,
 
    /* 3: End the program. */
@@ -165,11 +165,11 @@ static uint32_t const terakan_meta_copy_image_ps_r9xx[] = {
    S_SQ_TEX_WORD0_TEX_INST(3) |
       S_SQ_TEX_WORD0_RESOURCE_ID(TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META) |
       S_SQ_TEX_WORD0_SRC_GPR(0),
-   S_SQ_TEX_WORD1_DST_GPR(0) | S_SQ_TEX_WORD1_DST_SEL_X(V_03000C_SQ_SEL_X) |
-      S_SQ_TEX_WORD1_DST_SEL_Y(V_03000C_SQ_SEL_Y) | S_SQ_TEX_WORD1_DST_SEL_Z(V_03000C_SQ_SEL_Z) |
-      S_SQ_TEX_WORD1_DST_SEL_W(V_03000C_SQ_SEL_W),
-   S_SQ_TEX_WORD2_SRC_SEL_X(V_03000C_SQ_SEL_X) | S_SQ_TEX_WORD2_SRC_SEL_Y(V_03000C_SQ_SEL_Y) |
-      S_SQ_TEX_WORD2_SRC_SEL_Z(V_03000C_SQ_SEL_Z) | S_SQ_TEX_WORD2_SRC_SEL_W(V_03000C_SQ_SEL_0),
+   S_SQ_TEX_WORD1_DST_GPR(0) | S_SQ_TEX_WORD1_DST_SEL_X(TERASCALE_SWIZZLE_X) |
+      S_SQ_TEX_WORD1_DST_SEL_Y(TERASCALE_SWIZZLE_Y) |
+      S_SQ_TEX_WORD1_DST_SEL_Z(TERASCALE_SWIZZLE_Z) | S_SQ_TEX_WORD1_DST_SEL_W(TERASCALE_SWIZZLE_W),
+   S_SQ_TEX_WORD2_SRC_SEL_X(TERASCALE_SWIZZLE_X) | S_SQ_TEX_WORD2_SRC_SEL_Y(TERASCALE_SWIZZLE_Y) |
+      S_SQ_TEX_WORD2_SRC_SEL_Z(TERASCALE_SWIZZLE_Z) | S_SQ_TEX_WORD2_SRC_SEL_W(TERASCALE_SWIZZLE_0),
    0,
 };
 
@@ -256,7 +256,7 @@ terakan_CmdCopyImage2(VkCommandBuffer const commandBuffer,
    struct terakan_image const * const src_image =
       terakan_image_from_handle(pCopyImageInfo->srcImage);
 
-   if (terakan_format_is_expand_3x(src_image->surface.planes[0].bytes_per_block)) {
+   if (terakan_format_is_expand_3x(src_image->surface.aspects[0].bytes_per_block)) {
       terakan_meta_copy_expand_3x_image(command_writer, pCopyImageInfo);
       return;
    }
@@ -269,23 +269,17 @@ terakan_CmdCopyImage2(VkCommandBuffer const commandBuffer,
     * for depth/stencil.
     */
 
-   VkImageViewCreateInfo src_image_view_create_info = {
-      .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-      .image = pCopyImageInfo->srcImage,
-      .viewType = terakan_meta_transfer_image_view_type(src_image->vk.image_type),
-      .subresourceRange =
-         {
-            .levelCount = 1,
-         },
+   struct terakan_image_descriptor_create_info src_descriptor_create_info = {
+      .image = src_image,
+      .view_type = terakan_meta_transfer_image_view_type(src_image->vk.image_type),
+      .force_little_endian = true,
+      .level_count = 1,
    };
-   VkImageViewCreateInfo dst_image_view_create_info = {
-      .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-      .image = pCopyImageInfo->dstImage,
-      .viewType = terakan_meta_transfer_image_view_type(dst_image->vk.image_type),
-      .subresourceRange =
-         {
-            .levelCount = 1,
-         },
+   struct terakan_image_descriptor_create_info dst_descriptor_create_info = {
+      .image = dst_image,
+      .view_type = terakan_meta_transfer_image_view_type(dst_image->vk.image_type),
+      .force_little_endian = true,
+      .level_count = 1,
    };
 
    unsigned const src_block_width = vk_format_get_blockwidth(src_image->vk.format);
@@ -363,52 +357,48 @@ terakan_CmdCopyImage2(VkCommandBuffer const commandBuffer,
             push_constants_bo, push_constants_va_lines);
       }
 
-      src_image_view_create_info.subresourceRange.baseMipLevel = region->srcSubresource.mipLevel;
+      src_descriptor_create_info.base_mip_level = region->srcSubresource.mipLevel;
       if (src_image->vk.image_type == VK_IMAGE_TYPE_3D) {
-         src_image_view_create_info.subresourceRange.baseArrayLayer = (uint32_t)region->srcOffset.z;
-         src_image_view_create_info.subresourceRange.layerCount = region->extent.depth;
+         src_descriptor_create_info.base_array_layer = (uint32_t)region->srcOffset.z;
+         src_descriptor_create_info.layer_count = region->extent.depth;
       } else {
-         src_image_view_create_info.subresourceRange.baseArrayLayer =
-            region->srcSubresource.baseArrayLayer;
-         src_image_view_create_info.subresourceRange.layerCount =
+         src_descriptor_create_info.base_array_layer = region->srcSubresource.baseArrayLayer;
+         src_descriptor_create_info.layer_count =
             vk_image_subresource_layer_count(&src_image->vk, &region->srcSubresource);
       }
 
-      dst_image_view_create_info.subresourceRange.baseMipLevel = region->dstSubresource.mipLevel;
+      dst_descriptor_create_info.base_mip_level = region->dstSubresource.mipLevel;
       uint32_t const dst_base_layer = dst_image->vk.image_type == VK_IMAGE_TYPE_3D
                                          ? (uint32_t)region->dstOffset.z
                                          : region->dstSubresource.baseArrayLayer;
 
       unsigned dst_aspect_mask_remaining = (unsigned)region->dstSubresource.aspectMask;
       u_foreach_bit (src_aspect_index, region->srcSubresource.aspectMask) {
-         src_image_view_create_info.subresourceRange.aspectMask = (VkImageAspectFlags)1
-                                                                  << src_aspect_index;
-         dst_image_view_create_info.subresourceRange.aspectMask =
-            (VkImageAspectFlags)1 << u_bit_scan(&dst_aspect_mask_remaining);
+         src_descriptor_create_info.image_aspect_index = terakan_format_aspect_index(
+            src_image->format_info.aspect_map, (VkImageAspectFlags)1 << src_aspect_index, 0);
+         dst_descriptor_create_info.image_aspect_index = terakan_format_aspect_index(
+            dst_image->format_info.aspect_map,
+            (VkImageAspectFlags)1 << u_bit_scan(&dst_aspect_mask_remaining), 0);
 
-         src_image_view_create_info.format = terakan_meta_transfer_image_block_format(
-            src_image->surface
-               .planes[terakan_image_surface_aspect_plane(
-                  src_image->vk.format, src_image_view_create_info.subresourceRange.aspectMask)]
+         src_descriptor_create_info.view_format = terakan_meta_transfer_image_block_format_info(
+            src_image->surface.aspects[src_descriptor_create_info.image_aspect_index]
                .bytes_per_block);
-         dst_image_view_create_info.format = terakan_meta_transfer_image_block_format(
-            dst_image->surface
-               .planes[terakan_image_surface_aspect_plane(
-                  dst_image->vk.format, dst_image_view_create_info.subresourceRange.aspectMask)]
+         dst_descriptor_create_info.view_format = terakan_meta_transfer_image_block_format_info(
+            dst_image->surface.aspects[dst_descriptor_create_info.image_aspect_index]
                .bytes_per_block);
 
-         dst_image_view_create_info.subresourceRange.baseArrayLayer = dst_base_layer;
-         dst_image_view_create_info.subresourceRange.layerCount =
-            src_image_view_create_info.subresourceRange.layerCount;
+         dst_descriptor_create_info.base_array_layer = dst_base_layer;
+         dst_descriptor_create_info.layer_count = src_descriptor_create_info.layer_count;
 
          uint32_t src_resource[8];
-         if (unlikely(!terakan_image_create_resource_descriptor(&src_image_view_create_info,
-                                                                src_resource))) {
+         VkComponentMapping const identity_component_mapping = {};
+         if (unlikely(!terakan_image_create_resource_descriptor(
+                &src_descriptor_create_info, &identity_component_mapping, src_resource))) {
             assert(!"Invalid source image view create info");
             return;
          }
 
-         while (dst_image_view_create_info.subresourceRange.layerCount > 0) {
+         while (dst_descriptor_create_info.layer_count > 0) {
             terakan_hw_state_draw_set_sq_resource_fs(
                &command_writer->hw_state_draw,
                TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META, src_image->bo, src_resource);
@@ -416,11 +406,7 @@ terakan_CmdCopyImage2(VkCommandBuffer const commandBuffer,
             struct terakan_color_descriptor dst_color;
             struct terakan_color_meta_descriptor dst_color_meta;
             uint32_t const dst_color_layer_count = terakan_image_create_color_descriptor(
-               &dst_image_view_create_info, &dst_color, &dst_color_meta);
-            if (unlikely(dst_color_layer_count == 0)) {
-               assert(!"Invalid destination image view create info");
-               return;
-            }
+               &dst_descriptor_create_info, &dst_color, &dst_color_meta);
             terakan_color_descriptor_image_view_to_color_attachment(&dst_color);
             terakan_hw_state_draw_set_cb_color(&command_writer->hw_state_draw, 0, dst_image->bo,
                                                &dst_color, &dst_color_meta, false);
@@ -433,8 +419,8 @@ terakan_CmdCopyImage2(VkCommandBuffer const commandBuffer,
             src_resource[5] =
                (src_resource[5] & C_030014_BASE_ARRAY) |
                S_030014_BASE_ARRAY(G_030014_BASE_ARRAY(src_resource[5]) + dst_color_layer_count);
-            dst_image_view_create_info.subresourceRange.baseArrayLayer += dst_color_layer_count;
-            dst_image_view_create_info.subresourceRange.layerCount -= dst_color_layer_count;
+            dst_descriptor_create_info.base_array_layer += dst_color_layer_count;
+            dst_descriptor_create_info.layer_count -= dst_color_layer_count;
          }
       }
    }

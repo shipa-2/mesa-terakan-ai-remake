@@ -53,7 +53,7 @@ static_assert(
 /* Compact representation of a vertex attribute. */
 struct terakan_vertex_input_attribute {
    /* DST_GPR, DST_SEL_X/Y/Z/W, DATA_FORMAT, NUM_FORMAT_ALL, FORMAT_COMP_ALL.
-    * DATA_FORMAT may be FMT_INVALID if the format is unsupported, in which case the binding at
+    * DATA_FORMAT may be INVALID if the format is unsupported, in which case the binding at
     * buffer_id can be skipped where that may be relevant unless other attributes with a valid
     * format need it.
     */
@@ -61,8 +61,6 @@ struct terakan_vertex_input_attribute {
    uint16_t offset;
    /* Needs 5 bits. */
    uint8_t buffer_id;
-   /* Needs 2 bits. */
-   uint8_t endian_swap;
 };
 
 bool

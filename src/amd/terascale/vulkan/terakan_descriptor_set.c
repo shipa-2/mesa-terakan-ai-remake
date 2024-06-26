@@ -27,6 +27,7 @@
 #include "terakan_descriptor.h"
 #include "terakan_device.h"
 #include "terakan_entrypoints.h"
+#include "terakan_format.h"
 #include "terakan_image.h"
 #include "terakan_sampler.h"
 
@@ -85,7 +86,7 @@ terakan_UpdateDescriptorSets(UNUSED VkDevice const device, uint32_t const descri
             struct terakan_image_view const * const image_view = terakan_image_view_from_handle(
                descriptor_write->pImageInfo[descriptor_index].imageView);
             if (image_view != NULL &&
-                G_028C70_FORMAT(image_view->color.info) != V_028C70_COLOR_INVALID) {
+                G_028C70_FORMAT(image_view->color.info) != TERASCALE_FORMAT_INDEX_INVALID) {
                dst_uav->bo = image_view->bo;
                memcpy(&dst_uav->color, &image_view->color, sizeof(struct terakan_color_descriptor));
                terakan_color_descriptor_image_view_to_storage_image(&dst_uav->color);
@@ -135,7 +136,7 @@ terakan_UpdateDescriptorSets(UNUSED VkDevice const device, uint32_t const descri
             struct terakan_buffer_view const * const buffer_view = terakan_buffer_view_from_handle(
                descriptor_write->pTexelBufferView[descriptor_index]);
             if (buffer_view != NULL &&
-                G_028C70_FORMAT(buffer_view->color.info) != V_028C70_COLOR_INVALID) {
+                G_028C70_FORMAT(buffer_view->color.info) != TERASCALE_FORMAT_INDEX_INVALID) {
                dst_uav->bo = buffer_view->bo;
                memcpy(&dst_uav->color, &buffer_view->color,
                       sizeof(struct terakan_color_descriptor));

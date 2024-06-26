@@ -110,8 +110,10 @@ static uint32_t const terakan_meta_copy_expand_3x_ps_r8xx[] = {
 
    S_SQ_CF_ALLOC_EXPORT_WORD0_TYPE(V_SQ_CF_ALLOC_EXPORT_WORD0_SQ_EXPORT_PIXEL) |
       S_SQ_CF_ALLOC_EXPORT_WORD0_ARRAY_BASE(0),
-   S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_X(7) | S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Y(7) |
-      S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Z(7) | S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_W(7) |
+   S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_X(TERASCALE_SWIZZLE_MASK) |
+      S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Y(TERASCALE_SWIZZLE_MASK) |
+      S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Z(TERASCALE_SWIZZLE_MASK) |
+      S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_W(TERASCALE_SWIZZLE_MASK) |
       S_SQ_CF_ALLOC_EXPORT_WORD1_BARRIER(1) | S_SQ_CF_ALLOC_EXPORT_WORD1_END_OF_PROGRAM(1) |
       EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_EXPORT_DONE,
 
@@ -197,11 +199,12 @@ static uint32_t const terakan_meta_copy_expand_3x_ps_r8xx[] = {
 
    S_SQ_VTX_WORD0_VTX_INST(0) | S_SQ_VTX_WORD0_FETCH_TYPE(SQ_VTX_FETCH_NO_INDEX_OFFSET) |
       S_SQ_VTX_WORD0_BUFFER_ID(TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META) |
-      S_SQ_VTX_WORD0_SRC_GPR(0) | S_SQ_VTX_WORD0_SRC_SEL_X(V_03000C_SQ_SEL_W) |
+      S_SQ_VTX_WORD0_SRC_GPR(0) | S_SQ_VTX_WORD0_SRC_SEL_X(TERASCALE_SWIZZLE_W) |
       S_SQ_VTX_WORD0_MEGA_FETCH_COUNT(sizeof(uint32_t) * 3 - 1),
-   S_SQ_VTX_WORD1_GPR_DST_GPR(0) | S_SQ_VTX_WORD1_DST_SEL_X(V_03000C_SQ_SEL_X) |
-      S_SQ_VTX_WORD1_DST_SEL_Y(V_03000C_SQ_SEL_Y) | S_SQ_VTX_WORD1_DST_SEL_Z(V_03000C_SQ_SEL_Z) |
-      S_SQ_VTX_WORD1_DST_SEL_W(7) | S_SQ_VTX_WORD1_USE_CONST_FIELDS(1),
+   S_SQ_VTX_WORD1_GPR_DST_GPR(0) | S_SQ_VTX_WORD1_DST_SEL_X(TERASCALE_SWIZZLE_X) |
+      S_SQ_VTX_WORD1_DST_SEL_Y(TERASCALE_SWIZZLE_Y) |
+      S_SQ_VTX_WORD1_DST_SEL_Z(TERASCALE_SWIZZLE_Z) |
+      S_SQ_VTX_WORD1_DST_SEL_W(TERASCALE_SWIZZLE_MASK) | S_SQ_VTX_WORD1_USE_CONST_FIELDS(1),
    S_SQ_VTX_WORD2_MEGA_FETCH(1),
    0,
 
@@ -287,8 +290,10 @@ static uint32_t const terakan_meta_copy_expand_3x_ps_r9xx[] = {
 
    S_SQ_CF_ALLOC_EXPORT_WORD0_TYPE(V_SQ_CF_ALLOC_EXPORT_WORD0_SQ_EXPORT_PIXEL) |
       S_SQ_CF_ALLOC_EXPORT_WORD0_ARRAY_BASE(0),
-   S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_X(7) | S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Y(7) |
-      S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Z(7) | S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_W(7) |
+   S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_X(TERASCALE_SWIZZLE_MASK) |
+      S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Y(TERASCALE_SWIZZLE_MASK) |
+      S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Z(TERASCALE_SWIZZLE_MASK) |
+      S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_W(TERASCALE_SWIZZLE_MASK) |
       EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_EXPORT_DONE,
 
    /* 7: End the program. */
@@ -417,10 +422,11 @@ static uint32_t const terakan_meta_copy_expand_3x_ps_r9xx[] = {
 
    S_SQ_VTX_WORD0_VTX_INST(0) | S_SQ_VTX_WORD0_FETCH_TYPE(SQ_VTX_FETCH_NO_INDEX_OFFSET) |
       S_SQ_VTX_WORD0_BUFFER_ID(TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META) |
-      S_SQ_VTX_WORD0_SRC_GPR(0) | S_SQ_VTX_WORD0_SRC_SEL_X(V_03000C_SQ_SEL_W),
-   S_SQ_VTX_WORD1_GPR_DST_GPR(0) | S_SQ_VTX_WORD1_DST_SEL_X(V_03000C_SQ_SEL_X) |
-      S_SQ_VTX_WORD1_DST_SEL_Y(V_03000C_SQ_SEL_Y) | S_SQ_VTX_WORD1_DST_SEL_Z(V_03000C_SQ_SEL_Z) |
-      S_SQ_VTX_WORD1_DST_SEL_W(7) | S_SQ_VTX_WORD1_USE_CONST_FIELDS(1),
+      S_SQ_VTX_WORD0_SRC_GPR(0) | S_SQ_VTX_WORD0_SRC_SEL_X(TERASCALE_SWIZZLE_W),
+   S_SQ_VTX_WORD1_GPR_DST_GPR(0) | S_SQ_VTX_WORD1_DST_SEL_X(TERASCALE_SWIZZLE_X) |
+      S_SQ_VTX_WORD1_DST_SEL_Y(TERASCALE_SWIZZLE_Y) |
+      S_SQ_VTX_WORD1_DST_SEL_Z(TERASCALE_SWIZZLE_Z) |
+      S_SQ_VTX_WORD1_DST_SEL_W(TERASCALE_SWIZZLE_MASK) | S_SQ_VTX_WORD1_USE_CONST_FIELDS(1),
    0,
    0,
 
@@ -553,7 +559,7 @@ terakan_meta_copy_expand_3x_buffer_to_image(
    struct terakan_image const * const dst_image =
       terakan_image_from_handle(copy_buffer_to_image_info->dstImage);
 
-   unsigned const bytes_per_surfel = dst_image->surface.planes[0].bytes_per_block / 3;
+   unsigned const bytes_per_surfel = dst_image->surface.aspects[0].bytes_per_block / 3;
 
    uint32_t src_resource[8];
    terakan_meta_transfer_expand_3x_resource(bytes_per_surfel, src_resource);
@@ -565,12 +571,12 @@ terakan_meta_copy_expand_3x_buffer_to_image(
     * adjusting only the destination offset in the push constants. Assuming that images are never
     * 2^32 surfels or larger.
     */
-   VkDeviceSize const dst_plane_size_surfels_minus_one =
-      ((VkDeviceSize)dst_image->surface.planes[0].size_bytes_shr8 << 8) / bytes_per_surfel - 1;
-   assert(dst_plane_size_surfels_minus_one <= UINT32_MAX);
+   VkDeviceSize const dst_aspect_size_surfels_minus_one =
+      ((VkDeviceSize)dst_image->surface.aspects[0].size_bytes_shr8 << 8) / bytes_per_surfel - 1;
+   assert(dst_aspect_size_surfels_minus_one <= UINT32_MAX);
    dst_uav.base =
-      (uint32_t)(dst_image->va >> 8) + dst_image->surface.planes[0].offset_in_memory_bytes_shr8;
-   dst_uav.dim = (uint32_t)dst_plane_size_surfels_minus_one;
+      (uint32_t)(dst_image->va >> 8) + dst_image->surface.aspects[0].offset_in_memory_bytes_shr8;
+   dst_uav.dim = (uint32_t)dst_aspect_size_surfels_minus_one;
    terakan_hw_state_draw_set_cb_color(&command_writer->hw_state_draw, 0, dst_image->bo, &dst_uav,
                                       NULL, true);
 
@@ -600,12 +606,12 @@ terakan_meta_copy_expand_3x_buffer_to_image(
       uint64_t src_va = src_buffer->va + region->bufferOffset;
 
       struct terakan_image_surface_level const * const dst_surface_level =
-         &dst_image->surface.planes[0].levels[region->imageSubresource.mipLevel];
+         &dst_image->surface.aspects[0].levels[region->imageSubresource.mipLevel];
       uint32_t const dst_z_pitch_surfels =
          ((VkDeviceSize)dst_surface_level->slice_size_bytes_shr8 << 8) / bytes_per_surfel;
       uint32_t dst_offset_surfels =
          (uint32_t)(((VkDeviceSize)(dst_surface_level->offset_in_memory_bytes_shr8 -
-                                    dst_image->surface.planes[0].offset_in_memory_bytes_shr8)
+                                    dst_image->surface.aspects[0].offset_in_memory_bytes_shr8)
                      << 8) /
                     bytes_per_surfel) +
          dst_z_pitch_surfels * base_layer +
@@ -667,7 +673,7 @@ terakan_meta_copy_expand_3x_image_to_buffer(
    struct terakan_buffer const * const dst_buffer =
       terakan_buffer_from_handle(copy_image_to_buffer_info->dstBuffer);
 
-   unsigned const bytes_per_surfel = src_image->surface.planes[0].bytes_per_block / 3;
+   unsigned const bytes_per_surfel = src_image->surface.aspects[0].bytes_per_block / 3;
 
    uint32_t src_resource[8];
    terakan_meta_transfer_expand_3x_resource(bytes_per_surfel, src_resource);
@@ -697,7 +703,7 @@ terakan_meta_copy_expand_3x_image_to_buffer(
       }
 
       struct terakan_image_surface_level const * const src_surface_level =
-         &src_image->surface.planes[0].levels[region->imageSubresource.mipLevel];
+         &src_image->surface.aspects[0].levels[region->imageSubresource.mipLevel];
       VkDeviceSize const src_z_pitch_bytes = (VkDeviceSize)src_surface_level->slice_size_bytes_shr8
                                              << 8;
       uint32_t const src_rect_extent_surfels =
@@ -793,7 +799,7 @@ terakan_meta_copy_expand_3x_image(struct terakan_gfx_command_writer * const comm
    struct terakan_image const * const dst_image =
       terakan_image_from_handle(copy_image_info->dstImage);
 
-   unsigned const bytes_per_surfel = dst_image->surface.planes[0].bytes_per_block / 3;
+   unsigned const bytes_per_surfel = dst_image->surface.aspects[0].bytes_per_block / 3;
 
    uint32_t src_resource[8];
    terakan_meta_transfer_expand_3x_resource(bytes_per_surfel, src_resource);
@@ -805,12 +811,12 @@ terakan_meta_copy_expand_3x_image(struct terakan_gfx_command_writer * const comm
     * adjusting only the destination offset in the push constants. Assuming that images are never
     * 2^32 surfels or larger.
     */
-   VkDeviceSize const dst_plane_size_surfels_minus_one =
-      ((VkDeviceSize)dst_image->surface.planes[0].size_bytes_shr8 << 8) / bytes_per_surfel - 1;
-   assert(dst_plane_size_surfels_minus_one <= UINT32_MAX);
+   VkDeviceSize const dst_aspect_size_surfels_minus_one =
+      ((VkDeviceSize)dst_image->surface.aspects[0].size_bytes_shr8 << 8) / bytes_per_surfel - 1;
+   assert(dst_aspect_size_surfels_minus_one <= UINT32_MAX);
    dst_uav.base =
-      (uint32_t)(dst_image->va >> 8) + dst_image->surface.planes[0].offset_in_memory_bytes_shr8;
-   dst_uav.dim = (uint32_t)dst_plane_size_surfels_minus_one;
+      (uint32_t)(dst_image->va >> 8) + dst_image->surface.aspects[0].offset_in_memory_bytes_shr8;
+   dst_uav.dim = (uint32_t)dst_aspect_size_surfels_minus_one;
    terakan_hw_state_draw_set_cb_color(&command_writer->hw_state_draw, 0, dst_image->bo, &dst_uav,
                                       NULL, true);
 
@@ -830,7 +836,7 @@ terakan_meta_copy_expand_3x_image(struct terakan_gfx_command_writer * const comm
                                          : region->dstSubresource.baseArrayLayer;
 
       struct terakan_image_surface_level const * const src_surface_level =
-         &src_image->surface.planes[0].levels[region->srcSubresource.mipLevel];
+         &src_image->surface.aspects[0].levels[region->srcSubresource.mipLevel];
       uint32_t const src_rect_extent_surfels =
          src_surface_level->aligned_extent_surfels[0] * (region->extent.height - 1) +
          3 * region->extent.width;
@@ -846,12 +852,12 @@ terakan_meta_copy_expand_3x_image(struct terakan_gfx_command_writer * const comm
                                            3 * (uint32_t)region->srcOffset.x);
 
       struct terakan_image_surface_level const * const dst_surface_level =
-         &dst_image->surface.planes[0].levels[region->dstSubresource.mipLevel];
+         &dst_image->surface.aspects[0].levels[region->dstSubresource.mipLevel];
       uint32_t const dst_z_pitch_surfels =
          ((VkDeviceSize)dst_surface_level->slice_size_bytes_shr8 << 8) / bytes_per_surfel;
       uint32_t dst_offset_surfels =
          (uint32_t)(((VkDeviceSize)(dst_surface_level->offset_in_memory_bytes_shr8 -
-                                    dst_image->surface.planes[0].offset_in_memory_bytes_shr8)
+                                    dst_image->surface.aspects[0].offset_in_memory_bytes_shr8)
                      << 8) /
                     bytes_per_surfel) +
          dst_z_pitch_surfels * dst_base_layer +

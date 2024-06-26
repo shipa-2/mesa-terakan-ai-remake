@@ -216,17 +216,20 @@ struct terakan_color_descriptor {
 };
 
 void terakan_color_descriptor_calculate_buffer_base_pitch_dim_offset(
-   struct terakan_color_descriptor * descriptor, uint64_t va, VkDeviceSize elements, unsigned bpe,
-   unsigned tile_pipe_interleave_bytes_log2, uint32_t * alignment_offset_elements_out);
+   struct terakan_color_descriptor * descriptor, uint64_t va, VkDeviceSize elements,
+   unsigned bytes_per_element, unsigned tile_pipe_interleave_bytes_log2,
+   uint32_t * alignment_offset_elements_out);
 
 static inline void
 terakan_color_descriptor_calculate_buffer_base_pitch_view_dim(
    struct terakan_color_descriptor * const descriptor, uint64_t const va,
-   VkDeviceSize const elements, unsigned const bpe, unsigned const tile_pipe_interleave_bytes_log2)
+   VkDeviceSize const elements, unsigned const bytes_per_element,
+   unsigned const tile_pipe_interleave_bytes_log2)
 {
    uint32_t alignment_offset_elements;
    terakan_color_descriptor_calculate_buffer_base_pitch_dim_offset(
-      descriptor, va, elements, bpe, tile_pipe_interleave_bytes_log2, &alignment_offset_elements);
+      descriptor, va, elements, bytes_per_element, tile_pipe_interleave_bytes_log2,
+      &alignment_offset_elements);
    /* Used by the driver, must be zeroed before being passed to the hardware. */
    descriptor->view = S_028C6C_SLICE_START(alignment_offset_elements);
 }
