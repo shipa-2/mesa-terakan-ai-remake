@@ -264,23 +264,26 @@ terakan_physical_device_get_capabilities(
    properties_out->maxImageDimensionCube = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT;
    properties_out->maxImageArrayLayers = TERAKAN_IMAGE_MAX_TARGET_SLICES;
 
-   /* Vertex fetch constants have 32-bit size minus one in bytes.
-    * Random access targets have 32-bit size minus one in elements.
-    * Support the maximum possible number of R32G32B32A32 elements.
+   /* Buffer UAVs have LINEAR_ALIGNED array mode, and thus alignment equal to the pipe interleave,
+    * with the offset (in element units) applied in shaders. Adding the offset may result in
+    * out-of-bounds index values near UINT32_MAX wrapping and becoming valid indices near 0. Instead
+    * of comparing the index to the buffer size in shaders to implement robustness with the offset,
+    * the index value can be clamped to this maximum range as unsigned so that adding any alignment
+    * offset after the clamping won't cause wraparound.
     */
-   properties_out->maxTexelBufferElements = (uint32_t)1 << (32 - 4);
+   uint32_t const max_uav_range_bytes = ~(((uint32_t)1 << tile_pipe_interleave_bytes_log2) - 1);
+
+   /* Vertex fetch constants have 32-bit size minus one in bytes, so the theoretical maximum element
+    * count depends on the element size. But instead of exposing the worst case value, letting
+    * maxMemoryAllocationSize impose that limitation instead, which as of this writing never exceeds
+    * UINT32_MAX (also rounded down to the pipe interleave so the maximum valid size still makes it
+    * possible to provide the padding for UAV alignment base offsetting).
+    */
+   properties_out->maxTexelBufferElements = max_uav_range_bytes;
 
    properties_out->maxUniformBufferRange = TERAKAN_KCACHE_HW_MAX_BUFFER_SIZE_BYTES;
 
-   /* Storage buffers are bound as R32 vertex fetch constants or random access targets.
-    * However, buffer UAVs have LINEAR_ALIGNED array more, and thus alignment equal to the tile
-    * interleave, with the offset (in element units) applied in shaders. Adding the offset may
-    * result in out-of-bounds index values near UINT32_MAX wrapping and becoming valid indices
-    * near 0. Instead of comparing the index to the buffer size in shaders to implement robustness
-    * with the offset, the index value can be clamped to this maximum range as unsigned so that
-    * adding any alignment offset after the clamping won't cause wraparound.
-    */
-   properties_out->maxStorageBufferRange = ~(((uint32_t)1 << tile_pipe_interleave_bytes_log2) - 1);
+   properties_out->maxStorageBufferRange = max_uav_range_bytes;
 
    properties_out->maxPushConstantsSize = TERAKAN_PUSH_CONSTANTS_APP_SIZE_BYTES;
 
