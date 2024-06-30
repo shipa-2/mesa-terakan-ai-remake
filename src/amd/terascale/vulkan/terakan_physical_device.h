@@ -42,12 +42,6 @@
 extern "C" {
 #endif
 
-#if defined(_WIN32)
-#define TERAKAN_PHYSICAL_DEVICE_HAS_WINSYS_WDDM
-#else
-#define TERAKAN_PHYSICAL_DEVICE_HAS_WINSYS_DRM_RADEON
-#endif
-
 #define TERAKAN_PHYSICAL_DEVICE_VENDOR_ID_ATI 0x1002
 
 enum radeon_family terakan_physical_device_get_chip_family(uint32_t pci_device_id);

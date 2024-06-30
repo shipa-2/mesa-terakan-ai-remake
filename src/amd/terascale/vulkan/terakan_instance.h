@@ -43,8 +43,15 @@ enum {
    TERAKAN_DEBUG_STARTUP = (uint64_t)1 << 0,
 };
 
+struct terakan_instance;
+
+typedef void (*terakan_instance_destroy_fn)(struct terakan_instance * instance);
+
+/* Partially implemented by the winsys. */
 struct terakan_instance {
    struct vk_instance vk;
+
+   terakan_instance_destroy_fn destroy_fn;
 
    uint64_t debug_flags;
 
@@ -58,6 +65,16 @@ struct terakan_instance {
 };
 
 VK_DEFINE_HANDLE_CASTS(terakan_instance, vk.base, VkInstance, VK_OBJECT_TYPE_INSTANCE)
+
+void terakan_instance_finish(struct terakan_instance * instance);
+
+/* The winsys must set the physical device enumeration function after initializing the instance
+ * base.
+ */
+VkResult terakan_instance_init(struct terakan_instance * instance,
+                               VkInstanceCreateInfo const * create_info,
+                               terakan_instance_destroy_fn destroy_fn,
+                               VkAllocationCallbacks const * allocator);
 
 #ifdef __cplusplus
 }

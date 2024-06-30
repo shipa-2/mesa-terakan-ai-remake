@@ -39,10 +39,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#if defined(TERAKAN_PHYSICAL_DEVICE_HAS_WINSYS_DRM_RADEON)
-#include "winsys/drm_radeon/terakan_physical_device_drm_radeon.h"
-#elif defined(TERAKAN_PHYSICAL_DEVICE_HAS_WINSYS_WDDM)
-#include "winsys/wddm/terakan_physical_device_wddm.h"
+#if defined(_WIN32)
+#define TERAKAN_INSTANCE_HAS_WINSYS_WDDM
+#else
+#define TERAKAN_INSTANCE_HAS_WINSYS_DRM_RADEON
+#endif
+
+#if defined(TERAKAN_INSTANCE_HAS_WINSYS_DRM_RADEON)
+#include "winsys/drm_radeon/terakan_instance_drm_radeon.h"
+#elif defined(TERAKAN_INSTANCE_HAS_WINSYS_WDDM)
+#include "winsys/wddm/terakan_instance_wddm.h"
 #endif
 
 static struct debug_control const terakan_debug_options[] = {{"startup", TERAKAN_DEBUG_STARTUP},
@@ -108,9 +114,15 @@ terakan_GetInstanceProcAddr(VkInstance const instanceHandle, char const * const 
    return vk_instance_get_proc_addr(instance, &terakan_instance_entrypoints, pName);
 }
 
+void
+terakan_instance_finish(struct terakan_instance * const instance)
+{
+   vk_instance_finish(&instance->vk);
+}
+
 VKAPI_ATTR void VKAPI_CALL
 terakan_DestroyInstance(VkInstance const instanceHandle,
-                        VkAllocationCallbacks const * const pAllocator)
+                        UNUSED VkAllocationCallbacks const * const pAllocator)
 {
    struct terakan_instance * const instance = terakan_instance_from_handle(instanceHandle);
 
@@ -118,26 +130,16 @@ terakan_DestroyInstance(VkInstance const instanceHandle,
       return;
    }
 
-   vk_instance_finish(&instance->vk);
-   vk_free(&instance->vk.alloc, instance);
+   instance->destroy_fn(instance);
 }
 
-VKAPI_ATTR VkResult VKAPI_CALL
-terakan_CreateInstance(VkInstanceCreateInfo const * const pCreateInfo,
-                       VkAllocationCallbacks const * pAllocator, VkInstance * const pInstance)
+VkResult
+terakan_instance_init(struct terakan_instance * instance,
+                      VkInstanceCreateInfo const * const create_info,
+                      terakan_instance_destroy_fn const destroy_fn,
+                      VkAllocationCallbacks const * allocator)
 {
    VkResult result;
-
-   if (pAllocator == NULL) {
-      pAllocator = vk_default_allocator();
-   }
-
-   struct terakan_instance * const instance =
-      vk_alloc(pAllocator, sizeof(struct terakan_instance), alignof(struct terakan_instance),
-               VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE);
-   if (instance == NULL) {
-      return vk_error(NULL, VK_ERROR_OUT_OF_HOST_MEMORY);
-   }
 
    struct vk_instance_dispatch_table dispatch_table;
    vk_instance_dispatch_table_from_entrypoints(&dispatch_table, &terakan_instance_entrypoints,
@@ -145,11 +147,14 @@ terakan_CreateInstance(VkInstanceCreateInfo const * const pCreateInfo,
    vk_instance_dispatch_table_from_entrypoints(&dispatch_table, &wsi_instance_entrypoints, false);
 
    result = vk_instance_init(&instance->vk, &terakan_instance_extensions_supported, &dispatch_table,
-                             pCreateInfo, pAllocator);
+                             create_info, allocator);
    if (result != VK_SUCCESS) {
-      vk_free(pAllocator, instance);
       return vk_error(NULL, result);
    }
+
+   instance->vk.physical_devices.destroy = terakan_physical_device_destroy;
+
+   instance->destroy_fn = destroy_fn;
 
    instance->debug_flags = parse_debug_string(getenv("TERAKAN_DEBUG"), terakan_debug_options);
 
@@ -196,17 +201,30 @@ terakan_CreateInstance(VkInstanceCreateInfo const * const pCreateInfo,
            TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL - TERAKAN_COLOR_UAV_COUNT_PIXEL -
               instance->max_per_stage_uniform_buffers - instance->max_per_stage_input_attachments);
 
-   /* Initialize physical device management. */
+   return VK_SUCCESS;
+}
 
-#if defined(TERAKAN_PHYSICAL_DEVICE_HAS_WINSYS_DRM_RADEON)
-   instance->vk.physical_devices.try_create_for_drm = terakan_physical_device_drm_radeon_try_create;
-#elif defined(TERAKAN_PHYSICAL_DEVICE_HAS_WINSYS_WDDM)
-   instance->vk.physical_devices.enumerate = terakan_physical_device_wddm_enumerate;
+VKAPI_ATTR VkResult VKAPI_CALL
+terakan_CreateInstance(VkInstanceCreateInfo const * const pCreateInfo,
+                       VkAllocationCallbacks const * pAllocator, VkInstance * const pInstance)
+{
+   VkResult result;
+
+   if (pAllocator == NULL) {
+      pAllocator = vk_default_allocator();
+   }
+
+   struct terakan_instance * instance;
+#if defined(TERAKAN_INSTANCE_HAS_WINSYS_DRM_RADEON)
+   result = terakan_instance_drm_radeon_create(pCreateInfo, pAllocator, &instance);
+#elif defined(TERAKAN_INSTANCE_HAS_WINSYS_WDDM)
+   result = terakan_instance_wddm_create(pCreateInfo, pAllocator, &instance);
 #else
-#error "No physical device enumeration function for the target platform"
+#error "No instance creation function for the target platform"
 #endif
-
-   instance->vk.physical_devices.destroy = terakan_physical_device_destroy;
+   if (result != VK_SUCCESS) {
+      return result;
+   }
 
    if (instance->debug_flags & TERAKAN_DEBUG_STARTUP) {
       fputs("terakan: info: Created an instance.\n", stderr);
