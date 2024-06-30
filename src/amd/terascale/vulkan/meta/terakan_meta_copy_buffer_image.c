@@ -49,12 +49,18 @@
  * Image to buffer copying by drawing and writing to a UAV.
  */
 
-struct terakan_meta_copy_buffer_image_push_constants {
+enum {
    /* All values are in blocks. */
-   int32_t image_offset_x_minus_buffer_offset;
-   int32_t image_offset_y;
-   uint32_t buffer_y_pitch;
-   uint32_t buffer_z_pitch;
+
+   /* The offsets are signed. */
+   TERAKAN_META_COPY_BUFFER_IMAGE_CONST_IMAGE_OFFSET_X_MINUS_BUFFER_OFFSET,
+   TERAKAN_META_COPY_BUFFER_IMAGE_CONST_IMAGE_OFFSET_Y,
+
+   /* The pitches are unsigned. */
+   TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Y_PITCH,
+   TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Z_PITCH,
+
+   TERAKAN_META_COPY_BUFFER_IMAGE_CONSTS_COUNT,
 };
 
 static uint32_t const terakan_meta_copy_buffer_to_image_ps_r8xx[] = {
@@ -64,8 +70,8 @@ static uint32_t const terakan_meta_copy_buffer_to_image_ps_r8xx[] = {
 
    S_SQ_CF_WORD0_ADDR(3) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS) |
       S_SQ_CF_ALU_WORD0_KCACHE_MODE0(V_SQ_CF_KCACHE_LOCK_1),
-   S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(TERAKAN_KCACHE_FIELD_LINE(
-      struct terakan_meta_copy_buffer_image_push_constants, image_offset_x_minus_buffer_offset)) |
+   S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(TERAKAN_KCACHE_DWORD_LINE(
+      TERAKAN_META_COPY_BUFFER_IMAGE_CONST_IMAGE_OFFSET_X_MINUS_BUFFER_OFFSET)) |
       S_SQ_CF_ALU_WORD1_COUNT(8 - 3) | EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
    /* 1: Fetch from the source buffer. */
@@ -98,20 +104,18 @@ static uint32_t const terakan_meta_copy_buffer_to_image_ps_r8xx[] = {
     */
 
    S_SQ_ALU_WORD0_SRC0_SEL(0) | S_SQ_ALU_WORD0_SRC0_CHAN(0) |
-      TERAKAN_KCACHE_FIELD_WORD0_SRC1(struct terakan_meta_copy_buffer_image_push_constants,
-                                      image_offset_x_minus_buffer_offset),
+      TERAKAN_KCACHE_DWORD_WORD0_SRC1(
+         TERAKAN_META_COPY_BUFFER_IMAGE_CONST_IMAGE_OFFSET_X_MINUS_BUFFER_OFFSET),
    S_SQ_ALU_WORD1_DST_CHAN(0) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_SUB_INT),
 
    S_SQ_ALU_WORD0_SRC0_SEL(0) | S_SQ_ALU_WORD0_SRC0_CHAN(1) |
-      TERAKAN_KCACHE_FIELD_WORD0_SRC1(struct terakan_meta_copy_buffer_image_push_constants,
-                                      image_offset_y),
+      TERAKAN_KCACHE_DWORD_WORD0_SRC1(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_IMAGE_OFFSET_Y),
    S_SQ_ALU_WORD1_DST_CHAN(1) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_SUB_INT),
 
    S_SQ_ALU_WORD0_LAST(1) |
-      TERAKAN_KCACHE_FIELD_WORD0_SRC0(struct terakan_meta_copy_buffer_image_push_constants,
-                                      buffer_z_pitch) |
+      TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Z_PITCH) |
       S_SQ_ALU_WORD0_SRC1_SEL(0) | S_SQ_ALU_WORD0_SRC1_CHAN(2),
    S_SQ_ALU_WORD1_DST_CHAN(2) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MULLO_UINT),
@@ -129,8 +133,7 @@ static uint32_t const terakan_meta_copy_buffer_to_image_ps_r8xx[] = {
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_ADD_INT),
 
    S_SQ_ALU_WORD0_LAST(1) |
-      TERAKAN_KCACHE_FIELD_WORD0_SRC0(struct terakan_meta_copy_buffer_image_push_constants,
-                                      buffer_y_pitch) |
+      TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Y_PITCH) |
       S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC1_CHAN(1),
    S_SQ_ALU_WORD1_DST_CHAN(1) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MULLO_UINT),
@@ -181,8 +184,8 @@ static uint32_t const terakan_meta_copy_image_to_buffer_ps_r8xx[] = {
 
    S_SQ_CF_WORD0_ADDR(8) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS) |
       S_SQ_CF_ALU_WORD0_KCACHE_MODE0(V_SQ_CF_KCACHE_LOCK_1),
-   S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(TERAKAN_KCACHE_FIELD_LINE(
-      struct terakan_meta_copy_buffer_image_push_constants, image_offset_x_minus_buffer_offset)) |
+   S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(TERAKAN_KCACHE_DWORD_LINE(
+      TERAKAN_META_COPY_BUFFER_IMAGE_CONST_IMAGE_OFFSET_X_MINUS_BUFFER_OFFSET)) |
       S_SQ_CF_ALU_WORD1_COUNT(13 - 8) | S_SQ_CF_ALU_WORD1_BARRIER(1) |
       EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
@@ -245,20 +248,18 @@ static uint32_t const terakan_meta_copy_image_to_buffer_ps_r8xx[] = {
     */
 
    S_SQ_ALU_WORD0_SRC0_SEL(0) | S_SQ_ALU_WORD0_SRC0_CHAN(0) |
-      TERAKAN_KCACHE_FIELD_WORD0_SRC1(struct terakan_meta_copy_buffer_image_push_constants,
-                                      image_offset_x_minus_buffer_offset),
+      TERAKAN_KCACHE_DWORD_WORD0_SRC1(
+         TERAKAN_META_COPY_BUFFER_IMAGE_CONST_IMAGE_OFFSET_X_MINUS_BUFFER_OFFSET),
    S_SQ_ALU_WORD1_DST_CHAN(0) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_SUB_INT),
 
    S_SQ_ALU_WORD0_SRC0_SEL(0) | S_SQ_ALU_WORD0_SRC0_CHAN(1) |
-      TERAKAN_KCACHE_FIELD_WORD0_SRC1(struct terakan_meta_copy_buffer_image_push_constants,
-                                      image_offset_y),
+      TERAKAN_KCACHE_DWORD_WORD0_SRC1(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_IMAGE_OFFSET_Y),
    S_SQ_ALU_WORD1_DST_CHAN(1) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_SUB_INT),
 
    S_SQ_ALU_WORD0_LAST(1) |
-      TERAKAN_KCACHE_FIELD_WORD0_SRC0(struct terakan_meta_copy_buffer_image_push_constants,
-                                      buffer_z_pitch) |
+      TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Z_PITCH) |
       S_SQ_ALU_WORD0_SRC1_SEL(0) | S_SQ_ALU_WORD0_SRC1_CHAN(2),
    S_SQ_ALU_WORD1_DST_CHAN(2) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MULLO_UINT),
@@ -276,8 +277,7 @@ static uint32_t const terakan_meta_copy_image_to_buffer_ps_r8xx[] = {
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_ADD_INT),
 
    S_SQ_ALU_WORD0_LAST(1) |
-      TERAKAN_KCACHE_FIELD_WORD0_SRC0(struct terakan_meta_copy_buffer_image_push_constants,
-                                      buffer_y_pitch) |
+      TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Y_PITCH) |
       S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC1_CHAN(1),
    S_SQ_ALU_WORD1_DST_CHAN(1) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MULLO_UINT),
@@ -300,8 +300,8 @@ static uint32_t const terakan_meta_copy_buffer_to_image_ps_r9xx[] = {
 
    S_SQ_CF_WORD0_ADDR(4) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS) |
       S_SQ_CF_ALU_WORD0_KCACHE_MODE0(V_SQ_CF_KCACHE_LOCK_1),
-   S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(TERAKAN_KCACHE_FIELD_LINE(
-      struct terakan_meta_copy_buffer_image_push_constants, image_offset_x_minus_buffer_offset)) |
+   S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(TERAKAN_KCACHE_DWORD_LINE(
+      TERAKAN_META_COPY_BUFFER_IMAGE_CONST_IMAGE_OFFSET_X_MINUS_BUFFER_OFFSET)) |
       S_SQ_CF_ALU_WORD1_COUNT(15 - 4) | EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
    /* 1: Fetch from the source buffer. */
@@ -336,14 +336,13 @@ static uint32_t const terakan_meta_copy_buffer_to_image_ps_r9xx[] = {
     */
 
    S_SQ_ALU_WORD0_SRC0_SEL(0) | S_SQ_ALU_WORD0_SRC0_CHAN(0) |
-      TERAKAN_KCACHE_FIELD_WORD0_SRC1(struct terakan_meta_copy_buffer_image_push_constants,
-                                      image_offset_x_minus_buffer_offset),
+      TERAKAN_KCACHE_DWORD_WORD0_SRC1(
+         TERAKAN_META_COPY_BUFFER_IMAGE_CONST_IMAGE_OFFSET_X_MINUS_BUFFER_OFFSET),
    S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(0) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_SUB_INT),
 
    S_SQ_ALU_WORD0_LAST(1) | S_SQ_ALU_WORD0_SRC0_SEL(0) | S_SQ_ALU_WORD0_SRC0_CHAN(1) |
-      TERAKAN_KCACHE_FIELD_WORD0_SRC1(struct terakan_meta_copy_buffer_image_push_constants,
-                                      image_offset_y),
+      TERAKAN_KCACHE_DWORD_WORD0_SRC1(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_IMAGE_OFFSET_Y),
    S_SQ_ALU_WORD1_DST_CHAN(1) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_SUB_INT),
 
@@ -356,27 +355,23 @@ static uint32_t const terakan_meta_copy_buffer_to_image_ps_r9xx[] = {
     * 9: PV.W = MULLO_UINT CB[push].buffer_y_pitch, PV.Y
     */
 
-   TERAKAN_KCACHE_FIELD_WORD0_SRC0(struct terakan_meta_copy_buffer_image_push_constants,
-                                   buffer_y_pitch) |
+   TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Y_PITCH) |
       S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC1_CHAN(1),
    S_SQ_ALU_WORD1_DST_CHAN(0) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MULLO_UINT),
 
-   TERAKAN_KCACHE_FIELD_WORD0_SRC0(struct terakan_meta_copy_buffer_image_push_constants,
-                                   buffer_y_pitch) |
+   TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Y_PITCH) |
       S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC1_CHAN(1),
    S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(1) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MULLO_UINT),
 
-   TERAKAN_KCACHE_FIELD_WORD0_SRC0(struct terakan_meta_copy_buffer_image_push_constants,
-                                   buffer_y_pitch) |
+   TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Y_PITCH) |
       S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC1_CHAN(1),
    S_SQ_ALU_WORD1_DST_CHAN(2) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MULLO_UINT),
 
    S_SQ_ALU_WORD0_LAST(1) |
-      TERAKAN_KCACHE_FIELD_WORD0_SRC0(struct terakan_meta_copy_buffer_image_push_constants,
-                                      buffer_y_pitch) |
+      TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Y_PITCH) |
       S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC1_CHAN(1),
    S_SQ_ALU_WORD1_DST_CHAN(3) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MULLO_UINT),
@@ -390,27 +385,23 @@ static uint32_t const terakan_meta_copy_buffer_to_image_ps_r9xx[] = {
     * 13: PV.W = MULLO_UINT CB[push].buffer_z_pitch, R0.Z
     */
 
-   TERAKAN_KCACHE_FIELD_WORD0_SRC0(struct terakan_meta_copy_buffer_image_push_constants,
-                                   buffer_z_pitch) |
+   TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Z_PITCH) |
       S_SQ_ALU_WORD0_SRC1_SEL(0) | S_SQ_ALU_WORD0_SRC1_CHAN(2),
    S_SQ_ALU_WORD1_DST_CHAN(0) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MULLO_UINT),
 
-   TERAKAN_KCACHE_FIELD_WORD0_SRC0(struct terakan_meta_copy_buffer_image_push_constants,
-                                   buffer_z_pitch) |
+   TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Z_PITCH) |
       S_SQ_ALU_WORD0_SRC1_SEL(0) | S_SQ_ALU_WORD0_SRC1_CHAN(2),
    S_SQ_ALU_WORD1_DST_CHAN(1) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MULLO_UINT),
 
-   TERAKAN_KCACHE_FIELD_WORD0_SRC0(struct terakan_meta_copy_buffer_image_push_constants,
-                                   buffer_z_pitch) |
+   TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Z_PITCH) |
       S_SQ_ALU_WORD0_SRC1_SEL(0) | S_SQ_ALU_WORD0_SRC1_CHAN(2),
    S_SQ_ALU_WORD1_DST_CHAN(2) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MULLO_UINT),
 
    S_SQ_ALU_WORD0_LAST(1) |
-      TERAKAN_KCACHE_FIELD_WORD0_SRC0(struct terakan_meta_copy_buffer_image_push_constants,
-                                      buffer_z_pitch) |
+      TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Z_PITCH) |
       S_SQ_ALU_WORD0_SRC1_SEL(0) | S_SQ_ALU_WORD0_SRC1_CHAN(2),
    S_SQ_ALU_WORD1_DST_CHAN(3) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MULLO_UINT),
@@ -469,8 +460,8 @@ static uint32_t const terakan_meta_copy_image_to_buffer_ps_r9xx[] = {
 
    S_SQ_CF_WORD0_ADDR(10) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS) |
       S_SQ_CF_ALU_WORD0_KCACHE_MODE0(V_SQ_CF_KCACHE_LOCK_1),
-   S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(TERAKAN_KCACHE_FIELD_LINE(
-      struct terakan_meta_copy_buffer_image_push_constants, image_offset_x_minus_buffer_offset)) |
+   S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(TERAKAN_KCACHE_DWORD_LINE(
+      TERAKAN_META_COPY_BUFFER_IMAGE_CONST_IMAGE_OFFSET_X_MINUS_BUFFER_OFFSET)) |
       S_SQ_CF_ALU_WORD1_COUNT(21 - 10) | S_SQ_CF_ALU_WORD1_BARRIER(1) |
       EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
@@ -538,14 +529,13 @@ static uint32_t const terakan_meta_copy_image_to_buffer_ps_r9xx[] = {
     */
 
    S_SQ_ALU_WORD0_SRC0_SEL(0) | S_SQ_ALU_WORD0_SRC0_CHAN(0) |
-      TERAKAN_KCACHE_FIELD_WORD0_SRC1(struct terakan_meta_copy_buffer_image_push_constants,
-                                      image_offset_x_minus_buffer_offset),
+      TERAKAN_KCACHE_DWORD_WORD0_SRC1(
+         TERAKAN_META_COPY_BUFFER_IMAGE_CONST_IMAGE_OFFSET_X_MINUS_BUFFER_OFFSET),
    S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(0) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_SUB_INT),
 
    S_SQ_ALU_WORD0_LAST(1) | S_SQ_ALU_WORD0_SRC0_SEL(0) | S_SQ_ALU_WORD0_SRC0_CHAN(1) |
-      TERAKAN_KCACHE_FIELD_WORD0_SRC1(struct terakan_meta_copy_buffer_image_push_constants,
-                                      image_offset_y),
+      TERAKAN_KCACHE_DWORD_WORD0_SRC1(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_IMAGE_OFFSET_Y),
    S_SQ_ALU_WORD1_DST_CHAN(1) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_SUB_INT),
 
@@ -558,27 +548,23 @@ static uint32_t const terakan_meta_copy_image_to_buffer_ps_r9xx[] = {
     * 15: PV.W = MULLO_UINT CB[push].buffer_y_pitch, PV.Y
     */
 
-   TERAKAN_KCACHE_FIELD_WORD0_SRC0(struct terakan_meta_copy_buffer_image_push_constants,
-                                   buffer_y_pitch) |
+   TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Y_PITCH) |
       S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC1_CHAN(1),
    S_SQ_ALU_WORD1_DST_CHAN(0) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MULLO_UINT),
 
-   TERAKAN_KCACHE_FIELD_WORD0_SRC0(struct terakan_meta_copy_buffer_image_push_constants,
-                                   buffer_y_pitch) |
+   TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Y_PITCH) |
       S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC1_CHAN(1),
    S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(1) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MULLO_UINT),
 
-   TERAKAN_KCACHE_FIELD_WORD0_SRC0(struct terakan_meta_copy_buffer_image_push_constants,
-                                   buffer_y_pitch) |
+   TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Y_PITCH) |
       S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC1_CHAN(1),
    S_SQ_ALU_WORD1_DST_CHAN(2) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MULLO_UINT),
 
    S_SQ_ALU_WORD0_LAST(1) |
-      TERAKAN_KCACHE_FIELD_WORD0_SRC0(struct terakan_meta_copy_buffer_image_push_constants,
-                                      buffer_y_pitch) |
+      TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Y_PITCH) |
       S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC1_CHAN(1),
    S_SQ_ALU_WORD1_DST_CHAN(3) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MULLO_UINT),
@@ -592,27 +578,23 @@ static uint32_t const terakan_meta_copy_image_to_buffer_ps_r9xx[] = {
     * 19: PV.W = MULLO_UINT CB[push].buffer_z_pitch, R0.Z
     */
 
-   TERAKAN_KCACHE_FIELD_WORD0_SRC0(struct terakan_meta_copy_buffer_image_push_constants,
-                                   buffer_z_pitch) |
+   TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Z_PITCH) |
       S_SQ_ALU_WORD0_SRC1_SEL(0) | S_SQ_ALU_WORD0_SRC1_CHAN(2),
    S_SQ_ALU_WORD1_DST_CHAN(0) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MULLO_UINT),
 
-   TERAKAN_KCACHE_FIELD_WORD0_SRC0(struct terakan_meta_copy_buffer_image_push_constants,
-                                   buffer_z_pitch) |
+   TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Z_PITCH) |
       S_SQ_ALU_WORD0_SRC1_SEL(0) | S_SQ_ALU_WORD0_SRC1_CHAN(2),
    S_SQ_ALU_WORD1_DST_CHAN(1) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MULLO_UINT),
 
-   TERAKAN_KCACHE_FIELD_WORD0_SRC0(struct terakan_meta_copy_buffer_image_push_constants,
-                                   buffer_z_pitch) |
+   TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Z_PITCH) |
       S_SQ_ALU_WORD0_SRC1_SEL(0) | S_SQ_ALU_WORD0_SRC1_CHAN(2),
    S_SQ_ALU_WORD1_DST_CHAN(2) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MULLO_UINT),
 
    S_SQ_ALU_WORD0_LAST(1) |
-      TERAKAN_KCACHE_FIELD_WORD0_SRC0(struct terakan_meta_copy_buffer_image_push_constants,
-                                      buffer_z_pitch) |
+      TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Z_PITCH) |
       S_SQ_ALU_WORD0_SRC1_SEL(0) | S_SQ_ALU_WORD0_SRC1_CHAN(2),
    S_SQ_ALU_WORD1_DST_CHAN(3) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MULLO_UINT),
@@ -891,9 +873,9 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
    command_writer->push_constants_state.up_to_date_push_constants_bound_to_stages &=
       ~VK_SHADER_STAGE_FRAGMENT_BIT;
 
-   struct terakan_meta_copy_buffer_image_push_constants push_constants = {};
-   struct terakan_bo const * push_constants_bo = NULL;
-   uint32_t push_constants_va_lines;
+   uint32_t constants[TERAKAN_META_COPY_BUFFER_IMAGE_CONSTS_COUNT] = {};
+   struct terakan_bo const * constants_bo = NULL;
+   uint32_t constants_va_lines;
 
    for (uint32_t region_index = 0; region_index < pCopyBufferToImageInfo->regionCount;
         ++region_index) {
@@ -904,29 +886,31 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
       terakan_meta_copy_buffer_image_pitches_and_rect(image, region, &buffer_y_pitch,
                                                       &buffer_z_pitch, &rect);
 
-      if (push_constants.image_offset_x_minus_buffer_offset != rect.offset.x ||
-          push_constants.image_offset_y != rect.offset.y ||
-          push_constants.buffer_y_pitch != buffer_y_pitch ||
-          push_constants.buffer_z_pitch != buffer_z_pitch) {
-         push_constants.image_offset_x_minus_buffer_offset = rect.offset.x;
-         push_constants.image_offset_y = rect.offset.y;
-         push_constants.buffer_y_pitch = buffer_y_pitch;
-         push_constants.buffer_z_pitch = buffer_z_pitch;
-         push_constants_bo = NULL;
+      if (constants[TERAKAN_META_COPY_BUFFER_IMAGE_CONST_IMAGE_OFFSET_X_MINUS_BUFFER_OFFSET] !=
+             (uint32_t)rect.offset.x ||
+          constants[TERAKAN_META_COPY_BUFFER_IMAGE_CONST_IMAGE_OFFSET_Y] !=
+             (uint32_t)rect.offset.y ||
+          constants[TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Y_PITCH] != buffer_y_pitch ||
+          constants[TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Z_PITCH] != buffer_z_pitch) {
+         constants_bo = NULL;
+         constants[TERAKAN_META_COPY_BUFFER_IMAGE_CONST_IMAGE_OFFSET_X_MINUS_BUFFER_OFFSET] =
+            (uint32_t)rect.offset.x;
+         constants[TERAKAN_META_COPY_BUFFER_IMAGE_CONST_IMAGE_OFFSET_Y] = (uint32_t)rect.offset.y;
+         constants[TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Y_PITCH] = buffer_y_pitch;
+         constants[TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Z_PITCH] = buffer_z_pitch;
       }
-      if (push_constants_bo == NULL) {
-         void * const push_constants_mapping = terakan_push_buffer_allocate_kcache(
-            command_writer->base.command_buffer, sizeof(push_constants), &push_constants_bo,
-            &push_constants_va_lines);
-         if (unlikely(push_constants_mapping == NULL)) {
+      if (constants_bo == NULL) {
+         void * const constants_mapping = terakan_push_buffer_allocate_kcache(
+            command_writer->base.command_buffer, sizeof(constants), &constants_bo,
+            &constants_va_lines);
+         if (unlikely(constants_mapping == NULL)) {
             return;
          }
-         memcpy(push_constants_mapping, &push_constants, sizeof(push_constants));
+         memcpy(constants_mapping, constants, sizeof(constants));
          terakan_hw_state_draw_set_sq_kcache_fs(
             &command_writer->hw_state_draw, TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS,
-            (sizeof(push_constants) + (TERAKAN_KCACHE_HW_LINE_BYTES - 1)) /
-               TERAKAN_KCACHE_HW_LINE_BYTES,
-            push_constants_bo, push_constants_va_lines);
+            DIV_ROUND_UP(sizeof(constants), TERAKAN_KCACHE_HW_LINE_BYTES), constants_bo,
+            constants_va_lines);
       }
 
       image_descriptor_create_info.image_aspect_index = terakan_format_aspect_index(
@@ -1030,9 +1014,9 @@ terakan_CmdCopyImageToBuffer2(VkCommandBuffer const commandBuffer,
    command_writer->push_constants_state.up_to_date_push_constants_bound_to_stages &=
       ~VK_SHADER_STAGE_FRAGMENT_BIT;
 
-   struct terakan_meta_copy_buffer_image_push_constants push_constants = {};
-   struct terakan_bo const * push_constants_bo = NULL;
-   uint32_t push_constants_va_lines;
+   uint32_t constants[TERAKAN_META_COPY_BUFFER_IMAGE_CONSTS_COUNT] = {};
+   struct terakan_bo const * constants_bo = NULL;
+   uint32_t constants_va_lines;
 
    for (uint32_t region_index = 0; region_index < pCopyImageToBufferInfo->regionCount;
         ++region_index) {
@@ -1063,29 +1047,31 @@ terakan_CmdCopyImageToBuffer2(VkCommandBuffer const commandBuffer,
       int32_t const image_offset_x_minus_buffer_offset =
          rect.offset.x - (int32_t)buffer_uav_alignment_offset_elements;
 
-      if (push_constants.image_offset_x_minus_buffer_offset != image_offset_x_minus_buffer_offset ||
-          push_constants.image_offset_y != rect.offset.y ||
-          push_constants.buffer_y_pitch != buffer_y_pitch ||
-          push_constants.buffer_z_pitch != buffer_z_pitch) {
-         push_constants.image_offset_x_minus_buffer_offset = image_offset_x_minus_buffer_offset;
-         push_constants.image_offset_y = rect.offset.y;
-         push_constants.buffer_y_pitch = buffer_y_pitch;
-         push_constants.buffer_z_pitch = buffer_z_pitch;
-         push_constants_bo = NULL;
+      if (constants[TERAKAN_META_COPY_BUFFER_IMAGE_CONST_IMAGE_OFFSET_X_MINUS_BUFFER_OFFSET] !=
+             (uint32_t)image_offset_x_minus_buffer_offset ||
+          constants[TERAKAN_META_COPY_BUFFER_IMAGE_CONST_IMAGE_OFFSET_Y] !=
+             (uint32_t)rect.offset.y ||
+          constants[TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Y_PITCH] != buffer_y_pitch ||
+          constants[TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Z_PITCH] != buffer_z_pitch) {
+         constants_bo = NULL;
+         constants[TERAKAN_META_COPY_BUFFER_IMAGE_CONST_IMAGE_OFFSET_X_MINUS_BUFFER_OFFSET] =
+            (uint32_t)image_offset_x_minus_buffer_offset;
+         constants[TERAKAN_META_COPY_BUFFER_IMAGE_CONST_IMAGE_OFFSET_Y] = (uint32_t)rect.offset.y;
+         constants[TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Y_PITCH] = buffer_y_pitch;
+         constants[TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Z_PITCH] = buffer_z_pitch;
       }
-      if (push_constants_bo == NULL) {
-         void * const push_constants_mapping = terakan_push_buffer_allocate_kcache(
-            command_writer->base.command_buffer, sizeof(push_constants), &push_constants_bo,
-            &push_constants_va_lines);
-         if (unlikely(push_constants_mapping == NULL)) {
+      if (constants_bo == NULL) {
+         void * const constants_mapping = terakan_push_buffer_allocate_kcache(
+            command_writer->base.command_buffer, sizeof(constants), &constants_bo,
+            &constants_va_lines);
+         if (unlikely(constants_mapping == NULL)) {
             return;
          }
-         memcpy(push_constants_mapping, &push_constants, sizeof(push_constants));
+         memcpy(constants_mapping, constants, sizeof(constants));
          terakan_hw_state_draw_set_sq_kcache_fs(
             &command_writer->hw_state_draw, TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS,
-            (sizeof(push_constants) + (TERAKAN_KCACHE_HW_LINE_BYTES - 1)) /
-               TERAKAN_KCACHE_HW_LINE_BYTES,
-            push_constants_bo, push_constants_va_lines);
+            DIV_ROUND_UP(sizeof(constants), TERAKAN_KCACHE_HW_LINE_BYTES), constants_bo,
+            constants_va_lines);
       }
 
       image_descriptor_create_info.view_format =

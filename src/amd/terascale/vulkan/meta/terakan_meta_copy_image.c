@@ -39,9 +39,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
-struct terakan_meta_copy_image_push_constants {
-   /* In blocks. */
-   int32_t texture_minus_screen_position[2];
+enum {
+   /* In blocks, signed. */
+   TERAKAN_META_COPY_IMAGE_CONST_TEXTURE_MINUS_SCREEN_POSITION_X,
+   TERAKAN_META_COPY_IMAGE_CONST_TEXTURE_MINUS_SCREEN_POSITION_Y,
+
+   TERAKAN_META_COPY_IMAGE_CONSTS_COUNT,
 };
 
 static uint32_t const terakan_meta_copy_image_ps_r8xx[] = {
@@ -51,8 +54,8 @@ static uint32_t const terakan_meta_copy_image_ps_r8xx[] = {
 
    S_SQ_CF_WORD0_ADDR(3) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS) |
       S_SQ_CF_ALU_WORD0_KCACHE_MODE0(V_SQ_CF_KCACHE_LOCK_1),
-   S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(TERAKAN_KCACHE_FIELD_LINE(
-      struct terakan_meta_copy_image_push_constants, texture_minus_screen_position)) |
+   S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(
+      TERAKAN_KCACHE_DWORD_LINE(TERAKAN_META_COPY_IMAGE_CONST_TEXTURE_MINUS_SCREEN_POSITION_X)) |
       S_SQ_CF_ALU_WORD1_COUNT(4 - 3) | EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
    /* 1: Fetch from the source texture. */
@@ -75,20 +78,20 @@ static uint32_t const terakan_meta_copy_image_ps_r8xx[] = {
 
    /* Apply the address offset.
     *
-    * 3:     R0.X = ADD_INT R0.X, CB[push].texture_minus_screen_position.X
-    * 4: (v) R0.Y = ADD_INT R0.Y, CB[push].texture_minus_screen_position.Y
+    * 3:     R0.X = ADD_INT R0.X, CB[push].texture_minus_screen_position_x
+    * 4: (v) R0.Y = ADD_INT R0.Y, CB[push].texture_minus_screen_position_y
     * Cycle 0: X = R0, Y = R0
     */
 
    S_SQ_ALU_WORD0_SRC0_SEL(0) | S_SQ_ALU_WORD0_SRC0_CHAN(0) |
-      TERAKAN_KCACHE_FIELD_WORD0_SRC1(struct terakan_meta_copy_image_push_constants,
-                                      texture_minus_screen_position[0]),
+      TERAKAN_KCACHE_DWORD_WORD0_SRC1(
+         TERAKAN_META_COPY_IMAGE_CONST_TEXTURE_MINUS_SCREEN_POSITION_X),
    S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(0) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_ADD_INT),
 
    S_SQ_ALU_WORD0_LAST(1) | S_SQ_ALU_WORD0_SRC0_SEL(0) | S_SQ_ALU_WORD0_SRC0_CHAN(1) |
-      TERAKAN_KCACHE_FIELD_WORD0_SRC1(struct terakan_meta_copy_image_push_constants,
-                                      texture_minus_screen_position[1]),
+      TERAKAN_KCACHE_DWORD_WORD0_SRC1(
+         TERAKAN_META_COPY_IMAGE_CONST_TEXTURE_MINUS_SCREEN_POSITION_Y),
    S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(1) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_ADD_INT),
 
@@ -115,8 +118,8 @@ static uint32_t const terakan_meta_copy_image_ps_r9xx[] = {
 
    S_SQ_CF_WORD0_ADDR(4) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS) |
       S_SQ_CF_ALU_WORD0_KCACHE_MODE0(V_SQ_CF_KCACHE_LOCK_1),
-   S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(TERAKAN_KCACHE_FIELD_LINE(
-      struct terakan_meta_copy_image_push_constants, texture_minus_screen_position)) |
+   S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(
+      TERAKAN_KCACHE_DWORD_LINE(TERAKAN_META_COPY_IMAGE_CONST_TEXTURE_MINUS_SCREEN_POSITION_X)) |
       S_SQ_CF_ALU_WORD1_COUNT(5 - 4) | EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
    /* 1: Fetch from the source texture. */
@@ -143,20 +146,20 @@ static uint32_t const terakan_meta_copy_image_ps_r9xx[] = {
 
    /* Apply the address offset.
     *
-    * 4: R0.X = ADD_INT R0.X, CB[push].texture_minus_screen_position.X
-    * 5: R0.Y = ADD_INT R0.Y, CB[push].texture_minus_screen_position.Y
+    * 4: R0.X = ADD_INT R0.X, CB[push].texture_minus_screen_position_x
+    * 5: R0.Y = ADD_INT R0.Y, CB[push].texture_minus_screen_position_y
     * Cycle 0: X = R0, Y = R0
     */
 
    S_SQ_ALU_WORD0_SRC0_SEL(0) | S_SQ_ALU_WORD0_SRC0_CHAN(0) |
-      TERAKAN_KCACHE_FIELD_WORD0_SRC1(struct terakan_meta_copy_image_push_constants,
-                                      texture_minus_screen_position[0]),
+      TERAKAN_KCACHE_DWORD_WORD0_SRC1(
+         TERAKAN_META_COPY_IMAGE_CONST_TEXTURE_MINUS_SCREEN_POSITION_X),
    S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(0) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_ADD_INT),
 
    S_SQ_ALU_WORD0_LAST(1) | S_SQ_ALU_WORD0_SRC0_SEL(0) | S_SQ_ALU_WORD0_SRC0_CHAN(1) |
-      TERAKAN_KCACHE_FIELD_WORD0_SRC1(struct terakan_meta_copy_image_push_constants,
-                                      texture_minus_screen_position[1]),
+      TERAKAN_KCACHE_DWORD_WORD0_SRC1(
+         TERAKAN_META_COPY_IMAGE_CONST_TEXTURE_MINUS_SCREEN_POSITION_Y),
    S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(1) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_ADD_INT),
 
@@ -302,9 +305,9 @@ terakan_CmdCopyImage2(VkCommandBuffer const commandBuffer,
    command_writer->push_constants_state.up_to_date_push_constants_bound_to_stages &=
       ~VK_SHADER_STAGE_FRAGMENT_BIT;
 
-   struct terakan_meta_copy_image_push_constants push_constants = {};
-   struct terakan_bo const * push_constants_bo = NULL;
-   uint32_t push_constants_va_lines;
+   uint32_t constants[TERAKAN_META_COPY_IMAGE_CONSTS_COUNT] = {};
+   struct terakan_bo const * constants_bo = NULL;
+   uint32_t constants_va_lines;
 
    for (uint32_t region_index = 0; region_index < pCopyImageInfo->regionCount; ++region_index) {
       VkImageCopy2 const * const region = &pCopyImageInfo->pRegions[region_index];
@@ -331,30 +334,33 @@ terakan_CmdCopyImage2(VkCommandBuffer const commandBuffer,
                .height = DIV_ROUND_UP(region->extent.height, src_block_height),
             },
       };
-      int32_t const texture_minus_screen_position[2] = {
-         region->srcOffset.x / src_block_width - rect.offset.x,
-         region->srcOffset.y / src_block_height - rect.offset.y,
-      };
-      if (push_constants.texture_minus_screen_position[0] != texture_minus_screen_position[0] ||
-          push_constants.texture_minus_screen_position[1] != texture_minus_screen_position[1]) {
-         push_constants.texture_minus_screen_position[0] = texture_minus_screen_position[0];
-         push_constants.texture_minus_screen_position[1] = texture_minus_screen_position[1];
-         push_constants_bo = NULL;
+      int32_t const texture_minus_screen_position_x =
+         region->srcOffset.x / src_block_width - rect.offset.x;
+      int32_t const texture_minus_screen_position_y =
+         region->srcOffset.y / src_block_height - rect.offset.y;
+      if (constants[TERAKAN_META_COPY_IMAGE_CONST_TEXTURE_MINUS_SCREEN_POSITION_X] !=
+             (uint32_t)texture_minus_screen_position_x ||
+          constants[TERAKAN_META_COPY_IMAGE_CONST_TEXTURE_MINUS_SCREEN_POSITION_Y] !=
+             (uint32_t)texture_minus_screen_position_y) {
+         constants_bo = NULL;
+         constants[TERAKAN_META_COPY_IMAGE_CONST_TEXTURE_MINUS_SCREEN_POSITION_X] =
+            (uint32_t)texture_minus_screen_position_x;
+         constants[TERAKAN_META_COPY_IMAGE_CONST_TEXTURE_MINUS_SCREEN_POSITION_Y] =
+            (uint32_t)texture_minus_screen_position_y;
       }
 
-      if (push_constants_bo == NULL) {
-         void * const push_constants_mapping = terakan_push_buffer_allocate_kcache(
-            command_writer->base.command_buffer, sizeof(push_constants), &push_constants_bo,
-            &push_constants_va_lines);
-         if (unlikely(push_constants_mapping == NULL)) {
+      if (constants_bo == NULL) {
+         void * const constants_mapping = terakan_push_buffer_allocate_kcache(
+            command_writer->base.command_buffer, sizeof(constants), &constants_bo,
+            &constants_va_lines);
+         if (unlikely(constants_mapping == NULL)) {
             return;
          }
-         memcpy(push_constants_mapping, &push_constants, sizeof(push_constants));
+         memcpy(constants_mapping, constants, sizeof(constants));
          terakan_hw_state_draw_set_sq_kcache_fs(
             &command_writer->hw_state_draw, TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS,
-            (sizeof(push_constants) + (TERAKAN_KCACHE_HW_LINE_BYTES - 1)) /
-               TERAKAN_KCACHE_HW_LINE_BYTES,
-            push_constants_bo, push_constants_va_lines);
+            DIV_ROUND_UP(sizeof(constants), TERAKAN_KCACHE_HW_LINE_BYTES), constants_bo,
+            constants_va_lines);
       }
 
       src_descriptor_create_info.base_mip_level = region->srcSubresource.mipLevel;

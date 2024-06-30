@@ -81,26 +81,25 @@ extern "C" {
  */
 #define TERAKAN_KCACHE_MAX_UNIFORM_BUFFERS TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS
 
-/* For easier writing of meta shaders. */
-#define TERAKAN_KCACHE_BYTE_LINE(offset) ((offset) >> TERAKAN_KCACHE_HW_LINE_BYTES_LOG2)
-#define TERAKAN_KCACHE_BYTE_VECTOR(offset)                                                         \
-   (((offset) & (TERAKAN_KCACHE_HW_LINE_BYTES - 1)) / (4 * sizeof(float)))
-#define TERAKAN_KCACHE_BYTE_SOURCE(offset)       (0x80 + TERAKAN_KCACHE_BYTE_VECTOR(offset))
-#define TERAKAN_KCACHE_BYTE_COMPONENT(offset)    (((offset) / sizeof(float)) & 3)
-#define TERAKAN_KCACHE_FIELD_LINE(type, field)   TERAKAN_KCACHE_BYTE_LINE(offsetof(type, field))
-#define TERAKAN_KCACHE_FIELD_VECTOR(type, field) TERAKAN_KCACHE_BYTE_VECTOR(offsetof(type, field))
-#define TERAKAN_KCACHE_FIELD_SOURCE(type, field) TERAKAN_KCACHE_BYTE_SOURCE(offsetof(type, field))
-#define TERAKAN_KCACHE_FIELD_COMPONENT(type, field)                                                \
-   TERAKAN_KCACHE_BYTE_COMPONENT(offsetof(type, field))
-#define TERAKAN_KCACHE_FIELD_WORD0_SRC0(type, field)                                               \
-   (S_SQ_ALU_WORD0_SRC0_SEL(TERAKAN_KCACHE_FIELD_SOURCE(type, field)) |                            \
-    S_SQ_ALU_WORD0_SRC0_CHAN(TERAKAN_KCACHE_FIELD_COMPONENT(type, field)))
-#define TERAKAN_KCACHE_FIELD_WORD0_SRC1(type, field)                                               \
-   (S_SQ_ALU_WORD0_SRC1_SEL(TERAKAN_KCACHE_FIELD_SOURCE(type, field)) |                            \
-    S_SQ_ALU_WORD0_SRC1_CHAN(TERAKAN_KCACHE_FIELD_COMPONENT(type, field)))
-#define TERAKAN_KCACHE_FIELD_WORD1_SRC2(type, field)                                               \
-   (S_SQ_ALU_WORD1_OP3_SRC2_SEL(TERAKAN_KCACHE_FIELD_SOURCE(type, field)) |                        \
-    S_SQ_ALU_WORD1_OP3_SRC2_CHAN(TERAKAN_KCACHE_FIELD_COMPONENT(type, field)))
+/* For easier writing of meta shaders.
+ * offsetof doesn't produce a constant on MSVC 2022, so using dword offsets instead.
+ */
+#define TERAKAN_KCACHE_DWORD_LINE(offset_dwords)                                                   \
+   ((offset_dwords) / (TERAKAN_KCACHE_HW_LINE_BYTES / sizeof(uint32_t)))
+#define TERAKAN_KCACHE_DWORD_VECTOR(offset_dwords)                                                 \
+   (((offset_dwords) & (TERAKAN_KCACHE_HW_LINE_BYTES / sizeof(uint32_t) - 1)) / 4)
+#define TERAKAN_KCACHE_DWORD_SOURCE(offset_dwords)                                                 \
+   (0x80 + TERAKAN_KCACHE_DWORD_VECTOR(offset_dwords))
+#define TERAKAN_KCACHE_DWORD_COMPONENT(offset_dwords) ((offset_dwords) & 3)
+#define TERAKAN_KCACHE_DWORD_WORD0_SRC0(offset_dwords)                                             \
+   (S_SQ_ALU_WORD0_SRC0_SEL(TERAKAN_KCACHE_DWORD_SOURCE(offset_dwords)) |                          \
+    S_SQ_ALU_WORD0_SRC0_CHAN(TERAKAN_KCACHE_DWORD_COMPONENT(offset_dwords)))
+#define TERAKAN_KCACHE_DWORD_WORD0_SRC1(offset_dwords)                                             \
+   (S_SQ_ALU_WORD0_SRC1_SEL(TERAKAN_KCACHE_DWORD_SOURCE(offset_dwords)) |                          \
+    S_SQ_ALU_WORD0_SRC1_CHAN(TERAKAN_KCACHE_DWORD_COMPONENT(offset_dwords)))
+#define TERAKAN_KCACHE_DWORD_WORD1_SRC2(offset_dwords)                                             \
+   (S_SQ_ALU_WORD1_OP3_SRC2_SEL(TERAKAN_KCACHE_DWORD_SOURCE(offset_dwords)) |                      \
+    S_SQ_ALU_WORD1_OP3_SRC2_CHAN(TERAKAN_KCACHE_DWORD_COMPONENT(offset_dwords)))
 
 #define TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE 176
 #define TERAKAN_RESOURCE_HW_COUNT_VERTEX        160

@@ -39,8 +39,14 @@
 #include <stdint.h>
 #include <string.h>
 
-struct terakan_meta_clear_color_push_constants {
-   uint32_t clear_value[4];
+enum {
+   TERAKAN_META_CLEAR_COLOR_CONST_CLEAR_VALUE,
+   TERAKAN_META_CLEAR_COLOR_CONST_CLEAR_VALUE_R = TERAKAN_META_CLEAR_COLOR_CONST_CLEAR_VALUE,
+   TERAKAN_META_CLEAR_COLOR_CONST_CLEAR_VALUE_G,
+   TERAKAN_META_CLEAR_COLOR_CONST_CLEAR_VALUE_B,
+   TERAKAN_META_CLEAR_COLOR_CONST_CLEAR_VALUE_A,
+
+   TERAKAN_META_CLEAR_COLOR_CONSTS_COUNT,
 };
 
 static uint32_t const terakan_meta_clear_color_ps_r8xx[] = {
@@ -51,7 +57,7 @@ static uint32_t const terakan_meta_clear_color_ps_r8xx[] = {
    S_SQ_CF_WORD0_ADDR(2) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS) |
       S_SQ_CF_ALU_WORD0_KCACHE_MODE0(V_SQ_CF_KCACHE_LOCK_1),
    S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(
-      TERAKAN_KCACHE_FIELD_LINE(struct terakan_meta_clear_color_push_constants, clear_value)) |
+      TERAKAN_KCACHE_DWORD_LINE(TERAKAN_META_CLEAR_COLOR_CONST_CLEAR_VALUE)) |
       S_SQ_CF_ALU_WORD1_COUNT(5 - 2) | EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
    /* 1: Export the color and end the program. */
@@ -75,24 +81,23 @@ static uint32_t const terakan_meta_clear_color_ps_r8xx[] = {
     * 5: (v) R0.W = MOV CB[push].clear_value.W, unused 0
     */
 
-   TERAKAN_KCACHE_FIELD_WORD0_SRC0(struct terakan_meta_clear_color_push_constants, clear_value[0]) |
+   TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_CLEAR_COLOR_CONST_CLEAR_VALUE_R) |
       S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_0),
    S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(0) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MOV),
 
-   TERAKAN_KCACHE_FIELD_WORD0_SRC0(struct terakan_meta_clear_color_push_constants, clear_value[1]) |
+   TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_CLEAR_COLOR_CONST_CLEAR_VALUE_G) |
       S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_0),
    S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(1) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MOV),
 
-   TERAKAN_KCACHE_FIELD_WORD0_SRC0(struct terakan_meta_clear_color_push_constants, clear_value[2]) |
+   TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_CLEAR_COLOR_CONST_CLEAR_VALUE_B) |
       S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_0),
    S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(2) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MOV),
 
    S_SQ_ALU_WORD0_LAST(1) |
-      TERAKAN_KCACHE_FIELD_WORD0_SRC0(struct terakan_meta_clear_color_push_constants,
-                                      clear_value[3]) |
+      TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_CLEAR_COLOR_CONST_CLEAR_VALUE_A) |
       S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_0),
    S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(3) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MOV),
@@ -106,7 +111,7 @@ static uint32_t const terakan_meta_clear_color_ps_r9xx[] = {
    S_SQ_CF_WORD0_ADDR(3) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS) |
       S_SQ_CF_ALU_WORD0_KCACHE_MODE0(V_SQ_CF_KCACHE_LOCK_1),
    S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(
-      TERAKAN_KCACHE_FIELD_LINE(struct terakan_meta_clear_color_push_constants, clear_value)) |
+      TERAKAN_KCACHE_DWORD_LINE(TERAKAN_META_CLEAR_COLOR_CONST_CLEAR_VALUE)) |
       S_SQ_CF_ALU_WORD1_COUNT(6 - 3) | EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
    /* 1: Export the color. */
@@ -134,24 +139,23 @@ static uint32_t const terakan_meta_clear_color_ps_r9xx[] = {
     * 6: R0.W = MOV CB[push].clear_value.W, unused 0
     */
 
-   TERAKAN_KCACHE_FIELD_WORD0_SRC0(struct terakan_meta_clear_color_push_constants, clear_value[0]) |
+   TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_CLEAR_COLOR_CONST_CLEAR_VALUE_R) |
       S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_0),
    S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(0) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MOV),
 
-   TERAKAN_KCACHE_FIELD_WORD0_SRC0(struct terakan_meta_clear_color_push_constants, clear_value[1]) |
+   TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_CLEAR_COLOR_CONST_CLEAR_VALUE_G) |
       S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_0),
    S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(1) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MOV),
 
-   TERAKAN_KCACHE_FIELD_WORD0_SRC0(struct terakan_meta_clear_color_push_constants, clear_value[2]) |
+   TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_CLEAR_COLOR_CONST_CLEAR_VALUE_B) |
       S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_0),
    S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(2) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MOV),
 
    S_SQ_ALU_WORD0_LAST(1) |
-      TERAKAN_KCACHE_FIELD_WORD0_SRC0(struct terakan_meta_clear_color_push_constants,
-                                      clear_value[3]) |
+      TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_CLEAR_COLOR_CONST_CLEAR_VALUE_A) |
       S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_0),
    S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(3) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
       S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MOV),
@@ -384,9 +388,9 @@ terakan_CmdClearAttachments(VkCommandBuffer const commandBuffer, uint32_t const 
    command_writer->push_constants_state.up_to_date_push_constants_bound_to_stages &=
       ~VK_SHADER_STAGE_FRAGMENT_BIT;
 
-   struct terakan_meta_clear_color_push_constants push_constants = {};
-   struct terakan_bo const * push_constants_bo = NULL;
-   uint32_t push_constants_va_lines;
+   uint32_t constants[TERAKAN_META_CLEAR_COLOR_CONSTS_COUNT] = {};
+   struct terakan_bo const * constants_bo = NULL;
+   uint32_t constants_va_lines;
 
    for (uint32_t attachment_index = 0; attachment_index < attachmentCount; ++attachment_index) {
       VkClearAttachment const * const attachment = &pAttachments[attachment_index];
@@ -394,26 +398,25 @@ terakan_CmdClearAttachments(VkCommandBuffer const commandBuffer, uint32_t const 
          continue;
       }
 
-      if (memcmp(push_constants.clear_value, attachment->clearValue.color.uint32,
-                 sizeof(uint32_t) * 4) != 0) {
-         memcpy(push_constants.clear_value, attachment->clearValue.color.uint32,
-                sizeof(uint32_t) * 4);
-         push_constants_bo = NULL;
+      if (memcmp(&constants[TERAKAN_META_CLEAR_COLOR_CONST_CLEAR_VALUE],
+                 attachment->clearValue.color.uint32, sizeof(uint32_t) * 4) != 0) {
+         constants_bo = NULL;
+         memcpy(&constants[TERAKAN_META_CLEAR_COLOR_CONST_CLEAR_VALUE],
+                attachment->clearValue.color.uint32, sizeof(uint32_t) * 4);
       }
 
-      if (push_constants_bo == NULL) {
-         void * const push_constants_mapping = terakan_push_buffer_allocate_kcache(
-            command_writer->base.command_buffer, sizeof(push_constants), &push_constants_bo,
-            &push_constants_va_lines);
-         if (unlikely(push_constants_mapping == NULL)) {
+      if (constants_bo == NULL) {
+         void * const constants_mapping = terakan_push_buffer_allocate_kcache(
+            command_writer->base.command_buffer, sizeof(constants), &constants_bo,
+            &constants_va_lines);
+         if (unlikely(constants_mapping == NULL)) {
             return;
          }
-         memcpy(push_constants_mapping, &push_constants, sizeof(push_constants));
+         memcpy(constants_mapping, constants, sizeof(constants));
          terakan_hw_state_draw_set_sq_kcache_fs(
             &command_writer->hw_state_draw, TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS,
-            (sizeof(push_constants) + (TERAKAN_KCACHE_HW_LINE_BYTES - 1)) /
-               TERAKAN_KCACHE_HW_LINE_BYTES,
-            push_constants_bo, push_constants_va_lines);
+            DIV_ROUND_UP(sizeof(constants), TERAKAN_KCACHE_HW_LINE_BYTES), constants_bo,
+            constants_va_lines);
       }
 
       terakan_meta_set_ps(command_writer, TERAKAN_META_SHADER_CLEAR_COLOR_PS, false);
