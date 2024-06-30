@@ -144,6 +144,7 @@ if with_platform_windows
     'winsys/wddm/terakan_wddm_d3dkmthk.h',
   )
   libterakan_deps += [
+    cc.find_library('cfgmgr32'),
     cc.find_library('dxgi'),
     cc.find_library('gdi32'),
   ]

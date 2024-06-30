@@ -26,12 +26,26 @@
 
 #include "terakan_instance.h"
 
+#include "terakan_wddm_d3dkmthk.h"
+
+#include <windows.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 struct terakan_instance_wddm {
    struct terakan_instance base;
+
+   /* Windows functions not available in Windows Vista are loaded dynamically. */
+
+   HMODULE gdi32_module;
+
+   struct {
+      /* Added in Windows 8 and Windows Server 2012. */
+
+      PFND3DKMT_OPENADAPTERFROMLUID d3dkmt_open_adapter_from_luid;
+   } dll_fn;
 };
 
 VkResult terakan_instance_wddm_create(VkInstanceCreateInfo const * create_info,

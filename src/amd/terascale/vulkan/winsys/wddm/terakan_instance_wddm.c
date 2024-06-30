@@ -30,6 +30,9 @@
 #include "vk_log.h"
 
 #include <stddef.h>
+#include <string.h>
+
+#include <windows.h>
 
 static void
 terakan_instance_wddm_destroy(struct terakan_instance * const instance_base)
@@ -38,6 +41,8 @@ terakan_instance_wddm_destroy(struct terakan_instance * const instance_base)
       container_of(instance_base, struct terakan_instance_wddm, base);
 
    terakan_instance_finish(&instance->base);
+
+   FreeLibrary(instance->gdi32_module);
 
    vk_free(&instance->base.vk.alloc, instance);
 }
@@ -56,15 +61,32 @@ terakan_instance_wddm_create(VkInstanceCreateInfo const * const create_info,
       return vk_error(NULL, VK_ERROR_OUT_OF_HOST_MEMORY);
    }
 
+   /* Load optional function pointers. */
+
+   memset(&instance->dll_fn, 0, sizeof(instance->dll_fn));
+
+   instance->gdi32_module = LoadLibraryW(L"gdi32.dll");
+   if (instance->gdi32_module == NULL) {
+      result = vk_errorf(NULL, VK_ERROR_INITIALIZATION_FAILED, "Failed to load gdi32.dll");
+      goto fail_alloc;
+   }
+   instance->dll_fn.d3dkmt_open_adapter_from_luid = (PFND3DKMT_OPENADAPTERFROMLUID)GetProcAddress(
+      instance->gdi32_module, "D3DKMTOpenAdapterFromLuid");
+
    result =
       terakan_instance_init(&instance->base, create_info, terakan_instance_wddm_destroy, allocator);
    if (result != VK_SUCCESS) {
-      vk_free(allocator, instance);
-      return result;
+      goto fail_gdi32_module;
    }
 
    instance->base.vk.physical_devices.enumerate = terakan_physical_device_wddm_enumerate;
 
    *instance_out = &instance->base;
    return VK_SUCCESS;
+
+fail_gdi32_module:
+   FreeLibrary(instance->gdi32_module);
+fail_alloc:
+   vk_free(allocator, instance);
+   return result;
 }
