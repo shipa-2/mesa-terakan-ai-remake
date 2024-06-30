@@ -1,6 +1,6 @@
 COPYRIGHT = '''\
 /*
- * Copyright © 2024 Vitaliy Triang3l Kuzmin
+ * Copyright (c) 2024 Vitaliy Triang3l Kuzmin
  *
  * Based in part on the address library for AMD drivers (AddrLib) which is:
  * Copyright (c) 2007-2024 Advanced Micro Devices, Inc. All Rights Reserved.
