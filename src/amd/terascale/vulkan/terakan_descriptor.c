@@ -106,7 +106,7 @@ terakan_descriptor_create_for_uniform_buffer(struct terakan_bo const * const bo,
    resource_out[3] =
       S_03000C_DST_SEL_X(TERASCALE_SWIZZLE_X) | S_03000C_DST_SEL_Y(TERASCALE_SWIZZLE_Y) |
       S_03000C_DST_SEL_Z(TERASCALE_SWIZZLE_Z) | S_03000C_DST_SEL_W(TERASCALE_SWIZZLE_W);
-   resource_out[4] = (uint32_t)(range_aligned / (sizeof(uint32_t) * 4));
+   resource_out[4] = (uint32_t)range_aligned;
    resource_out[7] = S_03001C_TYPE(V_03001C_SQ_TEX_VTX_VALID_BUFFER);
    resource_out[TERAKAN_RESOURCE_BUFFER_PRIORITY_WORD] = TERAKAN_BO_PRIORITY_UNIFORM_BUFFER;
 
@@ -130,17 +130,11 @@ terakan_descriptor_create_for_storage_buffer(
 
    resource_out[0] = (uint32_t)va;
    resource_out[1] = (uint32_t)(range_aligned - 1);
-   resource_out[2] = S_030008_BASE_ADDRESS_HI(va >> 32) | S_030008_STRIDE(sizeof(uint32_t)) |
-                     S_030008_DATA_FORMAT(TERASCALE_FORMAT_INDEX_32) |
-                     S_030008_NUM_FORMAT_ALL(TERASCALE_FORMAT_SQ_NUM_FORMAT_INT) |
-                     S_030008_ENDIAN_SWAP(UTIL_ARCH_BIG_ENDIAN ? TERASCALE_ENDIAN_SWAP_8IN32 : 0);
-   /* XYZW DST_SEL to permit vertex fetches larger than TERASCALE_FORMAT_INDEX_32 with a different
-    * format in the fetch instruction.
-    */
+   resource_out[2] = S_030008_BASE_ADDRESS_HI(va >> 32) | S_030008_STRIDE(1);
    resource_out[3] =
       S_03000C_DST_SEL_X(TERASCALE_SWIZZLE_X) | S_03000C_DST_SEL_Y(TERASCALE_SWIZZLE_Y) |
       S_03000C_DST_SEL_Z(TERASCALE_SWIZZLE_Z) | S_03000C_DST_SEL_W(TERASCALE_SWIZZLE_W);
-   resource_out[4] = (uint32_t)(range_aligned / sizeof(uint32_t));
+   resource_out[4] = (uint32_t)range_aligned;
    resource_out[7] = S_03001C_TYPE(V_03001C_SQ_TEX_VTX_VALID_BUFFER);
    resource_out[TERAKAN_RESOURCE_BUFFER_PRIORITY_WORD] = TERAKAN_BO_PRIORITY_SHADER_READ_BUFFER;
 

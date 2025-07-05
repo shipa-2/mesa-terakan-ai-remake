@@ -160,17 +160,71 @@ terakan_shader_spirv_to_nir(struct terakan_device * const device, size_t const s
    return nir;
 }
 
+/* `data` points to `nir_variable_mode robust_modes`. */
 static bool
 terakan_nir_should_vectorize_load_store(unsigned const align_mul, unsigned const align_offset,
                                         unsigned const bit_size, unsigned const num_components,
                                         int64_t hole_size, nir_intrinsic_instr * const low,
                                         UNUSED nir_intrinsic_instr * const high, void * const data)
 {
+   /* TODO(Triang3l): Don't vectorize kcache loads, and also don't combine kcache and resource loads
+    * (such as when the constant address of `high` is above the maximum kcache buffer size).
+    */
+
+   if (low->intrinsic == nir_intrinsic_store_ssbo) {
+      /* Storage buffer UAVs always use TERASCALE_FORMAT_INDEX_32 or STORE_BYTE / STORE_SHORT. */
+      return false;
+   }
+
+   /* Vectorization of buffer resource fetches. */
+
    if (num_components > 4 || hole_size != 0) {
       return false;
    }
 
-   /* TODO(Triang3l): Handle the alignment. */
+   unsigned const vector_bytes = bit_size / 8u * num_components;
+
+   if (bit_size < 32) {
+      /* According to testing on Barts, 8_8_8 and 16_16_16 buffer fetches return completely invalid
+       * values.
+       */
+      if (num_components == 3) {
+         return false;
+      }
+
+      /* According to testing on Barts, the hardware implicitly rounds the address down to the
+       * alignment requirement, which is min(bytes per element, 4), matching the alignment
+       * restriction described in "4.4.6 Element Alignment" of the Direct3D 11.3 Functional
+       * Specification.
+       */
+      if (nir_combined_align(align_mul, align_offset) < MIN2(vector_bytes, 4u)) {
+         return false;
+      }
+   }
+
+   /* According to testing on Barts, for elements larger than 4 bytes, bounds checking only
+    * considers the first 4 bytes, and if they are within the buffer size, the entire element is
+    * fetched. This may result in data outside the memory range bound to the buffer being loaded,
+    * which is not allowed with robustBufferAccess, so vectorize beyond 4 bytes only if it can be
+    * assumed that out-of-bounds access must not happen.
+    */
+   if (vector_bytes > 4) {
+      nir_variable_mode const robust_modes = *(nir_variable_mode const *)data;
+      switch (low->intrinsic) {
+      case nir_intrinsic_load_ubo:
+         if (robust_modes & nir_var_mem_ubo) {
+            return false;
+         }
+         break;
+      case nir_intrinsic_load_ssbo:
+         if (robust_modes & nir_var_mem_ssbo) {
+            return false;
+         }
+         break;
+      default:
+         break;
+      }
+   }
 
    return true;
 }
@@ -232,14 +286,22 @@ terakan_shader_lower_and_optimize_post_link(
 
    NIR_PASS(_, nir, r600_nir_lower_cube_to_2darray);
 
-   /* Vectorize loads that will be lowered to typed buffer load (vertex fetch) instructions. */
+   /* Vectorize loads that will be lowered to typed buffer load (vertex fetch) instructions, but
+    * first lower all loads to scalar to make sure hardware constraints for vectorizing are taken
+    * into account. Also, lower SSBO stores to scalar because the hardware instruction stores one
+    * element.
+    */
 
-   nir_load_store_vectorize_options const load_store_vectorize_options = {
+   nir_load_store_vectorize_options load_store_vectorize_options = {
       .callback = terakan_nir_should_vectorize_load_store,
-      .modes = nir_var_mem_ubo | nir_var_mem_push_const,
-      /* TODO(Triang3l): Vectorize SSBO loads, but not those done via a UAV. */
-      /* TODO(Triang3l): Robust access variable modes. */
+      .modes = nir_var_mem_ubo | nir_var_mem_push_const | nir_var_mem_ssbo,
    };
+   NIR_PASS(_, nir, nir_lower_io_to_scalar, load_store_vectorize_options.modes, NULL, NULL);
+   /* TODO(Triang3l): VK_EXT_pipeline_robustness. */
+   if (pipeline_layout->vk.base.device->enabled_features.robustBufferAccess) {
+      load_store_vectorize_options.robust_modes |= nir_var_mem_ubo | nir_var_mem_ssbo;
+   }
+   load_store_vectorize_options.cb_data = &load_store_vectorize_options.robust_modes;
    NIR_PASS(_, nir, nir_opt_load_store_vectorize, &load_store_vectorize_options);
 
    /* Lower bindings according to the pipeline layout.

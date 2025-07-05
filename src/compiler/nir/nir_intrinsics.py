@@ -1673,18 +1673,20 @@ intrinsic("r600_indirect_vertex_at_index", dest_comp=1, src_comp=[1], flags=[CAN
 load("r600_indirect_per_vertex_input", [1, 1], [BASE, RANGE, COMPONENT, DEST_TYPE, IO_SEMANTICS], [CAN_ELIMINATE, CAN_REORDER])
 
 # Load from a vertex fetch resource.
-# Reorderable, don't use for purposes like random access target immediate buffer reads.
+# Reorderability depends on ACCESS_CAN_REORDER.
 # src[] = { buffer index offset relative to ID_BASE, element index }
+# Relevant ACCESS: NON_UNIFORM, CAN_REORDER, INCLUDE_HELPERS
 # ID_BASE = buffer index base
 # BASE = data additional 16-bit offset in bytes
 # FORMAT = data format, or PIPE_FORMAT_NONE to use the format from the fetch constant
 # FLAGS = R600_NIR_LOAD_BUFFER_RESOURCE_FLAG_*
 load("buffer_resource_r600", src_comp=[1, 1],
      indices=[ACCESS, ID_BASE, BASE, COMPONENT, FORMAT, MEGA_FETCH_COUNT_R600, FLAGS],
-     flags=[CAN_ELIMINATE, CAN_REORDER])
+     flags=[CAN_ELIMINATE])
 
 # Load from a constant cache (kcache) buffer.
 # src[] = { buffer index offset relative to ID_BASE }
+# Relevant ACCESS: NON_UNIFORM
 # ID_BASE = buffer index base
 # BASE = data address in vec4 elements
 load("kcache_r600", src_comp=[1], indices=[ACCESS, ID_BASE, BASE, COMPONENT], flags=[CAN_ELIMINATE, CAN_REORDER])

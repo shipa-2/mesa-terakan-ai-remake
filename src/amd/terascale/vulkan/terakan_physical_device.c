@@ -210,7 +210,51 @@ terakan_physical_device_get_capabilities(
 
    /* Vulkan 1.0. */
 
+   /* Buffer resource bounds checking hardware behavior according to testing on Barts:
+    *
+    * For element sizes within 4 bytes, the entire element size must be in bounds for the data to be
+    * fetched. Otherwise, 0 is loaded into all channels.
+    *
+    * For element sizes larger than 4 bytes, however, only the first 4 bytes are checked, and if
+    * they're in bounds, the entire element is fetched (otherwise all channels receive 0).
+    * Therefore, if the size of the buffer is 3 bytes, a 32_32_32_32 fetch at offset 0 will return
+    * zeros, but if the buffer is 4 bytes large, all bytes [0, 15] will be loaded.
+    *
+    * This allows for vectorizing 32-bit uniform buffer and storage buffer loads freely without
+    * robustBufferAccess. However, this also makes it possible to read from beyond the memory range
+    * bound to the buffer, which is not allowed with robustBufferAccess.
+    *
+    * Section 46. "Features" of the Vulkan 1.3.292 specification says:
+    *
+    *     "If robustBufferAccess2 is enabled, vertex input attributes are considered out of bounds
+    *     if the offset of the attribute in the bound vertex buffer range plus the size of the
+    *     attribute is greater than the byte size of the memory range bound to the vertex buffer
+    *     binding.
+    *
+    *     If a vertex input attribute is out of bounds, the raw data extracted are zero values, and
+    *     missing G, B, or A components are filled with (0,0,1)."
+    *
+    * Thus, for vertex input, the bounds checking behavior for elements larger than 4 bytes must
+    * explicitly be taken into account with robustBufferAccess2 and even robustBufferAccess as
+    * out-of-bounds vertex input loads must not read from outside the memory range bound to the
+    * buffer. One approach is to subtract element size minus 4 from the size of the buffer.
+    *
+    * During a buffer resource fetch, the global address (which is the base address plus index times
+    * stride plus the offset from the fetch instruction) is implicitly rounded down to the alignment
+    * requirement of the element format: min(bytes per element, 4), which matches the alignment
+    * restriction for structures like vertices described in "4.4.6 Element Alignment" of the
+    * Direct3D 11.3 Functional Specification. (Non-power-of-two element sizes below 4 aren't
+    * important because during testing on Barts, 8_8_8 and 16_16_16 buffer fetches produced
+    * completely invalid values.)
+    *
+    * Bounds checking doesn't involve the base address from the buffer resource descriptor, only the
+    * index and offset part. Therefore, if the base address is misaligned, it's possible to read
+    * bytes that precede the base address. However, that doesn't permit reading from beyond the end
+    * of the [unaligned base, unaligned base + size) range, as long as elements are up to 4 bytes
+    * large.
+    */
    features_out->robustBufferAccess = true;
+
    features_out->fullDrawIndexUint32 = true;
    features_out->imageCubeArray = true;
    features_out->independentBlend = true;

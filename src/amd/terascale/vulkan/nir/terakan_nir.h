@@ -36,16 +36,17 @@
 extern "C" {
 #endif
 
-/* Generates buffer resource load intrinsics for a buffer resource with a stride of 1 producing a
- * NIR vector.
- * byte_address_alignment == 0 is treated as component size alignment.
+/* Emits a buffer resource load intrinsic for a buffer resource with a stride of 1 producing a NIR
+ * vector.
+ * Supports 1, 2 and 4 components for 8 and 16 bits, and 1, 2, 3 and 4 components for 32 bits.
+ * Vectorization is expected to be done externally before lowering to this intrinsic if needed,
+ * taking alignment and robustness requirements into account.
  */
 nir_def * terakan_nir_load_raw_resource_buffer(nir_builder * b, unsigned num_components,
                                                unsigned bit_size, enum gl_access_qualifier access,
                                                unsigned resource_index_base,
                                                nir_def * resource_index, unsigned byte_address_base,
-                                               nir_def * byte_address,
-                                               unsigned byte_address_alignment);
+                                               nir_def * byte_address);
 
 /* Compact fragment shader data output locations, so all RTVs precede all UAVs as required and to be
  * able to allocate arrays of UAVs without fragmentation, and so there are no holes in
@@ -64,9 +65,13 @@ bool terakan_nir_compact_fragment_data_locations(nir_shader * shader,
  *
  * It's recommended to run nir_opt_load_store_vectorize before the pass, as this transforms certain
  * loads and stores into hardware-specific intrinsics.
+ *
+ * The function adds new bits to `resources_needed_accum` and `samplers_needed_accum`, but keeps
+ * already set ones.
  */
 bool terakan_nir_lower_bindings(nir_shader * shader, struct terakan_pipeline_layout const * layout,
-                                BITSET_WORD * resources_needed, uint32_t * samplers_needed);
+                                BITSET_WORD * resources_needed_accum,
+                                uint32_t * samplers_needed_accum);
 
 bool terakan_nir_lower_sin_cos(nir_shader * shader);
 

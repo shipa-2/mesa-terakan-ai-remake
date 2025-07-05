@@ -1708,25 +1708,14 @@ Shader::emit_load_buffer_resource(nir_intrinsic_instr *instr)
 
    RegisterVec4 dest = vf.dest_vec4(instr->def, pin_group);
 
-   const unsigned instr_flags = nir_intrinsic_flags(instr);
-
-   unsigned resource_base = nir_intrinsic_id_base(instr);
-   PRegister resource_offset = nullptr;
-   const nir_const_value *resource_offset_const = nir_src_as_const_value(instr->src[0]);
-   if (resource_offset_const != nullptr) {
-      resource_base += resource_offset_const->u32;
-   } else {
-      resource_offset = vf.src(instr->src[0], 0)->as_register();
-   }
-
-   unsigned first_component = nir_intrinsic_component(instr);
-   assert(first_component + instr->def.num_components <= 4);
-
    unsigned fetch_format = FMT_INVALID;
    unsigned fetch_num_format = 0;
    unsigned fetch_format_comp = 0;
    unsigned fetch_endian = ENDIAN_NONE;
    RegisterVec4::Swizzle fetch_swizzle{7, 7, 7, 7};
+
+   unsigned first_component = nir_intrinsic_component(instr);
+   assert(first_component + instr->def.num_components <= 4);
 
    pipe_format format = nir_intrinsic_format(instr);
    if (format != PIPE_FORMAT_NONE) {
@@ -1758,10 +1747,21 @@ Shader::emit_load_buffer_resource(nir_intrinsic_instr *instr)
       }
    }
 
+   auto coord = vf.src(instr->src[1], 0)->as_register();
+
+   unsigned resource_base = nir_intrinsic_id_base(instr);
+   PRegister resource_offset = nullptr;
+   const nir_const_value *resource_offset_const = nir_src_as_const_value(instr->src[0]);
+   if (resource_offset_const != nullptr) {
+      resource_base += resource_offset_const->u32;
+   } else {
+      resource_offset = vf.src(instr->src[0], 0)->as_register();
+   }
+
    auto fetch = new FetchInstr(vc_fetch,
                                dest,
                                fetch_swizzle,
-                               vf.src(instr->src[1], 0)->as_register(),
+                               coord,
                                nir_intrinsic_base(instr),
                                no_index_offset,
                                static_cast<EVTXDataFormat>(fetch_format),
@@ -1769,6 +1769,14 @@ Shader::emit_load_buffer_resource(nir_intrinsic_instr *instr)
                                static_cast<EVFetchEndianSwap>(fetch_endian),
                                resource_base,
                                resource_offset);
+
+   gl_access_qualifier access = nir_intrinsic_access(instr);
+
+   if (access & ACCESS_INCLUDE_HELPERS) {
+      fetch->set_instr_flag(Instr::helper);
+   }
+
+   const unsigned instr_flags = nir_intrinsic_flags(instr);
 
    if (!(instr_flags & R600_NIR_LOAD_BUFFER_RESOURCE_FLAG_USE_VERTEX_CACHE)) {
       fetch->set_fetch_flag(FetchInstr::use_tc);
@@ -1804,6 +1812,11 @@ Shader::emit_load_buffer_resource(nir_intrinsic_instr *instr)
       fetch->reset_fetch_flag(FetchInstr::is_mega_fetch);
    } else {
       fetch->set_fetch_flag(FetchInstr::is_mega_fetch);
+   }
+
+   if (!(access & ACCESS_CAN_REORDER)) {
+      /* Need write-read coherence within the invocation. */
+      chain_ssbo_read(fetch);
    }
 
    emit_instruction(fetch);
