@@ -272,15 +272,29 @@ terakan_gfx_command_writer_emit_done(ASSERTED struct terakan_gfx_command_writer 
 
 /* Entry point for emitting packets.
  *
- * Allocates space for `packet_dwords` and `relocation_count` relocations, and assumes that the
+ * Allocates space for `packet_dwords` and `relocation_*_count` relocations, and assumes that the
  * application will write them all.
  * `packet_dwords` must not be 0.
  *
  * Also ensures that `bo_count` calls to `terakan_bo_reference_writer_add_reference` for
  * `terakan_gfx_command_writer::bo_reference_writer` will succeed (regardless of which BOs are
- * specified).
+ * specified). Unlike for `packet_dwords` and relocations, it's also okay to allocate more BO
+ * references than the number of `terakan_bo_reference_writer_add_reference` calls that will
+ * actually be done subsequently (`terakan_bo_reference_writer_add_reference` calls may thus be done
+ * conditionally based on whether this emission has started a new indirect buffer and thus a new
+ * list of BO references, for instance).
  *
- * Switches to the next indirect buffer and reapplies the state if needed.
+ * Switches to the next indirect buffer and reapplies the state if needed. This implies that:
+ * - Emissions must contain complete PM4 packets. It's not allowed to split a single packet into
+ *   multiple `emit` calls, because an `emit` call may start a new indirect buffer.
+ * - The effects of packets changing the GPU state (such as SET_CONFIG/CONTEXT_REG) may not be
+ *   preserved across multiple `emit` calls on their own, for the same reason. Therefore, GPU state
+ *   changes must be done either via the entire `terakan_hw_state` infrastructure (including marking
+ *   the touched state as pending in `terakan_state` if needed, to make sure the state desired by
+ *   the application is restored before the next draw / dispatch done by the application), or within
+ *   the same `emit` call as the draw / dispatch / barrier packets themselves that require the
+ *   needed state (and where necessary, properly updating `terakan_hw_state` to reflect the effects
+ *   of that).
  *
  * Returns a pointer to the packet dwords, or NULL if failed to allocate (the result must be
  * checked).
