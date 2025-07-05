@@ -51,9 +51,9 @@
 extern "C" {
 #endif
 
-#define TERAKAN_CONFIG_REG_OFFSET(address)  (((address)-EVERGREEN_CONFIG_REG_OFFSET) >> 2)
-#define TERAKAN_CONTEXT_REG_OFFSET(address) (((address)-EVERGREEN_CONTEXT_REG_OFFSET) >> 2)
-#define TERAKAN_CTL_CONST_OFFSET(address)   (((address)-EVERGREEN_CTL_CONST_OFFSET) >> 2)
+#define TERAKAN_CONFIG_REG_OFFSET(address)  (((address) - EVERGREEN_CONFIG_REG_OFFSET) >> 2)
+#define TERAKAN_CONTEXT_REG_OFFSET(address) (((address) - EVERGREEN_CONTEXT_REG_OFFSET) >> 2)
+#define TERAKAN_CTL_CONST_OFFSET(address)   (((address) - EVERGREEN_CTL_CONST_OFFSET) >> 2)
 
 /* Given that Terakan exposes more sampled image bindings than the Gallium R600 driver due to
  * separate images and samplers, the number of bindings may be much bigger, and thus, also taking

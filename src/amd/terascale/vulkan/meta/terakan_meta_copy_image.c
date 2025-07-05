@@ -176,77 +176,76 @@ static uint32_t const terakan_meta_copy_image_ps_r9xx[] = {
    0,
 };
 
-struct terakan_meta_shader const terakan_meta_copy_image_ps =
-   {
-      .r8xx =
-         {
-            .program = terakan_meta_copy_image_ps_r8xx,
-            .program_size_bytes = sizeof(terakan_meta_copy_image_ps_r8xx),
-            .static_registers =
-               {
-                  .sq_pgm_resources =
-                     {
-                        S_028844_NUM_GPRS(1) | TERAKAN_META_SQ_PGM_RESOURCES_COMMON,
-                        TERAKAN_META_SQ_PGM_RESOURCES_2_COMMON,
-                     },
-                  .stage =
-                     {
-                        .ps =
-                           {
-                              .sq_pgm_exports_ps = S_02884C_EXPORT_COLORS(1),
-                              .spi_ps_in_control =
-                                 {
-                                    S_0286CC_NUM_INTERP(1) | S_0286CC_LINEAR_GRADIENT_ENA(1),
-                                    S_0286D0_FIXED_PT_POSITION_ENA(1) |
-                                       S_0286D0_FIXED_PT_POSITION_ADDR(0),
-                                 },
-                              .spi_baryc_cntl = S_0286E0_LINEAR_CENTER_ENA(1),
-                              .cb_shader_mask = 0xF,
-                           },
-                     },
-               },
-         },
-      .r9xx =
-         {
-            .program = terakan_meta_copy_image_ps_r9xx,
-            .program_size_bytes = sizeof(terakan_meta_copy_image_ps_r9xx),
-            .static_registers =
-               {
-                  .sq_pgm_resources =
-                     {
-                        S_028844_NUM_GPRS(1) | TERAKAN_META_SQ_PGM_RESOURCES_COMMON,
-                        TERAKAN_META_SQ_PGM_RESOURCES_2_COMMON,
-                     },
-                  .stage =
-                     {
-                        .ps =
-                           {
-                              .sq_pgm_exports_ps = S_02884C_EXPORT_COLORS(1),
-                              .spi_ps_in_control =
-                                 {
-                                    S_0286CC_NUM_INTERP(1) | S_0286CC_LINEAR_GRADIENT_ENA(1),
-                                    S_0286D0_FIXED_PT_POSITION_ENA(1) |
-                                       S_0286D0_FIXED_PT_POSITION_ADDR(0),
-                                 },
-                              .spi_baryc_cntl = S_0286E0_LINEAR_CENTER_ENA(1),
-                              .cb_shader_mask = 0xF,
-                           },
-                     },
-               },
-         },
-      .kcache_needed = (uint16_t)1 << TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS,
-      .resources_needed =
-         {
-            [BITSET_BITWORD(TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META)] =
-               BITSET_BIT(TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META),
-         },
-      .stage =
-         {
-            .ps =
-               {
-                  .db_shader_control = TERAKAN_META_DB_SHADER_CONTROL_DEFAULT,
-               },
-         },
+struct terakan_meta_shader const terakan_meta_copy_image_ps = {
+   .r8xx =
+      {
+         .program = terakan_meta_copy_image_ps_r8xx,
+         .program_size_bytes = sizeof(terakan_meta_copy_image_ps_r8xx),
+         .static_registers =
+            {
+               .sq_pgm_resources =
+                  {
+                     S_028844_NUM_GPRS(1) | TERAKAN_META_SQ_PGM_RESOURCES_COMMON,
+                     TERAKAN_META_SQ_PGM_RESOURCES_2_COMMON,
+                  },
+               .stage =
+                  {
+                     .ps =
+                        {
+                           .sq_pgm_exports_ps = S_02884C_EXPORT_COLORS(1),
+                           .spi_ps_in_control =
+                              {
+                                 S_0286CC_NUM_INTERP(1) | S_0286CC_LINEAR_GRADIENT_ENA(1),
+                                 S_0286D0_FIXED_PT_POSITION_ENA(1) |
+                                    S_0286D0_FIXED_PT_POSITION_ADDR(0),
+                              },
+                           .spi_baryc_cntl = S_0286E0_LINEAR_CENTER_ENA(1),
+                           .cb_shader_mask = 0xF,
+                        },
+                  },
+            },
+      },
+   .r9xx =
+      {
+         .program = terakan_meta_copy_image_ps_r9xx,
+         .program_size_bytes = sizeof(terakan_meta_copy_image_ps_r9xx),
+         .static_registers =
+            {
+               .sq_pgm_resources =
+                  {
+                     S_028844_NUM_GPRS(1) | TERAKAN_META_SQ_PGM_RESOURCES_COMMON,
+                     TERAKAN_META_SQ_PGM_RESOURCES_2_COMMON,
+                  },
+               .stage =
+                  {
+                     .ps =
+                        {
+                           .sq_pgm_exports_ps = S_02884C_EXPORT_COLORS(1),
+                           .spi_ps_in_control =
+                              {
+                                 S_0286CC_NUM_INTERP(1) | S_0286CC_LINEAR_GRADIENT_ENA(1),
+                                 S_0286D0_FIXED_PT_POSITION_ENA(1) |
+                                    S_0286D0_FIXED_PT_POSITION_ADDR(0),
+                              },
+                           .spi_baryc_cntl = S_0286E0_LINEAR_CENTER_ENA(1),
+                           .cb_shader_mask = 0xF,
+                        },
+                  },
+            },
+      },
+   .kcache_needed = (uint16_t)1 << TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS,
+   .resources_needed =
+      {
+         [BITSET_BITWORD(TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META)] =
+            BITSET_BIT(TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META),
+      },
+   .stage =
+      {
+         .ps =
+            {
+               .db_shader_control = TERAKAN_META_DB_SHADER_CONTROL_DEFAULT,
+            },
+      },
 };
 
 VKAPI_ATTR void VKAPI_CALL
