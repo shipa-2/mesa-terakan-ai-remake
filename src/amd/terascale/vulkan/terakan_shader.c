@@ -25,11 +25,14 @@
 
 #include "nir/terakan_nir.h"
 #include "terakan_bo.h"
+#include "terakan_command_buffer.h"
 #include "terakan_descriptor.h"
 #include "terakan_device.h"
 #include "terakan_physical_device.h"
 
+#include "amd/terascale/common/terascale_wddm.h"
 #include "compiler/glsl_types.h"
+#include "gallium/drivers/r600/evergreend.h"
 #include "gallium/drivers/r600/sfn/sfn_nir_lower_tex.h"
 #include "spirv/nir_spirv.h"
 #include "util/bitscan.h"
@@ -41,6 +44,65 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
+
+struct terakan_shader_ring const terakan_shader_rings[TERAKAN_SHADER_RING_INDEX_COUNT] = {
+   [TERAKAN_SHADER_RING_INDEX_LSTMP] =
+      {
+         .base_wddm_patch_ids = TERASCALE_WDDM_PATCH_IDS_SQ_LSTMP_RING_BASE,
+         .base_size_config_reg_offset = TERAKAN_CONFIG_REG_OFFSET(R_008E10_SQ_LSTMP_RING_BASE),
+         .item_size_context_reg_offset =
+            TERAKAN_CONTEXT_REG_OFFSET(R_028830_SQ_LSTMP_RING_ITEMSIZE),
+         .stages = VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+         .sx_surface_sync_mask = (uint32_t)1 << 4,
+      },
+   [TERAKAN_SHADER_RING_INDEX_HSTMP] =
+      {
+         .base_wddm_patch_ids = TERASCALE_WDDM_PATCH_IDS_SQ_HSTMP_RING_BASE,
+         .base_size_config_reg_offset = TERAKAN_CONFIG_REG_OFFSET(R_008E18_SQ_HSTMP_RING_BASE),
+         .item_size_context_reg_offset =
+            TERAKAN_CONTEXT_REG_OFFSET(R_028834_SQ_HSTMP_RING_ITEMSIZE),
+         .stages = VK_PIPELINE_STAGE_2_TESSELLATION_CONTROL_SHADER_BIT,
+         .sx_surface_sync_mask = (uint32_t)1 << 4,
+      },
+   [TERAKAN_SHADER_RING_INDEX_ESTMP] =
+      {
+         .base_wddm_patch_ids = TERASCALE_WDDM_PATCH_IDS_SQ_ESTMP_RING_BASE,
+         .base_size_config_reg_offset = TERAKAN_CONFIG_REG_OFFSET(R_008C50_SQ_ESTMP_RING_BASE),
+         .item_size_context_reg_offset =
+            TERAKAN_CONTEXT_REG_OFFSET(R_028908_SQ_ESTMP_RING_ITEMSIZE),
+         .stages = VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT |
+                   VK_PIPELINE_STAGE_2_TESSELLATION_EVALUATION_SHADER_BIT,
+         .sx_surface_sync_mask = (uint32_t)1 << 4,
+      },
+   [TERAKAN_SHADER_RING_INDEX_GSTMP] =
+      {
+         .base_wddm_patch_ids = TERASCALE_WDDM_PATCH_IDS_SQ_GSTMP_RING_BASE,
+         .base_size_config_reg_offset = TERAKAN_CONFIG_REG_OFFSET(R_008C58_SQ_GSTMP_RING_BASE),
+         .item_size_context_reg_offset =
+            TERAKAN_CONTEXT_REG_OFFSET(R_02890C_SQ_GSTMP_RING_ITEMSIZE),
+         .stages = VK_PIPELINE_STAGE_2_GEOMETRY_SHADER_BIT,
+         .sx_surface_sync_mask = (uint32_t)1 << 4,
+      },
+   [TERAKAN_SHADER_RING_INDEX_VSTMP] =
+      {
+         .base_wddm_patch_ids = TERASCALE_WDDM_PATCH_IDS_SQ_VSTMP_RING_BASE,
+         .base_size_config_reg_offset = TERAKAN_CONFIG_REG_OFFSET(R_008C60_SQ_VSTMP_RING_BASE),
+         .item_size_context_reg_offset =
+            TERAKAN_CONTEXT_REG_OFFSET(R_028910_SQ_VSTMP_RING_ITEMSIZE),
+         .stages = VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT |
+                   VK_PIPELINE_STAGE_2_TESSELLATION_EVALUATION_SHADER_BIT,
+         .sx_surface_sync_mask = (uint32_t)1 << 4,
+      },
+   [TERAKAN_SHADER_RING_INDEX_PSTMP] =
+      {
+         .base_wddm_patch_ids = TERASCALE_WDDM_PATCH_IDS_SQ_PSTMP_RING_BASE,
+         .base_size_config_reg_offset = TERAKAN_CONFIG_REG_OFFSET(R_008C68_SQ_PSTMP_RING_BASE),
+         .item_size_context_reg_offset =
+            TERAKAN_CONTEXT_REG_OFFSET(R_028914_SQ_PSTMP_RING_ITEMSIZE),
+         .stages = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+         .sx_surface_sync_mask = (uint32_t)1 << 4,
+      },
+};
 
 /* From gl_nir_linker.c. */
 static void

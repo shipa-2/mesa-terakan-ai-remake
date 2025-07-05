@@ -68,7 +68,6 @@ enum terakan_bo_priority {
    TERAKAN_BO_PRIORITY_SHADER_BINARY = 10,
 
    TERAKAN_BO_PRIORITY_SHADER_RINGS = 11,
-   TERAKAN_BO_PRIORITY_SCRATCH_BUFFER = 11,
 };
 
 struct terakan_device;

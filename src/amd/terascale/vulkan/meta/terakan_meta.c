@@ -202,7 +202,7 @@ terakan_meta_set_vs(struct terakan_gfx_command_writer * const command_writer,
                     enum terakan_meta_shader_index const shader_index)
 {
    terakan_state_draw_set_pending(&command_writer->state_draw,
-                                  TERAKAN_STATE_DRAW_INDEX_SQ_PGM_LS_ES_GS_VS);
+                                  TERAKAN_STATE_DRAW_INDEX_SQ_PGM_LS_HS_ES_GS_VS);
 
    struct terakan_device const * const device = terakan_gfx_command_writer_device(command_writer);
 
@@ -220,6 +220,14 @@ terakan_meta_set_vs(struct terakan_gfx_command_writer * const command_writer,
    command_writer->hw_state_draw.sq_pgm_vs = shader_static;
    terakan_hw_state_draw_written(&command_writer->hw_state_draw,
                                  TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_VS, true);
+
+   terakan_state_draw_set_pending(&command_writer->state_draw,
+                                  TERAKAN_STATE_DRAW_INDEX_SQ_TMP_LS_HS_ES_GS_VS);
+   terakan_hw_state_draw_set_sq_ring(command_writer, TERAKAN_SHADER_RING_INDEX_LSTMP, 0, 0);
+   terakan_hw_state_draw_set_sq_ring(command_writer, TERAKAN_SHADER_RING_INDEX_HSTMP, 0, 0);
+   terakan_hw_state_draw_set_sq_ring(command_writer, TERAKAN_SHADER_RING_INDEX_ESTMP, 0, 0);
+   terakan_hw_state_draw_set_sq_ring(command_writer, TERAKAN_SHADER_RING_INDEX_GSTMP, 0, 0);
+   terakan_hw_state_draw_set_sq_ring(command_writer, TERAKAN_SHADER_RING_INDEX_VSTMP, 0, 0);
 
    struct terakan_meta_shader const * const shader = terakan_meta_shaders[shader_index];
 
@@ -261,6 +269,9 @@ terakan_meta_set_ps(struct terakan_gfx_command_writer * const command_writer,
    command_writer->hw_state_draw.sq_pgm_ps = shader_static;
    terakan_hw_state_draw_written(&command_writer->hw_state_draw,
                                  TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_PS, shader_static_modified);
+
+   terakan_state_draw_set_pending(&command_writer->state_draw, TERAKAN_STATE_DRAW_INDEX_SQ_TMP_PS);
+   terakan_hw_state_draw_set_sq_ring(command_writer, TERAKAN_SHADER_RING_INDEX_PSTMP, 0, 0);
 
    terakan_hw_state_draw_set_sq_constants_needed_by_fs(
       &command_writer->hw_state_draw, shader->kcache_needed, shader->resources_needed,

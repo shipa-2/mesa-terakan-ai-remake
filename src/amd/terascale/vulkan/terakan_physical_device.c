@@ -38,6 +38,7 @@
 #include "terakan_wsi.h"
 
 #include "compiler/shader_enums.h"
+#include "gallium/drivers/r600/evergreend.h"
 #include "gallium/drivers/r600/r600_isa.h"
 #include "gallium/drivers/r600/sfn/sfn_nir.h"
 #include "util/macros.h"
@@ -151,30 +152,141 @@ terakan_physical_device_chip_family_info_init(
       chip_family_info_out->has_vertex_cache = true;
    }
 
+   switch (chip_family) {
+   case CHIP_CYPRESS:
+   case CHIP_HEMLOCK:
+   case CHIP_BARTS:
+   case CHIP_CAYMAN:
+      chip_family_info_out->two_shader_engines_max = true;
+      break;
+   default:
+      chip_family_info_out->two_shader_engines_max = false;
+   }
+
+   /* Thread allocation granularity is 8 according to the Evergreen 3D Register Reference Guide. */
+   memset(&chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx, 0,
+          sizeof(chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx));
    if (is_r9xx) {
-      chip_family_info_out->sq_max_threads = 256;
-      chip_family_info_out->sq_ps_threads_r8xx = 0;
+      chip_family_info_out->sq_max_threads_shr3 = 256 >> 3;
    } else {
-      switch (chip_family) {
-      case CHIP_CEDAR:
-      case CHIP_PALM:
-      case CHIP_CAICOS:
-         chip_family_info_out->sq_max_threads = 192;
-         break;
-      default:
-         chip_family_info_out->sq_max_threads = 248;
+      bool const is_sumo = chip_family == CHIP_SUMO || chip_family == CHIP_SUMO2;
+
+      uint32_t sq_ps_threads_shr3;
+      uint32_t sq_max_gs_threads_shr3;
+      if (chip_family == CHIP_CEDAR || chip_family == CHIP_PALM || chip_family == CHIP_CAICOS) {
+         chip_family_info_out->sq_max_threads_shr3 = 192 >> 3;
+         sq_ps_threads_shr3 = 96 >> 3;
+         sq_max_gs_threads_shr3 = 16 >> 3;
+      } else {
+         chip_family_info_out->sq_max_threads_shr3 = 248 >> 3;
+         /* TODO(Triang3l): This way, when rendering with VS only, CHIP_SUMO and CHIP_SUMO2 receive
+          * more VS threads than PS threads, which may be suboptimal. However, both DRM Radeon
+          * 2.50.0 and R600g at the time of writing allocate 96 threads to PS rather than 128 for
+          * those chips. Research if using the same allocation as on other chips with 4 quad pipes
+          * is fine.
+          */
+         sq_ps_threads_shr3 = (is_sumo ? 96 : 128) >> 3;
+         sq_max_gs_threads_shr3 = 32 >> 3;
       }
 
-      switch (chip_family) {
-      case CHIP_CEDAR:
-      case CHIP_PALM:
-      case CHIP_SUMO:
-      case CHIP_SUMO2:
-         chip_family_info_out->sq_ps_threads_r8xx = 96;
-         break;
-      default:
-         chip_family_info_out->sq_ps_threads_r8xx = 128;
+      for (unsigned ts_enabled = 0; ts_enabled < 2; ++ts_enabled) {
+         for (unsigned gs_enabled = 0; gs_enabled < 2; ++gs_enabled) {
+            chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[ts_enabled][gs_enabled][0] |=
+               S_008C18_NUM_PS_THREADS(sq_ps_threads_shr3 << 3);
+         }
       }
+
+      uint32_t const sq_non_ps_threads_shr3 =
+         chip_family_info_out->sq_max_threads_shr3 - sq_ps_threads_shr3;
+
+      uint32_t const sq_gs_threads_no_ts_shr3 =
+         MIN2(sq_non_ps_threads_shr3 / 3, sq_max_gs_threads_shr3);
+      chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[0][1][0] |=
+         S_008C18_NUM_VS_THREADS(((sq_non_ps_threads_shr3 - sq_gs_threads_no_ts_shr3) / 2) << 3) |
+         S_008C18_NUM_GS_THREADS(sq_gs_threads_no_ts_shr3 << 3);
+
+      uint32_t sq_ls_hs_threads_no_gs_shr3;
+      uint32_t sq_ls_hs_threads_with_gs_shr3;
+      uint32_t sq_gs_threads_with_ts_shr3;
+      if (is_sumo) {
+         /* Allocate more threads to post-tessellation stages.
+          * LS and HS get the same amount as on other chips with 4 quad pipes, the rest are
+          * distributed evenly.
+          * This is different from R600g at the time of writing, but R600g allocates only 16 threads
+          * to each pre-tessellation stage (like on chips with 2 quad pipes) and 24 threads to each
+          * post-tessellation one, only resulting in 200 out of 248 threads being utilized.
+          */
+         sq_ls_hs_threads_no_gs_shr3 = 40 >> 3;
+         sq_ls_hs_threads_with_gs_shr3 = 24 >> 3;
+         sq_gs_threads_with_ts_shr3 =
+            MIN2((sq_non_ps_threads_shr3 - sq_ls_hs_threads_with_gs_shr3 * 2) / 3,
+                 sq_max_gs_threads_shr3);
+      } else {
+         /* Distribute threads evenly between vertex stages. */
+         sq_ls_hs_threads_no_gs_shr3 = sq_non_ps_threads_shr3 / 3;
+         sq_gs_threads_with_ts_shr3 = MIN2(sq_non_ps_threads_shr3 / 5, sq_max_gs_threads_shr3);
+         sq_ls_hs_threads_with_gs_shr3 = (sq_non_ps_threads_shr3 - sq_gs_threads_with_ts_shr3) / 4;
+      }
+
+      chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[1][0][1] |=
+         S_008C1C_NUM_HS_THREADS(sq_ls_hs_threads_no_gs_shr3 << 3) |
+         S_008C1C_NUM_LS_THREADS(sq_ls_hs_threads_no_gs_shr3 << 3);
+
+      chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[1][1][0] |=
+         S_008C18_NUM_VS_THREADS(((sq_non_ps_threads_shr3 - sq_ls_hs_threads_with_gs_shr3 * 2 -
+                                   sq_gs_threads_with_ts_shr3) /
+                                  2)
+                                 << 3) |
+         S_008C18_NUM_GS_THREADS(sq_gs_threads_with_ts_shr3 << 3);
+      chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[1][1][1] |=
+         S_008C1C_NUM_HS_THREADS(sq_ls_hs_threads_with_gs_shr3 << 3) |
+         S_008C1C_NUM_LS_THREADS(sq_ls_hs_threads_with_gs_shr3 << 3);
+
+      /* Allocate all threads not used for other stages (including for rounding error reasons) to
+       * the Vulkan vertex or tessellation evaluation stage.
+       */
+
+      uint32_t const sq_max_threads = chip_family_info_out->sq_max_threads_shr3 << 3;
+
+      uint32_t const sq_non_vs_threads_no_tess =
+         G_008C18_NUM_PS_THREADS(chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[0][0][0]);
+      assert(sq_non_vs_threads_no_tess < sq_max_threads);
+      chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[0][0][0] |=
+         S_008C18_NUM_VS_THREADS(sq_max_threads - sq_non_vs_threads_no_tess);
+
+      uint32_t const sq_non_es_threads_no_tess =
+         G_008C18_NUM_PS_THREADS(
+            chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[0][1][0]) +
+         G_008C18_NUM_VS_THREADS(
+            chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[0][1][0]) +
+         G_008C18_NUM_GS_THREADS(chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[0][1][0]);
+      assert(sq_non_es_threads_no_tess < sq_max_threads);
+      chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[0][1][0] |=
+         S_008C18_NUM_ES_THREADS(sq_max_threads - sq_non_es_threads_no_tess);
+
+      uint32_t const sq_non_vs_threads_with_tess =
+         G_008C18_NUM_PS_THREADS(
+            chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[1][0][0]) +
+         G_008C1C_NUM_HS_THREADS(
+            chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[1][0][1]) +
+         G_008C1C_NUM_LS_THREADS(chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[1][0][1]);
+      assert(sq_non_vs_threads_with_tess < sq_max_threads);
+      chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[1][0][0] |=
+         S_008C18_NUM_VS_THREADS(sq_max_threads - sq_non_vs_threads_with_tess);
+
+      uint32_t const sq_non_es_threads_with_tess =
+         G_008C18_NUM_PS_THREADS(
+            chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[1][1][0]) +
+         G_008C18_NUM_VS_THREADS(
+            chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[1][1][0]) +
+         G_008C18_NUM_GS_THREADS(
+            chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[1][1][0]) +
+         G_008C1C_NUM_HS_THREADS(
+            chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[1][1][1]) +
+         G_008C1C_NUM_LS_THREADS(chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[1][1][1]);
+      assert(sq_non_es_threads_with_tess < sq_max_threads);
+      chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[1][1][0] |=
+         S_008C18_NUM_ES_THREADS(sq_max_threads - sq_non_es_threads_with_tess);
    }
 
    switch (chip_family) {
@@ -188,6 +300,20 @@ terakan_physical_device_chip_family_info_init(
       break;
    default:
       chip_family_info_out->sq_max_stack_entries = 512;
+   }
+
+   switch (chip_family) {
+   case CHIP_CEDAR:
+   case CHIP_PALM:
+      /* In the AMD Accelerated Parallel Processing OpenCL Programming Guide rev2.3 (July 2012)
+       * device parameters table, for Cedar and Ontario / Zacate (Wrestler, or Palm),
+       * Max Work-Items / GPU = 6144, Max Wavefronts / GPU = 192, therefore the wave size is 32.
+       */
+      chip_family_info_out->wave_lanes_log2 = 5;
+      break;
+   default:
+      /* For Caicos / Seymour, Max Work-Items / GPU = 12288, Max Wavefronts / GPU = 192. */
+      chip_family_info_out->wave_lanes_log2 = 6;
    }
 }
 

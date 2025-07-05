@@ -23,9 +23,11 @@
 
 #include "terakan_queue.h"
 
+#include "terakan_bo.h"
 #include "terakan_command_buffer.h"
 #include "terakan_device.h"
 #include "terakan_physical_device.h"
+#include "terakan_shader.h"
 #include "terakan_sync_completion.h"
 
 #include "c11/threads.h"
@@ -111,6 +113,23 @@ terakan_queue_completion_thread_func(void * queue_ptr)
    return 0;
 }
 
+static void
+terakan_queue_replace_relocation_offset_for_32_bits(
+   enum terakan_queue_relocation_type const relocation_type, void * const relocations,
+   uint32_t const relocation_handle, uint32_t const wddm_allocation_offset)
+{
+   switch (relocation_type) {
+   case TERAKAN_QUEUE_RELOCATION_TYPE_WDDM_PATCH: {
+      struct terakan_queue_relocation_wddm_patch * const patch =
+         &((struct terakan_queue_relocation_wddm_patch *)relocations)[relocation_handle];
+      patch->allocation_offset = wddm_allocation_offset;
+   } break;
+
+   default:
+      break;
+   }
+}
+
 #define TERAKAN_QUEUE_SIGNAL_INDIRECT_BUFFER_MAX_DWORDS ((uint32_t)1 << 5)
 static_assert(
    TERAKAN_QUEUE_SIGNAL_INDIRECT_BUFFER_MAX_DWORDS >=
@@ -121,6 +140,8 @@ static_assert(
 static uint32_t
 terakan_queue_get_graphics_signal_indirect_buffer(
    struct terakan_device const * const device, VkPipelineStageFlags2 const expanded_signal_stages,
+   VkPipelineStageFlags2 const expanded_shader_ring_signal_stages,
+   uint32_t const sx_surface_sync_mask,
    uint32_t indirect_buffer[TERAKAN_QUEUE_SIGNAL_INDIRECT_BUFFER_MAX_DWORDS])
 {
    uint32_t indirect_buffer_size_dwords = 0;
@@ -139,20 +160,19 @@ terakan_queue_get_graphics_signal_indirect_buffer(
    uint32_t cp_coher_cntl_cb_db_dest_base_ena = 0;
    uint32_t cp_coher_cntl = 0;
 
-   if (expanded_signal_stages & (VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
-                                 VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT)) {
-      cp_coher_cntl_cb_db_dest_base_ena |= S_0085F0_DB_DEST_BASE_ENA(1);
-      cp_coher_cntl |= S_0085F0_DB_ACTION_ENA(1);
-   }
-   if (expanded_signal_stages & ((device->vk.enabled_features.fragmentStoresAndAtomics
+   bool const flush_uav =
+      (expanded_signal_stages & ((device->vk.enabled_features.fragmentStoresAndAtomics
                                      ? VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT
                                      : 0) |
-                                 VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT)) {
-      /* Perform a full destination cache flush if UAVs need to be flushed because
-       * FLUSH_AND_INV_CB_DATA_TS writes a timestamp and thus needs a BO.
-       * Fence signals result in a full flush anyway, more granularity may only be useful for
-       * semaphores.
-       */
+                                 VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT)) != 0;
+   bool const flush_rtv =
+      (expanded_signal_stages &
+       (VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_2_BLIT_BIT)) != 0;
+   bool const flush_db =
+      (expanded_signal_stages & (VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
+                                 VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT)) != 0;
+
+   if (flush_uav) {
       cp_coher_cntl_cb_db_dest_base_ena |=
          S_0085F0_CB0_DEST_BASE_ENA(1) | S_0085F0_CB1_DEST_BASE_ENA(1) |
          S_0085F0_CB2_DEST_BASE_ENA(1) | S_0085F0_CB3_DEST_BASE_ENA(1) |
@@ -160,20 +180,42 @@ terakan_queue_get_graphics_signal_indirect_buffer(
          S_0085F0_CB6_DEST_BASE_ENA(1) | S_0085F0_CB7_DEST_BASE_ENA(1) |
          S_0085F0_CB8_DEST_BASE_ENA(1) | S_0085F0_CB9_DEST_BASE_ENA(1) |
          S_0085F0_CB10_DEST_BASE_ENA(1) | S_0085F0_CB11_DEST_BASE_ENA(1);
-      cp_coher_cntl |= S_0085F0_CB_ACTION_ENA(1) | S_0085F0_SMX_ACTION_ENA(1);
+      cp_coher_cntl |= S_0085F0_CB_ACTION_ENA(1);
+   }
+   if (flush_rtv) {
+      cp_coher_cntl_cb_db_dest_base_ena |=
+         S_0085F0_CB0_DEST_BASE_ENA(1) | S_0085F0_CB1_DEST_BASE_ENA(1) |
+         S_0085F0_CB2_DEST_BASE_ENA(1) | S_0085F0_CB3_DEST_BASE_ENA(1) |
+         S_0085F0_CB4_DEST_BASE_ENA(1) | S_0085F0_CB5_DEST_BASE_ENA(1) |
+         S_0085F0_CB6_DEST_BASE_ENA(1) | S_0085F0_CB7_DEST_BASE_ENA(1);
+      cp_coher_cntl |= S_0085F0_CB_ACTION_ENA(1);
+   }
+   if (flush_db) {
+      cp_coher_cntl_cb_db_dest_base_ena |= S_0085F0_DB_DEST_BASE_ENA(1);
+      cp_coher_cntl |= S_0085F0_DB_ACTION_ENA(1);
+   }
+   if (sx_surface_sync_mask) {
+      assert(TERAKAN_QUEUE_SIGNAL_INDIRECT_BUFFER_MAX_DWORDS - indirect_buffer_size_dwords >= 3);
+      indirect_buffer[indirect_buffer_size_dwords++] = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
+      indirect_buffer[indirect_buffer_size_dwords++] =
+         TERAKAN_CONTEXT_REG_OFFSET(R_028354_SX_SURFACE_SYNC);
+      indirect_buffer[indirect_buffer_size_dwords++] =
+         S_028354_SURFACE_SYNC_MASK(sx_surface_sync_mask);
+      cp_coher_cntl |= S_0085F0_SH_ACTION_ENA(1);
+   }
+
+   if (flush_uav || sx_surface_sync_mask) {
+      /* Perform a full destination cache flush if UAVs need to be flushed because
+       * FLUSH_AND_INV_CB_DATA_TS writes a timestamp and thus needs a BO.
+       * Fence signals result in a full flush anyway, more granularity may only be useful for
+       * semaphores.
+       */
       assert(TERAKAN_QUEUE_SIGNAL_INDIRECT_BUFFER_MAX_DWORDS - indirect_buffer_size_dwords >= 2);
       indirect_buffer[indirect_buffer_size_dwords++] = PKT3(PKT3_EVENT_WRITE, 1 - 1, 0);
       indirect_buffer[indirect_buffer_size_dwords++] =
          EVENT_TYPE(EVENT_TYPE_CACHE_FLUSH_AND_INV_EVENT) | EVENT_INDEX(0);
    } else {
-      if (expanded_signal_stages &
-          (VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_2_BLIT_BIT)) {
-         cp_coher_cntl_cb_db_dest_base_ena |=
-            S_0085F0_CB0_DEST_BASE_ENA(1) | S_0085F0_CB1_DEST_BASE_ENA(1) |
-            S_0085F0_CB2_DEST_BASE_ENA(1) | S_0085F0_CB3_DEST_BASE_ENA(1) |
-            S_0085F0_CB4_DEST_BASE_ENA(1) | S_0085F0_CB5_DEST_BASE_ENA(1) |
-            S_0085F0_CB6_DEST_BASE_ENA(1) | S_0085F0_CB7_DEST_BASE_ENA(1);
-         cp_coher_cntl |= S_0085F0_CB_ACTION_ENA(1);
+      if (flush_rtv) {
          assert(TERAKAN_QUEUE_SIGNAL_INDIRECT_BUFFER_MAX_DWORDS - indirect_buffer_size_dwords >=
                 2 * 2);
          indirect_buffer[indirect_buffer_size_dwords++] = PKT3(PKT3_EVENT_WRITE, 1 - 1, 0);
@@ -183,9 +225,7 @@ terakan_queue_get_graphics_signal_indirect_buffer(
          indirect_buffer[indirect_buffer_size_dwords++] =
             EVENT_TYPE(EVENT_TYPE_FLUSH_AND_INV_CB_META) | EVENT_INDEX(0);
       }
-      if (expanded_signal_stages & (VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
-                                    VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT)) {
-         /* CP_COHER_CNTL bits have already been set. */
+      if (flush_db) {
          assert(TERAKAN_QUEUE_SIGNAL_INDIRECT_BUFFER_MAX_DWORDS - indirect_buffer_size_dwords >= 2);
          indirect_buffer[indirect_buffer_size_dwords++] = PKT3(PKT3_EVENT_WRITE, 1 - 1, 0);
          indirect_buffer[indirect_buffer_size_dwords++] =
@@ -193,15 +233,18 @@ terakan_queue_get_graphics_signal_indirect_buffer(
       }
    }
 
+   VkPipelineStageFlags2 const partial_flush_stages =
+      expanded_signal_stages | expanded_shader_ring_signal_stages;
+
    /* SURFACE_SYNC with any CB/DB_DEST_BASE_ENA implies PS_PARTIAL_FLUSH. */
    if (!cp_coher_cntl_cb_db_dest_base_ena) {
-      if (expanded_signal_stages &
+      if (partial_flush_stages &
           (VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_BLIT_BIT)) {
          assert(TERAKAN_QUEUE_SIGNAL_INDIRECT_BUFFER_MAX_DWORDS - indirect_buffer_size_dwords >= 2);
          indirect_buffer[indirect_buffer_size_dwords++] = PKT3(PKT3_EVENT_WRITE, 1 - 1, 0);
          indirect_buffer[indirect_buffer_size_dwords++] =
             EVENT_TYPE(EVENT_TYPE_PS_PARTIAL_FLUSH) | EVENT_INDEX(4);
-      } else if (expanded_signal_stages &
+      } else if (partial_flush_stages &
                  (VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT |
                   VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT |
                   VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT |
@@ -215,7 +258,7 @@ terakan_queue_get_graphics_signal_indirect_buffer(
       }
    }
 
-   if (expanded_signal_stages & VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT) {
+   if (partial_flush_stages & VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT) {
       assert(TERAKAN_QUEUE_SIGNAL_INDIRECT_BUFFER_MAX_DWORDS - indirect_buffer_size_dwords >= 2);
       indirect_buffer[indirect_buffer_size_dwords++] = PKT3(PKT3_EVENT_WRITE, 1 - 1, 0);
       indirect_buffer[indirect_buffer_size_dwords++] =
@@ -258,6 +301,147 @@ terakan_queue_submit(struct vk_queue * const queue_base, struct vk_queue_submit 
 
    struct terakan_device * const device =
       container_of(queue->vk.base.device, struct terakan_device, vk);
+   struct terakan_physical_device const * const physical_device =
+      terakan_device_physical_device(device);
+
+   /* Update submission-time allocations. */
+
+   uint64_t await_internal_bo_timeline_value = 0;
+
+   uint32_t shader_ring_bytes_needed_for_se_shr8[TERAKAN_SHADER_RING_INDEX_COUNT] = {};
+   for (uint32_t command_buffer_index = 0; command_buffer_index < submit->command_buffer_count;
+        ++command_buffer_index) {
+      struct terakan_command_buffer const * const command_buffer = container_of(
+         submit->command_buffers[command_buffer_index], struct terakan_command_buffer const, vk);
+      for (size_t shader_ring_index = 0; shader_ring_index < TERAKAN_SHADER_RING_INDEX_COUNT;
+           ++shader_ring_index) {
+         shader_ring_bytes_needed_for_se_shr8[shader_ring_index] =
+            MAX2(command_buffer->shader_ring_bytes_needed_for_se_shr8[shader_ring_index],
+                 shader_ring_bytes_needed_for_se_shr8[shader_ring_index]);
+      }
+   }
+   uint32_t shader_ring_bytes_needed_total_shr8 = 0;
+   uint32_t shader_ring_offsets_shr8[TERAKAN_SHADER_RING_INDEX_COUNT] = {};
+   for (size_t shader_ring_index = 0; shader_ring_index < TERAKAN_SHADER_RING_INDEX_COUNT;
+        ++shader_ring_index) {
+      shader_ring_offsets_shr8[shader_ring_index] = shader_ring_bytes_needed_total_shr8;
+      shader_ring_bytes_needed_total_shr8 +=
+         shader_ring_bytes_needed_for_se_shr8[shader_ring_index]
+         << (unsigned)(physical_device->chip_family_info.two_shader_engines_max &&
+                       (TERAKAN_SHADER_RINGS_PER_SHADER_ENGINE & BITFIELD_BIT(shader_ring_index)));
+   }
+   if (queue->shader_rings_bytes_shr8 < shader_ring_bytes_needed_total_shr8) {
+      await_internal_bo_timeline_value =
+         MAX2(queue->shader_rings_last_usage, await_internal_bo_timeline_value);
+   }
+
+   if (await_internal_bo_timeline_value != 0) {
+      VkResult const internal_bo_timeline_wait_result =
+         vk_sync_wait(&device->vk, queue->internal_bo_timeline, await_internal_bo_timeline_value,
+                      VK_SYNC_WAIT_COMPLETE, UINT64_MAX);
+      if (internal_bo_timeline_wait_result != VK_SUCCESS) {
+         if (internal_bo_timeline_wait_result == VK_ERROR_OUT_OF_HOST_MEMORY ||
+             internal_bo_timeline_wait_result == VK_ERROR_OUT_OF_DEVICE_MEMORY) {
+            return vk_error(device, internal_bo_timeline_wait_result);
+         }
+         vk_device_set_lost(
+            &device->vk,
+            "Failed to await completion of submissions referencing the queue's internal "
+            "allocations with result %s",
+            vk_Result_to_str(internal_bo_timeline_wait_result));
+         mtx_lock(&device->completion_mutex);
+         device->completion_lost = true;
+         mtx_unlock(&device->completion_mutex);
+         cnd_broadcast(&device->completion_condition);
+         return VK_ERROR_DEVICE_LOST;
+      }
+   }
+
+   if (queue->shader_rings_bytes_shr8 < shader_ring_bytes_needed_total_shr8) {
+      queue->shader_rings_bytes_shr8 = 0;
+      if (queue->shader_rings != NULL) {
+         terakan_bo_free(queue->shader_rings, NULL);
+         queue->shader_rings = NULL;
+      }
+
+      VkResult const shader_rings_allocate_result = device->winsys_fn->bo->allocate_device_memory(
+         device, (VkDeviceSize)shader_ring_bytes_needed_total_shr8 << 8, 0x100,
+         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0, NULL, VK_SYSTEM_ALLOCATION_SCOPE_DEVICE,
+         &queue->shader_rings);
+      if (shader_rings_allocate_result != VK_SUCCESS) {
+         return vk_error(device, shader_rings_allocate_result);
+      }
+      queue->shader_rings_bytes_shr8 = shader_ring_bytes_needed_total_shr8;
+      queue->shader_rings_last_usage = 0;
+   }
+
+   /* Insert submission-time allocations into the command buffers.
+    *
+    * VUID-vkQueueSubmit-pCommandBuffers-00070: "Each element of the pCommandBuffers member of each
+    * element of pSubmits must be in the pending or executable state"
+    *
+    * However, in Terakan, there's only one GFX queue, for which vkQueueSubmit must be externally
+    * synchronized, so it's safe to modify the command buffers here without additional
+    * synchronization (such as locking before modifying, unlocking after submitting to the winsys)
+    * or creating copies of them even if they are in the pending state.
+    */
+
+   if (shader_ring_bytes_needed_total_shr8 != 0) {
+      uint32_t const shader_rings_va_shr8 = (uint32_t)(queue->shader_rings->va >> 8);
+      for (uint32_t command_buffer_index = 0; command_buffer_index < submit->command_buffer_count;
+           ++command_buffer_index) {
+         struct terakan_command_buffer const * const command_buffer = container_of(
+            submit->command_buffers[command_buffer_index], struct terakan_command_buffer const, vk);
+         list_for_each_entry (struct terakan_command_buffer_indirect_buffer,
+                              command_buffer_indirect_buffer, &command_buffer->indirect_buffers,
+                              link) {
+            if (command_buffer_indirect_buffer->shader_rings_bo_placeholder_reference !=
+                UINT32_MAX) {
+               device->winsys_fn->queue->create_bo_reference(
+                  (char *)command_buffer_indirect_buffer->bo_references +
+                     device->bo_reference_size *
+                        command_buffer_indirect_buffer->shader_rings_bo_placeholder_reference,
+                  queue->shader_rings, true, true, TERAKAN_BO_PRIORITY_SHADER_RINGS);
+               for (size_t shader_ring_index = 0;
+                    shader_ring_index < TERAKAN_SHADER_RING_INDEX_COUNT; ++shader_ring_index) {
+                  struct terakan_command_buffer_indirect_buffer_shader_ring * const
+                     indirect_buffer_shader_ring =
+                        &command_buffer_indirect_buffer->shader_rings[shader_ring_index];
+                  if (indirect_buffer_shader_ring->set_base_argument_offsets_dwords[0] ==
+                      UINT32_MAX) {
+                     continue;
+                  }
+                  uint32_t const shader_ring_va_shr8 =
+                     shader_rings_va_shr8 + shader_ring_offsets_shr8[shader_ring_index];
+                  uint32_t const shader_ring_bytes_shr8 =
+                     shader_ring_bytes_needed_for_se_shr8[shader_ring_index];
+                  command_buffer_indirect_buffer->indirect_buffer
+                     [indirect_buffer_shader_ring->set_base_argument_offsets_dwords[0]] =
+                     shader_ring_va_shr8;
+                  terakan_queue_replace_relocation_offset_for_32_bits(
+                     physical_device->submission_info_gfx.base.relocation_type,
+                     command_buffer_indirect_buffer->relocations,
+                     indirect_buffer_shader_ring->set_base_relocation_handles[0],
+                     shader_ring_va_shr8);
+                  if (physical_device->chip_family_info.two_shader_engines_max &&
+                      (TERAKAN_SHADER_RINGS_PER_SHADER_ENGINE & BITFIELD_BIT(shader_ring_index))) {
+                     command_buffer_indirect_buffer->indirect_buffer
+                        [indirect_buffer_shader_ring->set_base_argument_offsets_dwords[1]] =
+                        shader_ring_va_shr8 + shader_ring_bytes_shr8;
+                     terakan_queue_replace_relocation_offset_for_32_bits(
+                        physical_device->submission_info_gfx.base.relocation_type,
+                        command_buffer_indirect_buffer->relocations,
+                        indirect_buffer_shader_ring->set_base_relocation_handles[1],
+                        shader_ring_va_shr8 + shader_ring_bytes_shr8);
+                  }
+                  command_buffer_indirect_buffer
+                     ->indirect_buffer[indirect_buffer_shader_ring->set_size_argument_offset_dwords] =
+                     shader_ring_bytes_shr8;
+               }
+            }
+         }
+      }
+   }
 
    /* Submit the command buffers. */
 
@@ -265,7 +449,7 @@ terakan_queue_submit(struct vk_queue * const queue_base, struct vk_queue_submit 
         ++command_buffer_index) {
       struct terakan_command_buffer const * const command_buffer = container_of(
          submit->command_buffers[command_buffer_index], struct terakan_command_buffer const, vk);
-      list_for_each_entry (struct terakan_command_buffer_indirect_buffer,
+      list_for_each_entry (struct terakan_command_buffer_indirect_buffer const,
                            command_buffer_indirect_buffer, &command_buffer->indirect_buffers,
                            link) {
          /* The winsys may not support empty indirect buffers. */
@@ -298,17 +482,31 @@ terakan_queue_submit(struct vk_queue * const queue_base, struct vk_queue_submit 
    /* Construct the list of the timeline semaphores that need to be signaled, and gather the stages
     * for the dependency.
     */
-   VkPipelineStageFlags2 signal_stages = 0;
    struct list_head completion_signals;
    list_inithead(&completion_signals);
-   for (uint32_t submit_signal_index = 0; submit_signal_index < submit->signal_count;
-        ++submit_signal_index) {
-      struct vk_sync_signal const * const submit_signal = &submit->signals[submit_signal_index];
-      if (submit_signal->sync->type == &vk_sync_dummy_type) {
-         continue;
+   bool const internal_bo_timeline_signal_needed = shader_ring_bytes_needed_total_shr8 != 0;
+   /* Handling both submission signals and the internal BO timeline semaphore signal in a similar
+    * way, with the latter assumed to be the signal at the loop iteration `submit->signal_count`.
+    */
+   uint32_t const submit_and_internal_bo_timeline_signal_count =
+      submit->signal_count + (uint32_t)internal_bo_timeline_signal_needed;
+   for (uint32_t submit_signal_index = 0;
+        submit_signal_index < submit_and_internal_bo_timeline_signal_count; ++submit_signal_index) {
+      struct vk_sync * submit_signal_sync;
+      uint64_t submit_signal_value;
+      if (unlikely(submit_signal_index >= submit->signal_count)) {
+         submit_signal_sync = queue->internal_bo_timeline;
+         submit_signal_value = queue->internal_bo_timeline_next_value;
+      } else {
+         struct vk_sync_signal const * const submit_signal = &submit->signals[submit_signal_index];
+         if (submit_signal->sync->type == &vk_sync_dummy_type) {
+            continue;
+         }
+         submit_signal_sync = submit_signal->sync;
+         submit_signal_value = submit_signal->signal_value;
       }
-      signal_stages |= submit_signal->stage_mask;
-      assert(submit_signal->sync->type == &terakan_sync_completion_type);
+      assert(submit_signal_sync->type == &terakan_sync_completion_type);
+
       struct terakan_queue_completion_signal * completion_signal;
       mtx_lock(&device->completion_mutex);
       if (!list_is_empty(&queue->completion_signals_free)) {
@@ -336,8 +534,8 @@ terakan_queue_submit(struct vk_queue * const queue_base, struct vk_queue_submit 
          }
       }
       completion_signal->sync =
-         container_of(submit_signal->sync, struct terakan_sync_completion, vk);
-      completion_signal->value = submit_signal->signal_value;
+         container_of(submit_signal_sync, struct terakan_sync_completion, vk);
+      completion_signal->value = submit_signal_value;
       list_add(&completion_signal->link, &completion_signals);
    }
    if (list_is_empty(&completion_signals)) {
@@ -393,11 +591,39 @@ terakan_queue_submit(struct vk_queue * const queue_base, struct vk_queue_submit 
     * Make sure all writes and reads in the first synchronization scope are complete to prevent all
     * types of data hazards, and flush write caches to make written memory available.
     */
+
+   VkPipelineStageFlags2 signal_stages = 0;
+   for (uint32_t submit_signal_index = 0; submit_signal_index < submit->signal_count;
+        ++submit_signal_index) {
+      struct vk_sync_signal const * const submit_signal = &submit->signals[submit_signal_index];
+      if (submit_signal->sync->type == &vk_sync_dummy_type) {
+         continue;
+      }
+      signal_stages |= submit_signal->stage_mask;
+   }
    signal_stages = vk_expand_src_stage_flags2(signal_stages);
+
+   uint32_t sx_surface_sync_mask = 0b0;
+   VkPipelineStageFlags2 shader_ring_signal_stages = 0;
+   if (shader_ring_bytes_needed_total_shr8 != 0) {
+      for (size_t shader_ring_index = 0; shader_ring_index < TERAKAN_SHADER_RING_INDEX_COUNT;
+           ++shader_ring_index) {
+         if (shader_ring_bytes_needed_for_se_shr8[shader_ring_index] == 0) {
+            continue;
+         }
+         struct terakan_shader_ring const * const shader_ring_info =
+            &terakan_shader_rings[shader_ring_index];
+         sx_surface_sync_mask |= shader_ring_info->sx_surface_sync_mask;
+         shader_ring_signal_stages |= shader_ring_info->stages;
+      }
+   }
+   shader_ring_signal_stages = vk_expand_src_stage_flags2(shader_ring_signal_stages);
+
    uint32_t signal_indirect_buffer[TERAKAN_QUEUE_SIGNAL_INDIRECT_BUFFER_MAX_DWORDS];
    uint32_t const signal_indirect_buffer_size_dwords =
-      terakan_queue_get_graphics_signal_indirect_buffer(device, signal_stages,
-                                                        signal_indirect_buffer);
+      terakan_queue_get_graphics_signal_indirect_buffer(
+         device, signal_stages, shader_ring_signal_stages, sx_surface_sync_mask,
+         signal_indirect_buffer);
    assert(signal_indirect_buffer_size_dwords != 0);
 
    /* Submit the memory dependency packets and a signal of the completion fence. */
@@ -427,7 +653,9 @@ terakan_queue_submit(struct vk_queue * const queue_base, struct vk_queue_submit 
     * submission, and wake pending signal waiting threads and the submission completion awaiting
     * thread.
     */
+
    mtx_lock(&device->completion_mutex);
+
    for (uint32_t submit_signal_index = 0; submit_signal_index < submit->signal_count;
         ++submit_signal_index) {
       struct vk_sync_signal const * const submit_signal = &submit->signals[submit_signal_index];
@@ -440,7 +668,23 @@ terakan_queue_submit(struct vk_queue * const queue_base, struct vk_queue_submit 
       assert(submit_signal_sync->pending_value < submit_signal->signal_value);
       submit_signal_sync->pending_value = submit_signal->signal_value;
    }
+
+   if (internal_bo_timeline_signal_needed) {
+      assert(queue->internal_bo_timeline->type == &terakan_sync_completion_type);
+      struct terakan_sync_completion * const internal_bo_timeline_sync =
+         container_of(queue->internal_bo_timeline, struct terakan_sync_completion, vk);
+      assert(internal_bo_timeline_sync->pending_value < queue->internal_bo_timeline_next_value);
+      internal_bo_timeline_sync->pending_value = queue->internal_bo_timeline_next_value;
+
+      if (shader_ring_bytes_needed_total_shr8 != 0) {
+         queue->shader_rings_last_usage = queue->internal_bo_timeline_next_value;
+      }
+
+      ++queue->internal_bo_timeline_next_value;
+   }
+
    list_addtail(&completion_submission->link, &queue->completion_submissions_pending);
+
    mtx_unlock(&device->completion_mutex);
    cnd_broadcast(&device->completion_condition);
 
@@ -453,11 +697,16 @@ terakan_queue_destroy(struct terakan_queue * const queue)
    struct terakan_device * const device =
       container_of(queue->vk.base.device, struct terakan_device, vk);
 
+   if (queue->shader_rings != NULL) {
+      terakan_bo_free(queue->shader_rings, NULL);
+   }
+
+   vk_sync_destroy(&device->vk, queue->internal_bo_timeline);
+
    mtx_lock(&device->completion_mutex);
    queue->shutdown_competion_thread = true;
    mtx_unlock(&device->completion_mutex);
    cnd_broadcast(&device->completion_condition);
-
    thrd_join(queue->completion_thread, NULL);
 
    struct terakan_queue_completion_submission *completion_submission, *next_submission;
@@ -536,11 +785,37 @@ terakan_queue_create(struct terakan_device * const device,
       goto fail_submission_context;
    }
 
+   struct vk_sync_type const * const * internal_bo_timeline_type;
+   for (internal_bo_timeline_type = physical_device->vk.supported_sync_types;
+        *internal_bo_timeline_type != NULL; ++internal_bo_timeline_type) {
+      if ((*internal_bo_timeline_type)->features &
+          (VK_SYNC_FEATURE_TIMELINE | VK_SYNC_FEATURE_CPU_WAIT)) {
+         break;
+      }
+   }
+   assert(*internal_bo_timeline_type != NULL);
+   result = vk_sync_create(&device->vk, *internal_bo_timeline_type, VK_SYNC_IS_TIMELINE, 0,
+                           &queue->internal_bo_timeline);
+   if (result != VK_SUCCESS) {
+      goto fail_completion_thread;
+   }
+   queue->internal_bo_timeline_next_value = 1;
+
+   queue->shader_rings_bytes_shr8 = 0;
+   queue->shader_rings = NULL;
+   queue->shader_rings_last_usage = 0;
+
    queue->vk.driver_submit = terakan_queue_submit;
 
    *queue_out = queue;
    return VK_SUCCESS;
 
+fail_completion_thread:
+   mtx_lock(&device->completion_mutex);
+   queue->shutdown_competion_thread = true;
+   mtx_unlock(&device->completion_mutex);
+   cnd_broadcast(&device->completion_condition);
+   thrd_join(queue->completion_thread, NULL);
 fail_submission_context:
    device->winsys_fn->queue->release_submission_context(queue->submission_context);
 fail_queue:

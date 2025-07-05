@@ -403,6 +403,11 @@ terakan_command_buffer_create(struct vk_command_pool * const command_pool,
    list_inithead(&command_buffer->push_buffers);
    command_buffer->current_push_buffer_used_bytes = TERAKAN_PUSH_BUFFER_SIZE_BYTES;
 
+   for (size_t shader_ring_index = 0; shader_ring_index < TERAKAN_SHADER_RING_INDEX_COUNT;
+        ++shader_ring_index) {
+      command_buffer->shader_ring_bytes_needed_for_se_shr8[shader_ring_index] = 0;
+   }
+
    list_inithead(&command_buffer->indirect_buffers);
 
    command_buffer->command_writer.gfx = NULL;
@@ -457,8 +462,9 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
     * - fglrx indirect buffers
     */
 
+   struct terakan_device const * const device = terakan_gfx_command_writer_device(command_writer);
    struct terakan_physical_device const * const physical_device =
-      terakan_gfx_command_writer_physical_device(command_writer);
+      terakan_device_physical_device(device);
    struct terakan_physical_device_chip_family_info const * const chip_family_info =
       &physical_device->chip_family_info;
    bool const is_r9xx = chip_family_info->is_r9xx;
@@ -894,15 +900,12 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
    /* TODO(Triang3l): Emit the values for graphics or compute when switching between the two. */
 
    if (!is_r9xx) {
-      /* The thread counts should be a multiple of 8 as space is allocated in blocks of 8 according
-       * to the register reference.
-       * DRM Radeon 2.50.0 spreads the non-pixel-shader threads evenly between 6 stages, but aside
-       * from the pixel shader there are 5 stages - allocate more.
-       */
-      uint32_t const sq_vertex_threads =
-         (chip_family_info->sq_max_threads - chip_family_info->sq_ps_threads_r8xx) / 5 / 8 * 8;
+      unsigned const sq_vertex_stage_count =
+         terakan_shader_hw_vertex_stage_count(device->vk.enabled_features.tessellationShader,
+                                              device->vk.enabled_features.geometryShader);
 
-      uint32_t const sq_stage_stack_entries = chip_family_info->sq_max_stack_entries / 6;
+      uint32_t const sq_stage_stack_entries =
+         chip_family_info->sq_max_stack_entries / (sq_vertex_stage_count + 1);
 
       uint32_t const sq_thread_stack_register_count =
          (R_008C28_SQ_STACK_RESOURCE_MGMT_3 - R_008C18_SQ_THREAD_RESOURCE_MGMT_1) /
@@ -915,23 +918,29 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
       }
       *packet++ = PKT3(PKT3_SET_CONFIG_REG, sq_thread_stack_register_count, 0);
       *packet++ = TERAKAN_CONFIG_REG_OFFSET(R_008C18_SQ_THREAD_RESOURCE_MGMT_1);
-      /* R_008C18_SQ_THREAD_RESOURCE_MGMT_1 */
-      *packet++ = S_008C18_NUM_PS_THREADS(chip_family_info->sq_ps_threads_r8xx) |
-                  S_008C18_NUM_VS_THREADS(sq_vertex_threads) |
-                  S_008C18_NUM_GS_THREADS(sq_vertex_threads) |
-                  S_008C18_NUM_ES_THREADS(sq_vertex_threads);
-      /* R_008C1C_SQ_THREAD_RESOURCE_MGMT_2 */
-      *packet++ =
-         S_008C1C_NUM_HS_THREADS(sq_vertex_threads) | S_008C1C_NUM_LS_THREADS(sq_vertex_threads);
+      /* R_008C18_SQ_THREAD_RESOURCE_MGMT_1, R_008C1C_SQ_THREAD_RESOURCE_MGMT_2 */
+      /* TODO(Triang3l): Allocate based on the currently bound shaders, not the enabled features.
+       * Must be consistent with terakan_state_draw sq_tmp.sq_thread_resource_mgmt.
+       */
+      memcpy(packet,
+             chip_family_info->sq_thread_resource_mgmt_ts_gs_r8xx
+                [device->vk.enabled_features.tessellationShader ? 1 : 0]
+                [device->vk.enabled_features.geometryShader ? 1 : 0],
+             sizeof(uint32_t) * 2);
+      packet += 2;
       /* R_008C20_SQ_STACK_RESOURCE_MGMT_1 */
       *packet++ = S_008C20_NUM_PS_STACK_ENTRIES(sq_stage_stack_entries) |
                   S_008C20_NUM_VS_STACK_ENTRIES(sq_stage_stack_entries);
       /* R_008C24_SQ_STACK_RESOURCE_MGMT_2 */
-      *packet++ = S_008C24_NUM_GS_STACK_ENTRIES(sq_stage_stack_entries) |
-                  S_008C24_NUM_ES_STACK_ENTRIES(sq_stage_stack_entries);
+      *packet++ = device->vk.enabled_features.geometryShader
+                     ? S_008C24_NUM_GS_STACK_ENTRIES(sq_stage_stack_entries) |
+                          S_008C24_NUM_ES_STACK_ENTRIES(sq_stage_stack_entries)
+                     : 0;
       /* R_008C28_SQ_STACK_RESOURCE_MGMT_3 */
-      *packet++ = S_008C28_NUM_HS_STACK_ENTRIES(sq_stage_stack_entries) |
-                  S_008C28_NUM_LS_STACK_ENTRIES(sq_stage_stack_entries);
+      *packet++ = device->vk.enabled_features.tessellationShader
+                     ? S_008C28_NUM_HS_STACK_ENTRIES(sq_stage_stack_entries) |
+                          S_008C28_NUM_LS_STACK_ENTRIES(sq_stage_stack_entries)
+                     : 0;
       *packet++ = PKT3(PKT3_SET_CONFIG_REG, 1, 0);
       *packet++ = TERAKAN_CONFIG_REG_OFFSET(R_008E2C_SQ_LDS_RESOURCE_MGMT);
       *packet++ = S_008E2C_NUM_PS_LDS(TERAKAN_LIMITS_HW_LDS_SIMD_DWORD_COUNT / 2) |
@@ -956,6 +965,13 @@ terakan_gfx_command_writer_new_indirect_buffer(
                                      command_writer->indirect_buffer->bo_references,
                                      terakan_gfx_command_writer_device(command_writer)
                                         ->command_buffer_submission_size_gfx.bo_references);
+
+   command_writer->indirect_buffer->shader_rings_bo_placeholder_reference = UINT32_MAX;
+   for (size_t shader_ring_index = 0; shader_ring_index < TERAKAN_SHADER_RING_INDEX_COUNT;
+        ++shader_ring_index) {
+      command_writer->indirect_buffer->shader_rings[shader_ring_index]
+         .set_base_argument_offsets_dwords[0] = UINT32_MAX;
+   }
 
    command_writer->is_beginning_indirect_buffer = true;
 
@@ -1092,7 +1108,7 @@ terakan_gfx_command_writer_emit_with_bo(struct terakan_gfx_command_writer * cons
    return indirect_buffer_allocation;
 }
 
-void
+uint32_t
 terakan_gfx_command_writer_add_relocation(struct terakan_gfx_command_writer * const command_writer,
                                           uint32_t ** const indirect_buffer_append_ptr,
                                           uint32_t const * const address_in_packet,
@@ -1105,7 +1121,7 @@ terakan_gfx_command_writer_add_relocation(struct terakan_gfx_command_writer * co
          ->submission_info_gfx.base.relocation_type;
 
    if (relocation_type == TERAKAN_QUEUE_RELOCATION_TYPE_NONE) {
-      return;
+      return 0;
    }
 
 #ifndef NDEBUG
@@ -1115,18 +1131,22 @@ terakan_gfx_command_writer_add_relocation(struct terakan_gfx_command_writer * co
 #endif
 
    switch (relocation_type) {
-   case TERAKAN_QUEUE_RELOCATION_TYPE_DRM_NOP:
+   case TERAKAN_QUEUE_RELOCATION_TYPE_DRM_NOP: {
       *((*indirect_buffer_append_ptr)++) = PKT3(PKT3_NOP, 0, 0);
+      uint32_t const relocation_handle =
+         (uint32_t)(*indirect_buffer_append_ptr - command_writer->indirect_buffer->indirect_buffer);
       /* DRM Radeon accepts BO reference offsets in dwords, so multiplying by
        * `sizeof(struct drm_radeon_cs_reloc) / sizeof(__u32)`.
        */
       *((*indirect_buffer_append_ptr)++) = 4 * bo_reference;
-      break;
+      return relocation_handle;
+   } break;
 
    case TERAKAN_QUEUE_RELOCATION_TYPE_WDDM_PATCH: {
+      uint32_t const relocation_handle = command_writer->indirect_buffer->relocation_count++;
       struct terakan_queue_relocation_wddm_patch * const patch =
-         &((struct terakan_queue_relocation_wddm_patch *)command_writer->indirect_buffer
-              ->relocations)[command_writer->indirect_buffer->relocation_count++];
+         &((struct terakan_queue_relocation_wddm_patch *)
+              command_writer->indirect_buffer->relocations)[relocation_handle];
       /* + 1 because a hAllocation = 0 allocation list entry is prepended when submitting. */
       patch->allocation_index = 1 + bo_reference;
       patch->slot_id = (uint32_t)wddm_patch_ids;
@@ -1136,11 +1156,14 @@ terakan_gfx_command_writer_add_relocation(struct terakan_gfx_command_writer * co
          sizeof(uint32_t) *
          (uint32_t)(address_in_packet - command_writer->indirect_buffer->indirect_buffer);
       patch->split_offset = 0;
+      return relocation_handle;
    } break;
 
    default:
       assert(!"Unsupported relocation type");
    }
+
+   return 0;
 }
 
 void
@@ -1266,6 +1289,12 @@ terakan_BeginCommandBuffer(VkCommandBuffer const commandBuffer,
     * simplicity of submitting.
     */
    uint32_t const invalidate_caches_packets[] = {
+      PKT3(PKT3_SET_CONTEXT_REG, 1, 0),
+      TERAKAN_CONTEXT_REG_OFFSET(R_028354_SX_SURFACE_SYNC),
+      /* Scratch buffers. */
+      /* TODO(Triang3l): Everything else once implemented: stream output, geometry ring buffers. */
+      S_028354_SURFACE_SYNC_MASK(0b10000),
+
       PKT3(PKT3_EVENT_WRITE, 1 - 1, 0),
       EVENT_TYPE(EVENT_TYPE_CACHE_FLUSH_AND_INV_EVENT) | EVENT_INDEX(0),
 

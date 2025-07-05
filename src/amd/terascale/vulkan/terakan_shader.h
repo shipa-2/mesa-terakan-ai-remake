@@ -32,8 +32,10 @@
 
 #include "gallium/drivers/r600/r600_shader_common.h"
 #include "util/bitset.h"
+#include "util/macros.h"
 #include "nir.h"
 
+#include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <vulkan/vulkan_core.h>
@@ -42,8 +44,48 @@
 extern "C" {
 #endif
 
+inline unsigned
+terakan_shader_hw_vertex_stage_count(bool const tessellation_shader, bool const geometry_shader)
+{
+   return (tessellation_shader ? 2 /* LS, HS */ : 0) +
+          (geometry_shader ? 3 /* ES, GS, VS */ : 1 /* VS */);
+}
+
 #define TERAKAN_SHADER_PROGRAM_ALIGNMENT_LOG2 8
 #define TERAKAN_SHADER_PROGRAM_ALIGNMENT      (1 << TERAKAN_SHADER_PROGRAM_ALIGNMENT_LOG2)
+
+enum terakan_shader_ring_index {
+   TERAKAN_SHADER_RING_INDEX_LSTMP,
+   TERAKAN_SHADER_RING_INDEX_HSTMP,
+   TERAKAN_SHADER_RING_INDEX_ESTMP,
+   TERAKAN_SHADER_RING_INDEX_GSTMP,
+   TERAKAN_SHADER_RING_INDEX_VSTMP,
+   TERAKAN_SHADER_RING_INDEX_PSTMP,
+
+   TERAKAN_SHADER_RING_INDEX_COUNT,
+};
+
+static_assert(TERAKAN_SHADER_RING_INDEX_COUNT <= 32,
+              "Using shader ring buffer indices in a 32-bit bitfield.");
+
+#define TERAKAN_SHADER_RINGS_PER_SHADER_ENGINE                                                     \
+   (BITFIELD_BIT(TERAKAN_SHADER_RING_INDEX_LSTMP) |                                                \
+    BITFIELD_BIT(TERAKAN_SHADER_RING_INDEX_HSTMP) |                                                \
+    BITFIELD_BIT(TERAKAN_SHADER_RING_INDEX_ESTMP) |                                                \
+    BITFIELD_BIT(TERAKAN_SHADER_RING_INDEX_GSTMP) |                                                \
+    BITFIELD_BIT(TERAKAN_SHADER_RING_INDEX_VSTMP) | BITFIELD_BIT(TERAKAN_SHADER_RING_INDEX_PSTMP))
+
+struct terakan_shader_ring {
+   uint64_t base_wddm_patch_ids;
+   /* The size register is the next after the base register. */
+   uint32_t base_size_config_reg_offset;
+   uint32_t item_size_context_reg_offset;
+   /* Pipeline stages potentially accessing this ring. */
+   VkPipelineStageFlags2 stages;
+   uint32_t sx_surface_sync_mask;
+};
+
+extern struct terakan_shader_ring const terakan_shader_rings[TERAKAN_SHADER_RING_INDEX_COUNT];
 
 /* Fields that don't depend on any other state. */
 struct terakan_shader_static {
@@ -82,6 +124,8 @@ struct terakan_shader_impl {
    /* This object owns the BO in `static_state`. */
    /* TODO(Triang3l): Shader suballocation. */
    struct terakan_shader_static static_state;
+
+   uint32_t scratch_item_size_dwords;
 
    struct terakan_push_constants_usage push_constants_usage;
 

@@ -109,7 +109,8 @@ terakan_state_draw_apply_vgt_index_offset(struct terakan_gfx_command_writer * co
 }
 
 static void
-terakan_state_draw_apply_sq_pgm_ls_es_gs_vs(struct terakan_gfx_command_writer * const command_writer)
+terakan_state_draw_apply_sq_pgm_ls_hs_es_gs_vs(
+   struct terakan_gfx_command_writer * const command_writer)
 {
    struct terakan_state_draw * const state = &command_writer->state_draw;
 
@@ -121,13 +122,20 @@ terakan_state_draw_apply_sq_pgm_ls_es_gs_vs(struct terakan_gfx_command_writer * 
 
    /* Vertex shader. */
 
-   struct terakan_shader_impl const * const vs = state->sq_pgm_ls_es_gs_vs.vs_as_vs;
+   struct terakan_shader_impl const * const vs = state->sq_pgm_ls_hs_es_gs_vs.vs_as_vs;
    assert(vs != NULL);
    if (likely(vs != NULL)) {
       bool const vs_static_modified = command_writer->hw_state_draw.sq_pgm_vs != &vs->static_state;
       command_writer->hw_state_draw.sq_pgm_vs = &vs->static_state;
       terakan_hw_state_draw_written(&command_writer->hw_state_draw,
                                     TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_VS, vs_static_modified);
+
+      TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(SQ_TMP_LS_HS_ES_GS_VS, SQ_PGM_LS_HS_ES_GS_VS);
+      if (command_writer->state_draw.sq_tmp.vs_item_size_dwords != vs->scratch_item_size_dwords) {
+         command_writer->state_draw.sq_tmp.vs_item_size_dwords = vs->scratch_item_size_dwords;
+         terakan_state_draw_set_pending(&command_writer->state_draw,
+                                        TERAKAN_STATE_DRAW_INDEX_SQ_TMP_LS_HS_ES_GS_VS);
+      }
 
       terakan_hw_state_draw_set_sq_constants_needed_by_vs(&command_writer->hw_state_draw, 0,
                                                           vs->resources_needed, vs->samplers_needed,
@@ -142,12 +150,12 @@ terakan_state_draw_apply_sq_pgm_ls_es_gs_vs(struct terakan_gfx_command_writer * 
             VK_SHADER_STAGE_VERTEX_BIT;
       }
 
-      TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(SQ_PGM_FS, SQ_PGM_LS_ES_GS_VS);
+      TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(SQ_PGM_FS, SQ_PGM_LS_HS_ES_GS_VS);
       if (state->sq_pgm_fs.static_state == NULL) {
          for (unsigned attribute_word_index = 0;
               attribute_word_index < BITSET_WORDS(TERAKAN_VERTEX_INPUT_MAX_ATTRIBUTES);
               ++attribute_word_index) {
-            if ((state->sq_pgm_fs.dynamic_state.from_apply_sq_pgm_ls_es_gs_vs
+            if ((state->sq_pgm_fs.dynamic_state.from_apply_sq_pgm_ls_hs_es_gs_vs
                     .attributes_needed_by_vs[attribute_word_index] ^
                  vs->vs.vertex_attributes_needed[attribute_word_index]) &
                 state->sq_pgm_fs.dynamic_state.attributes_provided[attribute_word_index]) {
@@ -157,7 +165,7 @@ terakan_state_draw_apply_sq_pgm_ls_es_gs_vs(struct terakan_gfx_command_writer * 
          }
       }
       BITSET_COPY(
-         state->sq_pgm_fs.dynamic_state.from_apply_sq_pgm_ls_es_gs_vs.attributes_needed_by_vs,
+         state->sq_pgm_fs.dynamic_state.from_apply_sq_pgm_ls_hs_es_gs_vs.attributes_needed_by_vs,
          vs->vs.vertex_attributes_needed);
    }
 }
@@ -286,6 +294,14 @@ terakan_state_draw_apply_sq_pgm_ps(struct terakan_gfx_command_writer * const com
    terakan_hw_state_draw_written(&command_writer->hw_state_draw,
                                  TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_PS, fs_static_modified);
 
+   uint32_t const tmp_item_size = fs != NULL ? fs->scratch_item_size_dwords : 0;
+   TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(SQ_TMP_PS, SQ_PGM_PS);
+   if (command_writer->state_draw.sq_tmp.ps_item_size_dwords != tmp_item_size) {
+      command_writer->state_draw.sq_tmp.ps_item_size_dwords = tmp_item_size;
+      terakan_state_draw_set_pending(&command_writer->state_draw,
+                                     TERAKAN_STATE_DRAW_INDEX_SQ_TMP_PS);
+   }
+
    terakan_hw_state_draw_set_sq_constants_needed_by_fs(&command_writer->hw_state_draw, 0,
                                                        fs != NULL ? fs->resources_needed : NULL,
                                                        fs != NULL ? fs->samplers_needed : 0b0);
@@ -314,6 +330,64 @@ terakan_state_draw_apply_sq_pgm_ps(struct terakan_gfx_command_writer * const com
    TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(DB_SHADER_CONTROL, SQ_PGM_PS);
    terakan_state_draw_set_pending(&command_writer->state_draw,
                                   TERAKAN_STATE_DRAW_INDEX_DB_SHADER_CONTROL);
+}
+
+static void
+terakan_state_draw_apply_sq_tmp(struct terakan_gfx_command_writer * const command_writer,
+                                enum terakan_shader_ring_index const ring_index,
+                                uint32_t const item_size_dwords, uint32_t num_threads)
+{
+   if (!item_size_dwords) {
+      terakan_hw_state_draw_set_sq_ring(command_writer, ring_index, 0, 0);
+      return;
+   }
+   struct terakan_physical_device_chip_family_info const * const chip_family_info =
+      &terakan_gfx_command_writer_physical_device(command_writer)->chip_family_info;
+   if (chip_family_info->is_r9xx) {
+      /* R9xx doesn't have SQ_THREAD_RESOURCE_MGMT, use the maximum size. */
+      /* TODO(Triang3l): Research smaller sizes for different stages. */
+      num_threads = 256;
+   }
+   terakan_hw_state_draw_set_sq_ring(
+      command_writer, ring_index, item_size_dwords,
+      (uint32_t)DIV_ROUND_UP((sizeof(uint32_t) * (uint64_t)item_size_dwords * num_threads)
+                                << chip_family_info->wave_lanes_log2,
+                             (uint32_t)1 << 8));
+}
+
+static void
+terakan_state_draw_apply_sq_tmp_ls_hs_es_gs_vs(
+   struct terakan_gfx_command_writer * const command_writer)
+{
+   terakan_state_draw_apply_sq_tmp(
+      command_writer, TERAKAN_SHADER_RING_INDEX_LSTMP,
+      command_writer->state_draw.sq_tmp.ls_item_size_dwords,
+      G_008C1C_NUM_LS_THREADS(command_writer->state_draw.sq_tmp.sq_thread_resource_mgmt[1]));
+   terakan_state_draw_apply_sq_tmp(
+      command_writer, TERAKAN_SHADER_RING_INDEX_HSTMP,
+      command_writer->state_draw.sq_tmp.hs_item_size_dwords,
+      G_008C1C_NUM_HS_THREADS(command_writer->state_draw.sq_tmp.sq_thread_resource_mgmt[1]));
+   terakan_state_draw_apply_sq_tmp(
+      command_writer, TERAKAN_SHADER_RING_INDEX_ESTMP,
+      command_writer->state_draw.sq_tmp.es_item_size_dwords,
+      G_008C18_NUM_ES_THREADS(command_writer->state_draw.sq_tmp.sq_thread_resource_mgmt[0]));
+   terakan_state_draw_apply_sq_tmp(
+      command_writer, TERAKAN_SHADER_RING_INDEX_GSTMP,
+      command_writer->state_draw.sq_tmp.gs_item_size_dwords,
+      G_008C18_NUM_GS_THREADS(command_writer->state_draw.sq_tmp.sq_thread_resource_mgmt[0]));
+   terakan_state_draw_apply_sq_tmp(
+      command_writer, TERAKAN_SHADER_RING_INDEX_VSTMP,
+      command_writer->state_draw.sq_tmp.vs_item_size_dwords,
+      G_008C18_NUM_VS_THREADS(command_writer->state_draw.sq_tmp.sq_thread_resource_mgmt[0]));
+}
+
+static void
+terakan_state_draw_apply_sq_tmp_ps(struct terakan_gfx_command_writer * const command_writer)
+{
+   terakan_state_draw_apply_sq_tmp(
+      command_writer, TERAKAN_SHADER_RING_INDEX_PSTMP,
+      command_writer->state_draw.sq_tmp.ps_item_size_dwords,
+      G_008C18_NUM_PS_THREADS(command_writer->state_draw.sq_tmp.sq_thread_resource_mgmt[0]));
 }
 
 static void
@@ -1038,10 +1112,14 @@ static terakan_state_draw_apply_function const
       [TERAKAN_STATE_DRAW_INDEX_VGT_INDEX_TYPE] = terakan_state_draw_apply_vgt_index_type,
       [TERAKAN_STATE_DRAW_INDEX_VGT_PRIMITIVE_TYPE] = terakan_state_draw_apply_vgt_primitive_type,
       [TERAKAN_STATE_DRAW_INDEX_VGT_INDEX_OFFSET] = terakan_state_draw_apply_vgt_index_offset,
-      [TERAKAN_STATE_DRAW_INDEX_SQ_PGM_LS_ES_GS_VS] = terakan_state_draw_apply_sq_pgm_ls_es_gs_vs,
+      [TERAKAN_STATE_DRAW_INDEX_SQ_PGM_LS_HS_ES_GS_VS] =
+         terakan_state_draw_apply_sq_pgm_ls_hs_es_gs_vs,
       [TERAKAN_STATE_DRAW_INDEX_SQ_PGM_FS] = terakan_state_draw_apply_sq_pgm_fs,
       [TERAKAN_STATE_DRAW_INDEX_SQ_RESOURCES_FS] = terakan_state_draw_apply_sq_resources_fs,
       [TERAKAN_STATE_DRAW_INDEX_SQ_PGM_PS] = terakan_state_draw_apply_sq_pgm_ps,
+      [TERAKAN_STATE_DRAW_INDEX_SQ_TMP_LS_HS_ES_GS_VS] =
+         terakan_state_draw_apply_sq_tmp_ls_hs_es_gs_vs,
+      [TERAKAN_STATE_DRAW_INDEX_SQ_TMP_PS] = terakan_state_draw_apply_sq_tmp_ps,
       [TERAKAN_STATE_DRAW_INDEX_PA_CL_CLIP_CNTL] = terakan_state_draw_apply_pa_cl_clip_cntl,
       [TERAKAN_STATE_DRAW_INDEX_VIEWPORT] = terakan_state_draw_apply_viewport,
       [TERAKAN_STATE_DRAW_INDEX_PA_SU_SC_MODE_CNTL] = terakan_state_draw_apply_pa_su_sc_mode_cntl,
@@ -1135,7 +1213,7 @@ terakan_state_draw_reset(struct terakan_state_draw * const state,
    /* firstVertex or vertexOffset = 0 */
    state->vgt_index_offset = 0;
 
-   state->sq_pgm_ls_es_gs_vs.vs_as_vs = NULL;
+   state->sq_pgm_ls_hs_es_gs_vs.vs_as_vs = NULL;
 
    /* vertexBindingDescriptionCount = 0, vertexAttributeDescriptionCount = 0 */
    memset(&state->sq_pgm_fs, 0, sizeof(state->sq_pgm_fs));
@@ -1149,6 +1227,15 @@ terakan_state_draw_reset(struct terakan_state_draw * const state,
    state->sq_resources_fs_pending = BITFIELD_MASK(TERAKAN_RESOURCE_HW_COUNT_FETCH);
 
    state->sq_pgm_ps.fs = NULL;
+
+   memset(&state->sq_tmp, 0, sizeof(state->sq_tmp));
+   memcpy(
+      state->sq_tmp.sq_thread_resource_mgmt,
+      terakan_device_physical_device(device)
+         ->chip_family_info
+         .sq_thread_resource_mgmt_ts_gs_r8xx[device->vk.enabled_features.tessellationShader ? 1 : 0]
+                                            [device->vk.enabled_features.geometryShader ? 1 : 0],
+      sizeof(uint32_t) * 2);
 
    state->pa_cl_clip_cntl =
       /* negativeOneToOne = VK_FALSE */

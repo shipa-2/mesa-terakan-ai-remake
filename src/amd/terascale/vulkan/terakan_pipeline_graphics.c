@@ -513,10 +513,10 @@ terakan_pipeline_graphics_bind(struct terakan_gfx_command_writer * const command
    /* Vertex shader. */
 
    struct terakan_shader_impl const * const vs = &pipeline->shaders[MESA_SHADER_VERTEX];
-   if (command_writer->state_draw.sq_pgm_ls_es_gs_vs.vs_as_vs != vs) {
-      command_writer->state_draw.sq_pgm_ls_es_gs_vs.vs_as_vs = vs;
+   if (command_writer->state_draw.sq_pgm_ls_hs_es_gs_vs.vs_as_vs != vs) {
+      command_writer->state_draw.sq_pgm_ls_hs_es_gs_vs.vs_as_vs = vs;
       terakan_state_draw_set_pending(&command_writer->state_draw,
-                                     TERAKAN_STATE_DRAW_INDEX_SQ_PGM_LS_ES_GS_VS);
+                                     TERAKAN_STATE_DRAW_INDEX_SQ_PGM_LS_HS_ES_GS_VS);
    }
 
    /* Fragment shader. */

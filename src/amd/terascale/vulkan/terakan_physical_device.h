@@ -62,9 +62,22 @@ struct terakan_physical_device_chip_family_info {
    bool has_dedicated_vram;
 
    bool has_vertex_cache;
-   uint32_t sq_max_threads;
-   uint32_t sq_ps_threads_r8xx;
+   /* 1 shader engine if false, up to 2 shader engines if true. */
+   bool two_shader_engines_max;
+   /* In the AMD Accelerated Parallel Processing OpenCL Programming Guide rev2.3 (July 2012) device
+    * parameters table, this is "Max Wavefronts / GPU" divided by the number of shader engines (and
+    * for Hemlock, also divided by the number of GPUs), and divided by the allocation granularity on
+    * R8xx (8 wavefronts).
+    * https://web.archive.org/web/20131111194717/http://developer.amd.com/wordpress/media/2012/10/AMD_Accelerated_Parallel_Processing_OpenCL_Programming_Guide4.pdf
+    */
+   uint32_t sq_max_threads_shr3;
+   /* [Tessellation stages enabled][geometry stage enabled][register]. */
+   uint32_t sq_thread_resource_mgmt_ts_gs_r8xx[2][2][2];
    uint32_t sq_max_stack_entries;
+   /* Log2 of "Max Work-Items / GPU" divided by "Max Wavefronts / GPU" in the device parameters
+    * table.
+    */
+   unsigned wave_lanes_log2;
 };
 
 void terakan_physical_device_chip_family_info_init(

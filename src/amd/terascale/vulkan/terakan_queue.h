@@ -72,10 +72,25 @@ enum terakan_queue_relocation_type {
    TERAKAN_QUEUE_RELOCATION_TYPE_NONE,
    /* NOP packets containing the BO reference offset in dwords after the packets containing the
     * relative address.
+    * Relocation handle is the index of the dword in the indirect buffer that contains the BO
+    * reference (the argument of the NOP).
     */
    TERAKAN_QUEUE_RELOCATION_TYPE_DRM_NOP,
-   /* Array of `terakan_queue_relocation_wddm_patch`. */
+   /* Array of `terakan_queue_relocation_wddm_patch`.
+    * Relocation handle is the index of the relocation in the patch location list.
+    */
    TERAKAN_QUEUE_RELOCATION_TYPE_WDDM_PATCH,
+};
+
+/* In some cases, such as reallocation, the actual BO that will be used in the submission may not be
+ * available at command buffer writing time, and instead the reference is patched at submission
+ * time. The command buffer stores references to "BO placeholders" for such BOs in the BO reference
+ * lists of its indirect buffers.
+ */
+enum terakan_queue_bo_reference_placeholder_index {
+   TERAKAN_QUEUE_BO_REFERENCE_PLACEHOLDER_INDEX_SHADER_RINGS,
+
+   TERAKAN_QUEUE_BO_REFERENCE_PLACEHOLDER_INDEX_COUNT,
 };
 
 struct terakan_queue_submission_size {
@@ -177,6 +192,14 @@ struct terakan_queue {
     * for instance, the process that is supposed to do the signal is killed.
     */
    thrd_t completion_thread;
+
+   /* Timeline semaphore for reallocation of internal BOs. */
+   struct vk_sync * internal_bo_timeline;
+   uint64_t internal_bo_timeline_next_value;
+
+   uint32_t shader_rings_bytes_shr8;
+   struct terakan_bo * shader_rings;
+   uint64_t shader_rings_last_usage;
 };
 
 VK_DEFINE_HANDLE_CASTS(terakan_queue, vk.base, VkQueue, VK_OBJECT_TYPE_QUEUE)

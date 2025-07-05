@@ -24,7 +24,9 @@
 #include "terakan_hw_state.h"
 
 #include "terakan_command_buffer.h"
+#include "terakan_device.h"
 #include "terakan_physical_device.h"
+#include "terakan_queue.h"
 
 #include "amd/terascale/common/terascale_format.h"
 #include "amd/terascale/common/terascale_wddm.h"
@@ -137,6 +139,198 @@ terakan_hw_state_draw_emit_vgt_index_offset(struct terakan_gfx_command_writer * 
    *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028408_VGT_INDX_OFFSET);
    *packet++ = command_writer->hw_state_draw.vgt_index_offset;
    terakan_gfx_command_writer_emit_done(command_writer, packet);
+}
+
+static void
+terakan_hw_state_draw_emit_sq_rings(struct terakan_gfx_command_writer * const command_writer)
+{
+   /* Make sure base and size placeholder setting for the needed rings is emitted once in the
+    * indirect buffer.
+    */
+
+   uint32_t base_size_emit_needed_for_rings;
+   if (likely(command_writer->indirect_buffer != NULL)) {
+      base_size_emit_needed_for_rings = 0b0;
+      u_foreach_bit (ring_index, command_writer->hw_state_draw.sq_rings.needed) {
+         if (command_writer->indirect_buffer->shader_rings[ring_index]
+                .set_base_argument_offsets_dwords[0] == UINT32_MAX) {
+            base_size_emit_needed_for_rings |= BITFIELD_BIT(ring_index);
+         }
+      }
+   } else {
+      /* Should happen only if this emit ends up the very first in the command buffer, thus likely
+       * never, but still handled for correctness.
+       */
+      base_size_emit_needed_for_rings = command_writer->hw_state_draw.sq_rings.needed;
+   }
+
+   if (base_size_emit_needed_for_rings) {
+      struct terakan_device const * const device =
+         terakan_gfx_command_writer_device(command_writer);
+      uint32_t const base_size_emit_needed_for_rings_per_se =
+         terakan_device_physical_device(device)->chip_family_info.two_shader_engines_max
+            ? base_size_emit_needed_for_rings & TERAKAN_SHADER_RINGS_PER_SHADER_ENGINE
+            : 0b0;
+      uint32_t const base_size_emit_needed_for_rings_broadcast =
+         base_size_emit_needed_for_rings & ~base_size_emit_needed_for_rings_per_se;
+
+      unsigned const base_size_emit_needed_for_rings_per_se_count =
+         util_bitcount(base_size_emit_needed_for_rings_per_se);
+      unsigned const base_size_emit_needed_for_rings_broadcast_count =
+         util_bitcount(base_size_emit_needed_for_rings_broadcast);
+
+      /* The size register follows the base register. */
+      uint32_t packet_dwords = 4 * base_size_emit_needed_for_rings_broadcast_count;
+      if (base_size_emit_needed_for_rings_per_se_count != 0) {
+         /* 3 dwords for a single SET_CONFIG_REG.
+          * For each SE, switch to configuring that SE (2 SEs x 3 dwords), and set up the bases
+          * (2 SEs x N rings x 3 dwords).
+          * Then re-enable broadcasting (3 dwords), and set up the sizes (N rings x 3 dwords).
+          */
+         packet_dwords += 3 * (3 + base_size_emit_needed_for_rings_per_se_count * 3);
+      }
+
+      /* TODO(Triang3l): Proper VS/PS_PARTIAL_FLUSH only doing the flush once per draw if needed by
+       * multiple state items, and removing the flush from pending barrier actions, as well as
+       * upgrading VS_PARTIAL_FLUSH to PS_PARTIAL_FLUSH if both are needed by different state items.
+       */
+      packet_dwords += 2;
+
+      /* Always allocating a BO reference regardless of whether one has already been created for the
+       * current indirect buffer because terakan_gfx_command_writer_emit_with_bo may start a new
+       * indirect buffer with a new BO reference list, but actually creating that BO reference
+       * conditionally.
+       */
+
+      uint32_t * packet =
+         terakan_gfx_command_writer_emit_with_bo(command_writer, packet_dwords, true, 1,
+                                                 2 * base_size_emit_needed_for_rings_per_se_count +
+                                                    base_size_emit_needed_for_rings_broadcast_count,
+                                                 0);
+      if (unlikely(packet == NULL)) {
+         return;
+      }
+
+      /* TODO(Triang3l): Proper VS/PS_PARTIAL_FLUSH only doing the flush once per draw and removing
+       * the flush from pending barrier actions, as well as upgrading VS_PARTIAL_FLUSH to
+       * PS_PARTIAL_FLUSH if both are needed by different state items.
+       */
+      *packet++ = PKT3(PKT3_EVENT_WRITE, 0, 0);
+      *packet++ = EVENT_TYPE(EVENT_TYPE_PS_PARTIAL_FLUSH) | EVENT_INDEX(4);
+
+      /* terakan_gfx_command_writer_emit_with_bo may start a new indirect buffer, so obtaining the
+       * actual info after the call.
+       */
+
+      if (command_writer->indirect_buffer->shader_rings_bo_placeholder_reference == UINT32_MAX) {
+         command_writer->indirect_buffer->shader_rings_bo_placeholder_reference =
+            terakan_bo_reference_writer_add_reference(
+               &command_writer->base.bo_reference_writer,
+               device->reference_placeholder_bos
+                  [TERAKAN_QUEUE_BO_REFERENCE_PLACEHOLDER_INDEX_SHADER_RINGS],
+               true, true, TERAKAN_BO_PRIORITY_SHADER_RINGS);
+      }
+
+      u_foreach_bit (ring_index, base_size_emit_needed_for_rings_broadcast) {
+         /* Expecting the ring size to be set externally if the ring is needed, in which case it
+          * must never be 0.
+          */
+         assert(
+            command_writer->base.command_buffer->shader_ring_bytes_needed_for_se_shr8[ring_index] !=
+            0);
+
+         struct terakan_shader_ring const * const ring_info = &terakan_shader_rings[ring_index];
+         struct terakan_command_buffer_indirect_buffer_shader_ring * const indirect_buffer_ring =
+            &command_writer->indirect_buffer->shader_rings[ring_index];
+
+         *packet++ = PKT3(PKT3_SET_CONFIG_REG, 2, 0);
+         *packet++ = ring_info->base_size_config_reg_offset;
+         uint32_t const * const packet_base = packet;
+         indirect_buffer_ring->set_base_argument_offsets_dwords[0] =
+            (uint32_t)(packet_base - command_writer->indirect_buffer->indirect_buffer);
+         /* Placeholder, will be written at submission time. */
+         *packet++ = 0;
+         indirect_buffer_ring->set_size_argument_offset_dwords =
+            (uint32_t)(packet - command_writer->indirect_buffer->indirect_buffer);
+         /* Placeholder, will be written at submission time. */
+         *packet++ = 0;
+         indirect_buffer_ring->set_base_relocation_handles[0] =
+            terakan_gfx_command_writer_add_relocation(
+               command_writer, &packet, packet_base, *packet_base, ring_info->base_wddm_patch_ids,
+               command_writer->indirect_buffer->shader_rings_bo_placeholder_reference);
+      }
+
+      if (base_size_emit_needed_for_rings_per_se) {
+         /* Per-shader-engine bases. */
+         for (uint32_t shader_engine = 0; shader_engine < 2; ++shader_engine) {
+            *packet++ = PKT3(PKT3_SET_CONFIG_REG, 1, 0);
+            *packet++ = TERAKAN_CONFIG_REG_OFFSET(EG_0802C_GRBM_GFX_INDEX);
+            *packet++ = S_0802C_SE_INDEX(shader_engine) | S_0802C_INSTANCE_BROADCAST_WRITES(1);
+
+            u_foreach_bit (ring_index, base_size_emit_needed_for_rings_per_se) {
+               struct terakan_shader_ring const * const ring_info =
+                  &terakan_shader_rings[ring_index];
+               struct terakan_command_buffer_indirect_buffer_shader_ring * const
+                  indirect_buffer_ring = &command_writer->indirect_buffer->shader_rings[ring_index];
+
+               *packet++ = PKT3(PKT3_SET_CONFIG_REG, 1, 0);
+               *packet++ = ring_info->base_size_config_reg_offset;
+               uint32_t const * const packet_base = packet;
+               indirect_buffer_ring->set_base_argument_offsets_dwords[shader_engine] =
+                  (uint32_t)(packet_base - command_writer->indirect_buffer->indirect_buffer);
+               /* Placeholder, will be written at submission time. */
+               *packet++ = 0;
+               indirect_buffer_ring->set_base_relocation_handles[shader_engine] =
+                  terakan_gfx_command_writer_add_relocation(
+                     command_writer, &packet, packet_base, *packet_base,
+                     ring_info->base_wddm_patch_ids,
+                     command_writer->indirect_buffer->shader_rings_bo_placeholder_reference);
+            }
+         }
+
+         *packet++ = PKT3(PKT3_SET_CONFIG_REG, 1, 0);
+         *packet++ = TERAKAN_CONFIG_REG_OFFSET(EG_0802C_GRBM_GFX_INDEX);
+         *packet++ = S_0802C_INSTANCE_BROADCAST_WRITES(1) | S_0802C_SE_BROADCAST_WRITES(1);
+
+         /* Sizes (same for both shader engines). */
+         u_foreach_bit (ring_index, base_size_emit_needed_for_rings_per_se) {
+            /* Expecting the ring size to be set externally if the ring is needed, in which case it
+             * must never be 0.
+             */
+            assert(command_writer->base.command_buffer
+                      ->shader_ring_bytes_needed_for_se_shr8[ring_index] != 0);
+
+            struct terakan_shader_ring const * const ring_info = &terakan_shader_rings[ring_index];
+            struct terakan_command_buffer_indirect_buffer_shader_ring * const indirect_buffer_ring =
+               &command_writer->indirect_buffer->shader_rings[ring_index];
+
+            *packet++ = PKT3(PKT3_SET_CONFIG_REG, 1, 0);
+            *packet++ = ring_info->base_size_config_reg_offset + 1;
+            indirect_buffer_ring->set_size_argument_offset_dwords =
+               (uint32_t)(packet - command_writer->indirect_buffer->indirect_buffer);
+            /* Placeholder, will be written at submission time. */
+            *packet++ = 0;
+         }
+      }
+
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
+   }
+
+   /* Update the item sizes. */
+   uint32_t const item_size_emit_needed_for_rings =
+      command_writer->hw_state_draw.sq_rings.item_sizes_modified &
+      command_writer->hw_state_draw.sq_rings.needed;
+   u_foreach_bit (ring_index, item_size_emit_needed_for_rings) {
+      uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, true);
+      if (unlikely(packet == NULL)) {
+         return;
+      }
+      *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
+      *packet++ = terakan_shader_rings[ring_index].item_size_context_reg_offset;
+      *packet++ = command_writer->hw_state_draw.sq_rings.item_sizes_dwords[ring_index];
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
+   }
+   command_writer->hw_state_draw.sq_rings.item_sizes_modified &= ~item_size_emit_needed_for_rings;
 }
 
 static void
@@ -1974,6 +2168,7 @@ static terakan_hw_state_draw_emit_function const
       [TERAKAN_HW_STATE_DRAW_INDEX_CB_TARGET_MASK] = terakan_hw_state_draw_emit_cb_target_mask,
       [TERAKAN_HW_STATE_DRAW_INDEX_CB_BLEND_RGBA] = terakan_hw_state_draw_emit_cb_blend_rgba,
       [TERAKAN_HW_STATE_DRAW_INDEX_CB_COLOR_CONTROL] = terakan_hw_state_draw_emit_cb_color_control,
+      [TERAKAN_HW_STATE_DRAW_INDEX_SQ_RINGS] = terakan_hw_state_draw_emit_sq_rings,
       [TERAKAN_HW_STATE_DRAW_INDEX_VIEWPORT] = terakan_hw_state_draw_emit_viewport,
       [TERAKAN_HW_STATE_DRAW_INDEX_CB_BLEND_CONTROL] = terakan_hw_state_draw_emit_cb_blend_control,
       [TERAKAN_HW_STATE_DRAW_INDEX_CB_COLOR] = terakan_hw_state_draw_emit_cb_color,
@@ -2004,6 +2199,40 @@ static terakan_hw_state_draw_emit_function const
       [TERAKAN_HW_STATE_DRAW_INDEX_SQ_SAMPLER_BORDER_COLORS_FS] =
          terakan_hw_state_draw_emit_sq_sampler_border_colors_fs,
 };
+
+void
+terakan_hw_state_draw_set_sq_ring(struct terakan_gfx_command_writer * const command_writer,
+                                  enum terakan_shader_ring_index const ring_index,
+                                  uint32_t const item_size_dwords,
+                                  uint32_t const ring_size_needed_for_se_bytes_shr8)
+{
+   uint32_t const ring_index_bit = BITFIELD_BIT(ring_index);
+
+   if (item_size_dwords == 0) {
+      command_writer->hw_state_draw.sq_rings.needed &= ~ring_index_bit;
+      return;
+   }
+
+   assert(ring_size_needed_for_se_bytes_shr8 != 0);
+   uint32_t * const command_buffer_ring_size_needed =
+      &command_writer->base.command_buffer->shader_ring_bytes_needed_for_se_shr8[ring_index];
+   *command_buffer_ring_size_needed =
+      MAX2(ring_size_needed_for_se_bytes_shr8, *command_buffer_ring_size_needed);
+
+   bool modified = !(command_writer->hw_state_draw.sq_rings.needed & ring_index_bit);
+   command_writer->hw_state_draw.sq_rings.needed |= ring_index_bit;
+
+   if (command_writer->hw_state_draw.sq_rings.item_sizes_dwords[ring_index] != item_size_dwords) {
+      command_writer->hw_state_draw.sq_rings.item_sizes_dwords[ring_index] = item_size_dwords;
+      command_writer->hw_state_draw.sq_rings.item_sizes_modified |= ring_index_bit;
+      modified = true;
+   }
+
+   if (modified) {
+      BITSET_SET(command_writer->hw_state_draw.state_modified,
+                 TERAKAN_HW_STATE_DRAW_INDEX_SQ_RINGS);
+   }
+}
 
 static void
 terakan_hw_state_draw_set_cb_color_impl(struct terakan_hw_state_draw * const state,
@@ -2683,6 +2912,13 @@ terakan_hw_state_draw_emit_all(struct terakan_gfx_command_writer * const command
    BITSET_ZERO(state->state_modified);
 
    /* Make sure emission callbacks with additional modification tracking emit everything needed. */
+   state->sq_rings.item_sizes_modified = 0b0;
+   for (size_t shader_ring_index = 0; shader_ring_index < TERAKAN_SHADER_RING_INDEX_COUNT;
+        ++shader_ring_index) {
+      if (state->sq_rings.item_sizes_dwords[shader_ring_index] != 0) {
+         state->sq_rings.item_sizes_modified |= BITFIELD_BIT(shader_ring_index);
+      }
+   }
    state->viewport_counts.scale_offset_z_min_max_emitted = 0;
    state->viewport_counts.scissor_emitted = 0;
    state->cb_blend_control.modified = state->cb_blend_control.ever_written;
@@ -2699,6 +2935,10 @@ terakan_hw_state_draw_reset(struct terakan_hw_state_draw * const state)
 {
    BITSET_ZERO(state->state_ever_written);
    BITSET_ZERO(state->state_modified);
+
+   state->sq_rings.needed = 0b0;
+   state->sq_rings.item_sizes_modified = 0b0;
+   memset(&state->sq_rings.item_sizes_dwords, 0, sizeof(state->sq_rings.item_sizes_dwords));
 
    memset(&state->viewport_counts, 0, sizeof(state->viewport_counts));
    /* Viewport state fields may be modified at different frequencies, initialize all to safe values.

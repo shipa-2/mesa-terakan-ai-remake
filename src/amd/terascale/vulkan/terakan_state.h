@@ -58,14 +58,20 @@ enum terakan_state_draw_index {
 
    TERAKAN_STATE_DRAW_INDEX_VGT_INDEX_OFFSET,
 
-   TERAKAN_STATE_DRAW_INDEX_SQ_PGM_LS_ES_GS_VS,
+   TERAKAN_STATE_DRAW_INDEX_SQ_PGM_LS_HS_ES_GS_VS,
 
-   /* Depends on TERAKAN_STATE_DRAW_INDEX_SQ_PGM_LS_ES_GS_VS. */
+   /* Depends on TERAKAN_STATE_DRAW_INDEX_SQ_PGM_LS_HS_ES_GS_VS. */
    TERAKAN_STATE_DRAW_INDEX_SQ_PGM_FS,
 
    TERAKAN_STATE_DRAW_INDEX_SQ_RESOURCES_FS,
 
    TERAKAN_STATE_DRAW_INDEX_SQ_PGM_PS,
+
+   /* Depend on TERAKAN_STATE_DRAW_INDEX_SQ_PGM_LS_HS_ES_GS_VS. */
+   TERAKAN_STATE_DRAW_INDEX_SQ_TMP_LS_HS_ES_GS_VS,
+
+   /* Depends on TERAKAN_STATE_DRAW_INDEX_SQ_PGM_PS. */
+   TERAKAN_STATE_DRAW_INDEX_SQ_TMP_PS,
 
    TERAKAN_STATE_DRAW_INDEX_PA_CL_CLIP_CNTL,
 
@@ -157,10 +163,10 @@ struct terakan_state_draw {
    /* TERAKAN_STATE_DRAW_INDEX_VGT_INDEX_OFFSET */
    uint32_t vgt_index_offset;
 
-   /* TERAKAN_STATE_DRAW_INDEX_SQ_PGM_LS_ES_GS_VS */
+   /* TERAKAN_STATE_DRAW_INDEX_SQ_PGM_LS_HS_ES_GS_VS */
    struct {
       struct terakan_shader_impl const * vs_as_vs;
-   } sq_pgm_ls_es_gs_vs;
+   } sq_pgm_ls_hs_es_gs_vs;
 
    /* TERAKAN_STATE_DRAW_INDEX_SQ_PGM_FS */
    struct {
@@ -193,7 +199,7 @@ struct terakan_state_draw {
 
          struct {
             BITSET_DECLARE(attributes_needed_by_vs, TERAKAN_VERTEX_INPUT_MAX_ATTRIBUTES);
-         } from_apply_sq_pgm_ls_es_gs_vs;
+         } from_apply_sq_pgm_ls_hs_es_gs_vs;
       } dynamic_state;
 
       /* When using static vertex input state, if this value doesn't match which bindings have the
@@ -215,6 +221,22 @@ struct terakan_state_draw {
        */
       struct terakan_shader_impl const * fs;
    } sq_pgm_ps;
+
+   struct {
+      /* TERAKAN_STATE_DRAW_INDEX_SQ_TMP_LS_HS_ES_GS_VS: NUM_LS/HS/ES/GS/VS_THREADS
+       * TERAKAN_STATE_DRAW_INDEX_SQ_TMP_PS: NUM_PS_THREADS
+       */
+      uint32_t sq_thread_resource_mgmt[2];
+
+      /* TERAKAN_STATE_DRAW_INDEX_SQ_TMP_LS_HS_ES_GS_VS */
+      uint32_t ls_item_size_dwords;
+      uint32_t hs_item_size_dwords;
+      uint32_t es_item_size_dwords;
+      uint32_t gs_item_size_dwords;
+      uint32_t vs_item_size_dwords;
+      /* TERAKAN_STATE_DRAW_INDEX_SQ_TMP_PS */
+      uint32_t ps_item_size_dwords;
+   } sq_tmp;
 
    /* TERAKAN_STATE_DRAW_INDEX_PA_CL_CLIP_CNTL */
    uint32_t pa_cl_clip_cntl;

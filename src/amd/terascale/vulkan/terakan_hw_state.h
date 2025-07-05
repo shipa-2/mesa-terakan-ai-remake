@@ -153,7 +153,9 @@ enum terakan_hw_state_draw_index {
     */
    TERAKAN_HW_STATE_DRAW_INDEX_SPECIAL_FIRST,
 
-   TERAKAN_HW_STATE_DRAW_INDEX_VIEWPORT = TERAKAN_HW_STATE_DRAW_INDEX_SPECIAL_FIRST,
+   TERAKAN_HW_STATE_DRAW_INDEX_SQ_RINGS = TERAKAN_HW_STATE_DRAW_INDEX_SPECIAL_FIRST,
+
+   TERAKAN_HW_STATE_DRAW_INDEX_VIEWPORT,
 
    TERAKAN_HW_STATE_DRAW_INDEX_CB_BLEND_CONTROL,
 
@@ -292,6 +294,19 @@ struct terakan_hw_state_draw {
 
    /* TERAKAN_HW_STATE_DRAW_INDEX_CB_COLOR_CONTROL */
    uint32_t cb_color_control;
+
+   /* TERAKAN_HW_STATE_DRAW_INDEX_SQ_RINGS
+    * Don't access externally directly, instead set via terakan_hw_state_draw_set_sq_ring.
+    */
+   struct {
+      uint32_t needed;
+      uint32_t item_sizes_modified;
+      /* Must not be zero if a ring is needed.
+       * Ring sizes themselves must be updated in the command buffer for needed rings before setting
+       * the item sizes.
+       */
+      uint32_t item_sizes_dwords[TERAKAN_SHADER_RING_INDEX_COUNT];
+   } sq_rings;
 
    /* TERAKAN_HW_STATE_DRAW_INDEX_VIEWPORT
     * Modify `viewports` and call terakan_hw_state_draw_update_viewports (ever-written is not
@@ -468,6 +483,13 @@ terakan_hw_state_draw_written(struct terakan_hw_state_draw * const state,
       BITSET_SET(state->state_modified, state_index);
    }
 }
+
+struct terakan_gfx_command_writer;
+
+void terakan_hw_state_draw_set_sq_ring(struct terakan_gfx_command_writer * command_writer,
+                                       enum terakan_shader_ring_index ring_index,
+                                       uint32_t item_size_dwords,
+                                       uint32_t ring_size_needed_for_se_bytes_shr8);
 
 /* `lowest_modified` are the lowest indices of the viewports for which the corresponding states were
  * modified. If not modifying those states, pass ARRAY_SIZE(state->viewports).
@@ -650,8 +672,6 @@ void terakan_hw_state_draw_set_sq_constants_needed_by_fs(struct terakan_hw_state
 
 void terakan_hw_state_draw_indirect_buffer_begun_and_sq_resources_cleared(
    struct terakan_hw_state_draw * state);
-
-struct terakan_gfx_command_writer;
 
 void terakan_hw_state_draw_emit_modified(struct terakan_gfx_command_writer * command_writer);
 

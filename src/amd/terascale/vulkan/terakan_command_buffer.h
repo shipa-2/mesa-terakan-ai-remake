@@ -32,6 +32,7 @@
 #include "terakan_physical_device.h"
 #include "terakan_push_constants.h"
 #include "terakan_queue.h"
+#include "terakan_shader.h"
 #include "terakan_state.h"
 
 #include "gallium/drivers/r600/evergreend.h"
@@ -132,6 +133,19 @@ struct terakan_push_buffer {
    struct list_head link;
 };
 
+/* Rings are allocated at submission time via BO reference placeholders, so their base and size are
+ * set once per indirect buffer, and the setting packets are patched at submission time.
+ */
+
+struct terakan_command_buffer_indirect_buffer_shader_ring {
+   /* [0] is UINT32_MAX if the ring is not used.
+    * [1] is for the second shader engine if needed.
+    */
+   uint32_t set_base_argument_offsets_dwords[2];
+   uint32_t set_base_relocation_handles[2];
+   uint32_t set_size_argument_offset_dwords;
+};
+
 struct terakan_command_buffer_indirect_buffer {
    /* If owned, within terakan_command_buffer::indirect_buffers.
     * If free, within terakan_command_pool::indirect_buffers_free.
@@ -149,6 +163,11 @@ struct terakan_command_buffer_indirect_buffer {
     * the pointer to the array of relocations is NULL.
     */
    void * relocations;
+
+   /* UINT32_MAX if the BO reference hasn't been created yet. */
+   uint32_t shader_rings_bo_placeholder_reference;
+   struct terakan_command_buffer_indirect_buffer_shader_ring
+      shader_rings[TERAKAN_SHADER_RING_INDEX_COUNT];
 };
 
 struct terakan_gfx_command_writer;
@@ -159,6 +178,9 @@ struct terakan_command_buffer {
    struct list_head push_buffers;
    /* Bytes currently used in the head of push_buffers. */
    uint32_t current_push_buffer_used_bytes;
+
+   /* RING_SIZE for one shader engine. */
+   uint32_t shader_ring_bytes_needed_for_se_shr8[TERAKAN_SHADER_RING_INDEX_COUNT];
 
    struct list_head indirect_buffers;
 
@@ -332,14 +354,19 @@ terakan_gfx_command_writer_emit(struct terakan_gfx_command_writer * const comman
  *
  * `wddm_patch_ids` is the WDDM patch location slot ID in the lower 32 bits, driver ID in the upper
  * 32 bits.
+ *
+ * Returns the handle of the relocation specific to the relocation type that may be used for
+ * patching the relocation at submission time.
  */
-void terakan_gfx_command_writer_add_relocation(struct terakan_gfx_command_writer * command_writer,
-                                               uint32_t ** indirect_buffer_append_ptr,
-                                               uint32_t const * address_in_packet,
-                                               uint32_t wddm_allocation_offset,
-                                               uint64_t wddm_patch_ids, uint32_t bo_reference);
+uint32_t terakan_gfx_command_writer_add_relocation(
+   struct terakan_gfx_command_writer * command_writer, uint32_t ** indirect_buffer_append_ptr,
+   uint32_t const * address_in_packet, uint32_t wddm_allocation_offset, uint64_t wddm_patch_ids,
+   uint32_t bo_reference);
 
-static inline void
+/* If the relocation type requires two relocations for 40-bit addresses, returns the handle of the
+ * first relocation, assuming that the handle of the second one can be calculated trivially from it.
+ */
+static inline uint32_t
 terakan_gfx_command_writer_add_relocation_for_40_bits(
    struct terakan_gfx_command_writer * const command_writer,
    uint32_t ** const indirect_buffer_append_ptr, uint32_t const * const address_in_packet_lo,
@@ -349,15 +376,16 @@ terakan_gfx_command_writer_add_relocation_for_40_bits(
    /* DRM Radeon uses one relocation for all 40 bits, WDDM Radeon Software uses separate ones for
     * each dword.
     */
-   terakan_gfx_command_writer_add_relocation(command_writer, indirect_buffer_append_ptr,
-                                             address_in_packet_lo, *address_in_packet_lo,
-                                             wddm_patch_ids_lo, bo_reference);
+   uint32_t const first_relocation_handle = terakan_gfx_command_writer_add_relocation(
+      command_writer, indirect_buffer_append_ptr, address_in_packet_lo, *address_in_packet_lo,
+      wddm_patch_ids_lo, bo_reference);
    if (terakan_gfx_command_writer_physical_device(command_writer)
           ->submission_info_gfx.base.relocation_type == TERAKAN_QUEUE_RELOCATION_TYPE_WDDM_PATCH) {
       terakan_gfx_command_writer_add_relocation(command_writer, indirect_buffer_append_ptr,
                                                 address_in_packet_hi, *address_in_packet_hi,
                                                 wddm_patch_ids_hi, bo_reference);
    }
+   return first_relocation_handle;
 }
 
 void terakan_gfx_command_writer_emit_event_write_eop_discarding_data(
