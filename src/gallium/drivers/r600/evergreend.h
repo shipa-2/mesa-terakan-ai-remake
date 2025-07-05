@@ -2952,6 +2952,12 @@
 #define CM_R_028C38_PA_SC_AA_MASK_X0Y0_X1Y0           0x28c38
 #define CM_R_028C3C_PA_SC_AA_MASK_X0Y1_X1Y1           0x28c3c
 
+#define EG_0802C_GRBM_GFX_INDEX          			0x802C
+#define   S_0802C_INSTANCE_INDEX(x)					  (((x) & 0xffff) << 0)
+#define   S_0802C_SE_INDEX(x)						  (((x) & 0x3fff) << 16)
+#define   S_0802C_INSTANCE_BROADCAST_WRITES(x)		  (((x) & 0x1) << 30)
+#define   S_0802C_SE_BROADCAST_WRITES(x)			  (((x) & 0x1) << 31)
+
 #define CM_R_028AA8_IA_MULTI_VGT_PARAM                0x028AA8
 #define   S_028AA8_PRIMGROUP_SIZE(x)                   (((unsigned)(x) & 0xFFFF) << 0)
 #define   G_028AA8_PRIMGROUP_SIZE(x)                   (((x) >> 0) & 0xFFFF)
