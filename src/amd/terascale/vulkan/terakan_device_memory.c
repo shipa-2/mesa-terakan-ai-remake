@@ -189,11 +189,19 @@ terakan_AllocateMemory(VkDevice const deviceHandle,
     * VkPhysicalDeviceRobustness2PropertiesEXT, so make sure the BO is never smaller than the size
     * rounded up, and the validation in the kernel driver doesn't consider the binding out of
     * bounds.
-    * DRM Radeon 2.50.0 also validates the size of buffer UAVs as LINEAR_ALIGNED image size, but
-    * with the smallest SLICE_TILE_MAX it considers them zero-size, so the UAV pitch alignment is
-    * not important here.
     */
-   VkDeviceSize const bo_size = ALIGN_POT(device_memory->vk.size, TERAKAN_KCACHE_HW_LINE_BYTES);
+   VkDeviceSize bo_size =
+      ALIGN_POT(device_memory->vk.size, (VkDeviceSize)TERAKAN_KCACHE_HW_LINE_BYTES);
+   if (physical_device->submission_info_gfx.buffer_uav_validated_as_image) {
+      /* Make it possible to create buffer UAVs at any location in the BO as long as the BO-relative
+       * base address is specified at the granularity of the minimum LINEAR_ALIGNED pitch for the
+       * element size, with offsetting done in shaders.
+       * The maximum value `terakan_format_pitch_alignment_linear_surfels` may return is 64 elements
+       * of 16 bytes each - 1024 bytes, which is larger than the maximum possible pipe interleave
+       * (512 bytes).
+       */
+      bo_size = ALIGN_POT(bo_size, (VkDeviceSize)(sizeof(uint32_t) * 4 * 64));
+   }
 
    VkMemoryPropertyFlags const memory_property_flags =
       physical_device->memory_properties.memoryTypes[device_memory->vk.memory_type_index]

@@ -568,8 +568,11 @@ terakan_meta_copy_expand_3x_buffer_to_image(
       bytes_per_surfel, terakan_gfx_command_writer_physical_device(command_writer)
                            ->tiling_info.pipe_interleave_bytes_log2);
    /* For simplicity and not to explicitly handle UAV alignment as image slices are always aligned,
-    * adjusting only the destination offset in the push constants. Assuming that images are never
-    * 2^32 surfels or larger.
+    * adjusting only the destination offset in the push constants.
+    * `buffer_uav_validated_as_image` doesn't need to be handled because surfel rows already have
+    * the necessary pitch alignment, and using the same element format for the UAV as for the
+    * surfels.
+    * Assuming that images are never 2^32 surfels or larger.
     */
    VkDeviceSize const dst_aspect_size_surfels_minus_one =
       ((VkDeviceSize)dst_image->surface.aspects[0].size_bytes_shr8 << 8) / bytes_per_surfel - 1;

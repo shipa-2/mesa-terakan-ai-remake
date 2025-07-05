@@ -264,26 +264,48 @@ terakan_physical_device_get_capabilities(
    properties_out->maxImageDimensionCube = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT;
    properties_out->maxImageArrayLayers = TERAKAN_IMAGE_MAX_TARGET_SLICES;
 
+   /* Vertex fetch constants have 32-bit size minus one in bytes, so the theoretical maximum element
+    * count depends on the element size. But instead of exposing the worst case value, letting
+    * maxMemoryAllocationSize impose that limitation instead, which as of this writing never exceeds
+    * UINT32_MAX (also rounded down to the pipe interleave so the maximum valid size still makes it
+    * possible to provide the padding for UAV alignment base offsetting).
+    *
+    * If texel buffers were accessed with `uint` coordinates, the actual limit would match
+    * `maxStorageBufferRange`. That is sufficient for element index clamping for robust buffer
+    * access with `buffer_uav_validated_as_image`, there's no need to set a lower limit to handle
+    * that UAVs with large element sizes have a base address granularity larger than the pipe
+    * interleave. That's because shaders add the sub-granularity base offset passed in elements, not
+    * in bytes. So, with 256-byte pipe interleave, the maximum sub-granularity base offset will be
+    * 255 - for 1 byte per element. With 8 or 16 bytes per element, the base granularity is 512 or
+    * 1024 bytes respectively (due to the requirement that the pitch must be aligned to 64 elements
+    * for LINEAR_ALIGNED), however, because the sub-granularity base offset is passed in elements,
+    * it will not exceed 63.
+    *
+    * However, texel buffers are accessed in shaders with coordinates being 32-bit signed integers,
+    * so coordinates starting from 2^31 must be considered out of bounds as they are negative.
+    * textureSize also returns a signed integer, hence 2^31-1 rather than 2^31.
+    */
+   properties_out->maxTexelBufferElements = INT32_MAX;
+
+   properties_out->maxUniformBufferRange = TERAKAN_KCACHE_HW_MAX_BUFFER_SIZE_BYTES;
+
    /* Buffer UAVs have LINEAR_ALIGNED array mode, and thus alignment equal to the pipe interleave,
     * with the offset (in element units) applied in shaders. Adding the offset may result in
     * out-of-bounds index values near UINT32_MAX wrapping and becoming valid indices near 0. Instead
     * of comparing the index to the buffer size in shaders to implement robustness with the offset,
     * the index value can be clamped to this maximum range as unsigned so that adding any alignment
     * offset after the clamping won't cause wraparound.
+    *
+    * With `buffer_uav_validated_as_image`, the base address rounding and the offsetting in shaders
+    * are also performed to make sure a CB_COLOR with the smallest possible PITCH_TILE_MAX and
+    * SLICE_TILE_MAX for the element size is considered in bounds of the BO without adding too much
+    * BO size padding.
+    *
+    * Storage buffer UAVs have 32-bit elements, and thus the pipe interleave divided by the element
+    * size is at least 64, so the pitch never needs to be overaligned, therefore no need to handle
+    * `buffer_uav_validated_as_image`.
     */
-   uint32_t const max_uav_range_bytes = ~(((uint32_t)1 << tile_pipe_interleave_bytes_log2) - 1);
-
-   /* Vertex fetch constants have 32-bit size minus one in bytes, so the theoretical maximum element
-    * count depends on the element size. But instead of exposing the worst case value, letting
-    * maxMemoryAllocationSize impose that limitation instead, which as of this writing never exceeds
-    * UINT32_MAX (also rounded down to the pipe interleave so the maximum valid size still makes it
-    * possible to provide the padding for UAV alignment base offsetting).
-    */
-   properties_out->maxTexelBufferElements = max_uav_range_bytes;
-
-   properties_out->maxUniformBufferRange = TERAKAN_KCACHE_HW_MAX_BUFFER_SIZE_BYTES;
-
-   properties_out->maxStorageBufferRange = max_uav_range_bytes;
+   properties_out->maxStorageBufferRange = ~(((uint32_t)1 << tile_pipe_interleave_bytes_log2) - 1);
 
    properties_out->maxPushConstantsSize = TERAKAN_PUSH_CONSTANTS_APP_SIZE_BYTES;
 

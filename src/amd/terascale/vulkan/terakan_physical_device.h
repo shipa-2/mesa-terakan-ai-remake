@@ -101,6 +101,30 @@ struct terakan_physical_device_submission_info {
 struct terakan_physical_device_submission_info_gfx {
    struct terakan_physical_device_submission_info base;
 
+   /* Whether the kernel driver incorrectly validates buffer UAVs, treating them as images.
+    *
+    * In CB_COLOR registers of buffer UAVs, Terakan specifies the smallest possible PITCH_TILE_MAX
+    * and SLICE_TILE_MAX taking into account the alignment requirements for the element size.
+    * Therefore, the kernel driver assumes that the CB_COLOR points to a single row with
+    * `terakan_format_pitch_alignment_linear_surfels` elements, and expects them to be inside the
+    * bounds of the BO.
+    *
+    * This means that a 16 bytes per element UAV placed at 256 bytes in the BO, considering that the
+    * minimum possible pitch is 64 elements, will be assumed to span bytes [256, 1280), so the size
+    * of the BO must be sufficiently padded to make it possible to create a UAV (including in meta
+    * actions) at any offset allowed for the given usage scenario by Vulkan.
+    *
+    * It may be possible to avoid adding too much padding, however, by moving the base address
+    * offsetting to shaders partially or fully. In the example provided above, if the base address
+    * is set to 0 instead (with the 256-byte offset applied in the shader), the BO only needs to be
+    * padded to 1024 bytes rather than to 1280.
+    *
+    * Given that there already is shader offsetting logic that lets applications create storage
+    * buffers and storage texel buffers with alignment requirements smaller than the pipe
+    * interleave, it's trivial to extend that functionality to also handle this.
+    */
+   bool buffer_uav_validated_as_image;
+
    /* Whether submissions referencing kcache buffers need to reset the constants mode to DX10 using
     * the MODE_CONTROL packet beforehand.
     */

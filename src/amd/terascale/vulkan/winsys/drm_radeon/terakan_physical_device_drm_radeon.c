@@ -282,6 +282,8 @@ terakan_physical_device_drm_radeon_try_create(struct vk_instance * const instanc
          {
             .relocation_type = TERAKAN_QUEUE_RELOCATION_TYPE_DRM_NOP,
          },
+      /* TODO(Triang3l): Don't enable `buffer_uav_validated_as_image` with virtual memory. */
+      .buffer_uav_validated_as_image = true,
    };
 
    size_t sync_type_count = 0;

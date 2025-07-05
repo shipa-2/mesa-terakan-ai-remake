@@ -30,6 +30,7 @@
 #include "terakan_entrypoints.h"
 #include "terakan_format.h"
 #include "terakan_image.h"
+#include "terakan_physical_device.h"
 
 #include "gallium/drivers/r600/eg_sq.h"
 #include "gallium/drivers/r600/evergreend.h"
@@ -993,9 +994,8 @@ terakan_CmdCopyImageToBuffer2(VkCommandBuffer const commandBuffer,
       .attrib = S_028C74_NON_DISP_TILING_ORDER(1),
    };
 
-   uint32_t const tile_pipe_interleave_bytes_log2 =
-      terakan_gfx_command_writer_physical_device(command_writer)
-         ->tiling_info.pipe_interleave_bytes_log2;
+   struct terakan_physical_device const * const physical_device =
+      terakan_gfx_command_writer_physical_device(command_writer);
 
    command_writer->post_color_image_copy_write_barrier_actions |=
       TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_UAV | TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_PS;
@@ -1033,16 +1033,15 @@ terakan_CmdCopyImageToBuffer2(VkCommandBuffer const commandBuffer,
       unsigned const region_bytes_per_block =
          image->surface.aspects[image_descriptor_create_info.image_aspect_index].bytes_per_block;
 
-      uint32_t buffer_uav_alignment_offset_elements;
-      terakan_color_descriptor_calculate_buffer_base_pitch_dim_offset(
+      uint32_t buffer_uav_base_granularity_offset_elements;
+      terakan_color_descriptor_calculate_buffer_base_pitch_slice_dim_offset(
          &buffer_uav, buffer->va + region->bufferOffset,
          (image_descriptor_create_info.layer_count - 1) * buffer_z_pitch +
             (rect.extent.height - 1) * buffer_y_pitch + rect.extent.width,
-         region_bytes_per_block, tile_pipe_interleave_bytes_log2,
-         &buffer_uav_alignment_offset_elements);
+         region_bytes_per_block, physical_device, &buffer_uav_base_granularity_offset_elements);
 
       int32_t const image_offset_x_minus_buffer_offset =
-         rect.offset.x - (int32_t)buffer_uav_alignment_offset_elements;
+         rect.offset.x - (int32_t)buffer_uav_base_granularity_offset_elements;
 
       if (constants[TERAKAN_META_COPY_BUFFER_IMAGE_CONST_IMAGE_OFFSET_X_MINUS_BUFFER_OFFSET] !=
              (uint32_t)image_offset_x_minus_buffer_offset ||
