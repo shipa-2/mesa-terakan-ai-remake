@@ -26,11 +26,14 @@
 #include "terakan_command_buffer.h"
 #include "terakan_descriptor.h"
 #include "terakan_entrypoints.h"
+#include "terakan_format.h"
+#include "terakan_image.h"
 
 #include "gallium/drivers/r600/eg_sq.h"
 #include "gallium/drivers/r600/evergreend.h"
 #include "gallium/drivers/r600/r600_opcodes.h"
 #include "util/macros.h"
+#include "util/u_math.h"
 
 #include <assert.h>
 #include <math.h>
@@ -225,6 +228,134 @@ struct terakan_meta_shader const terakan_meta_clear_color_ps = {
             },
       },
 };
+
+VKAPI_ATTR void VKAPI_CALL
+terakan_CmdClearColorImage(VkCommandBuffer const commandBuffer, VkImage const imageHandle,
+                           UNUSED VkImageLayout const imageLayout,
+                           VkClearColorValue const * const pColor, uint32_t const rangeCount,
+                           VkImageSubresourceRange const * const pRanges)
+{
+   struct terakan_gfx_command_writer * const command_writer =
+      terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx;
+
+   struct terakan_image const * const image = terakan_image_from_handle(imageHandle);
+
+   /* VUID-vkCmdClearColorImage-aspectMask-02498: "The VkImageSubresourceRange::aspectMask members
+    * of the elements of the pRanges array must each only include VK_IMAGE_ASPECT_COLOR_BIT"
+    */
+   unsigned const aspect_index =
+      terakan_format_aspect_index(image->format_info.aspect_map, VK_IMAGE_ASPECT_COLOR_BIT, 0);
+
+   struct terascale_format_info const image_format_info =
+      image->format_info.aspect_formats[aspect_index];
+
+   /* TODO(Triang3l): 3x-expanded format clearing. */
+   if (unlikely(!IS_POT(terascale_format_bytes_per_block[image_format_info.format]))) {
+      return;
+   }
+
+   struct terakan_image_descriptor_create_info image_descriptor_create_info = {
+      .image = image,
+      .view_type = terakan_meta_transfer_image_view_type(image->vk.image_type),
+      .view_format = terakan_meta_transfer_image_block_format_info(
+         terascale_format_bytes_per_block[image_format_info.format]),
+      /* The clear value is a byte array with the needed endianness. */
+      .force_little_endian = true,
+      .image_aspect_index = aspect_index,
+      .level_count = 1,
+   };
+
+   struct terakan_bo const * constants_bo;
+   uint32_t constants_va_lines;
+   uint32_t * const constants_mapping = terakan_push_buffer_allocate_kcache(
+      command_writer->base.command_buffer, sizeof(uint32_t) * TERAKAN_META_CLEAR_COLOR_CONSTS_COUNT,
+      &constants_bo, &constants_va_lines);
+   if (unlikely(constants_mapping == NULL)) {
+      return;
+   }
+
+   uint8_t clear_value[sizeof(uint32_t) * 4] = {};
+   terascale_format_pack_color(&image_format_info, pColor->uint32, clear_value);
+   if (image_descriptor_create_info.view_format.number_type == TERASCALE_FORMAT_NUMBER_TYPE_UNORM) {
+      /* Writing via a 8 bits per channel unorm format for 16bpc export to be usable. */
+      assert(image_descriptor_create_info.view_format.format == TERASCALE_FORMAT_INDEX_8 ||
+             image_descriptor_create_info.view_format.format == TERASCALE_FORMAT_INDEX_8_8 ||
+             image_descriptor_create_info.view_format.format == TERASCALE_FORMAT_INDEX_8_8_8_8);
+      for (unsigned byte_index = 0; byte_index < 4; ++byte_index) {
+         constants_mapping[TERAKAN_META_CLEAR_COLOR_CONST_CLEAR_VALUE + byte_index] =
+            fui((float)clear_value[byte_index] / 255.0f);
+      }
+   } else {
+      memcpy(&constants_mapping[TERAKAN_META_CLEAR_COLOR_CONST_CLEAR_VALUE], clear_value,
+             sizeof(uint32_t) * 4);
+   }
+
+   command_writer->push_constants_state.up_to_date_push_constants_bound_to_stages &=
+      ~VK_SHADER_STAGE_FRAGMENT_BIT;
+   terakan_hw_state_draw_set_sq_kcache_fs(
+      &command_writer->hw_state_draw, TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS,
+      DIV_ROUND_UP(sizeof(uint32_t) * TERAKAN_META_CLEAR_COLOR_CONSTS_COUNT,
+                   TERAKAN_KCACHE_HW_LINE_BYTES),
+      constants_bo, constants_va_lines);
+
+   terakan_meta_begin_2d_immediate_rects(command_writer, TERAKAN_META_PA_CL_VTE_CNTL_2D,
+                                         TERAKAN_META_DB_RENDER_OVERRIDE_DEFAULT, true);
+
+   terakan_meta_set_vs(command_writer, TERAKAN_META_SHADER_POSITION_AND_LAYER_FROM_INDEX_VS);
+   terakan_meta_set_ps(command_writer, TERAKAN_META_SHADER_CLEAR_COLOR_PS, false);
+
+   terakan_meta_begin_cb(command_writer, 0xF, 0b1);
+
+   for (uint32_t range_index = 0; range_index < rangeCount; ++range_index) {
+      VkImageSubresourceRange const * const range = &pRanges[range_index];
+
+      uint32_t const range_level_count = vk_image_subresource_level_count(&image->vk, range);
+      for (uint32_t level_base_relative_index = 0; level_base_relative_index < range_level_count;
+           ++level_base_relative_index) {
+         image_descriptor_create_info.base_mip_level =
+            range->baseMipLevel + level_base_relative_index;
+
+         if (image->vk.image_type == VK_IMAGE_TYPE_3D) {
+            image_descriptor_create_info.base_array_layer = 0;
+            image_descriptor_create_info.layer_count =
+               u_minify(image->vk.extent.depth, image_descriptor_create_info.base_mip_level);
+         } else {
+            image_descriptor_create_info.base_array_layer = range->baseArrayLayer;
+            image_descriptor_create_info.layer_count =
+               vk_image_subresource_layer_count(&image->vk, range);
+         }
+
+         VkRect2D const rect = {
+            .extent =
+               {
+                  .width =
+                     u_minify(image->vk.extent.width, image_descriptor_create_info.base_mip_level),
+                  .height =
+                     u_minify(image->vk.extent.height, image_descriptor_create_info.base_mip_level),
+               },
+         };
+
+         while (image_descriptor_create_info.layer_count > 0) {
+            struct terakan_color_descriptor color_descriptor;
+            struct terakan_color_meta_descriptor color_meta_descriptor;
+            uint32_t const color_descriptor_layer_count = terakan_image_create_color_descriptor(
+               &image_descriptor_create_info, &color_descriptor, &color_meta_descriptor);
+            terakan_color_descriptor_image_view_to_color_attachment(&color_descriptor);
+            terakan_hw_state_draw_set_cb_color(&command_writer->hw_state_draw, 0, image->bo,
+                                               &color_descriptor, &color_meta_descriptor, false);
+            terakan_meta_set_db_shader_control_with_rtv(
+               command_writer, terakan_meta_clear_color_ps.stage.ps.db_shader_control,
+               color_descriptor.info);
+
+            terakan_meta_emit_rect_3_vertices_draw(command_writer, &rect,
+                                                   color_descriptor_layer_count);
+
+            image_descriptor_create_info.base_array_layer += color_descriptor_layer_count;
+            image_descriptor_create_info.layer_count -= color_descriptor_layer_count;
+         }
+      }
+   }
+}
 
 VKAPI_ATTR void VKAPI_CALL
 terakan_CmdClearAttachments(VkCommandBuffer const commandBuffer, uint32_t const attachmentCount,

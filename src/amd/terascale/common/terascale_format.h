@@ -200,6 +200,27 @@ terascale_format_get_sq_num_format(const enum terascale_format_number_type numbe
    }
 }
 
+/* Formats with the FLOAT suffix with bit layout matching that of the format with 1 subtracted from
+ * the index.
+ *
+ * These include formats like 16_FLOAT (6) which is a FLOAT counterpart of 16 (5), but not formats
+ * like X24_8_32_FLOAT, 5_9_9_9_SHAREDEXP or BC6 as they don't have a non-floating-point
+ * counterpart.
+ *
+ * SQ fetch doesn't have a NUM_FORMAT for floating-point, instead the floating-point representation
+ * is selected by specifying the DATA_FORMAT with the FLOAT suffix.
+ *
+ * In CB, these formats behave like the format with 1 subtracted from the index with NUMBER_TYPE
+ * implicitly forced to FLOAT.
+ */
+#define TERASCALE_FORMATS_FLOAT_COUNTERPART                                                        \
+   (TERASCALE_FORMAT_BIT(16_FLOAT) | TERASCALE_FORMAT_BIT(32_FLOAT) |                              \
+    TERASCALE_FORMAT_BIT(16_16_FLOAT) | TERASCALE_FORMAT_BIT(8_24_FLOAT) |                         \
+    TERASCALE_FORMAT_BIT(24_8_FLOAT) | TERASCALE_FORMAT_BIT(10_11_11_FLOAT) |                      \
+    TERASCALE_FORMAT_BIT(11_11_10_FLOAT) | TERASCALE_FORMAT_BIT(32_32_FLOAT) |                     \
+    TERASCALE_FORMAT_BIT(16_16_16_16_FLOAT) | TERASCALE_FORMAT_BIT(32_32_32_32_FLOAT) |            \
+    TERASCALE_FORMAT_BIT(16_16_16_FLOAT) | TERASCALE_FORMAT_BIT(32_32_32_FLOAT))
+
 /* If FORMAT is among these formats, and NUMBER_TYPE is UNORM, SNORM or SRGB:
  * - On R6xx: BLEND_FLOAT32 can be disabled, SOURCE_FORMAT can be NORM.
  * - On R8xx: SOURCE_FORMAT can be 4C_16BPC.
@@ -379,6 +400,15 @@ enum terascale_r8xx_depth_format {
 bool terascale_get_r8xx_depth_stencil_format(enum pipe_format format,
                                              enum terascale_r8xx_depth_format *depth_format_out_opt,
                                              bool *has_stencil_out_opt);
+
+/* For non-blocked, non-_AS_ formats only.
+ * The resulting data has the host endianness (for DB-compatible surfaces, the caller itself must
+ * convert to little-endian if needed).
+ * The amount of data written is the number of bytes per element in the format.
+ * RGBA is interpreted as uint32, sint32 or float32 depending on the number format of the channel.
+ */
+void terascale_format_pack_color(const struct terascale_format_info *format_info,
+                                 const uint32_t rgba[4], void *packed_out);
 
 #ifdef __cplusplus
 }

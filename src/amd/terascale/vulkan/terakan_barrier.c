@@ -147,7 +147,13 @@ terakan_barrier_get_src_actions(struct terakan_gfx_command_writer const * const 
          }
          /* TODO(Triang3l): Depth/stencil blit actions. */
       }
-      /* TODO(Triang3l): Actions for clears. */
+      if (src_stages & VK_PIPELINE_STAGE_2_CLEAR_BIT) {
+         if (for_color_image) {
+            actions |= TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RTV_DATA |
+                       TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RTV_META;
+         }
+         /* TODO(Triang3l): Depth/stencil clear actions. */
+      }
    }
 
    if (src_access & (VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT)) {
