@@ -543,7 +543,7 @@ terakan_meta_copy_expand_3x_begin(struct terakan_gfx_command_writer * const comm
    terakan_meta_set_vs(command_writer, TERAKAN_META_SHADER_POSITION_FROM_INDEX_VS);
    terakan_meta_set_ps(command_writer, TERAKAN_META_SHADER_COPY_EXPAND_3X_PS, true);
 
-   terakan_meta_begin_cb(command_writer, V_028808_CB_NORMAL, 0xF, 0b0);
+   terakan_meta_begin_cb(command_writer, 0xF, 0b0);
 
    command_writer->push_constants_state.up_to_date_push_constants_bound_to_stages &=
       ~VK_SHADER_STAGE_FRAGMENT_BIT;

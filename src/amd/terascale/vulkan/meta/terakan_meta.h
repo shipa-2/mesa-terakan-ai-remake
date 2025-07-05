@@ -159,8 +159,7 @@ void terakan_meta_set_ps(struct terakan_gfx_command_writer * command_writer,
                          enum terakan_meta_shader_index shader_index, bool set_db_shader_control);
 
 void terakan_meta_begin_cb(struct terakan_gfx_command_writer * command_writer,
-                           uint32_t cb_color_control_mode, uint32_t cb_target_mask,
-                           uint8_t disable_blend_for_targets);
+                           uint32_t cb_target_mask, uint8_t disable_blend_for_targets);
 
 void terakan_meta_begin_2d(struct terakan_gfx_command_writer * command_writer,
                            uint32_t pa_cl_vte_cntl);

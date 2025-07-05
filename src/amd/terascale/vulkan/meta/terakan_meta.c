@@ -269,13 +269,12 @@ terakan_meta_set_ps(struct terakan_gfx_command_writer * const command_writer,
 
 void
 terakan_meta_begin_cb(struct terakan_gfx_command_writer * const command_writer,
-                      uint32_t const cb_color_control_mode, uint32_t const cb_target_mask,
-                      uint8_t const disable_blend_for_targets)
+                      uint32_t const cb_target_mask, uint8_t const disable_blend_for_targets)
 {
    terakan_meta_modify_state_draw_dword(
       command_writer, TERAKAN_STATE_DRAW_INDEX_CB_COLOR_CONTROL,
       TERAKAN_HW_STATE_DRAW_INDEX_CB_COLOR_CONTROL, &command_writer->hw_state_draw.cb_color_control,
-      S_028808_MODE(cb_target_mask ? cb_color_control_mode : V_028808_CB_DISABLE) |
+      S_028808_MODE(cb_target_mask ? V_028808_CB_NORMAL : V_028808_CB_DISABLE) |
          S_028808_ROP3(0xCC));
 
    terakan_meta_modify_state_draw_dword(command_writer, TERAKAN_STATE_DRAW_INDEX_CB_TARGET_MASK,

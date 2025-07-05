@@ -421,7 +421,7 @@ terakan_CmdClearAttachments(VkCommandBuffer const commandBuffer, uint32_t const 
 
       terakan_meta_set_ps(command_writer, TERAKAN_META_SHADER_CLEAR_COLOR_PS, false);
 
-      terakan_meta_begin_cb(command_writer, V_028808_CB_NORMAL, 0xF, 0b1);
+      terakan_meta_begin_cb(command_writer, 0xF, 0b1);
 
       struct terakan_state_draw_cb_color const * const attachment_cb_color =
          &command_writer->state_draw.cb_color_rtv.attachments[attachment->colorAttachment];
@@ -473,7 +473,7 @@ terakan_CmdClearAttachments(VkCommandBuffer const commandBuffer, uint32_t const 
    if (depth_stencil_clear_aspects) {
       /* Depth/stencil was not cleared alongside color. Clear it now. */
       terakan_meta_set_ps(command_writer, TERAKAN_META_SHADER_EMPTY_OPAQUE_PS, true);
-      terakan_meta_begin_cb(command_writer, V_028808_CB_DISABLE, 0x0, 0b0);
+      terakan_meta_begin_cb(command_writer, 0x0, 0b0);
       for (uint32_t rect_index = 0; rect_index < rectCount; ++rect_index) {
          VkClearRect const * const rect = &pRects[rect_index];
          if (rect_index != 0 && rect->baseArrayLayer != pRects[rect_index - 1].baseArrayLayer) {
