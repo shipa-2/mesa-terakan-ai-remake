@@ -1027,10 +1027,10 @@ terakan_hw_state_draw_emit_sq_kcache_buffer(
 
 /* bo and descriptor are undefined if not_null == false. */
 static bool
-terakan_hw_state_draw_emit_resource(struct terakan_gfx_command_writer * const command_writer,
-                                    uint32_t const global_index, bool const not_null,
-                                    struct terakan_bo const * const bo,
-                                    uint32_t const descriptor[8])
+terakan_hw_state_draw_emit_sq_resource(struct terakan_gfx_command_writer * const command_writer,
+                                       uint32_t const global_index, bool const not_null,
+                                       struct terakan_bo const * const bo,
+                                       uint32_t const descriptor[8])
 {
    uint32_t * packet;
 
@@ -1175,10 +1175,10 @@ terakan_hw_state_draw_emit_sq_resources_for_stage(
 
    unsigned binding_index;
    BITSET_FOREACH_SET (binding_index, update_bindings, count) {
-      if (!terakan_hw_state_draw_emit_resource(command_writer, global_offset + binding_index,
-                                               BITSET_TEST(not_null_bitset, binding_index),
-                                               bos[binding_index],
-                                               descriptors + 8 * binding_index)) {
+      if (!terakan_hw_state_draw_emit_sq_resource(command_writer, global_offset + binding_index,
+                                                  BITSET_TEST(not_null_bitset, binding_index),
+                                                  bos[binding_index],
+                                                  descriptors + 8 * binding_index)) {
          return;
       }
       BITSET_CLEAR(modified_bitset, binding_index);
@@ -1377,7 +1377,7 @@ terakan_hw_state_draw_emit_sq_resources_vs(struct terakan_gfx_command_writer * c
          }
       }
 
-      if (emit_binding && !terakan_hw_state_draw_emit_resource(
+      if (emit_binding && !terakan_hw_state_draw_emit_sq_resource(
                              command_writer, TERAKAN_RESOURCE_HW_OFFSET_VSES + binding_index,
                              resource_not_null, state->sq_resource_bos.vs[binding_index],
                              state->sq_resource_descriptors.vs[binding_index])) {
@@ -1698,7 +1698,7 @@ terakan_hw_state_draw_emit_sq_resources_tes(struct terakan_gfx_command_writer * 
          }
       }
 
-      if (emit_binding && !terakan_hw_state_draw_emit_resource(
+      if (emit_binding && !terakan_hw_state_draw_emit_sq_resource(
                              command_writer, TERAKAN_RESOURCE_HW_OFFSET_VSES + binding_index,
                              resource_not_null, state->sq_resource_bos.tes[binding_index],
                              state->sq_resource_descriptors.tes[binding_index])) {
