@@ -312,7 +312,6 @@ terakan_barrier_emit_pending_actions(struct terakan_gfx_command_writer * const c
          cp_coher_cntl_cb_db_dest_base_ena |=
             S_0085F0_CB8_DEST_BASE_ENA(1) | S_0085F0_CB9_DEST_BASE_ENA(1) |
             S_0085F0_CB10_DEST_BASE_ENA(1) | S_0085F0_CB11_DEST_BASE_ENA(1);
-         cp_coher_cntl |= S_0085F0_SMX_ACTION_ENA(1);
          /* Flushes and invalidates RTV and UAV data, but not meta. */
          terakan_gfx_command_writer_emit_event_write_eop_discarding_data(
             command_writer, EVENT_TYPE(EVENT_TYPE_FLUSH_AND_INV_CB_DATA_TS) | EVENT_INDEX(5));

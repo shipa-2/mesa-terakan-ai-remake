@@ -303,7 +303,7 @@ terakan_CreateBufferView(VkDevice const deviceHandle,
          if (format_info.supports_cb_color && pCreateInfo->offset % bytes_per_element == 0) {
             terakan_color_descriptor_calculate_buffer_base_pitch_slice_view_dim(
                &buffer_view->color, va, buffer_view->vk.elements, bytes_per_element,
-               terakan_device_physical_device(device));
+               terakan_device_physical_device(device), true);
             buffer_view->color.info =
                S_028C70_ENDIAN(endian_swap) | S_028C70_FORMAT(format_info.format) |
                S_028C70_ARRAY_MODE(V_028C70_ARRAY_LINEAR_ALIGNED) |

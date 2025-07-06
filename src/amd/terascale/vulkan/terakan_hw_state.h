@@ -159,6 +159,8 @@ enum terakan_hw_state_draw_index {
 
    TERAKAN_HW_STATE_DRAW_INDEX_CB_BLEND_CONTROL,
 
+   TERAKAN_HW_STATE_DRAW_INDEX_CB_IMMED,
+
    TERAKAN_HW_STATE_DRAW_INDEX_CB_COLOR,
 
    /* Matching the sequence in terakan_hw_state_draw_sq_constants_needed_stage. */
@@ -335,6 +337,16 @@ struct terakan_hw_state_draw {
       uint8_t modified;
       uint32_t cb_blend_control[TERAKAN_COLOR_HW_RTV_COUNT];
    } cb_blend_control;
+
+   /* TERAKAN_HW_STATE_DRAW_INDEX_CB_IMMED
+    * Don't access externally directly, instead set via terakan_hw_state_draw_set_cb_immed.
+    */
+   struct {
+      uint16_t ever_written;
+      uint16_t modified;
+      /* 3 bits per UAV. */
+      uint64_t uavs_bytes_per_texel_log2;
+   } cb_immed;
 
    /* TERAKAN_HW_STATE_DRAW_INDEX_CB_COLOR
     * Don't access externally directly, instead set via terakan_hw_state_draw_set_cb_color or
@@ -531,6 +543,29 @@ terakan_hw_state_draw_set_cb_blend_control(struct terakan_hw_state_draw * const 
    if (modified) {
       state->cb_blend_control.modified |= color_bit;
       BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_CB_BLEND_CONTROL);
+   }
+}
+
+static inline void
+terakan_hw_state_draw_set_cb_immed(struct terakan_hw_state_draw * const state,
+                                   uint32_t const uav_index, unsigned const bytes_per_texel_log2)
+{
+   assert(uav_index < TERAKAN_COLOR_HW_RTV_AND_UAV_COUNT);
+   assert(bytes_per_texel_log2 <= 4);
+   unsigned const uav_shift = 3 * uav_index;
+   uint64_t const uavs_bytes_per_texel_log2 =
+      (state->cb_immed.uavs_bytes_per_texel_log2 & ~(BITFIELD64_MASK(3) << uav_shift)) |
+      ((uint64_t)bytes_per_texel_log2 << uav_shift);
+   bool modified = state->cb_immed.uavs_bytes_per_texel_log2 != uavs_bytes_per_texel_log2;
+   state->cb_immed.uavs_bytes_per_texel_log2 = uavs_bytes_per_texel_log2;
+   uint16_t const uav_index_bit = (uint16_t)1 << uav_index;
+   if (!(state->cb_immed.ever_written & uav_index_bit)) {
+      state->cb_immed.ever_written |= uav_index_bit;
+      modified = true;
+   }
+   if (modified) {
+      state->cb_immed.modified |= uav_index_bit;
+      BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_CB_IMMED);
    }
 }
 

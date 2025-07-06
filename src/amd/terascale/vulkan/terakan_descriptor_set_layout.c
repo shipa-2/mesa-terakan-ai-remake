@@ -131,6 +131,10 @@ terakan_CreateDescriptorSetLayout(VkDevice const deviceHandle,
       stage_mask |=
          VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT | VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
    }
+   VkShaderStageFlags uav_supported_stage_mask = VK_SHADER_STAGE_COMPUTE_BIT;
+   if (device->vk.enabled_features.fragmentStoresAndAtomics) {
+      uav_supported_stage_mask |= VK_SHADER_STAGE_FRAGMENT_BIT;
+   }
 
    /* Calculate the sizes of the suballocations, as well as masks of shader stages requiring any
     * descriptors of a given type.
@@ -138,7 +142,7 @@ terakan_CreateDescriptorSetLayout(VkDevice const deviceHandle,
    size_t binding_count = 0;
    uint8_t immutable_sampler_count = 0;
    uint16_t shader_range_count = 0;
-   VkShaderStageFlags stages_with_resources = 0, stages_with_samplers = 0;
+   VkShaderStageFlags stages_with_resources = 0, stages_with_samplers = 0, stages_with_uavs = 0;
    for (uint32_t create_info_binding_index = 0;
         create_info_binding_index < non_empty_create_info_binding_count;
         ++create_info_binding_index) {
@@ -164,6 +168,11 @@ terakan_CreateDescriptorSetLayout(VkDevice const deviceHandle,
       if (terakan_descriptor_type_has_resource(binding_type)) {
          ++binding_shader_range_count;
          stages_with_resources |= binding_stages;
+         VkShaderStageFlags const binding_uav_stages = binding_stages & uav_supported_stage_mask;
+         if (binding_uav_stages && terakan_descriptor_type_has_uav(binding_type)) {
+            ++binding_shader_range_count;
+            stages_with_uavs |= binding_uav_stages;
+         }
       }
       if (terakan_descriptor_type_has_sampler(binding_type)) {
          if (binding->pImmutableSamplers != NULL) {
@@ -213,8 +222,8 @@ terakan_CreateDescriptorSetLayout(VkDevice const deviceHandle,
     */
    uint8_t next_immutable_sampler_index = 0;
    uint16_t dynamic_offset_count = 0;
-   uint16_t set_uav_count = 0;
    uint16_t set_resource_count = 0;
+   uint16_t set_uav_count = 0;
    uint8_t set_sampler_count = 0;
    for (uint32_t create_info_binding_index = 0;
         create_info_binding_index < non_empty_create_info_binding_count;
@@ -234,24 +243,24 @@ terakan_CreateDescriptorSetLayout(VkDevice const deviceHandle,
        * This isn't necessary due to the requirements for consecutive bindings in
        * vkUpdateDescriptorSets, but trivially allows for more graceful handling of invalid usage.
        */
-      layout_binding->first_set_uav = set_uav_count;
       layout_binding->first_set_resource = set_resource_count;
+      layout_binding->first_set_uav = set_uav_count;
       layout_binding->first_set_sampler = set_sampler_count;
 
       /* Add to the counts, validating against the numeric limits. */
-      if (terakan_descriptor_type_has_uav(binding_type)) {
-         if (TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_IN_PIPELINE - set_uav_count <
-             binding_descriptor_count) {
-            goto too_many_descriptors_destroy;
-         }
-         set_uav_count += binding_descriptor_count;
-      }
       if (terakan_descriptor_type_has_resource(binding_type)) {
          if (TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_IN_PIPELINE - set_resource_count <
              binding_descriptor_count) {
             goto too_many_descriptors_destroy;
          }
          set_resource_count += binding_descriptor_count;
+         if (terakan_descriptor_type_has_uav(binding_type)) {
+            if (TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_IN_PIPELINE - set_uav_count <
+                binding_descriptor_count) {
+               goto too_many_descriptors_destroy;
+            }
+            set_uav_count += binding_descriptor_count;
+         }
       }
       bool const binding_has_samplers = terakan_descriptor_type_has_sampler(binding_type);
       if (binding_has_samplers) {
@@ -312,6 +321,7 @@ terakan_CreateDescriptorSetLayout(VkDevice const deviceHandle,
 
    uint16_t next_shader_range_index = 0;
 
+   /* Resource ranges. */
    unsigned remaining_stages = (unsigned)stages_with_resources;
    while (remaining_stages) {
       int const stage_index = u_bit_scan(&remaining_stages);
@@ -379,6 +389,7 @@ terakan_CreateDescriptorSetLayout(VkDevice const deviceHandle,
       layout_shader->uniform_buffer_count = stage_uniform_buffer_count;
    }
 
+   /* Sampler ranges. */
    remaining_stages = (unsigned)stages_with_samplers;
    while (remaining_stages) {
       int const stage_index = u_bit_scan(&remaining_stages);
@@ -436,6 +447,51 @@ terakan_CreateDescriptorSetLayout(VkDevice const deviceHandle,
          next_shader_range_index - layout_shader->first_sampler_range;
 
       layout_shader->sampler_count = stage_sampler_count;
+   }
+
+   /* UAV ranges, after setting up resource ranges because they take shader indices from the
+    * resources corresponding to them.
+    */
+   remaining_stages = (unsigned)stages_with_uavs;
+   while (remaining_stages) {
+      int const stage_index = u_bit_scan(&remaining_stages);
+
+      struct terakan_descriptor_set_layout_shader * const layout_shader =
+         &layout->shaders[stage_index];
+      layout_shader->first_uav_range = next_shader_range_index;
+
+      uint8_t const stage_flag = (uint8_t)1 << stage_index;
+
+      for (uint32_t create_info_binding_index = 0;
+           create_info_binding_index < non_empty_create_info_binding_count;
+           ++create_info_binding_index) {
+         struct terakan_descriptor_set_layout_binding * const binding =
+            &layout->bindings[sorted_create_info_bindings[create_info_binding_index].binding];
+
+         if (!(binding->stage_flags & stage_flag) ||
+             !terakan_descriptor_type_has_uav(binding->descriptor_type)) {
+            continue;
+         }
+         assert(terakan_descriptor_type_has_resource(binding->descriptor_type));
+
+         assert(next_shader_range_index < shader_range_count);
+         struct terakan_descriptor_set_layout_shader_range * const shader_range =
+            &layout->shader_ranges[next_shader_range_index];
+         shader_range->first_set_descriptor = binding->first_set_uav;
+         shader_range->first_dynamic_offset =
+            binding->descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC
+               ? binding->first_immutable_sampler_or_dynamic_offset
+               : UINT16_MAX;
+         shader_range->first_shader_descriptor = binding->first_shader_resources[stage_index];
+         shader_range->descriptor_count = binding->descriptor_count;
+         if (next_shader_range_index == layout_shader->first_uav_range ||
+             !terakan_descriptor_set_layout_shader_range_try_extend(
+                &layout->shader_ranges[next_shader_range_index - 1], shader_range)) {
+            ++next_shader_range_index;
+         }
+      }
+
+      layout_shader->uav_range_count = next_shader_range_index - layout_shader->first_uav_range;
    }
 
    /* Not == because contiguous ranges may be merged. */

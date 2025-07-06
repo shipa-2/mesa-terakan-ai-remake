@@ -1057,6 +1057,44 @@ terakan_hw_state_draw_emit_cb_blend_control(struct terakan_gfx_command_writer * 
 }
 
 static void
+terakan_hw_state_draw_emit_cb_immed(struct terakan_gfx_command_writer * const command_writer)
+{
+   struct terakan_hw_state_draw * const state = &command_writer->hw_state_draw;
+
+   uint16_t const modified = state->cb_immed.modified;
+   assert(!(modified & ~state->cb_immed.ever_written));
+   if (!modified) {
+      return;
+   }
+
+   unsigned const modified_count = util_bitcount(modified);
+   uint32_t * packet = terakan_gfx_command_writer_emit_with_bo(
+      command_writer, (2 + 1) * modified_count, true, 1, modified_count, 0);
+   if (unlikely(packet == NULL)) {
+      return;
+   }
+   struct terakan_device const * const device = terakan_gfx_command_writer_device(command_writer);
+   uint32_t const bo_reference = terakan_bo_reference_writer_add_reference(
+      &command_writer->base.bo_reference_writer, device->uav_immediate_bo, true, true,
+      TERAKAN_BO_PRIORITY_SHADER_RW_BUFFER);
+   u_foreach_bit (uav_index, modified) {
+      *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
+      *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028B9C_CB_IMMED0_BASE) + uav_index;
+      uint32_t const * const packet_cb_immed_base = packet;
+      *packet++ =
+         device
+            ->uav_immediate_va_shr8[(state->cb_immed.uavs_bytes_per_texel_log2 >> (3 * uav_index)) &
+                                    0b111];
+      terakan_gfx_command_writer_add_relocation(
+         command_writer, &packet, packet_cb_immed_base, *packet_cb_immed_base,
+         TERASCALE_WDDM_PATCH_IDS_CB_IMMED_BASE | uav_index, bo_reference);
+   }
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
+
+   state->cb_immed.modified = 0b0;
+}
+
+static void
 terakan_hw_state_draw_emit_cb_color(struct terakan_gfx_command_writer * const command_writer)
 {
    struct terakan_hw_state_draw * const state = &command_writer->hw_state_draw;
@@ -2171,6 +2209,7 @@ static terakan_hw_state_draw_emit_function const
       [TERAKAN_HW_STATE_DRAW_INDEX_SQ_RINGS] = terakan_hw_state_draw_emit_sq_rings,
       [TERAKAN_HW_STATE_DRAW_INDEX_VIEWPORT] = terakan_hw_state_draw_emit_viewport,
       [TERAKAN_HW_STATE_DRAW_INDEX_CB_BLEND_CONTROL] = terakan_hw_state_draw_emit_cb_blend_control,
+      [TERAKAN_HW_STATE_DRAW_INDEX_CB_IMMED] = terakan_hw_state_draw_emit_cb_immed,
       [TERAKAN_HW_STATE_DRAW_INDEX_CB_COLOR] = terakan_hw_state_draw_emit_cb_color,
       [TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_VS] = terakan_hw_state_draw_emit_sq_kcache_vs,
       [TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_TCS] = terakan_hw_state_draw_emit_sq_kcache_tcs,
@@ -2922,6 +2961,7 @@ terakan_hw_state_draw_emit_all(struct terakan_gfx_command_writer * const command
    state->viewport_counts.scale_offset_z_min_max_emitted = 0;
    state->viewport_counts.scissor_emitted = 0;
    state->cb_blend_control.modified = state->cb_blend_control.ever_written;
+   state->cb_immed.modified = state->cb_immed.ever_written;
    state->cb_color.modified = state->cb_color.ever_written;
 
    unsigned state_index;
@@ -2954,6 +2994,14 @@ terakan_hw_state_draw_reset(struct terakan_hw_state_draw * const state)
     * ever having configured blending).
     */
    BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_INDEX_CB_BLEND_CONTROL);
+
+   state->cb_immed.ever_written = 0;
+   state->cb_immed.modified = 0;
+   state->cb_immed.uavs_bytes_per_texel_log2 = 0;
+   /* For simplicity, consider the immediate buffer state always valid (starting from no UAVs with
+    * an immediate buffer ever bound).
+    */
+   BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_INDEX_CB_IMMED);
 
    state->cb_color.ever_written = 0;
    state->cb_color.modified = 0;

@@ -1033,15 +1033,16 @@ terakan_CmdCopyImageToBuffer2(VkCommandBuffer const commandBuffer,
       unsigned const region_bytes_per_block =
          image->surface.aspects[image_descriptor_create_info.image_aspect_index].bytes_per_block;
 
-      uint32_t buffer_uav_base_granularity_offset_elements;
+      uint32_t buffer_uav_base_granularity_offset_bytes;
       terakan_color_descriptor_calculate_buffer_base_pitch_slice_dim_offset(
          &buffer_uav, buffer->va + region->bufferOffset,
          (image_descriptor_create_info.layer_count - 1) * buffer_z_pitch +
             (rect.extent.height - 1) * buffer_y_pitch + rect.extent.width,
-         region_bytes_per_block, physical_device, &buffer_uav_base_granularity_offset_elements);
+         region_bytes_per_block, physical_device, &buffer_uav_base_granularity_offset_bytes);
 
       int32_t const image_offset_x_minus_buffer_offset =
-         rect.offset.x - (int32_t)buffer_uav_base_granularity_offset_elements;
+         rect.offset.x -
+         (int32_t)(buffer_uav_base_granularity_offset_bytes / region_bytes_per_block);
 
       if (constants[TERAKAN_META_COPY_BUFFER_IMAGE_CONST_IMAGE_OFFSET_X_MINUS_BUFFER_OFFSET] !=
              (uint32_t)image_offset_x_minus_buffer_offset ||

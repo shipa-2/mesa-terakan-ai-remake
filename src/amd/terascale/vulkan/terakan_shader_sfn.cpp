@@ -100,6 +100,8 @@ terakan_shader_impl_compile(terakan_shader_impl * const shader, terakan_device *
    shader->scratch_item_size_dwords = 4 * nir->scratch_size;
 
    sfn_shader->get_shader_info(&shader->shader);
+   /* Pre-applied during binding lowering. */
+   shader->shader.rat_base = 0;
 
    /* TODO(Triang3l): has_compressed_msaa_texturing. */
    r600_bytecode_init(&shader->shader.bc, gfx_level, chip_family_info.chip_family, false);

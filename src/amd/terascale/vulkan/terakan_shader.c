@@ -295,6 +295,8 @@ void
 terakan_shader_lower_and_optimize_post_link(
    nir_shader * const nir, struct terakan_pipeline_layout const * const pipeline_layout,
    BITSET_WORD * const resources_needed, uint32_t * const samplers_needed,
+   BITSET_WORD * const uavs_for_mutable_resources_needed,
+   uint32_t * const driver_push_constants_used,
    uint8_t * const fragment_data_uncompacted_locations_out)
 {
    bool progress;
@@ -371,7 +373,11 @@ terakan_shader_lower_and_optimize_post_link(
     * must be placed above color attachments.
     */
 
-   NIR_PASS(_, nir, terakan_nir_lower_bindings, pipeline_layout, resources_needed, samplers_needed);
+   NIR_PASS(_, nir, terakan_nir_lower_bindings, pipeline_layout, resources_needed, samplers_needed,
+            nir->info.stage == MESA_SHADER_FRAGMENT
+               ? util_bitcount(fragment_data_uncompacted_locations)
+               : 0,
+            uavs_for_mutable_resources_needed, driver_push_constants_used);
 
    /* Perform lowerings on the level of basic building blocks after the interface has been set up.
     */

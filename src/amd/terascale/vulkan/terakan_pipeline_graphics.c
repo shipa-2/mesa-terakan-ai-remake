@@ -1149,9 +1149,10 @@ terakan_pipeline_graphics_create(struct terakan_device * const device,
       shader->push_constants_usage.app_extent_bytes =
          pipeline_layout->shader_app_push_constants_extents_bytes[stage_index];
 
-      terakan_shader_lower_and_optimize_post_link(nir, pipeline_layout, shader->resources_needed,
-                                                  &shader->samplers_needed,
-                                                  &shader->fs.fragment_data_uncompacted_locations);
+      terakan_shader_lower_and_optimize_post_link(
+         nir, pipeline_layout, shader->resources_needed, &shader->samplers_needed,
+         shader->uavs_for_mutable_resources_needed, &shader->push_constants_usage.driver_constants,
+         &shader->fs.fragment_data_uncompacted_locations);
 
       /* TODO(Triang3l): Construct the shader key from the NIR and, when available, the pipeline
        * state.

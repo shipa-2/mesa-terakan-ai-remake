@@ -53,10 +53,11 @@ struct terakan_descriptor_set_layout_binding {
     * Descriptors of each type for consecutive bindings are laid out in descriptor memory
     * sequentially so descriptor counts in writes can span both array elements and consecutive
     * bindings.
-    * UAVs are allocated regardless of the stage flags for the simplicity of writing and copying.
+    * UAVs are allocated in the set's memory (but not in the shader ranges) regardless of the stage
+    * flags for simplicity of writing and copying.
     */
-   uint16_t first_set_uav;
    uint16_t first_set_resource;
+   uint16_t first_set_uav;
    uint8_t first_set_sampler;
 
    uint8_t stage_flags;
@@ -72,7 +73,7 @@ struct terakan_descriptor_set_layout_shader_range {
    uint16_t first_set_descriptor;
    /* UINT16_MAX if not using a dynamic offset. */
    uint16_t first_dynamic_offset;
-   /* Of the range's type. */
+   /* Of the range's type. UAVs share indices with resources corresponding to them. */
    uint8_t first_shader_descriptor;
    uint8_t descriptor_count;
 };
@@ -83,8 +84,10 @@ struct terakan_descriptor_set_layout_shader {
 
    uint16_t first_resource_range;
    uint16_t first_sampler_range;
+   uint16_t first_uav_range;
    uint8_t resource_range_count;
    uint8_t sampler_range_count;
+   uint8_t uav_range_count;
 
    uint8_t resource_count;
    uint8_t uniform_buffer_count;

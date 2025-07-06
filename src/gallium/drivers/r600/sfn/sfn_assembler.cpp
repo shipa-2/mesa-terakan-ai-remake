@@ -829,13 +829,10 @@ AssamblerVisitor::visit(const RatInstr& instr)
    cf->output.index_gpr = instr.index_gpr();
    cf->output.comp_mask = instr.comp_mask();
    cf->output.burst_count = instr.burst_count();
-   assert(instr.data_swz(0) == PIPE_SWIZZLE_X);
-   if (cf->rat.inst != RatInstr::STORE_TYPED) {
-      assert(instr.data_swz(1) == PIPE_SWIZZLE_Y ||
-             instr.data_swz(1) == PIPE_SWIZZLE_MAX);
-      assert(instr.data_swz(2) == PIPE_SWIZZLE_Z ||
-             instr.data_swz(2) == PIPE_SWIZZLE_MAX);
-   }
+   assert(instr.data_swz(0) == PIPE_SWIZZLE_X || instr.data_swz(0) == PIPE_SWIZZLE_MAX);
+   assert(instr.data_swz(1) == PIPE_SWIZZLE_Y || instr.data_swz(1) == PIPE_SWIZZLE_MAX);
+   assert(instr.data_swz(2) == PIPE_SWIZZLE_Z || instr.data_swz(2) == PIPE_SWIZZLE_MAX);
+   assert(instr.data_swz(3) == PIPE_SWIZZLE_W || instr.data_swz(3) == PIPE_SWIZZLE_MAX);
 
    cf->vpm = m_bc->type == PIPE_SHADER_FRAGMENT;
    cf->barrier = 1;

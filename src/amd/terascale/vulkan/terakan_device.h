@@ -74,6 +74,16 @@ struct terakan_device {
     */
    struct terakan_bo * gfx_discard_bo;
 
+   /* CB_IMMED buffers of chip family info `uav_immediate_size_texels` texels each for all possible
+    * UAV texel sizes, because CB multiplies the invocation index by the texel size, so using the
+    * same buffer with different texel sizes would cause collisions.
+    * `uav_immediate_va_shr8` index is log2 of the texel size in bytes.
+    * Because the same buffer is used for all UAVs (of a given texel size), one invocation must
+    * never have multiple UAV operations returning a value in flight.
+    */
+   struct terakan_bo * uav_immediate_bo;
+   uint32_t uav_immediate_va_shr8[4 + 1];
+
    struct terakan_bo * meta_shaders_bo;
    struct terakan_shader_static meta_shaders[TERAKAN_META_SHADER_COUNT];
 

@@ -286,13 +286,13 @@ terakan_image_surface_tiling_compute(VkImageCreateInfo const * const image_creat
          /* Handle common candidates for the linear mode.
           *
           * 1D storage images must be linear according to the Gallium R600 driver, and overall
-          * linear is more compact for them (storage image usage is not supported in Terakan for
-          * formats that must be tiled).
+          * linear is more compact for them.
           *
-          * AddrLib, however, makes images with a height of 1 also because linear is optimal for
-          * them. However, a comment in the R800 AddrLib says "Tex2D UAV on cypress will fail/hang
-          * if tile mode is linear", and the R800 AddrLib disables the linear array mode
-          * optimization for a height of 1 completely.
+          * AddrLib, however, also normally makes images with a height of 1 linear because linear is
+          * optimal for them. However, a comment in the R800 AddrLib says "Tex2D UAV on cypress will
+          * fail/hang if tile mode is linear", and the R800 AddrLib disables the linear array mode
+          * optimization for a height of 1 completely, so not doing this optimization for non-1D
+          * images here either.
           */
          if (image_create_info->imageType == VK_IMAGE_TYPE_1D) {
             array_mode = V_028C70_ARRAY_LINEAR_ALIGNED;
@@ -1393,17 +1393,32 @@ terakan_image_create_color_descriptor(
    default:
       break;
    }
-   uint32_t resource_type;
+   bool const array_mode_is_linear = surface_level->array_mode <= V_028C70_ARRAY_LINEAR_ALIGNED;
+   uint32_t uav_resource_type;
+   /* Array and non-array view types must be respected for the correct array layer index
+    * out-of-bounds behavior.
+    */
    switch (descriptor_create_info->view_type) {
+   /* 1D storage images must be linear according to the Gallium R600 driver.
+    * DB, however, requires tiling, so 1D images with depth / stencil usage will be tiled, thus they
+    * have to be accessed as 2D, with shaders forcing Y to 0.
+    * The 2D fallback can't be used for linear 1D images, however, because according to a comment in
+    * the R800 AddrLib, "Tex2D UAV on cypress will fail/hang if tile mode is linear".
+    */
    case VK_IMAGE_VIEW_TYPE_1D:
+      uav_resource_type = array_mode_is_linear ? V_028C70_TEXTURE1D : V_028C70_TEXTURE2D;
+      break;
    case VK_IMAGE_VIEW_TYPE_1D_ARRAY:
-      resource_type = image->vk.array_layers > 1 ? V_028C70_TEXTURE1DARRAY : V_028C70_TEXTURE1D;
+      uav_resource_type = array_mode_is_linear ? V_028C70_TEXTURE1DARRAY : V_028C70_TEXTURE2DARRAY;
+      break;
+   case VK_IMAGE_VIEW_TYPE_2D:
+      uav_resource_type = V_028C70_TEXTURE2D;
       break;
    case VK_IMAGE_VIEW_TYPE_3D:
-      resource_type = V_028C70_TEXTURE3D;
+      uav_resource_type = V_028C70_TEXTURE3D;
       break;
    default:
-      resource_type = image->vk.array_layers > 1 ? V_028C70_TEXTURE2DARRAY : V_028C70_TEXTURE2D;
+      uav_resource_type = V_028C70_TEXTURE2DARRAY;
    }
    descriptor_out->info =
       S_028C70_ENDIAN(
@@ -1413,7 +1428,7 @@ terakan_image_create_color_descriptor(
       S_028C70_FORMAT(view_format.format) | S_028C70_ARRAY_MODE(surface_level->array_mode) |
       S_028C70_NUMBER_TYPE(view_format.number_type) |
       S_028C70_COMP_SWAP(view_format.cb_color_swap) | S_028C70_SIMPLE_FLOAT(1) |
-      S_028C70_SOURCE_FORMAT(source_format) | S_028C70_RESOURCE_TYPE(resource_type);
+      S_028C70_SOURCE_FORMAT(source_format) | S_028C70_RESOURCE_TYPE(uav_resource_type);
    if (terascale_format_blend_bypass((enum terascale_format_number_type)view_format.number_type,
                                      (enum terascale_format_index)view_format.format)) {
       descriptor_out->info |= S_028C70_BLEND_BYPASS(1);
@@ -1424,8 +1439,8 @@ terakan_image_create_color_descriptor(
    struct terakan_physical_device const * const physical_device =
       container_of(image->vk.base.device->physical, struct terakan_physical_device const, vk);
    descriptor_out->attrib =
-      S_028C74_NON_DISP_TILING_ORDER(surface_aspect->tiling.tc_non_display ||
-                                     surface_level->array_mode <= V_028C70_ARRAY_LINEAR_ALIGNED) |
+      S_028C74_NON_DISP_TILING_ORDER(array_mode_is_linear ||
+                                     surface_aspect->tiling.tc_non_display) |
       S_028C74_TILE_SPLIT(surface_aspect->tiling.attrib_tile_split) |
       S_028C74_NUM_BANKS(physical_device->tiling_info.banks_log2 - 1) |
       S_028C74_BANK_WIDTH(surface_aspect->tiling.attrib_bank_width) |

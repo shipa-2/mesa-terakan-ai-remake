@@ -78,6 +78,8 @@ struct terakan_physical_device_chip_family_info {
     * table.
     */
    unsigned wave_lanes_log2;
+   /* Lanes * waves * shader engines. */
+   uint32_t uav_immediate_size_texels;
 };
 
 void terakan_physical_device_chip_family_info_init(

@@ -63,11 +63,11 @@ public:
    enum ERatOp {
       NOP,
       STORE_TYPED,
-      STORE_RAW,
-      STORE_RAW_FDENORM,
+      STORE_RAW,         /* Evergreen only */
+      STORE_RAW_FDENORM, /* Evergreen only */
       CMPXCHG_INT,
-      CMPXCHG_FLT,
-      CMPXCHG_FDENORM,
+      CMPXCHG_FLT,     /* Evergreen only */
+      CMPXCHG_FDENORM, /* Evergreen only */
       ADD,
       SUB,
       RSUB,
@@ -78,15 +78,18 @@ public:
       AND,
       OR,
       XOR,
-      MSKOR,
+      MSKOR, /* Evergreen only */
       INC_UINT,
       DEC_UINT,
+      STORE_DWORD, /* Cayman only */
+      STORE_SHORT, /* Cayman only */
+      STORE_BYTE,  /* Cayman only */
       NOP_RTN = 32,
       XCHG_RTN = 34,
-      XCHG_FDENORM_RTN,
+      XCHG_FDENORM_RTN, /* Evergreen only */
       CMPXCHG_INT_RTN,
-      CMPXCHG_FLT_RTN,
-      CMPXCHG_FDENORM_RTN,
+      CMPXCHG_FLT_RTN,     /* Evergreen only */
+      CMPXCHG_FDENORM_RTN, /* Evergreen only */
       ADD_RTN,
       SUB_RTN,
       RSUB_RTN,
@@ -97,7 +100,7 @@ public:
       AND_RTN,
       OR_RTN,
       XOR_RTN,
-      MSKOR_RTN,
+      MSKOR_RTN, /* Evergreen only */
       WRAP_INC_RTN,
       WRAP_DEC_RTN,
       UNSUPPORTED
@@ -152,6 +155,8 @@ public:
    void update_indirect_addr(PRegister old_reg, PRegister addr) override;
 
 private:
+   static bool emit_uav_instr(nir_intrinsic_instr *intrin, Shader& shader);
+
    static bool emit_global_store(nir_intrinsic_instr *intr, Shader& shader);
 
    static bool emit_ssbo_load(nir_intrinsic_instr *intr, Shader& shader);

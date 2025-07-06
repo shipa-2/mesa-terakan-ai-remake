@@ -315,6 +315,14 @@ terakan_physical_device_chip_family_info_init(
       /* For Caicos / Seymour, Max Work-Items / GPU = 12288, Max Wavefronts / GPU = 192. */
       chip_family_info_out->wave_lanes_log2 = 6;
    }
+
+   /* A compute shader may occupy all the available threads. */
+   /* TODO(Triang3l): See how MBCNT behaves on wave32 chips and possibly scale the wave ID by 32
+    * there.
+    */
+   chip_family_info_out->uav_immediate_size_texels =
+      chip_family_info_out->sq_max_threads_shr3
+      << (3 + 6 + (unsigned)chip_family_info_out->two_shader_engines_max);
 }
 
 /* Winsys-specific extensions are not handled, they should be configured by the
@@ -402,7 +410,7 @@ terakan_physical_device_get_capabilities(
    features_out->textureCompressionBC = true;
    /* TODO(Triang3l): occlusionQueryPrecise. */
    /* TODO(Triang3l): pipelineStatisticsQuery. */
-   /* TODO(Triang3l): fragmentStoresAndAtomics. */
+   features_out->fragmentStoresAndAtomics = true;
    /* TODO(Triang3l): shaderTessellationAndGeometryPointSize. */
    /* TODO(Triang3l): Possibly shaderImageGatherExtended. */
    /* TODO(Triang3l): Shader storage image format features. */

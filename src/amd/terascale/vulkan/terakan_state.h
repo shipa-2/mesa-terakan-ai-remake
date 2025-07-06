@@ -108,8 +108,10 @@ enum terakan_state_draw_index {
     * TERAKAN_STATE_DRAW_INDEX_CB_BLEND_CONTROL.
     */
    TERAKAN_STATE_DRAW_INDEX_CB_COLOR_RTV,
-   /* Depends on TERAKAN_STATE_DRAW_INDEX_COLOR_ATTACHMENT_USAGE and
-    * TERAKAN_STATE_DRAW_INDEX_CB_COLOR_RTV.
+   /* Depends on TERAKAN_STATE_DRAW_INDEX_SQ_PGM_PS. */
+   TERAKAN_STATE_DRAW_INDEX_CB_COLOR_UAV,
+   /* Depends on TERAKAN_STATE_DRAW_INDEX_COLOR_ATTACHMENT_USAGE,
+    * TERAKAN_STATE_DRAW_INDEX_CB_COLOR_RTV and TERAKAN_STATE_DRAW_INDEX_CB_COLOR_UAV.
     */
    TERAKAN_STATE_DRAW_INDEX_CB_TARGET_MASK,
    /* Depends on TERAKAN_STATE_DRAW_INDEX_CB_TARGET_MASK and TERAKAN_STATE_DRAW_INDEX_LOGIC_OP. */
@@ -140,6 +142,11 @@ struct terakan_state_draw_cb_color {
    struct terakan_bo const * bo;
    struct terakan_color_descriptor color;
    struct terakan_color_meta_descriptor meta;
+};
+
+struct terakan_state_draw_cb_color_uav {
+   struct terakan_bo const * bo;
+   struct terakan_color_descriptor color;
 };
 
 /* State applied before performing application's draws, and marked for reapplication after internal
@@ -381,11 +388,15 @@ struct terakan_state_draw {
       struct {
          uint32_t attachment_format_masks;
       } from_apply_cb_color_rtv;
+      struct {
+         uint32_t uav_cb_target_mask;
+      } from_apply_cb_color_uav;
    } cb_target_mask;
 
    /* TERAKAN_STATE_DRAW_INDEX_CB_COLOR_CONTROL */
    struct {
       struct {
+         bool any_rtv_or_uav_enabled;
          bool any_rtv_enabled;
       } from_apply_cb_target_mask;
    } cb_color_control;
@@ -396,6 +407,23 @@ struct terakan_state_draw {
          bool cb_dual_export_allowed;
       } from_apply_cb_color_rtv;
    } db_shader_control;
+
+   /* TERAKAN_STATE_DRAW_INDEX_CB_COLOR_UAV, at the end because of large arrays. */
+
+   struct {
+      struct {
+         uint8_t fs_uav_index_base;
+         /* For descriptor set binding simplicity, storing UAV descriptors in the state at the same
+          * indices as the read-only resources corresponding to them, but to calculate UAV indices,
+          * compacting the indices of the resources that have corresponding UAVs.
+          */
+         BITSET_DECLARE(fs_uavs_used, TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL);
+      } from_apply_sq_pgm_ps;
+
+      BITSET_DECLARE(fs_uavs_not_null, TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL);
+
+      struct terakan_state_draw_cb_color_uav fs_uavs[TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL];
+   } cb_color_uav;
 };
 
 static inline void

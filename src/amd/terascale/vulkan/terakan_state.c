@@ -31,6 +31,7 @@
 #include "terakan_format.h"
 #include "terakan_hw_state.h"
 #include "terakan_image.h"
+#include "terakan_push_constants.h"
 #include "terakan_shader.h"
 #include "terakan_state_rasterization.h"
 
@@ -325,6 +326,26 @@ terakan_state_draw_apply_sq_pgm_ps(struct terakan_gfx_command_writer * const com
          color_attachments_written_by_shader;
       terakan_state_draw_set_pending(&command_writer->state_draw,
                                      TERAKAN_STATE_DRAW_INDEX_COLOR_ATTACHMENT_USAGE);
+   }
+
+   TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_COLOR_UAV, SQ_PGM_PS);
+   uint8_t const uav_index_base = util_bitcount(color_attachments_written_by_shader);
+   static BITSET_WORD const
+      zero_uav_bitset[BITSET_WORDS(TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL)];
+   BITSET_WORD const * const uavs_used =
+      fs != NULL ? fs->uavs_for_mutable_resources_needed : zero_uav_bitset;
+   size_t const uav_bitset_size_bytes =
+      sizeof(BITSET_WORD) * BITSET_WORDS(TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL);
+   if (command_writer->state_draw.cb_color_uav.from_apply_sq_pgm_ps.fs_uav_index_base !=
+          uav_index_base ||
+       memcmp(command_writer->state_draw.cb_color_uav.from_apply_sq_pgm_ps.fs_uavs_used, uavs_used,
+              uav_bitset_size_bytes) != 0) {
+      command_writer->state_draw.cb_color_uav.from_apply_sq_pgm_ps.fs_uav_index_base =
+         uav_index_base;
+      memcpy(command_writer->state_draw.cb_color_uav.from_apply_sq_pgm_ps.fs_uavs_used, uavs_used,
+             uav_bitset_size_bytes);
+      terakan_state_draw_set_pending(&command_writer->state_draw,
+                                     TERAKAN_STATE_DRAW_INDEX_CB_COLOR_UAV);
    }
 
    TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(DB_SHADER_CONTROL, SQ_PGM_PS);
@@ -997,6 +1018,74 @@ terakan_state_draw_apply_cb_color_rtv(struct terakan_gfx_command_writer * const 
 }
 
 static void
+terakan_state_draw_apply_cb_color_uav(struct terakan_gfx_command_writer * const command_writer)
+{
+   struct terakan_device const * const device = terakan_gfx_command_writer_device(command_writer);
+
+   uint32_t uav_cb_target_mask = 0b0;
+
+   unsigned uav_zero_based_index = 0;
+   unsigned uav_mutable_resource_index;
+   TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_COLOR_UAV, SQ_PGM_PS);
+   BITSET_FOREACH_SET (uav_mutable_resource_index,
+                       command_writer->state_draw.cb_color_uav.from_apply_sq_pgm_ps.fs_uavs_used,
+                       TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL) {
+      uint32_t const uav_color_index =
+         command_writer->state_draw.cb_color_uav.from_apply_sq_pgm_ps.fs_uav_index_base +
+         uav_zero_based_index;
+      uint32_t const uav_immediate_resource_index =
+         TERAKAN_RESOURCE_RANGE_UAV_IMMEDIATE_BASE_PIXEL + uav_zero_based_index;
+      if (BITSET_TEST(command_writer->state_draw.cb_color_uav.fs_uavs_not_null,
+                      uav_mutable_resource_index)) {
+         struct terakan_state_draw_cb_color_uav const * const uav =
+            &command_writer->state_draw.cb_color_uav.fs_uavs[uav_mutable_resource_index];
+         struct terakan_color_descriptor const * uav_color = &uav->color;
+         struct terakan_color_descriptor uav_color_without_base_granularity_offset;
+         if (G_028C70_RESOURCE_TYPE(uav->color.info) == V_028C70_BUFFER) {
+            uint32_t * const uav_base_granularity_offset_constant =
+               &command_writer->push_constants_state.driver_constants
+                   .buffer_uav_base_granularity_offset[uav_zero_based_index];
+            if (*uav_base_granularity_offset_constant != uav->color.view) {
+               *uav_base_granularity_offset_constant = uav->color.view;
+               command_writer->push_constants_state.driver_constants_modified |= BITFIELD_BIT(
+                  TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_BUFFER_UAV_BASE_GRANULARITY_OFFSET);
+            }
+            uav_color_without_base_granularity_offset = uav->color;
+            uav_color_without_base_granularity_offset.view = 0;
+            uav_color = &uav_color_without_base_granularity_offset;
+         }
+         terakan_hw_state_draw_set_cb_color(&command_writer->hw_state_draw, uav_color_index,
+                                            uav->bo, uav_color, NULL, true);
+         terakan_hw_state_draw_set_cb_immed(
+            &command_writer->hw_state_draw, uav_color_index,
+            util_logbase2(terascale_format_bytes_per_block[G_028C70_FORMAT(uav_color->info)]));
+         uint32_t uav_immediate_resource[8];
+         terakan_color_descriptor_info_to_uav_immediate_resource(device, uav_color->info,
+                                                                 uav_immediate_resource);
+         terakan_hw_state_draw_set_sq_resource_fs(&command_writer->hw_state_draw,
+                                                  uav_immediate_resource_index,
+                                                  device->uav_immediate_bo, uav_immediate_resource);
+         uav_cb_target_mask |= (uint32_t)0xF << (4 * uav_color_index);
+      } else {
+         terakan_hw_state_draw_set_cb_color(&command_writer->hw_state_draw, uav_color_index, NULL,
+                                            NULL, NULL, true);
+         terakan_hw_state_draw_set_sq_resource_fs(&command_writer->hw_state_draw,
+                                                  uav_immediate_resource_index, NULL, NULL);
+      }
+      ++uav_zero_based_index;
+   }
+
+   TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_TARGET_MASK, CB_COLOR_UAV);
+   if (command_writer->state_draw.cb_target_mask.from_apply_cb_color_uav.uav_cb_target_mask !=
+       uav_cb_target_mask) {
+      command_writer->state_draw.cb_target_mask.from_apply_cb_color_uav.uav_cb_target_mask =
+         uav_cb_target_mask;
+      terakan_state_draw_set_pending(&command_writer->state_draw,
+                                     TERAKAN_STATE_DRAW_INDEX_CB_TARGET_MASK);
+   }
+}
+
+static void
 terakan_state_draw_apply_cb_target_mask(struct terakan_gfx_command_writer * const command_writer)
 {
    uint32_t cb_target_mask_rtv = 0b0;
@@ -1022,8 +1111,8 @@ terakan_state_draw_apply_cb_target_mask(struct terakan_gfx_command_writer * cons
             command_writer->state_draw.cb_target_mask.attachment_write_masks[attachment_index];
          if (!attachment_target_mask) {
             /* No components present in the attachment format are enabled, ignore (here, and via
-             * `any_rtv_enabled`, in CB_COLOR_CONTROL MODE setup) the write mask specified by the
-             * application for the missing components.
+             * `any_rtv_or_uav_enabled`, in CB_COLOR_CONTROL MODE setup) the write mask specified by
+             * the application for the missing components.
              * One of the particular cases of this is an attachment image not being bound also, in
              * which case CB_TARGET_MASK should be disabled, so Terakan can simply leave CB_COLOR#
              * registers undefined or unchanged for unbound targets without explicitly setting their
@@ -1043,17 +1132,25 @@ terakan_state_draw_apply_cb_target_mask(struct terakan_gfx_command_writer * cons
       }
    }
 
-   /* TODO(Triang3l): UAVs. */
+   TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_TARGET_MASK, CB_COLOR_UAV);
+   uint32_t const cb_target_mask =
+      cb_target_mask_rtv |
+      command_writer->state_draw.cb_target_mask.from_apply_cb_color_uav.uav_cb_target_mask;
 
-   bool const modified = command_writer->hw_state_draw.cb_target_mask != cb_target_mask_rtv;
-   command_writer->hw_state_draw.cb_target_mask = cb_target_mask_rtv;
+   bool const modified = command_writer->hw_state_draw.cb_target_mask != cb_target_mask;
+   command_writer->hw_state_draw.cb_target_mask = cb_target_mask;
    terakan_hw_state_draw_written(&command_writer->hw_state_draw,
                                  TERAKAN_HW_STATE_DRAW_INDEX_CB_TARGET_MASK, modified);
 
+   bool const any_rtv_or_uav_enabled = cb_target_mask != 0;
    bool const any_rtv_enabled = cb_target_mask_rtv != 0;
    TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_COLOR_CONTROL, CB_TARGET_MASK);
-   if (command_writer->state_draw.cb_color_control.from_apply_cb_target_mask.any_rtv_enabled !=
-       any_rtv_enabled) {
+   if (command_writer->state_draw.cb_color_control.from_apply_cb_target_mask
+             .any_rtv_or_uav_enabled != any_rtv_or_uav_enabled ||
+       command_writer->state_draw.cb_color_control.from_apply_cb_target_mask.any_rtv_enabled !=
+          any_rtv_enabled) {
+      command_writer->state_draw.cb_color_control.from_apply_cb_target_mask.any_rtv_or_uav_enabled =
+         any_rtv_or_uav_enabled;
       command_writer->state_draw.cb_color_control.from_apply_cb_target_mask.any_rtv_enabled =
          any_rtv_enabled;
       terakan_state_draw_set_pending(&command_writer->state_draw,
@@ -1066,13 +1163,12 @@ terakan_state_draw_apply_cb_color_control(struct terakan_gfx_command_writer * co
 {
    TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_COLOR_CONTROL, CB_TARGET_MASK);
    TERAKAN_STATE_DRAW_ASSERT_DEPENDS_ON(CB_COLOR_CONTROL, LOGIC_OP);
-   /* TODO(Triang3l): Enable CB_NORMAL too if any UAV is used. */
    /* Ignore the logical operation specified by the application and skip potential ROP3 state
     * changes if no RTV is written to, and thus it's irrelevant.
     */
    uint32_t const cb_color_control =
       S_028808_MODE(
-         command_writer->state_draw.cb_color_control.from_apply_cb_target_mask.any_rtv_enabled
+         command_writer->state_draw.cb_color_control.from_apply_cb_target_mask.any_rtv_or_uav_enabled
             ? V_028808_CB_NORMAL
             : V_028808_CB_DISABLE) |
       S_028808_ROP3(
@@ -1138,6 +1234,7 @@ static terakan_state_draw_apply_function const
       [TERAKAN_STATE_DRAW_INDEX_LOGIC_OP] = terakan_state_draw_apply_logic_op,
       [TERAKAN_STATE_DRAW_INDEX_CB_BLEND_CONTROL] = terakan_state_draw_apply_cb_blend_control,
       [TERAKAN_STATE_DRAW_INDEX_CB_COLOR_RTV] = terakan_state_draw_apply_cb_color_rtv,
+      [TERAKAN_STATE_DRAW_INDEX_CB_COLOR_UAV] = terakan_state_draw_apply_cb_color_uav,
       [TERAKAN_STATE_DRAW_INDEX_CB_TARGET_MASK] = terakan_state_draw_apply_cb_target_mask,
       [TERAKAN_STATE_DRAW_INDEX_CB_COLOR_CONTROL] = terakan_state_draw_apply_cb_color_control,
       [TERAKAN_STATE_DRAW_INDEX_DB_SHADER_CONTROL] = terakan_state_draw_apply_db_shader_control,
@@ -1335,6 +1432,12 @@ terakan_state_draw_reset(struct terakan_state_draw * const state,
    state->cb_target_mask.from_apply_cb_color_rtv.attachment_format_masks = 0b0;
    state->db_shader_control.from_apply_cb_color_rtv.cb_dual_export_allowed = true;
 
+   /* No fragment shader, no UAVs bound */
+   state->cb_color_uav.from_apply_sq_pgm_ps.fs_uav_index_base = 0;
+   BITSET_ZERO(state->cb_color_uav.from_apply_sq_pgm_ps.fs_uavs_used);
+   BITSET_ZERO(state->cb_color_uav.fs_uavs_not_null);
+   state->cb_target_mask.from_apply_cb_color_uav.uav_cb_target_mask = 0b0;
+
    /* colorWriteEnable feature disabled */
    state->cb_target_mask.attachment_write_enable =
       (uint8_t)BITFIELD_MASK(TERAKAN_COLOR_HW_RTV_COUNT);
@@ -1342,6 +1445,7 @@ terakan_state_draw_reset(struct terakan_state_draw * const state,
    memset(state->cb_target_mask.attachment_write_masks, 0,
           sizeof(state->cb_target_mask.attachment_write_masks));
 
+   state->cb_color_control.from_apply_cb_target_mask.any_rtv_or_uav_enabled = false;
    state->cb_color_control.from_apply_cb_target_mask.any_rtv_enabled = false;
 
    /* Make all state items pending so the defaults are applied before the first draw, even for

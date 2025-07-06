@@ -60,6 +60,8 @@ terakan_device_finish(struct terakan_device * const device)
 
    terakan_bo_free(device->meta_shaders_bo, NULL);
 
+   terakan_bo_free(device->uav_immediate_bo, NULL);
+
    terakan_bo_free(device->gfx_discard_bo, NULL);
 
    for (size_t reference_placeholder_bo_index = 0;
@@ -159,6 +161,28 @@ terakan_device_init(struct terakan_device * const device,
       goto fail_reference_placeholder_bos;
    }
 
+   uint32_t uav_immediate_bo_bytes_shr8 = 0;
+   for (unsigned texel_bytes_log2 = 0; texel_bytes_log2 <= 4; ++texel_bytes_log2) {
+      device->uav_immediate_va_shr8[texel_bytes_log2] = uav_immediate_bo_bytes_shr8;
+      uav_immediate_bo_bytes_shr8 += DIV_ROUND_UP(
+         physical_device->chip_family_info.uav_immediate_size_texels << texel_bytes_log2,
+         (uint32_t)1 << 8);
+   }
+   result = device->winsys_fn->bo->allocate_device_memory(
+      device, uav_immediate_bo_bytes_shr8 << 8, (VkDeviceSize)1 << 8,
+      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0, NULL, VK_SYSTEM_ALLOCATION_SCOPE_DEVICE,
+      &device->uav_immediate_bo);
+   if (result != VK_SUCCESS) {
+      result =
+         vk_errorf(physical_device->vk.instance, result,
+                   "Failed to allocate memory for unordered access view operation return values");
+      goto fail_gfx_discard_bo;
+   }
+   uint32_t const uav_immediate_bo_va_shr8 = device->uav_immediate_bo->va >> 8;
+   for (unsigned texel_bytes_log2 = 0; texel_bytes_log2 <= 4; ++texel_bytes_log2) {
+      device->uav_immediate_va_shr8[texel_bytes_log2] += uav_immediate_bo_va_shr8;
+   }
+
    bool const is_r9xx = physical_device->chip_family_info.is_r9xx;
 
    /* The first shader is the empty fetch shader. */
@@ -190,7 +214,7 @@ terakan_device_init(struct terakan_device * const device,
    if (result != VK_SUCCESS) {
       result = vk_errorf(physical_device->vk.instance, result,
                          "Failed to allocate memory for internal shaders");
-      goto fail_gfx_discard_bo;
+      goto fail_uav_immediate_bo;
    }
    uint32_t const meta_shaders_va_shr8 = (uint32_t)(device->meta_shaders_bo->va >> 8);
    {
@@ -288,6 +312,8 @@ fail_completion_mutex:
    mtx_destroy(&device->completion_mutex);
 fail_meta_shaders_bo:
    terakan_bo_free(device->meta_shaders_bo, NULL);
+fail_uav_immediate_bo:
+   terakan_bo_free(device->uav_immediate_bo, NULL);
 fail_gfx_discard_bo:
    terakan_bo_free(device->gfx_discard_bo, NULL);
 fail_reference_placeholder_bos:

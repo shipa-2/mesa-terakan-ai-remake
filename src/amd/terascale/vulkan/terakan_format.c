@@ -109,7 +109,7 @@ terakan_format_info_get(VkFormat const format, struct terakan_format_info * cons
 }
 
 VKAPI_ATTR void VKAPI_CALL
-terakan_GetPhysicalDeviceFormatProperties2(VkPhysicalDevice const physicalDevice,
+terakan_GetPhysicalDeviceFormatProperties2(UNUSED VkPhysicalDevice const physicalDevice,
                                            VkFormat const format,
                                            VkFormatProperties2 * const pFormatProperties)
 {
@@ -212,22 +212,16 @@ terakan_GetPhysicalDeviceFormatProperties2(VkPhysicalDevice const physicalDevice
           * CB_IMMED.
           */
          if (image_sq_vertex_fetch && image_sq_texture_fetch) {
-            VkFormatFeatureFlags2 const storage_image_features =
-               VK_FORMAT_FEATURE_2_STORAGE_IMAGE_BIT |
-               VK_FORMAT_FEATURE_2_STORAGE_READ_WITHOUT_FORMAT_BIT |
-               VK_FORMAT_FEATURE_2_STORAGE_WRITE_WITHOUT_FORMAT_BIT |
-               (image_cb_color_atomic ? VK_FORMAT_FEATURE_2_STORAGE_IMAGE_ATOMIC_BIT : 0);
             /* According to R800 AddrLib, "Tex2D UAV on cypress will fail/hang if tile mode is
-             * linear".
-             * Hemlock is a variant of Cypress, and AddrLib doesn't distinguish between the two, for
-             * safety, assume the bug is present on Hemlock too.
+             * linear". However, as of this writing, the Gallium R600 driver forces tiling for
+             * storage images not only on Cypress / Hemlock, but on all chips due to incorrect
+             * addressing in the hardware when the array mode is linear.
              */
-            enum radeon_family const chip_family =
-               terakan_physical_device_from_handle(physicalDevice)->chip_family_info.chip_family;
-            if (chip_family == CHIP_CYPRESS || chip_family == CHIP_HEMLOCK) {
-               image_tiled_only_features |= storage_image_features;
-            } else {
-               image_features |= storage_image_features;
+            image_tiled_only_features |= VK_FORMAT_FEATURE_2_STORAGE_IMAGE_BIT |
+                                         VK_FORMAT_FEATURE_2_STORAGE_READ_WITHOUT_FORMAT_BIT |
+                                         VK_FORMAT_FEATURE_2_STORAGE_WRITE_WITHOUT_FORMAT_BIT;
+            if (image_cb_color_atomic) {
+               image_tiled_only_features |= VK_FORMAT_FEATURE_2_STORAGE_IMAGE_ATOMIC_BIT;
             }
          }
 

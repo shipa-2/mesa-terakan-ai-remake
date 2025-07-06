@@ -40,15 +40,24 @@ extern "C" {
 #endif
 
 enum terakan_push_constants_driver_index {
-   TERAKAN_PUSH_CONSTANT_DRIVER_INDEX_DRAW_ID,
+   TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_BUFFER_UAV_BASE_GRANULARITY_OFFSET,
 
-   TERAKAN_PUSH_CONSTANT_DRIVER_INDEX_COUNT,
+   TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_DRAW_ID,
+
+   TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_COUNT,
 };
 
-static_assert(TERAKAN_PUSH_CONSTANT_DRIVER_INDEX_COUNT <= 32,
+static_assert(TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_COUNT <= 32,
               "Using driver push constant indices in a 32-bit bitfield.");
 
 struct terakan_push_constants_driver {
+   /* UAV indices in this array are zero-based, not offset by the RTV count, to avoid invalidating
+    * if the RTV count is changed, but UAV bindings are not.
+    * For storage buffers, in bytes.
+    * For texel buffers, in elements.
+    */
+   uint32_t buffer_uav_base_granularity_offset[TERAKAN_COLOR_HW_RTV_AND_UAV_COUNT];
+
    uint32_t draw_id;
 };
 

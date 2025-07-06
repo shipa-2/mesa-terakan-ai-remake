@@ -124,6 +124,10 @@ enum terascale_format_index {
 
 #define TERASCALE_FORMAT_BIT(format) BITFIELD64_BIT(TERASCALE_FORMAT_INDEX_##format)
 
+#define TERASCALE_FORMATS_COMBINED_DEPTH_STENCIL                                                   \
+   (TERASCALE_FORMAT_BIT(8_24) | TERASCALE_FORMAT_BIT(8_24_FLOAT) | TERASCALE_FORMAT_BIT(24_8) |   \
+    TERASCALE_FORMAT_BIT(24_8_FLOAT) | TERASCALE_FORMAT_BIT(X24_8_32_FLOAT))
+
 #define TERASCALE_FORMATS_8X1_BLOCK (TERASCALE_FORMAT_BIT(1) | TERASCALE_FORMAT_BIT(1_REVERSED))
 #define TERASCALE_FORMATS_2X1_BLOCK (TERASCALE_FORMAT_BIT(GB_GR) | TERASCALE_FORMAT_BIT(BG_RG))
 #define TERASCALE_FORMATS_EXPAND_3X                                                                \
@@ -252,15 +256,8 @@ terascale_format_blend_bypass(const enum terascale_format_number_type number_typ
       return true;
    }
    /* The stencil channel is always UINT. */
-   switch (format) {
-   case TERASCALE_FORMAT_INDEX_8_24:
-   case TERASCALE_FORMAT_INDEX_8_24_FLOAT:
-   case TERASCALE_FORMAT_INDEX_24_8:
-   case TERASCALE_FORMAT_INDEX_24_8_FLOAT:
-   case TERASCALE_FORMAT_INDEX_X24_8_32_FLOAT:
+   if (TERASCALE_FORMATS_COMBINED_DEPTH_STENCIL & BITFIELD64_BIT(format)) {
       return true;
-   default:
-      break;
    }
    return false;
 }
@@ -299,6 +296,15 @@ enum terascale_format_cb_color_swap {
 
 /* [Format channel count][swap]. */
 extern const uint8_t terascale_format_cb_color_export_component_masks[4 + 1][4];
+
+/* [Format channel count][swap][export component index] = format channel.
+ * Export components not mapped to a channel are replaced with (0, 0, 0, 1), with the exception of
+ * zero channel count (for invalid formats), for which the swizzle is (0, 0, 0, 0) like for null
+ * descriptors in Vulkan - there are no masked-out channels, so this swizzle can be used for
+ * fetching in the SQ directly (hence "read" in the name), like for constructing the SQ resource
+ * descriptor for a UAV IMMED buffer.
+ */
+extern const uint8_t terascale_format_cb_color_read_swizzle[4 + 1][4][4];
 
 struct terascale_format_info {
    uint32_t format : 6;

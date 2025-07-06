@@ -6,6 +6,9 @@
 
 #include "sfn_instr_mem.h"
 
+#include "util/bitscan.h"
+#include "util/macros.h"
+
 #include "nir_intrinsics.h"
 #include "nir_intrinsics_indices.h"
 #include "sfn_alu_defines.h"
@@ -496,6 +499,9 @@ bool
 RatInstr::emit(nir_intrinsic_instr *intr, Shader& shader)
 {
    switch (intr->intrinsic) {
+   case nir_intrinsic_uav_instr_r600:
+   case nir_intrinsic_uav_returning_instr_r600:
+      return emit_uav_instr(intr, shader);
    case nir_intrinsic_load_ssbo:
       return emit_ssbo_load(intr, shader);
    case nir_intrinsic_store_ssbo:
@@ -520,6 +526,190 @@ RatInstr::emit(nir_intrinsic_instr *intr, Shader& shader)
    default:
       return false;
    }
+}
+
+bool
+RatInstr::emit_uav_instr(nir_intrinsic_instr *intrin, Shader& shader)
+{
+   auto& vf = shader.value_factory();
+
+   const RegisterVec4::Swizzle num_components_swizzles[] = {
+      {0, 7, 7, 7},
+      {0, 1, 7, 7},
+      {0, 1, 2, 7},
+      {0, 1, 2, 3},
+   };
+
+   /* Coordinate vector. */
+
+   unsigned coord_num_components = intrin->src[1].ssa->num_components;
+   auto coord = vf.temp_vec4(pin_chgr, num_components_swizzles[coord_num_components - 1]);
+   for (unsigned i = 0; i < coord_num_components; ++i) {
+      shader.emit_instruction(new AluInstr(op1_mov,
+                                           coord[i],
+                                           vf.src(intrin->src[1], i),
+                                           i == coord_num_components - 1
+                                              ? AluInstr::last_write
+                                              : AluInstr::write));
+   }
+
+   /* Value vector. */
+
+   auto op = static_cast<ERatOp>(nir_intrinsic_uav_op_r600(intrin));
+
+   bool op_returns = (static_cast<unsigned>(op) & 0x20) != 0;
+   assert(intrin->intrinsic == (op_returns ? nir_intrinsic_uav_returning_instr_r600
+                                           : nir_intrinsic_uav_instr_r600));
+
+   PVirtualValue return_value_index = op_returns ? vf.src(intrin->src[4], 0) : nullptr;
+
+   unsigned value_component_mask;
+   RegisterVec4 value;
+
+   if (op == ERatOp::STORE_TYPED) {
+      unsigned value_num_components = intrin->src[2].ssa->num_components;
+      assert(value_num_components <= 4);
+      value_component_mask = BITFIELD_MASK(value_num_components);
+      value = vf.temp_vec4(pin_chgr, num_components_swizzles[value_num_components - 1]);
+      for (unsigned i = 0; i < value_num_components; ++i) {
+         shader.emit_instruction(new AluInstr(op1_mov,
+                                              value[i],
+                                              vf.src(intrin->src[2], i),
+                                              i == value_num_components - 1
+                                                 ? AluInstr::last_write
+                                                 : AluInstr::write));
+      }
+   } else {
+      unsigned compare_value_component_index =
+         shader.chip_class() == ISA_CC_CAYMAN ? 2 : 3;
+
+      value_component_mask = 0b0;
+
+      /* NOP without a return value isn't useful, and assuming that every UAV
+       * instruction has at least one value component for simplicity.
+       */
+      assert(op != ERatOp::NOP);
+
+      auto op_non_rtn = static_cast<ERatOp>(static_cast<unsigned>(op) & 0x1F);
+      if (op_non_rtn != ERatOp::NOP) {
+         value_component_mask |= BITFIELD_BIT(0);
+         if (op_non_rtn == ERatOp::CMPXCHG_INT || op_non_rtn == ERatOp::CMPXCHG_FLT ||
+             op_non_rtn == ERatOp::CMPXCHG_FDENORM) {
+            value_component_mask |= BITFIELD_BIT(compare_value_component_index);
+         }
+      }
+
+      /* Return value index in the IMMED buffer. */
+      if (op_returns) {
+         value_component_mask |= BITFIELD_BIT(1);
+      }
+
+      assert(value_component_mask != 0b0);
+
+      RegisterVec4::Swizzle value_swizzle{7, 7, 7, 7};
+      u_foreach_bit (value_component, value_component_mask) {
+         value_swizzle[value_component] = value_component;
+      }
+      value = vf.temp_vec4(pin_chgr, value_swizzle);
+
+      unsigned value_last_component_index = util_last_bit(value_component_mask) - 1;
+
+      /* Value. */
+      if (value_component_mask & BITFIELD_BIT(0)) {
+         shader.emit_instruction(new AluInstr(op1_mov,
+                                              value[0],
+                                              vf.src(intrin->src[2], 0),
+                                              value_last_component_index == 0
+                                                 ? AluInstr::last_write
+                                                 : AluInstr::write));
+      }
+      /* Return value index in the IMMED buffer. */
+      if (value_component_mask & BITFIELD_BIT(1)) {
+         shader.emit_instruction(new AluInstr(op1_mov,
+                                              value[1],
+                                              return_value_index,
+                                              value_last_component_index == 1
+                                                 ? AluInstr::last_write
+                                                 : AluInstr::write));
+      }
+      /* Value to compare to. */
+      if (value_component_mask & BITFIELD_BIT(compare_value_component_index)) {
+         shader.emit_instruction(new AluInstr(op1_mov,
+                                              value[compare_value_component_index],
+                                              vf.src(intrin->src[3], 0),
+                                              value_last_component_index ==
+                                                    compare_value_component_index
+                                                 ? AluInstr::last_write
+                                                 : AluInstr::write));
+      }
+   }
+
+   /* UAV index. */
+
+   unsigned uav_base = nir_intrinsic_id_base(intrin);
+   unsigned immed_base = op_returns ? nir_intrinsic_uav_return_id_base_r600(intrin) : 0;
+   PRegister uav_offset = nullptr;
+   const nir_const_value *uav_offset_const = nir_src_as_const_value(intrin->src[0]);
+   if (uav_offset_const != nullptr) {
+      uav_base += uav_offset_const->u32;
+      immed_base += uav_offset_const->u32;
+   } else {
+      uav_offset = vf.src(intrin->src[0], 0)->as_register();
+   }
+
+   auto uav_instr = new RatInstr(cf_mem_rat,
+                                 static_cast<ERatOp>(nir_intrinsic_uav_op_r600(intrin)),
+                                 value,
+                                 coord,
+                                 uav_base,
+                                 uav_offset,
+                                 1,
+                                 value_component_mask,
+                                 0);
+   uav_instr->set_ack();
+   if (op_returns) {
+      uav_instr->set_instr_flag(Instr::ack_rat_return_write);
+   }
+   if (nir_intrinsic_access(intrin) & ACCESS_INCLUDE_HELPERS) {
+      uav_instr->set_instr_flag(Instr::helper);
+   }
+   shader.emit_instruction(uav_instr);
+
+   if (op_returns) {
+      assert(intrin->def.num_components <= 4);
+
+      auto fetch_instr =
+         new FetchInstr(vc_fetch,
+                        vf.dest_vec4(intrin->def, pin_group),
+                        num_components_swizzles[intrin->def.num_components - 1],
+                        return_value_index->as_register(),
+                        0,
+                        no_index_offset,
+                        fmt_invalid,
+                        vtx_nf_norm,
+                        vtx_es_none,
+                        immed_base,
+                        uav_offset);
+      fetch_instr->set_fetch_flag(FetchInstr::use_const_field);
+      fetch_instr->set_fetch_flag(FetchInstr::use_tc);
+      fetch_instr->set_fetch_flag(FetchInstr::uncached);
+      fetch_instr->set_fetch_flag(FetchInstr::wait_ack);
+
+      unsigned mega_fetch_count = nir_intrinsic_mega_fetch_count_r600(intrin);
+      fetch_instr->set_mfc(
+         (mega_fetch_count != 0 ? CLAMP(mega_fetch_count, 1u, 64u) : 4) - 1);
+
+      if (nir_intrinsic_access(intrin) & ACCESS_INCLUDE_HELPERS) {
+         fetch_instr->set_instr_flag(Instr::helper);
+      }
+
+      fetch_instr->add_required_instr(uav_instr);
+      shader.chain_ssbo_read(fetch_instr);
+
+      shader.emit_instruction(fetch_instr);
+   }
+
+   return true;
 }
 
 bool

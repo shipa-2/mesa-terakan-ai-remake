@@ -148,6 +148,9 @@ extern "C" {
  * buffers of UAVs (11 with the limitations of maxFragmentCombinedOutputResources's interaction with
  * dual-source blending) there, and give the rest of that range to an extension of the mutable
  * resource type descriptor space for use as input attachments (at least 4 are mandatory in Vulkan).
+ * To reduce hardware binding changes when switching between fragment shaders that have the same UAV
+ * bindings, but different color output counts, not offsetting immediate buffer resource indices by
+ * the color output count unlike UAV indices themselves.
  */
 #define TERAKAN_RESOURCE_RANGE_UAV_IMMEDIATE_BASE_PIXEL                                            \
    (TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE - TERAKAN_COLOR_UAV_COUNT_PIXEL)
@@ -226,20 +229,23 @@ unsigned terakan_color_descriptor_buffer_uav_base_granularity_log2(
 void terakan_color_descriptor_calculate_buffer_base_pitch_slice_dim_offset(
    struct terakan_color_descriptor * descriptor, uint64_t va, VkDeviceSize elements,
    unsigned bytes_per_element, struct terakan_physical_device const * physical_device,
-   uint32_t * base_granularity_offset_elements_out);
+   uint32_t * base_granularity_offset_bytes_out);
 
 static inline void
 terakan_color_descriptor_calculate_buffer_base_pitch_slice_view_dim(
    struct terakan_color_descriptor * const descriptor, uint64_t const va,
    VkDeviceSize const elements, unsigned const bytes_per_element,
-   struct terakan_physical_device const * const physical_device)
+   struct terakan_physical_device const * const physical_device,
+   bool const base_granularity_offset_in_elements)
 {
-   uint32_t base_granularity_offset_elements;
+   uint32_t base_granularity_offset;
    terakan_color_descriptor_calculate_buffer_base_pitch_slice_dim_offset(
-      descriptor, va, elements, bytes_per_element, physical_device,
-      &base_granularity_offset_elements);
+      descriptor, va, elements, bytes_per_element, physical_device, &base_granularity_offset);
+   if (base_granularity_offset_in_elements) {
+      base_granularity_offset /= bytes_per_element;
+   }
    /* Used by the driver, must be zeroed before being passed to the hardware. */
-   descriptor->view = base_granularity_offset_elements;
+   descriptor->view = base_granularity_offset;
 }
 
 static inline void
@@ -263,6 +269,13 @@ terakan_color_descriptor_image_view_to_storage_image(
       S_028C70_BLEND_BYPASS(1) | S_028C70_SOURCE_FORMAT(V_028C70_EXPORT_4C_32BPC) | S_028C70_RAT(1);
    descriptor->attrib &= C_028C74_FORCE_DST_ALPHA_1;
 }
+
+struct terakan_device;
+
+/* The BO is `device->uav_immediate_bo`. */
+void terakan_color_descriptor_info_to_uav_immediate_resource(struct terakan_device const * device,
+                                                             uint32_t color_info,
+                                                             uint32_t resource_out[8]);
 
 /* Additional hardware CB_COLOR[0-7] registers. */
 struct terakan_color_meta_descriptor {
@@ -313,10 +326,17 @@ terakan_descriptor_type_has_sampler(VkDescriptorType const descriptor_type)
 static inline bool
 terakan_descriptor_type_has_uav(VkDescriptorType const descriptor_type)
 {
-   return descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE ||
-          descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER ||
-          descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER ||
-          descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
+   if (descriptor_type != VK_DESCRIPTOR_TYPE_STORAGE_IMAGE &&
+       descriptor_type != VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER &&
+       descriptor_type != VK_DESCRIPTOR_TYPE_STORAGE_BUFFER &&
+       descriptor_type != VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC) {
+      return false;
+   }
+   /* For read-only bindings of the given types, and for size queries, UAVs always have a
+    * corresponding resource.
+    */
+   assert(terakan_descriptor_type_has_resource(descriptor_type));
+   return true;
 }
 
 bool terakan_descriptor_create_for_uniform_buffer(struct terakan_bo const * bo, uint64_t va,

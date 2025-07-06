@@ -68,10 +68,17 @@ bool terakan_nir_compact_fragment_data_locations(nir_shader * shader,
  *
  * The function adds new bits to `resources_needed_accum` and `samplers_needed_accum`, but keeps
  * already set ones.
+ *
+ * `uavs_for_mutable_resources_needed_out_opt`, however, is overwritten completely (more precisely,
+ * bitset words for the maximum count of mutable resources at the stage are touched), as UAV indices
+ * are prefix sums, and thus new bits can't be set after this lowering, and it also may be omitted
+ * by the caller if UAVs are not needed (such as if the stage doesn't support UAVs).
  */
 bool terakan_nir_lower_bindings(nir_shader * shader, struct terakan_pipeline_layout const * layout,
                                 BITSET_WORD * resources_needed_accum,
-                                uint32_t * samplers_needed_accum);
+                                uint32_t * samplers_needed_accum, unsigned uav_base,
+                                BITSET_WORD * uavs_for_mutable_resources_needed_out_opt,
+                                uint32_t * driver_push_constants_used_accum);
 
 bool terakan_nir_lower_sin_cos(nir_shader * shader);
 

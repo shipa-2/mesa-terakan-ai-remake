@@ -193,10 +193,17 @@ def is_swizzle_supported_by_cb_color(format_swizzle, cb_color_swap_export_compon
         if not (component_swizzle >= u_format_parse.SWIZZLE_X and
                 component_swizzle <= last_channel_swizzle):
             # This component of the color export is unused in the format, don't care which channel
-            # it ends up in, if at all. The client API implementation, if the client API has formats
-            # with void channels, is expected to, if the unused bits must be unmodified, exclude the
-            # export component from the write mask, and if it's alpha, replace the destination alpha
-            # blend factor with 1 if such formats exist at all in the client API.
+            # it ends up in, if at all.
+            # The client API implementation, if the client API has formats with void channels, is
+            # expected to, if the unused bits must be unmodified, exclude the export component from
+            # the write mask, and if it's alpha, replace the destination alpha blend factor with 1
+            # if such formats exist at all in the client API.
+            # This check also ensures that combined depth / stencil formats have CB_COLOR usage
+            # allowed even if the pipe_format uses only depth or only stencil, as well as on R8xx
+            # where depth and stencil are separate, and 24-bit depth is packed into 32 bits with
+            # 8 upper bits unused. The client API implementation is expected to replace the void
+            # channel with 0 where necessary (such as in the swizzle of the UAV IMMED buffer
+            # resource).
             continue
         # Export component is actually used - check if it goes to the correct data channel.
         if (component_swizzle_index !=

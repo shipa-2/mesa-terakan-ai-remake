@@ -229,6 +229,65 @@ const uint8_t terascale_format_cb_color_export_component_masks[4 + 1][4] = {
       },
 };
 
+const uint8_t terascale_format_cb_color_read_swizzle[4 + 1][4][4] =
+   {
+      [0] =
+         {
+            [TERASCALE_FORMAT_CB_COLOR_SWAP_STD] = {TERASCALE_SWIZZLE_0, TERASCALE_SWIZZLE_0,
+                                                    TERASCALE_SWIZZLE_0, TERASCALE_SWIZZLE_0},
+            [TERASCALE_FORMAT_CB_COLOR_SWAP_ALT] = {TERASCALE_SWIZZLE_0, TERASCALE_SWIZZLE_0,
+                                                    TERASCALE_SWIZZLE_0, TERASCALE_SWIZZLE_0},
+            [TERASCALE_FORMAT_CB_COLOR_SWAP_STD_REV] = {TERASCALE_SWIZZLE_0, TERASCALE_SWIZZLE_0,
+                                                        TERASCALE_SWIZZLE_0, TERASCALE_SWIZZLE_0},
+            [TERASCALE_FORMAT_CB_COLOR_SWAP_ALT_REV] = {TERASCALE_SWIZZLE_0, TERASCALE_SWIZZLE_0,
+                                                        TERASCALE_SWIZZLE_0, TERASCALE_SWIZZLE_0},
+         },
+      [1] =
+         {
+            [TERASCALE_FORMAT_CB_COLOR_SWAP_STD] = {TERASCALE_SWIZZLE_X, TERASCALE_SWIZZLE_0,
+                                                    TERASCALE_SWIZZLE_0, TERASCALE_SWIZZLE_1},
+            [TERASCALE_FORMAT_CB_COLOR_SWAP_ALT] = {TERASCALE_SWIZZLE_0, TERASCALE_SWIZZLE_X,
+                                                    TERASCALE_SWIZZLE_0, TERASCALE_SWIZZLE_1},
+            [TERASCALE_FORMAT_CB_COLOR_SWAP_STD_REV] = {TERASCALE_SWIZZLE_0, TERASCALE_SWIZZLE_0,
+                                                        TERASCALE_SWIZZLE_X, TERASCALE_SWIZZLE_1},
+            [TERASCALE_FORMAT_CB_COLOR_SWAP_ALT_REV] = {TERASCALE_SWIZZLE_0, TERASCALE_SWIZZLE_0,
+                                                        TERASCALE_SWIZZLE_0, TERASCALE_SWIZZLE_X},
+         },
+      [2] =
+         {
+            [TERASCALE_FORMAT_CB_COLOR_SWAP_STD] = {TERASCALE_SWIZZLE_X, TERASCALE_SWIZZLE_Y,
+                                                    TERASCALE_SWIZZLE_0, TERASCALE_SWIZZLE_1},
+            [TERASCALE_FORMAT_CB_COLOR_SWAP_ALT] = {TERASCALE_SWIZZLE_X, TERASCALE_SWIZZLE_0,
+                                                    TERASCALE_SWIZZLE_0, TERASCALE_SWIZZLE_Y},
+            [TERASCALE_FORMAT_CB_COLOR_SWAP_STD_REV] = {TERASCALE_SWIZZLE_Y, TERASCALE_SWIZZLE_X,
+                                                        TERASCALE_SWIZZLE_0, TERASCALE_SWIZZLE_1},
+            [TERASCALE_FORMAT_CB_COLOR_SWAP_ALT_REV] = {TERASCALE_SWIZZLE_Y, TERASCALE_SWIZZLE_0,
+                                                        TERASCALE_SWIZZLE_0, TERASCALE_SWIZZLE_X},
+         },
+      [3] =
+         {
+            [TERASCALE_FORMAT_CB_COLOR_SWAP_STD] = {TERASCALE_SWIZZLE_X, TERASCALE_SWIZZLE_Y,
+                                                    TERASCALE_SWIZZLE_Z, TERASCALE_SWIZZLE_1},
+            [TERASCALE_FORMAT_CB_COLOR_SWAP_ALT] = {TERASCALE_SWIZZLE_X, TERASCALE_SWIZZLE_Y,
+                                                    TERASCALE_SWIZZLE_0, TERASCALE_SWIZZLE_Z},
+            [TERASCALE_FORMAT_CB_COLOR_SWAP_STD_REV] = {TERASCALE_SWIZZLE_Z, TERASCALE_SWIZZLE_Y,
+                                                        TERASCALE_SWIZZLE_X, TERASCALE_SWIZZLE_1},
+            [TERASCALE_FORMAT_CB_COLOR_SWAP_ALT_REV] = {TERASCALE_SWIZZLE_Z, TERASCALE_SWIZZLE_Y,
+                                                        TERASCALE_SWIZZLE_0, TERASCALE_SWIZZLE_X},
+         },
+      [4] =
+         {
+            [TERASCALE_FORMAT_CB_COLOR_SWAP_STD] = {TERASCALE_SWIZZLE_X, TERASCALE_SWIZZLE_Y,
+                                                    TERASCALE_SWIZZLE_Z, TERASCALE_SWIZZLE_W},
+            [TERASCALE_FORMAT_CB_COLOR_SWAP_ALT] = {TERASCALE_SWIZZLE_Z, TERASCALE_SWIZZLE_Y,
+                                                    TERASCALE_SWIZZLE_X, TERASCALE_SWIZZLE_W},
+            [TERASCALE_FORMAT_CB_COLOR_SWAP_STD_REV] = {TERASCALE_SWIZZLE_W, TERASCALE_SWIZZLE_Z,
+                                                        TERASCALE_SWIZZLE_Y, TERASCALE_SWIZZLE_X},
+            [TERASCALE_FORMAT_CB_COLOR_SWAP_ALT_REV] = {TERASCALE_SWIZZLE_Y, TERASCALE_SWIZZLE_Z,
+                                                        TERASCALE_SWIZZLE_W, TERASCALE_SWIZZLE_X},
+         },
+};
+
 enum terascale_r6xx_depth_stencil_format
 terascale_get_r6xx_depth_stencil_format(const enum pipe_format format)
 {

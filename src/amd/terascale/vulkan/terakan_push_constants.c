@@ -46,7 +46,7 @@ terakan_push_constants_state_reset(struct terakan_push_constants_state * const s
 
    state->up_to_date_push_constants_bound_to_stages = 0;
 
-   state->driver_constants_modified = BITFIELD_MASK(TERAKAN_PUSH_CONSTANT_DRIVER_INDEX_COUNT);
+   state->driver_constants_modified = BITFIELD_MASK(TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_COUNT);
 
    /* For more stable comparisons. */
    memset(&state->driver_constants, 0, sizeof(state->driver_constants));

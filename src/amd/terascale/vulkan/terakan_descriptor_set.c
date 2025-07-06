@@ -249,6 +249,17 @@ terakan_UpdateDescriptorSets(UNUSED VkDevice const device, uint32_t const descri
                    sizeof(struct terakan_descriptor_set_resource) *
                       (src_binding->first_set_resource + descriptor_copy->srcArrayElement),
                 sizeof(struct terakan_descriptor_set_resource) * descriptor_copy->descriptorCount);
+
+         if (terakan_descriptor_type_has_uav(descriptor_type)) {
+            assert(terakan_descriptor_type_has_uav(dst_binding->descriptor_type));
+            memcpy(dst_set->descriptors + dst_set->layout->pool_first_uav_offset_bytes +
+                      sizeof(struct terakan_descriptor_set_uav) *
+                         (dst_binding->first_set_uav + descriptor_copy->dstArrayElement),
+                   src_set->descriptors + src_set->layout->pool_first_uav_offset_bytes +
+                      sizeof(struct terakan_descriptor_set_uav) *
+                         (src_binding->first_set_uav + descriptor_copy->srcArrayElement),
+                   sizeof(struct terakan_descriptor_set_uav) * descriptor_copy->descriptorCount);
+         }
       }
 
       if (terakan_descriptor_type_has_sampler(descriptor_type)) {
@@ -260,17 +271,6 @@ terakan_UpdateDescriptorSets(UNUSED VkDevice const device, uint32_t const descri
                    sizeof(struct terakan_descriptor_set_sampler) *
                       (src_binding->first_set_sampler + descriptor_copy->srcArrayElement),
                 sizeof(struct terakan_descriptor_set_sampler) * descriptor_copy->descriptorCount);
-      }
-
-      if (terakan_descriptor_type_has_uav(descriptor_type)) {
-         assert(terakan_descriptor_type_has_uav(dst_binding->descriptor_type));
-         memcpy(dst_set->descriptors + dst_set->layout->pool_first_uav_offset_bytes +
-                   sizeof(struct terakan_descriptor_set_uav) *
-                      (dst_binding->first_set_uav + descriptor_copy->dstArrayElement),
-                src_set->descriptors + src_set->layout->pool_first_uav_offset_bytes +
-                   sizeof(struct terakan_descriptor_set_uav) *
-                      (src_binding->first_set_uav + descriptor_copy->srcArrayElement),
-                sizeof(struct terakan_descriptor_set_uav) * descriptor_copy->descriptorCount);
       }
    }
 }
@@ -505,12 +505,12 @@ terakan_CreateDescriptorPool(VkDevice const deviceHandle,
       VkDescriptorPoolSize const pool_size = pCreateInfo->pPoolSizes[pool_size_index];
       if (terakan_descriptor_type_has_resource(pool_size.type)) {
          resource_count += pool_size.descriptorCount;
+         if (terakan_descriptor_type_has_uav(pool_size.type)) {
+            uav_count += pool_size.descriptorCount;
+         }
       }
       if (terakan_descriptor_type_has_sampler(pool_size.type)) {
          sampler_count += pool_size.descriptorCount;
-      }
-      if (terakan_descriptor_type_has_uav(pool_size.type)) {
-         uav_count += pool_size.descriptorCount;
       }
    }
    size_t const descriptor_memory_size =

@@ -296,6 +296,8 @@ terakan_meta_begin_cb(struct terakan_gfx_command_writer * const command_writer,
       /* Going to bind color targets for this meta draw. */
       terakan_state_draw_set_pending(&command_writer->state_draw,
                                      TERAKAN_STATE_DRAW_INDEX_CB_COLOR_RTV);
+      terakan_state_draw_set_pending(&command_writer->state_draw,
+                                     TERAKAN_STATE_DRAW_INDEX_CB_COLOR_UAV);
    }
 
    if (disable_blend_for_targets) {

@@ -31,9 +31,11 @@
 #include "terakan_entrypoints.h"
 #include "terakan_hw_state.h"
 
+#include "amd/terascale/common/terascale_format.h"
 #include "compiler/shader_enums.h"
 #include "gallium/drivers/r600/evergreend.h"
 #include "util/bitscan.h"
+#include "util/bitset.h"
 #include "util/macros.h"
 #include "util/u_math.h"
 #include "vk_alloc.h"
@@ -42,6 +44,7 @@
 #include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 VKAPI_ATTR void VKAPI_CALL
 terakan_CmdBindDescriptorSets(VkCommandBuffer const commandBuffer,
@@ -63,6 +66,15 @@ terakan_CmdBindDescriptorSets(VkCommandBuffer const commandBuffer,
    gl_shader_stage const shader_stage_last =
       is_compute ? MESA_SHADER_COMPUTE : MESA_SHADER_FRAGMENT;
    /* TODO(Triang3l): Apply bindings to the compute stage. */
+
+   gl_shader_stage const uav_shader_stage = is_compute ? MESA_SHADER_COMPUTE : MESA_SHADER_FRAGMENT;
+   /* TODO(Triang3l): Apply UAV bindings to the compute stage. */
+   BITSET_WORD const * const state_uavs_used =
+      command_writer->state_draw.cb_color_uav.from_apply_sq_pgm_ps.fs_uavs_used;
+   BITSET_WORD * const state_uavs_not_null =
+      command_writer->state_draw.cb_color_uav.fs_uavs_not_null;
+   struct terakan_state_draw_cb_color_uav * const state_uavs =
+      command_writer->state_draw.cb_color_uav.fs_uavs;
 
    uint32_t const * set_dynamic_offsets = pDynamicOffsets;
 
@@ -171,6 +183,91 @@ terakan_CmdBindDescriptorSets(VkCommandBuffer const commandBuffer,
                                           sampler->border_color);
                }
                /* TODO(Triang3l): Unnormalized coordinates on R8xx. */
+            }
+         }
+      }
+
+      /* Unordered access views. */
+
+      struct terakan_descriptor_set_layout_shader const * const set_layout_uav_shader =
+         &set_layout->shaders[uav_shader_stage];
+      if (set_layout_uav_shader->uav_range_count != 0) {
+         struct terakan_descriptor_set_uav const * const set_uavs =
+            (struct terakan_descriptor_set_uav const *)(set->descriptors +
+                                                        set_layout->pool_first_uav_offset_bytes);
+         assert(layout_set->first_shader_resources[uav_shader_stage] >=
+                TERAKAN_RESOURCE_RANGE_MUTABLE_BASE);
+         uint8_t const shader_uav_set_base = layout_set->first_shader_resources[uav_shader_stage] -
+                                             TERAKAN_RESOURCE_RANGE_MUTABLE_BASE;
+         struct terakan_descriptor_set_layout_shader_range const * const uav_ranges =
+            set_layout->shader_ranges + set_layout_uav_shader->first_uav_range;
+         for (uint8_t range_index = 0; range_index < set_layout_uav_shader->uav_range_count;
+              ++range_index) {
+            struct terakan_descriptor_set_layout_shader_range const * const range =
+               &uav_ranges[range_index];
+            struct terakan_descriptor_set_uav const * const range_set_uavs =
+               set_uavs + range->first_set_descriptor;
+            uint8_t const range_shader_base = shader_uav_set_base + range->first_shader_descriptor;
+            for (uint8_t uav_index = 0; uav_index < range->descriptor_count; ++uav_index) {
+               uint8_t const shader_uav_index = range_shader_base + uav_index;
+               assert(shader_uav_index < (is_compute
+                                             ? TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_NON_PIXEL
+                                             : TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL));
+               bool const state_uav_used = BITSET_TEST(state_uavs_used, shader_uav_index);
+               struct terakan_descriptor_set_uav const * const set_uav = &range_set_uavs[uav_index];
+               /* Because descriptors for bindings not statically referenced by the pipeline can be
+                * undefined, the BO pointer must not be dereferenced here as it may be outdated.
+                */
+               if (set_uav->bo != NULL) {
+                  struct terakan_color_descriptor const * new_uav_color = &set_uav->color;
+                  struct terakan_color_descriptor new_uav_color_with_dynamic_offset;
+                  if (range->first_dynamic_offset != UINT16_MAX) {
+                     assert(G_028C70_RESOURCE_TYPE(set_uav->color.info) == V_028C70_BUFFER);
+                     unsigned const uav_bytes_per_texel =
+                        terascale_format_bytes_per_block[G_028C70_FORMAT(set_uav->color.info)];
+                     uint64_t const new_uav_va =
+                        ((uint64_t)set_uav->color.base << 8) +
+                        set_uav->color.view * uav_bytes_per_texel +
+                        set_dynamic_offsets[range->first_dynamic_offset + uav_index];
+                     unsigned const tile_pipe_interleave_bytes_log2 =
+                        terakan_gfx_command_writer_physical_device(command_writer)
+                           ->tiling_info.pipe_interleave_bytes_log2;
+                     uint64_t const new_uav_va_aligned =
+                        new_uav_va >> tile_pipe_interleave_bytes_log2
+                                         << tile_pipe_interleave_bytes_log2;
+                     new_uav_color_with_dynamic_offset = set_uav->color;
+                     new_uav_color_with_dynamic_offset.base = (uint32_t)(new_uav_va_aligned >> 8);
+                     new_uav_color_with_dynamic_offset.view =
+                        (uint32_t)(new_uav_va - new_uav_va_aligned) * uav_bytes_per_texel;
+                     new_uav_color = &new_uav_color_with_dynamic_offset;
+                  }
+                  struct terakan_state_draw_cb_color_uav * const state_uav =
+                     &state_uavs[shader_uav_index];
+                  if (state_uav_used) {
+                     /* If used, check if different to avoid making
+                      * TERAKAN_STATE_DRAW_INDEX_CB_COLOR_UAV pending unless needed.
+                      */
+                     if (!BITSET_TEST(state_uavs_not_null, shader_uav_index) ||
+                         state_uav->bo != set_uav->bo ||
+                         memcmp(&state_uav->color, new_uav_color,
+                                sizeof(struct terakan_color_descriptor)) != 0) {
+                        state_uav->bo = set_uav->bo;
+                        state_uav->color = *new_uav_color;
+                        terakan_state_draw_set_pending(&command_writer->state_draw,
+                                                       TERAKAN_STATE_DRAW_INDEX_CB_COLOR_UAV);
+                     }
+                  } else {
+                     state_uav->bo = set_uav->bo;
+                     state_uav->color = *new_uav_color;
+                  }
+                  BITSET_SET(state_uavs_not_null, shader_uav_index);
+               } else {
+                  if (state_uav_used && BITSET_TEST(state_uavs_not_null, shader_uav_index)) {
+                     terakan_state_draw_set_pending(&command_writer->state_draw,
+                                                    TERAKAN_STATE_DRAW_INDEX_CB_COLOR_UAV);
+                  }
+                  BITSET_CLEAR(state_uavs_not_null, shader_uav_index);
+               }
             }
          }
       }
