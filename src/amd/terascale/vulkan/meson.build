@@ -115,7 +115,6 @@ libterakan_files = files(
 )
 
 libterakan_deps = [
-  dep_libdrm,
   dep_thread,
   dep_dl,
   dep_m,
@@ -161,6 +160,7 @@ elif system_has_kms_drm
     'winsys/drm_radeon/terakan_queue_drm_radeon.c',
     'winsys/drm_radeon/terakan_queue_drm_radeon.h',
   )
+  libterakan_deps += dep_libdrm
 endif
 
 libvulkan_terascale = shared_library(
