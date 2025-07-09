@@ -41,43 +41,6 @@
 extern "C" {
 #endif
 
-struct terakan_hw_state_sq_kcache_buffer {
-   /* BO and base are undefined if the size is 0. */
-   struct terakan_bo const * bo;
-   uint32_t va_lines;
-   uint32_t size_lines;
-};
-
-enum terakan_hw_state_draw_sq_constants_needed_stage {
-   TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_VS,
-   TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_TCS,
-   TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_TES,
-   TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_GS,
-   TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_FS,
-
-   TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_COUNT,
-};
-
-enum terakan_hw_state_draw_sq_constants_modified_stage {
-   TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_VS_IN_LS,
-   TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_VS_IN_VSES,
-   TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_TCS,
-   TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_TES_IN_VSES,
-   TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_GS,
-   TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_FS,
-
-   TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_COUNT,
-};
-
-struct terakan_hw_state_draw_vertex_constant_bits {
-   uint16_t kcache;
-
-   BITSET_DECLARE(resources, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
-
-   uint32_t samplers;
-   uint32_t sampler_border_colors;
-};
-
 #define TERAKAN_HW_STATE_DRAW_MAX_VIEWPORTS 16
 
 struct terakan_hw_state_draw_viewport {
@@ -162,35 +125,6 @@ enum terakan_hw_state_draw_index {
    TERAKAN_HW_STATE_DRAW_INDEX_CB_IMMED,
 
    TERAKAN_HW_STATE_DRAW_INDEX_CB_COLOR,
-
-   /* Matching the sequence in terakan_hw_state_draw_sq_constants_needed_stage. */
-   TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_VS,
-   TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_TCS,
-   TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_TES,
-   TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_GS,
-   TERAKAN_HW_STATE_DRAW_INDEX_SQ_KCACHE_FS,
-
-   TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_VI,
-   /* Matching the sequence in terakan_hw_state_draw_sq_constants_needed_stage. */
-   TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_VS,
-   TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_TCS,
-   TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_TES,
-   TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_GS,
-   TERAKAN_HW_STATE_DRAW_INDEX_SQ_RESOURCES_FS,
-
-   /* Matching the sequence in terakan_hw_state_draw_sq_constants_needed_stage. */
-   TERAKAN_HW_STATE_DRAW_INDEX_SQ_SAMPLERS_VS,
-   TERAKAN_HW_STATE_DRAW_INDEX_SQ_SAMPLERS_TCS,
-   TERAKAN_HW_STATE_DRAW_INDEX_SQ_SAMPLERS_TES,
-   TERAKAN_HW_STATE_DRAW_INDEX_SQ_SAMPLERS_GS,
-   TERAKAN_HW_STATE_DRAW_INDEX_SQ_SAMPLERS_FS,
-
-   /* Matching the sequence in terakan_hw_state_draw_sq_constants_needed_stage. */
-   TERAKAN_HW_STATE_DRAW_INDEX_SQ_SAMPLER_BORDER_COLORS_VS,
-   TERAKAN_HW_STATE_DRAW_INDEX_SQ_SAMPLER_BORDER_COLORS_TCS,
-   TERAKAN_HW_STATE_DRAW_INDEX_SQ_SAMPLER_BORDER_COLORS_TES,
-   TERAKAN_HW_STATE_DRAW_INDEX_SQ_SAMPLER_BORDER_COLORS_GS,
-   TERAKAN_HW_STATE_DRAW_INDEX_SQ_SAMPLER_BORDER_COLORS_FS,
 
    TERAKAN_HW_STATE_DRAW_INDEX_COUNT,
 };
@@ -362,116 +296,6 @@ struct terakan_hw_state_draw {
       struct terakan_color_descriptor color[TERAKAN_COLOR_HW_RTV_AND_UAV_COUNT];
       struct terakan_color_meta_descriptor meta[TERAKAN_COLOR_HW_RTV_COUNT];
    } cb_color;
-
-   /* Sequencer constants.
-    * Don't access externally directly, use the respective setters.
-    */
-
-   /* Constants demand of the shaders used in the next state emission. */
-   struct {
-      /* Whether each shader stage is used in the pipeline, and thus constants are needed for it.
-       * These are independent from the actual bits of the needed constants for these stages, based
-       * on how shaders are chained.
-       * For simplicity (and to avoid checking these while setting every single constant, which can
-       * be done many times before the first draw that happens afterwards with the respective
-       * state_modified bits set), the respective emit calls may be done regardless of whether these
-       * are true.
-       */
-      bool tcs_tes;
-      bool gs_after_vs;
-      bool gs_after_tes;
-
-      uint16_t kcache[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_COUNT];
-
-      struct {
-         BITSET_DECLARE(vi, TERAKAN_RESOURCE_HW_COUNT_FETCH);
-         BITSET_DECLARE(vs, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
-         BITSET_DECLARE(tcs, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
-         BITSET_DECLARE(tes, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
-         BITSET_DECLARE(gs, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
-         BITSET_DECLARE(fs, TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE);
-      } resources;
-
-      uint32_t samplers[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_COUNT];
-   } sq_constants_needed;
-
-   /* If the modified bit for the constant index is set, the new constant is considered to be
-    * completely new, and must be emitted for the specific stage next time it's needed.
-    * Otherwise, the constant may already be set to the needed value in the hardware, or it might
-    * have been set to it previously, but now has been evicted in the VSES constant by the other
-    * Vulkan VS or TES stage.
-    */
-   struct {
-      uint16_t kcache[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_COUNT];
-
-      struct {
-         BITSET_DECLARE(vi, TERAKAN_RESOURCE_HW_COUNT_FETCH);
-         BITSET_DECLARE(vs_in_ls, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
-         BITSET_DECLARE(vs_in_vses, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
-         BITSET_DECLARE(tcs, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
-         BITSET_DECLARE(tes_in_vses, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
-         BITSET_DECLARE(gs, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
-         BITSET_DECLARE(fs, TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE);
-      } resources;
-
-      uint32_t samplers[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_COUNT];
-      uint32_t sampler_border_colors[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_MODIFIED_STAGE_COUNT];
-   } sq_constants_modified;
-
-   /* Whether the constant emitted into VSES for VS or TES might have potentially been overwritten
-    * in the hardware by an emission for the other Vulkan stage, and thus when the constant is
-    * needed for that other stage later, it may need to be re-emitted.
-    * If the modified bit for the VS in VSES constant is true, the "VS constant overwritten by TES"
-    * bit for it should be considered out of date and thus ignored, same for the "TES constant
-    * overwritten by VS" bit if the corresponding TES constant was modified.
-    */
-   struct terakan_hw_state_draw_vertex_constant_bits sq_constants_for_vs_overwritten_in_vses_by_tes;
-   struct terakan_hw_state_draw_vertex_constant_bits sq_constants_for_tes_overwritten_in_vses_by_vs;
-
-   struct terakan_hw_state_sq_kcache_buffer
-      sq_kcache_buffers[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_COUNT]
-                       [TERAKAN_KCACHE_HW_BUFFERS_PER_STAGE];
-
-   /* The BOs and descriptors are undefined if the sq_resources_not_null bit for the resource index
-    * is not set.
-    */
-   struct {
-      BITSET_DECLARE(vi, TERAKAN_RESOURCE_HW_COUNT_FETCH);
-      BITSET_DECLARE(vs, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
-      BITSET_DECLARE(tcs, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
-      BITSET_DECLARE(tes, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
-      BITSET_DECLARE(gs, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
-      BITSET_DECLARE(fs, TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE);
-   } sq_resources_not_null;
-   struct {
-      struct terakan_bo const * vi[TERAKAN_RESOURCE_HW_COUNT_FETCH];
-      struct terakan_bo const * vs[TERAKAN_RESOURCE_HW_COUNT_VERTEX];
-      struct terakan_bo const * tcs[TERAKAN_RESOURCE_HW_COUNT_VERTEX];
-      struct terakan_bo const * tes[TERAKAN_RESOURCE_HW_COUNT_VERTEX];
-      struct terakan_bo const * gs[TERAKAN_RESOURCE_HW_COUNT_VERTEX];
-      struct terakan_bo const * fs[TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE];
-   } sq_resource_bos;
-   struct {
-      uint32_t vi[TERAKAN_RESOURCE_HW_COUNT_FETCH][8];
-      uint32_t vs[TERAKAN_RESOURCE_HW_COUNT_VERTEX][8];
-      uint32_t tcs[TERAKAN_RESOURCE_HW_COUNT_VERTEX][8];
-      uint32_t tes[TERAKAN_RESOURCE_HW_COUNT_VERTEX][8];
-      uint32_t gs[TERAKAN_RESOURCE_HW_COUNT_VERTEX][8];
-      uint32_t fs[TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE][8];
-   } sq_resource_descriptors;
-
-   uint32_t sq_samplers_ever_written[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_COUNT];
-   /* The bits are 0 for samplers not in sq_samplers_ever_written (the only interface exposed for
-    * setting the border color is setting the sampler itself).
-    */
-   uint32_t
-      sq_sampler_border_colors_ever_written[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_COUNT];
-   /* The bits are 0 for samplers not in sq_samplers_ever_written. */
-   uint32_t sq_samplers_with_border_color[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_COUNT];
-   uint32_t sq_samplers[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_COUNT]
-                       [TERAKAN_SAMPLER_HW_COUNT_PER_STAGE][3];
-   float sq_sampler_border_colors[TERAKAN_HW_STATE_DRAW_SQ_CONSTANTS_NEEDED_STAGE_COUNT]
-                                 [TERAKAN_SAMPLER_HW_COUNT_PER_STAGE][4];
 };
 
 /* Pass the result of the external comparison to reduce the amount of state setting packets if the
@@ -587,6 +411,216 @@ void terakan_hw_state_draw_set_cb_color(struct terakan_hw_state_draw * state, ui
 void terakan_hw_state_draw_set_cb_color1_dual_source(struct terakan_hw_state_draw * state,
                                                      uint32_t source_format);
 
+void terakan_hw_state_draw_emit_modified(struct terakan_gfx_command_writer * command_writer);
+
+void terakan_hw_state_draw_emit_all(struct terakan_gfx_command_writer * command_writer);
+
+void terakan_hw_state_draw_reset(struct terakan_hw_state_draw * state);
+
+/* Sequencer constants. */
+
+struct terakan_hw_state_sqc_kcache_buffer {
+   /* BO and base are undefined if the size is 0. */
+   struct terakan_bo const * bo;
+   uint32_t va_lines;
+   uint32_t size_lines;
+};
+
+enum terakan_hw_state_sqc_needed_stage {
+   TERAKAN_HW_STATE_SQC_NEEDED_STAGE_VS,
+   TERAKAN_HW_STATE_SQC_NEEDED_STAGE_TCS,
+   TERAKAN_HW_STATE_SQC_NEEDED_STAGE_TES,
+   TERAKAN_HW_STATE_SQC_NEEDED_STAGE_GS,
+   TERAKAN_HW_STATE_SQC_NEEDED_STAGE_FS,
+
+   TERAKAN_HW_STATE_SQC_NEEDED_STAGE_COUNT,
+};
+
+enum terakan_hw_state_sqc_modified_stage {
+   TERAKAN_HW_STATE_SQC_MODIFIED_STAGE_VS_IN_LS,
+   TERAKAN_HW_STATE_SQC_MODIFIED_STAGE_VS_IN_VSES,
+   TERAKAN_HW_STATE_SQC_MODIFIED_STAGE_TCS,
+   TERAKAN_HW_STATE_SQC_MODIFIED_STAGE_TES_IN_VSES,
+   TERAKAN_HW_STATE_SQC_MODIFIED_STAGE_GS,
+   TERAKAN_HW_STATE_SQC_MODIFIED_STAGE_FS,
+
+   TERAKAN_HW_STATE_SQC_MODIFIED_STAGE_COUNT,
+};
+
+struct terakan_hw_state_sqc_vertex_constant_bits {
+   uint16_t kcache;
+
+   BITSET_DECLARE(resources, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
+
+   uint32_t samplers;
+   uint32_t sampler_border_colors;
+};
+
+enum terakan_hw_state_sqc_index {
+   /* Matching the sequence in terakan_hw_state_sqc_needed_stage. */
+   TERAKAN_HW_STATE_SQC_INDEX_KCACHE_VS,
+   TERAKAN_HW_STATE_SQC_INDEX_KCACHE_TCS,
+   TERAKAN_HW_STATE_SQC_INDEX_KCACHE_TES,
+   TERAKAN_HW_STATE_SQC_INDEX_KCACHE_GS,
+   TERAKAN_HW_STATE_SQC_INDEX_KCACHE_FS,
+
+   TERAKAN_HW_STATE_SQC_INDEX_RESOURCES_VI,
+   /* Matching the sequence in terakan_hw_state_sqc_needed_stage. */
+   TERAKAN_HW_STATE_SQC_INDEX_RESOURCES_VS,
+   TERAKAN_HW_STATE_SQC_INDEX_RESOURCES_TCS,
+   TERAKAN_HW_STATE_SQC_INDEX_RESOURCES_TES,
+   TERAKAN_HW_STATE_SQC_INDEX_RESOURCES_GS,
+   TERAKAN_HW_STATE_SQC_INDEX_RESOURCES_FS,
+
+   /* Matching the sequence in terakan_hw_state_sqc_needed_stage. */
+   TERAKAN_HW_STATE_SQC_INDEX_SAMPLERS_VS,
+   TERAKAN_HW_STATE_SQC_INDEX_SAMPLERS_TCS,
+   TERAKAN_HW_STATE_SQC_INDEX_SAMPLERS_TES,
+   TERAKAN_HW_STATE_SQC_INDEX_SAMPLERS_GS,
+   TERAKAN_HW_STATE_SQC_INDEX_SAMPLERS_FS,
+
+   /* Matching the sequence in terakan_hw_state_sqc_needed_stage. */
+   TERAKAN_HW_STATE_SQC_INDEX_SAMPLER_BORDER_COLORS_VS,
+   TERAKAN_HW_STATE_SQC_INDEX_SAMPLER_BORDER_COLORS_TCS,
+   TERAKAN_HW_STATE_SQC_INDEX_SAMPLER_BORDER_COLORS_TES,
+   TERAKAN_HW_STATE_SQC_INDEX_SAMPLER_BORDER_COLORS_GS,
+   TERAKAN_HW_STATE_SQC_INDEX_SAMPLER_BORDER_COLORS_FS,
+
+   TERAKAN_HW_STATE_SQC_INDEX_COUNT,
+};
+
+static_assert(TERAKAN_HW_STATE_SQC_INDEX_COUNT <= 32,
+              "Using sequencer constant state indices in 32-bit bitfields.");
+
+#define TERAKAN_HW_STATE_SQC_INDICES_TCS_TES                                                       \
+   (BITFIELD_BIT(TERAKAN_HW_STATE_SQC_INDEX_KCACHE_TCS) |                                          \
+    BITFIELD_BIT(TERAKAN_HW_STATE_SQC_INDEX_KCACHE_TES) |                                          \
+    BITFIELD_BIT(TERAKAN_HW_STATE_SQC_INDEX_RESOURCES_TCS) |                                       \
+    BITFIELD_BIT(TERAKAN_HW_STATE_SQC_INDEX_RESOURCES_TES) |                                       \
+    BITFIELD_BIT(TERAKAN_HW_STATE_SQC_INDEX_SAMPLERS_TCS) |                                        \
+    BITFIELD_BIT(TERAKAN_HW_STATE_SQC_INDEX_SAMPLERS_TES) |                                        \
+    BITFIELD_BIT(TERAKAN_HW_STATE_SQC_INDEX_SAMPLER_BORDER_COLORS_TCS) |                           \
+    BITFIELD_BIT(TERAKAN_HW_STATE_SQC_INDEX_SAMPLER_BORDER_COLORS_TES))
+
+#define TERAKAN_HW_STATE_SQC_INDICES_GS                                                            \
+   (BITFIELD_BIT(TERAKAN_HW_STATE_SQC_INDEX_KCACHE_GS) |                                           \
+    BITFIELD_BIT(TERAKAN_HW_STATE_SQC_INDEX_RESOURCES_GS) |                                        \
+    BITFIELD_BIT(TERAKAN_HW_STATE_SQC_INDEX_SAMPLERS_GS) |                                         \
+    BITFIELD_BIT(TERAKAN_HW_STATE_SQC_INDEX_SAMPLER_BORDER_COLORS_GS))
+
+struct terakan_hw_state_sqc {
+   /* Don't access the fields externally directly, use the respective setters. */
+
+   /* Constants demand of the shaders used in the next state emission. */
+   struct {
+      /* Whether each shader stage is used in the pipeline, and thus constants are needed for it.
+       * These are independent from the actual bits of the needed constants for these stages, based
+       * on how shaders are chained.
+       * For simplicity (and to avoid checking these while setting every single constant, which can
+       * be done many times before the first draw that happens afterwards with the respective
+       * state_modified bits set), the respective emit calls may be done regardless of whether these
+       * are true.
+       */
+      bool tcs_tes;
+      bool gs_after_vs;
+      bool gs_after_tes;
+
+      uint16_t kcache[TERAKAN_HW_STATE_SQC_NEEDED_STAGE_COUNT];
+
+      struct {
+         BITSET_DECLARE(vi, TERAKAN_RESOURCE_HW_COUNT_FETCH);
+         BITSET_DECLARE(vs, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
+         BITSET_DECLARE(tcs, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
+         BITSET_DECLARE(tes, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
+         BITSET_DECLARE(gs, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
+         BITSET_DECLARE(fs, TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE);
+      } resources;
+
+      uint32_t samplers[TERAKAN_HW_STATE_SQC_NEEDED_STAGE_COUNT];
+   } needed;
+
+   /* If the modified bit for the constant index is set, the new constant is considered to be
+    * completely new, and must be emitted for the specific stage next time it's needed.
+    * Otherwise, the constant may already be set to the needed value in the hardware, or it might
+    * have been set to it previously, but now has been evicted in the VSES constant by the other
+    * Vulkan VS or TES stage.
+    */
+   struct {
+      uint16_t kcache[TERAKAN_HW_STATE_SQC_MODIFIED_STAGE_COUNT];
+
+      struct {
+         BITSET_DECLARE(vi, TERAKAN_RESOURCE_HW_COUNT_FETCH);
+         BITSET_DECLARE(vs_in_ls, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
+         BITSET_DECLARE(vs_in_vses, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
+         BITSET_DECLARE(tcs, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
+         BITSET_DECLARE(tes_in_vses, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
+         BITSET_DECLARE(gs, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
+         BITSET_DECLARE(fs, TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE);
+      } resources;
+
+      uint32_t samplers[TERAKAN_HW_STATE_SQC_MODIFIED_STAGE_COUNT];
+      uint32_t sampler_border_colors[TERAKAN_HW_STATE_SQC_MODIFIED_STAGE_COUNT];
+
+      /* `terakan_hw_state_sqc_index` bitfield indicating whether any constant of the given type is
+       * potentially modified - if a bit is zero, assuming that the respective modified array is
+       * also zero.
+       */
+      uint32_t indices;
+   } modified;
+
+   /* Whether the constant emitted into VSES for VS or TES might have potentially been overwritten
+    * in the hardware by an emission for the other Vulkan stage, and thus when the constant is
+    * needed for that other stage later, it may need to be re-emitted.
+    * If the modified bit for the VS in VSES constant is true, the "VS constant overwritten by TES"
+    * bit for it should be considered out of date and thus ignored, same for the "TES constant
+    * overwritten by VS" bit if the corresponding TES constant was modified.
+    */
+   struct terakan_hw_state_sqc_vertex_constant_bits vs_constants_overwritten_in_vses_by_tes;
+   struct terakan_hw_state_sqc_vertex_constant_bits tes_constants_overwritten_in_vses_by_vs;
+
+   struct terakan_hw_state_sqc_kcache_buffer kcache_buffers[TERAKAN_HW_STATE_SQC_NEEDED_STAGE_COUNT]
+                                                           [TERAKAN_KCACHE_HW_BUFFERS_PER_STAGE];
+
+   /* The BOs and descriptors are undefined if the `resources_not_null` bit for the resource index
+    * is not set.
+    */
+   struct {
+      BITSET_DECLARE(vi, TERAKAN_RESOURCE_HW_COUNT_FETCH);
+      BITSET_DECLARE(vs, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
+      BITSET_DECLARE(tcs, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
+      BITSET_DECLARE(tes, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
+      BITSET_DECLARE(gs, TERAKAN_RESOURCE_HW_COUNT_VERTEX);
+      BITSET_DECLARE(fs, TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE);
+   } resources_not_null;
+   struct {
+      struct terakan_bo const * vi[TERAKAN_RESOURCE_HW_COUNT_FETCH];
+      struct terakan_bo const * vs[TERAKAN_RESOURCE_HW_COUNT_VERTEX];
+      struct terakan_bo const * tcs[TERAKAN_RESOURCE_HW_COUNT_VERTEX];
+      struct terakan_bo const * tes[TERAKAN_RESOURCE_HW_COUNT_VERTEX];
+      struct terakan_bo const * gs[TERAKAN_RESOURCE_HW_COUNT_VERTEX];
+      struct terakan_bo const * fs[TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE];
+   } resource_bos;
+   struct {
+      uint32_t vi[TERAKAN_RESOURCE_HW_COUNT_FETCH][8];
+      uint32_t vs[TERAKAN_RESOURCE_HW_COUNT_VERTEX][8];
+      uint32_t tcs[TERAKAN_RESOURCE_HW_COUNT_VERTEX][8];
+      uint32_t tes[TERAKAN_RESOURCE_HW_COUNT_VERTEX][8];
+      uint32_t gs[TERAKAN_RESOURCE_HW_COUNT_VERTEX][8];
+      uint32_t fs[TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE][8];
+   } resource_descriptors;
+
+   uint32_t samplers_ever_written[TERAKAN_HW_STATE_SQC_NEEDED_STAGE_COUNT];
+   /* The bits are 0 for samplers not in `samplers_ever_written` (the only interface exposed for
+    * setting the border color is setting the sampler itself).
+    */
+   uint32_t sampler_border_colors_ever_written[TERAKAN_HW_STATE_SQC_NEEDED_STAGE_COUNT];
+   /* The bits are 0 for samplers not in sq_samplers_ever_written. */
+   uint32_t samplers_with_border_color[TERAKAN_HW_STATE_SQC_NEEDED_STAGE_COUNT];
+   uint32_t samplers[TERAKAN_HW_STATE_SQC_NEEDED_STAGE_COUNT][TERAKAN_SAMPLER_HW_COUNT_PER_STAGE][3];
+   float sampler_border_colors[TERAKAN_HW_STATE_SQC_NEEDED_STAGE_COUNT]
+                              [TERAKAN_SAMPLER_HW_COUNT_PER_STAGE][4];
+};
+
 /* Section 14.2.3. "Allocation of Descriptor Sets" of the Vulkan 1.3.275 specification says:
  *
  *     "For descriptor set bindings created without the VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT
@@ -601,118 +635,107 @@ void terakan_hw_state_draw_set_cb_color1_dual_source(struct terakan_hw_state_dra
  * - Bindings not statically used by shaders must not be emitted.
  */
 
-typedef void (*terakan_hw_state_draw_set_sq_kcache_function)(struct terakan_hw_state_draw * state,
-                                                             uint32_t index, uint32_t size_lines,
-                                                             struct terakan_bo const * bo,
-                                                             uint32_t va_lines);
-void terakan_hw_state_draw_set_sq_kcache_vs(struct terakan_hw_state_draw * state, uint32_t index,
-                                            uint32_t size_lines, struct terakan_bo const * bo,
-                                            uint32_t va_lines);
-void terakan_hw_state_draw_set_sq_kcache_tcs(struct terakan_hw_state_draw * state, uint32_t index,
-                                             uint32_t size_lines, struct terakan_bo const * bo,
-                                             uint32_t va_lines);
-void terakan_hw_state_draw_set_sq_kcache_tes(struct terakan_hw_state_draw * state, uint32_t index,
-                                             uint32_t size_lines, struct terakan_bo const * bo,
-                                             uint32_t va_lines);
-void terakan_hw_state_draw_set_sq_kcache_gs(struct terakan_hw_state_draw * state, uint32_t index,
-                                            uint32_t size_lines, struct terakan_bo const * bo,
-                                            uint32_t va_lines);
-void terakan_hw_state_draw_set_sq_kcache_fs(struct terakan_hw_state_draw * state, uint32_t index,
-                                            uint32_t size_lines, struct terakan_bo const * bo,
-                                            uint32_t va_lines);
-extern terakan_hw_state_draw_set_sq_kcache_function const
-   terakan_hw_state_draw_set_sq_kcache_for_stage[MESA_SHADER_FRAGMENT + 1];
+typedef void (*terakan_hw_state_sqc_set_kcache_function)(struct terakan_hw_state_sqc * state,
+                                                         uint32_t index, uint32_t size_lines,
+                                                         struct terakan_bo const * bo,
+                                                         uint32_t va_lines);
+void terakan_hw_state_sqc_set_kcache_vs(struct terakan_hw_state_sqc * state, uint32_t index,
+                                        uint32_t size_lines, struct terakan_bo const * bo,
+                                        uint32_t va_lines);
+void terakan_hw_state_sqc_set_kcache_tcs(struct terakan_hw_state_sqc * state, uint32_t index,
+                                         uint32_t size_lines, struct terakan_bo const * bo,
+                                         uint32_t va_lines);
+void terakan_hw_state_sqc_set_kcache_tes(struct terakan_hw_state_sqc * state, uint32_t index,
+                                         uint32_t size_lines, struct terakan_bo const * bo,
+                                         uint32_t va_lines);
+void terakan_hw_state_sqc_set_kcache_gs(struct terakan_hw_state_sqc * state, uint32_t index,
+                                        uint32_t size_lines, struct terakan_bo const * bo,
+                                        uint32_t va_lines);
+void terakan_hw_state_sqc_set_kcache_fs(struct terakan_hw_state_sqc * state, uint32_t index,
+                                        uint32_t size_lines, struct terakan_bo const * bo,
+                                        uint32_t va_lines);
+extern terakan_hw_state_sqc_set_kcache_function const
+   terakan_hw_state_sqc_set_kcache_for_stage[MESA_SHADER_FRAGMENT + 1];
 
-typedef void (*terakan_hw_state_draw_set_sq_resource_function)(struct terakan_hw_state_draw * state,
-                                                               uint32_t index,
-                                                               struct terakan_bo const * bo,
-                                                               uint32_t const descriptor[8]);
-void terakan_hw_state_draw_set_sq_resource_vi(struct terakan_hw_state_draw * state, uint32_t index,
-                                              struct terakan_bo const * bo,
-                                              uint32_t const descriptor[8]);
-void terakan_hw_state_draw_set_sq_resource_vs(struct terakan_hw_state_draw * state, uint32_t index,
-                                              struct terakan_bo const * bo,
-                                              uint32_t const descriptor[8]);
-void terakan_hw_state_draw_set_sq_resource_tcs(struct terakan_hw_state_draw * state, uint32_t index,
-                                               struct terakan_bo const * bo,
-                                               uint32_t const descriptor[8]);
-void terakan_hw_state_draw_set_sq_resource_tes(struct terakan_hw_state_draw * state, uint32_t index,
-                                               struct terakan_bo const * bo,
-                                               uint32_t const descriptor[8]);
-void terakan_hw_state_draw_set_sq_resource_gs(struct terakan_hw_state_draw * state, uint32_t index,
-                                              struct terakan_bo const * bo,
-                                              uint32_t const descriptor[8]);
-void terakan_hw_state_draw_set_sq_resource_fs(struct terakan_hw_state_draw * state, uint32_t index,
-                                              struct terakan_bo const * bo,
-                                              uint32_t const descriptor[8]);
-extern terakan_hw_state_draw_set_sq_resource_function const
-   terakan_hw_state_draw_set_sq_resource_for_stage[MESA_SHADER_FRAGMENT + 1];
+typedef void (*terakan_hw_state_sqc_set_resource_function)(struct terakan_hw_state_sqc * state,
+                                                           uint32_t index,
+                                                           struct terakan_bo const * bo,
+                                                           uint32_t const descriptor[8]);
+void terakan_hw_state_sqc_set_resource_vi(struct terakan_hw_state_sqc * state, uint32_t index,
+                                          struct terakan_bo const * bo,
+                                          uint32_t const descriptor[8]);
+void terakan_hw_state_sqc_set_resource_vs(struct terakan_hw_state_sqc * state, uint32_t index,
+                                          struct terakan_bo const * bo,
+                                          uint32_t const descriptor[8]);
+void terakan_hw_state_sqc_set_resource_tcs(struct terakan_hw_state_sqc * state, uint32_t index,
+                                           struct terakan_bo const * bo,
+                                           uint32_t const descriptor[8]);
+void terakan_hw_state_sqc_set_resource_tes(struct terakan_hw_state_sqc * state, uint32_t index,
+                                           struct terakan_bo const * bo,
+                                           uint32_t const descriptor[8]);
+void terakan_hw_state_sqc_set_resource_gs(struct terakan_hw_state_sqc * state, uint32_t index,
+                                          struct terakan_bo const * bo,
+                                          uint32_t const descriptor[8]);
+void terakan_hw_state_sqc_set_resource_fs(struct terakan_hw_state_sqc * state, uint32_t index,
+                                          struct terakan_bo const * bo,
+                                          uint32_t const descriptor[8]);
+extern terakan_hw_state_sqc_set_resource_function const
+   terakan_hw_state_sqc_set_resource_for_stage[MESA_SHADER_FRAGMENT + 1];
 
 /* The border color can be NULL if BORDER_COLOR_TYPE is not REGISTER. */
-typedef void (*terakan_hw_state_draw_set_sq_sampler_function)(struct terakan_hw_state_draw * state,
-                                                              uint32_t index,
-                                                              uint32_t const sampler[3],
-                                                              float const border_color[4]);
-void terakan_hw_state_draw_set_sq_sampler_vs(struct terakan_hw_state_draw * state, uint32_t index,
-                                             uint32_t const sampler[3],
-                                             float const border_color[4]);
-void terakan_hw_state_draw_set_sq_sampler_tcs(struct terakan_hw_state_draw * state, uint32_t index,
-                                              uint32_t const sampler[3],
-                                              float const border_color[4]);
-void terakan_hw_state_draw_set_sq_sampler_tes(struct terakan_hw_state_draw * state, uint32_t index,
-                                              uint32_t const sampler[3],
-                                              float const border_color[4]);
-void terakan_hw_state_draw_set_sq_sampler_gs(struct terakan_hw_state_draw * state, uint32_t index,
-                                             uint32_t const sampler[3],
-                                             float const border_color[4]);
-void terakan_hw_state_draw_set_sq_sampler_fs(struct terakan_hw_state_draw * state, uint32_t index,
-                                             uint32_t const sampler[3],
-                                             float const border_color[4]);
-extern terakan_hw_state_draw_set_sq_sampler_function const
-   terakan_hw_state_draw_set_sq_sampler_for_stage[MESA_SHADER_FRAGMENT + 1];
+typedef void (*terakan_hw_state_sqc_set_sampler_function)(struct terakan_hw_state_sqc * state,
+                                                          uint32_t index, uint32_t const sampler[3],
+                                                          float const border_color[4]);
+void terakan_hw_state_sqc_set_sampler_vs(struct terakan_hw_state_sqc * state, uint32_t index,
+                                         uint32_t const sampler[3], float const border_color[4]);
+void terakan_hw_state_sqc_set_sampler_tcs(struct terakan_hw_state_sqc * state, uint32_t index,
+                                          uint32_t const sampler[3], float const border_color[4]);
+void terakan_hw_state_sqc_set_sampler_tes(struct terakan_hw_state_sqc * state, uint32_t index,
+                                          uint32_t const sampler[3], float const border_color[4]);
+void terakan_hw_state_sqc_set_sampler_gs(struct terakan_hw_state_sqc * state, uint32_t index,
+                                         uint32_t const sampler[3], float const border_color[4]);
+void terakan_hw_state_sqc_set_sampler_fs(struct terakan_hw_state_sqc * state, uint32_t index,
+                                         uint32_t const sampler[3], float const border_color[4]);
+extern terakan_hw_state_sqc_set_sampler_function const
+   terakan_hw_state_sqc_set_sampler_for_stage[MESA_SHADER_FRAGMENT + 1];
 
 static inline bool
-terakan_hw_state_draw_sq_constants_needed_by_gs(struct terakan_hw_state_draw const * const state)
+terakan_hw_state_sqc_needed_by_gs(struct terakan_hw_state_sqc const * const state)
 {
-   return state->sq_constants_needed.tcs_tes ? state->sq_constants_needed.gs_after_tes
-                                             : state->sq_constants_needed.gs_after_vs;
+   return state->needed.tcs_tes ? state->needed.gs_after_tes : state->needed.gs_after_vs;
 }
 
-/* resources_opt is optional, passing NULL disables all constants for this stage (for instance, if
+/* `resources_opt` is optional, passing NULL disables all constants for this stage (for instance, if
  * no shader is bound to the stage).
  */
-void terakan_hw_state_draw_set_sq_constants_needed_by_vi(struct terakan_hw_state_draw * state,
-                                                         BITSET_WORD const * resources_opt);
-void terakan_hw_state_draw_set_sq_constants_needed_by_vs(struct terakan_hw_state_draw * state,
-                                                         uint16_t kcache,
-                                                         BITSET_WORD const * resources_opt,
-                                                         uint32_t samplers,
-                                                         VkShaderStageFlags next_stage);
-void terakan_hw_state_draw_set_sq_constants_needed_by_tcs(struct terakan_hw_state_draw * state,
-                                                          uint16_t kcache,
-                                                          BITSET_WORD const * resources_opt,
-                                                          uint32_t samplers);
-void terakan_hw_state_draw_set_sq_constants_needed_by_tes(struct terakan_hw_state_draw * state,
-                                                          uint16_t kcache,
-                                                          BITSET_WORD const * resources_opt,
-                                                          uint32_t samplers, bool next_stage_is_gs);
-void terakan_hw_state_draw_set_sq_constants_needed_by_gs(struct terakan_hw_state_draw * state,
-                                                         uint16_t kcache,
-                                                         BITSET_WORD const * resources_opt,
-                                                         uint32_t samplers);
-void terakan_hw_state_draw_set_sq_constants_needed_by_fs(struct terakan_hw_state_draw * state,
-                                                         uint16_t kcache,
-                                                         BITSET_WORD const * resources_opt,
-                                                         uint32_t samplers);
+void terakan_hw_state_sqc_set_needed_by_vi(struct terakan_hw_state_sqc * state,
+                                           BITSET_WORD const * resources_opt);
+void terakan_hw_state_sqc_set_needed_by_vs(struct terakan_hw_state_sqc * state, uint16_t kcache,
+                                           BITSET_WORD const * resources_opt, uint32_t samplers,
+                                           VkShaderStageFlags next_stage);
+void terakan_hw_state_sqc_set_needed_by_tcs(struct terakan_hw_state_sqc * state, uint16_t kcache,
+                                            BITSET_WORD const * resources_opt, uint32_t samplers);
+void terakan_hw_state_sqc_set_needed_by_tes(struct terakan_hw_state_sqc * state, uint16_t kcache,
+                                            BITSET_WORD const * resources_opt, uint32_t samplers,
+                                            bool next_stage_is_gs);
+void terakan_hw_state_sqc_set_needed_by_gs(struct terakan_hw_state_sqc * state, uint16_t kcache,
+                                           BITSET_WORD const * resources_opt, uint32_t samplers);
+void terakan_hw_state_sqc_set_needed_by_fs(struct terakan_hw_state_sqc * state, uint16_t kcache,
+                                           BITSET_WORD const * resources_opt, uint32_t samplers);
 
-void terakan_hw_state_draw_indirect_buffer_begun_and_sq_resources_cleared(
-   struct terakan_hw_state_draw * state);
+/* To make sure the next `terakan_hw_state_sqc_emit_modified` applies all the needed bindings, to be
+ * called when starting a new indirect buffer.
+ * All vertex / texture fetch resource constants in the hardware must be cleared prior to the call
+ * (such as by writing ~0 to SQ_TEX_RESOURCE_CLEAR), this is a simplification so it's possible to
+ * avoid explicitly emitting packets unbinding every resource in the hardware that's not bound in
+ * `terakan_hw_state_sqc` at the first use in the indirect buffer.
+ */
+void terakan_hw_state_sqc_indirect_buffer_begun_and_resources_cleared(
+   struct terakan_hw_state_sqc * state);
 
-void terakan_hw_state_draw_emit_modified(struct terakan_gfx_command_writer * command_writer);
+void terakan_hw_state_sqc_emit_modified(struct terakan_gfx_command_writer * command_writer);
 
-void terakan_hw_state_draw_emit_all(struct terakan_gfx_command_writer * command_writer);
-
-void terakan_hw_state_draw_reset(struct terakan_hw_state_draw * state);
+void terakan_hw_state_sqc_reset(struct terakan_hw_state_sqc * state);
 
 #ifdef __cplusplus
 }

@@ -983,17 +983,20 @@ terakan_gfx_command_writer_new_indirect_buffer(
       return false;
    }
    *packet++ = PKT3(PKT3_SET_CTL_CONST, 1, 0);
-   *packet++ = TERAKAN_CTL_CONST_OFFSET(R_03CFF4_SQ_VTX_START_INST_LOC);
+   *packet++ = TERAKAN_CTL_CONST_OFFSET(R_03FF04_SQ_TEX_RESOURCE_CLEAR);
    *packet++ = UINT32_MAX;
    terakan_gfx_command_writer_emit_done(command_writer, packet);
 
-   terakan_hw_state_draw_indirect_buffer_begun_and_sq_resources_cleared(
-      &command_writer->hw_state_draw);
+   terakan_hw_state_sqc_indirect_buffer_begun_and_resources_cleared(&command_writer->hw_state_sqc);
 
    bool const emit_all_state = command_writer->indirect_buffer_ever_begun;
    if (emit_all_state) {
       /* Re-emit the state from the previous indirect buffer. */
       terakan_hw_state_draw_emit_all(command_writer);
+      /* `terakan_hw_state_sqc_emit_modified` will emit all needed constants after the
+       * `terakan_hw_state_sqc_indirect_buffer_begun_and_resources_cleared`.
+       */
+      terakan_hw_state_sqc_emit_modified(command_writer);
    }
    command_writer->indirect_buffer_ever_begun = true;
 
@@ -1268,6 +1271,7 @@ terakan_BeginCommandBuffer(VkCommandBuffer const commandBuffer,
    gfx_command_writer->post_depth_stencil_image_copy_write_barrier_actions = 0;
 
    terakan_hw_state_draw_reset(&gfx_command_writer->hw_state_draw);
+   terakan_hw_state_sqc_reset(&gfx_command_writer->hw_state_sqc);
 
    terakan_push_constants_state_reset(&gfx_command_writer->push_constants_state);
 

@@ -356,8 +356,8 @@ terakan_CmdCopyImage2(VkCommandBuffer const commandBuffer,
             return;
          }
          memcpy(constants_mapping, constants, sizeof(constants));
-         terakan_hw_state_draw_set_sq_kcache_fs(
-            &command_writer->hw_state_draw, TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS,
+         terakan_hw_state_sqc_set_kcache_fs(
+            &command_writer->hw_state_sqc, TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS,
             DIV_ROUND_UP(sizeof(constants), TERAKAN_KCACHE_HW_LINE_BYTES), constants_bo,
             constants_va_lines);
       }
@@ -404,9 +404,9 @@ terakan_CmdCopyImage2(VkCommandBuffer const commandBuffer,
          }
 
          while (dst_descriptor_create_info.layer_count > 0) {
-            terakan_hw_state_draw_set_sq_resource_fs(
-               &command_writer->hw_state_draw,
-               TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META, src_image->bo, src_resource);
+            terakan_hw_state_sqc_set_resource_fs(
+               &command_writer->hw_state_sqc, TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META,
+               src_image->bo, src_resource);
 
             struct terakan_color_descriptor dst_color;
             struct terakan_color_meta_descriptor dst_color_meta;

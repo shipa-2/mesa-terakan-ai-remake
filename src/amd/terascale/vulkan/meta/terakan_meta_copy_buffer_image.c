@@ -905,8 +905,8 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
             return;
          }
          memcpy(constants_mapping, constants, sizeof(constants));
-         terakan_hw_state_draw_set_sq_kcache_fs(
-            &command_writer->hw_state_draw, TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS,
+         terakan_hw_state_sqc_set_kcache_fs(
+            &command_writer->hw_state_sqc, TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS,
             DIV_ROUND_UP(sizeof(constants), TERAKAN_KCACHE_HW_LINE_BYTES), constants_bo,
             constants_va_lines);
       }
@@ -950,9 +950,9 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
                   image_descriptor_create_info.view_format.number_type)) |
             S_030008_ENDIAN_SWAP(G_028C70_ENDIAN(color_descriptor.info));
          buffer_resource[4] = (uint32_t)buffer_size_elements;
-         terakan_hw_state_draw_set_sq_resource_fs(
-            &command_writer->hw_state_draw, TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META,
-            buffer->bo, buffer_resource);
+         terakan_hw_state_sqc_set_resource_fs(&command_writer->hw_state_sqc,
+                                              TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META,
+                                              buffer->bo, buffer_resource);
 
          terakan_meta_emit_rect_3_vertices_draw(command_writer, &rect,
                                                 color_descriptor_layer_count);
@@ -1065,8 +1065,8 @@ terakan_CmdCopyImageToBuffer2(VkCommandBuffer const commandBuffer,
             return;
          }
          memcpy(constants_mapping, constants, sizeof(constants));
-         terakan_hw_state_draw_set_sq_kcache_fs(
-            &command_writer->hw_state_draw, TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS,
+         terakan_hw_state_sqc_set_kcache_fs(
+            &command_writer->hw_state_sqc, TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS,
             DIV_ROUND_UP(sizeof(constants), TERAKAN_KCACHE_HW_LINE_BYTES), constants_bo,
             constants_va_lines);
       }
@@ -1092,9 +1092,9 @@ terakan_CmdCopyImageToBuffer2(VkCommandBuffer const commandBuffer,
          assert(!"Invalid image descriptor create info");
          return;
       }
-      terakan_hw_state_draw_set_sq_resource_fs(
-         &command_writer->hw_state_draw, TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META,
-         image->bo, image_resource);
+      terakan_hw_state_sqc_set_resource_fs(&command_writer->hw_state_sqc,
+                                           TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META,
+                                           image->bo, image_resource);
 
       terakan_meta_emit_rect_3_vertices_draw(command_writer, &rect,
                                              image_descriptor_create_info.layer_count);

@@ -104,8 +104,8 @@ terakan_CmdBindDescriptorSets(VkCommandBuffer const commandBuffer,
 
          /* Resources. */
 
-         terakan_hw_state_draw_set_sq_resource_function const graphics_resource_setter =
-            is_compute ? NULL : terakan_hw_state_draw_set_sq_resource_for_stage[shader_stage];
+         terakan_hw_state_sqc_set_resource_function const graphics_resource_setter =
+            terakan_hw_state_sqc_set_resource_for_stage[shader_stage];
          uint8_t const shader_resource_set_base = layout_set->first_shader_resources[shader_stage];
          struct terakan_descriptor_set_layout_shader_range const * const resource_ranges =
             set_layout->shader_ranges + set_layout_shader->first_resource_range;
@@ -139,7 +139,7 @@ terakan_CmdBindDescriptorSets(VkCommandBuffer const commandBuffer,
                      resource.resource[2] = (resource.resource[2] & C_030008_BASE_ADDRESS_HI) |
                                             S_030008_BASE_ADDRESS_HI(resource_address >> 32);
                   }
-                  graphics_resource_setter(&command_writer->hw_state_draw,
+                  graphics_resource_setter(&command_writer->hw_state_sqc,
                                            range_shader_base + resource_index, resource.bo,
                                            resource.resource);
                }
@@ -148,7 +148,7 @@ terakan_CmdBindDescriptorSets(VkCommandBuffer const commandBuffer,
                     ++resource_index) {
                   struct terakan_descriptor_set_resource const * const resource =
                      &range_set_resources[resource_index];
-                  graphics_resource_setter(&command_writer->hw_state_draw,
+                  graphics_resource_setter(&command_writer->hw_state_sqc,
                                            range_shader_base + resource_index, resource->bo,
                                            resource->resource);
                }
@@ -157,8 +157,8 @@ terakan_CmdBindDescriptorSets(VkCommandBuffer const commandBuffer,
 
          /* Samplers. */
 
-         terakan_hw_state_draw_set_sq_sampler_function const graphics_sampler_setter =
-            is_compute ? NULL : terakan_hw_state_draw_set_sq_sampler_for_stage[shader_stage];
+         terakan_hw_state_sqc_set_sampler_function const graphics_sampler_setter =
+            terakan_hw_state_sqc_set_sampler_for_stage[shader_stage];
          uint8_t const shader_sampler_set_base = layout_set->first_shader_samplers[shader_stage];
          struct terakan_descriptor_set_layout_shader_range const * const sampler_ranges =
             set_layout->shader_ranges + set_layout_shader->first_sampler_range;
@@ -178,7 +178,7 @@ terakan_CmdBindDescriptorSets(VkCommandBuffer const commandBuffer,
                 * may be left uninitialized if they're not statically referenced by the pipeline.
                 */
                if (likely(G_03C008_TYPE(sampler->sampler[2]))) {
-                  graphics_sampler_setter(&command_writer->hw_state_draw,
+                  graphics_sampler_setter(&command_writer->hw_state_sqc,
                                           range_shader_base + sampler_index, sampler->sampler,
                                           sampler->border_color);
                }

@@ -106,6 +106,7 @@ void
 terakan_before_hw_draw(struct terakan_gfx_command_writer * const command_writer)
 {
    terakan_hw_state_draw_emit_modified(command_writer);
+   terakan_hw_state_sqc_emit_modified(command_writer);
 
    /* Insert barriers after emitting the state changes, not before, so state changes are not blocked
     * by the barriers in the CP, and new work can begin as soon as possible.

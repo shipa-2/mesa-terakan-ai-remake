@@ -132,21 +132,17 @@ terakan_push_constants_apply(struct terakan_gfx_command_writer * const command_w
          state->allocation.bo,
          TERAKAN_KCACHE_HW_LINE_BYTES * (VkDeviceSize)state->allocation.va_kcache_lines,
          TERAKAN_KCACHE_HW_LINE_BYTES * state->allocation.size_kcache_lines, resource);
-      if (is_compute) {
-         /* TODO(Triang3l): Bind to the compute stage. */
-      } else {
-         unsigned remaining_stages = (unsigned)bind_to_stages;
-         while (remaining_stages) {
-            gl_shader_stage const stage_index = vk_to_mesa_shader_stage(
-               (VkShaderStageFlagBits)((VkShaderStageFlags)1 << u_bit_scan(&remaining_stages)));
-            terakan_hw_state_draw_set_sq_kcache_for_stage[stage_index](
-               &command_writer->hw_state_draw, TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS,
-               state->allocation.size_kcache_lines, state->allocation.bo,
-               state->allocation.va_kcache_lines);
-            terakan_hw_state_draw_set_sq_resource_for_stage[stage_index](
-               &command_writer->hw_state_draw, TERAKAN_RESOURCE_RANGE_PUSH_CONSTANTS,
-               state->allocation.bo, resource);
-         }
+      unsigned remaining_stages = (unsigned)bind_to_stages;
+      while (remaining_stages) {
+         gl_shader_stage const stage_index = vk_to_mesa_shader_stage(
+            (VkShaderStageFlagBits)((VkShaderStageFlags)1 << u_bit_scan(&remaining_stages)));
+         terakan_hw_state_sqc_set_kcache_for_stage[stage_index](
+            &command_writer->hw_state_sqc, TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS,
+            state->allocation.size_kcache_lines, state->allocation.bo,
+            state->allocation.va_kcache_lines);
+         terakan_hw_state_sqc_set_resource_for_stage[stage_index](
+            &command_writer->hw_state_sqc, TERAKAN_RESOURCE_RANGE_PUSH_CONSTANTS,
+            state->allocation.bo, resource);
       }
       state->up_to_date_push_constants_bound_to_stages |= bind_to_stages;
    }

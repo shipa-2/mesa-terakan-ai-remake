@@ -231,9 +231,9 @@ terakan_meta_set_vs(struct terakan_gfx_command_writer * const command_writer,
 
    struct terakan_meta_shader const * const shader = terakan_meta_shaders[shader_index];
 
-   terakan_hw_state_draw_set_sq_constants_needed_by_vs(
-      &command_writer->hw_state_draw, shader->kcache_needed, shader->resources_needed,
-      shader->samplers_needed, VK_SHADER_STAGE_FRAGMENT_BIT);
+   terakan_hw_state_sqc_set_needed_by_vs(&command_writer->hw_state_sqc, shader->kcache_needed,
+                                         shader->resources_needed, shader->samplers_needed,
+                                         VK_SHADER_STAGE_FRAGMENT_BIT);
 }
 
 void
@@ -273,9 +273,8 @@ terakan_meta_set_ps(struct terakan_gfx_command_writer * const command_writer,
    terakan_state_draw_set_pending(&command_writer->state_draw, TERAKAN_STATE_DRAW_INDEX_SQ_TMP_PS);
    terakan_hw_state_draw_set_sq_ring(command_writer, TERAKAN_SHADER_RING_INDEX_PSTMP, 0, 0);
 
-   terakan_hw_state_draw_set_sq_constants_needed_by_fs(
-      &command_writer->hw_state_draw, shader->kcache_needed, shader->resources_needed,
-      shader->samplers_needed);
+   terakan_hw_state_sqc_set_needed_by_fs(&command_writer->hw_state_sqc, shader->kcache_needed,
+                                         shader->resources_needed, shader->samplers_needed);
 }
 
 void

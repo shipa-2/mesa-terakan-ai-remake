@@ -138,9 +138,8 @@ terakan_state_draw_apply_sq_pgm_ls_hs_es_gs_vs(
                                         TERAKAN_STATE_DRAW_INDEX_SQ_TMP_LS_HS_ES_GS_VS);
       }
 
-      terakan_hw_state_draw_set_sq_constants_needed_by_vs(&command_writer->hw_state_draw, 0,
-                                                          vs->resources_needed, vs->samplers_needed,
-                                                          VK_SHADER_STAGE_FRAGMENT_BIT);
+      terakan_hw_state_sqc_set_needed_by_vs(&command_writer->hw_state_sqc, 0, vs->resources_needed,
+                                            vs->samplers_needed, VK_SHADER_STAGE_FRAGMENT_BIT);
 
       if (!terakan_push_constants_usage_empty(vs->push_constants_usage)) {
          command_writer->push_constants_state.usage_pre_rasterization =
@@ -245,8 +244,7 @@ terakan_state_draw_apply_sq_pgm_fs(struct terakan_gfx_command_writer * const com
    terakan_hw_state_draw_written(&command_writer->hw_state_draw,
                                  TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_FS, program_modified);
 
-   terakan_hw_state_draw_set_sq_constants_needed_by_vi(&command_writer->hw_state_draw,
-                                                       resources_needed);
+   terakan_hw_state_sqc_set_needed_by_vi(&command_writer->hw_state_sqc, resources_needed);
 }
 
 static void
@@ -275,8 +273,8 @@ terakan_state_draw_apply_sq_resources_fs(struct terakan_gfx_command_writer * con
          S_030008_BASE_ADDRESS_HI(buffer->va >> 32) |
          ((uint32_t)((buffer->stride >> (is_r9xx && buffer->stride >= 0x800 ? 1 : 0)) & 0xFFF)
           << 8);
-      terakan_hw_state_draw_set_sq_resource_vi(&command_writer->hw_state_draw, buffer_index,
-                                               buffer->bo, resource);
+      terakan_hw_state_sqc_set_resource_vi(&command_writer->hw_state_sqc, buffer_index, buffer->bo,
+                                           resource);
    }
    command_writer->state_draw.sq_resources_fs_pending = 0;
 }
@@ -303,9 +301,9 @@ terakan_state_draw_apply_sq_pgm_ps(struct terakan_gfx_command_writer * const com
                                      TERAKAN_STATE_DRAW_INDEX_SQ_TMP_PS);
    }
 
-   terakan_hw_state_draw_set_sq_constants_needed_by_fs(&command_writer->hw_state_draw, 0,
-                                                       fs != NULL ? fs->resources_needed : NULL,
-                                                       fs != NULL ? fs->samplers_needed : 0b0);
+   terakan_hw_state_sqc_set_needed_by_fs(&command_writer->hw_state_sqc, 0,
+                                         fs != NULL ? fs->resources_needed : NULL,
+                                         fs != NULL ? fs->samplers_needed : 0b0);
 
    command_writer->push_constants_state.usage_fragment =
       fs != NULL ? fs->push_constants_usage : (struct terakan_push_constants_usage){};
@@ -1062,15 +1060,15 @@ terakan_state_draw_apply_cb_color_uav(struct terakan_gfx_command_writer * const 
          uint32_t uav_immediate_resource[8];
          terakan_color_descriptor_info_to_uav_immediate_resource(device, uav_color->info,
                                                                  uav_immediate_resource);
-         terakan_hw_state_draw_set_sq_resource_fs(&command_writer->hw_state_draw,
-                                                  uav_immediate_resource_index,
-                                                  device->uav_immediate_bo, uav_immediate_resource);
+         terakan_hw_state_sqc_set_resource_fs(&command_writer->hw_state_sqc,
+                                              uav_immediate_resource_index,
+                                              device->uav_immediate_bo, uav_immediate_resource);
          uav_cb_target_mask |= (uint32_t)0xF << (4 * uav_color_index);
       } else {
          terakan_hw_state_draw_set_cb_color(&command_writer->hw_state_draw, uav_color_index, NULL,
                                             NULL, NULL, true);
-         terakan_hw_state_draw_set_sq_resource_fs(&command_writer->hw_state_draw,
-                                                  uav_immediate_resource_index, NULL, NULL);
+         terakan_hw_state_sqc_set_resource_fs(&command_writer->hw_state_sqc,
+                                              uav_immediate_resource_index, NULL, NULL);
       }
       ++uav_zero_based_index;
    }

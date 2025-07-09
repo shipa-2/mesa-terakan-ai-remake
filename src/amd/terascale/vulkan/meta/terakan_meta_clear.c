@@ -292,8 +292,8 @@ terakan_CmdClearColorImage(VkCommandBuffer const commandBuffer, VkImage const im
 
    command_writer->push_constants_state.up_to_date_push_constants_bound_to_stages &=
       ~VK_SHADER_STAGE_FRAGMENT_BIT;
-   terakan_hw_state_draw_set_sq_kcache_fs(
-      &command_writer->hw_state_draw, TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS,
+   terakan_hw_state_sqc_set_kcache_fs(
+      &command_writer->hw_state_sqc, TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS,
       DIV_ROUND_UP(sizeof(uint32_t) * TERAKAN_META_CLEAR_COLOR_CONSTS_COUNT,
                    TERAKAN_KCACHE_HW_LINE_BYTES),
       constants_bo, constants_va_lines);
@@ -544,8 +544,8 @@ terakan_CmdClearAttachments(VkCommandBuffer const commandBuffer, uint32_t const 
             return;
          }
          memcpy(constants_mapping, constants, sizeof(constants));
-         terakan_hw_state_draw_set_sq_kcache_fs(
-            &command_writer->hw_state_draw, TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS,
+         terakan_hw_state_sqc_set_kcache_fs(
+            &command_writer->hw_state_sqc, TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS,
             DIV_ROUND_UP(sizeof(constants), TERAKAN_KCACHE_HW_LINE_BYTES), constants_bo,
             constants_va_lines);
       }

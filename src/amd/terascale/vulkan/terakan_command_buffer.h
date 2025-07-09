@@ -268,11 +268,12 @@ struct terakan_gfx_command_writer {
    enum terakan_barrier_action_flags post_depth_stencil_image_copy_write_barrier_actions;
 
    struct terakan_hw_state_draw hw_state_draw;
+   struct terakan_hw_state_sqc hw_state_sqc;
 
-   /* Modifies hw_state_draw. */
+   /* Modifies hw_state_sqc. */
    struct terakan_push_constants_state push_constants_state;
 
-   /* Modifies hw_state_draw and push_constants_state. */
+   /* Modifies hw_state_draw, hw_state_sqc, and push_constants_state. */
    struct terakan_state_draw state_draw;
 };
 
