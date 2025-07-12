@@ -537,7 +537,8 @@ terakan_meta_emit_rect_3_vertices_draw(struct terakan_gfx_command_writer * const
       /* terakan_meta_begin_index_immediate_32 sets VGT_INDEX_TYPE to non-endian-swapped. */
       util_memcpy_cpu_to_le32(index_buffer_mapping, vertices, sizeof(vertices));
 
-      packet = terakan_gfx_command_writer_emit_with_bo(command_writer, 2 + 5, false, 1, 0, 1);
+      packet = terakan_gfx_command_writer_emit_with_bo(
+         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DRAW, 2 + 5, 1, 0, 1);
       if (unlikely(packet == NULL)) {
          return;
       }
@@ -567,7 +568,8 @@ terakan_meta_emit_rect_3_vertices_draw(struct terakan_gfx_command_writer * const
       return;
    }
 
-   packet = terakan_gfx_command_writer_emit(command_writer, 2 + 3 + ARRAY_SIZE(vertices), false);
+   packet = terakan_gfx_command_writer_emit(
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DRAW, 2 + 3 + ARRAY_SIZE(vertices));
    if (unlikely(packet == NULL)) {
       return;
    }

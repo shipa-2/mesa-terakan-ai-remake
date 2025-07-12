@@ -105,11 +105,9 @@ terakan_set_vertex_instance_offsets(struct terakan_gfx_command_writer * const co
 void
 terakan_before_hw_draw(struct terakan_gfx_command_writer * const command_writer)
 {
-   terakan_hw_state_draw_emit_modified(command_writer);
-   terakan_hw_state_sqc_emit_modified(command_writer);
-
-   /* Insert barriers after emitting the state changes, not before, so state changes are not blocked
-    * by the barriers in the CP, and new work can begin as soon as possible.
+   /* TODO(Triang3l): Maybe insert barriers after emitting the state changes in command emission,
+    * not before, so state changes are not blocked by the barriers in the CP, and new work can begin
+    * as soon as possible.
     */
    terakan_barrier_emit_pending_actions(command_writer);
 }
@@ -141,7 +139,8 @@ terakan_CmdDraw(VkCommandBuffer const commandBuffer, uint32_t const vertexCount,
 
    terakan_before_draw(command_writer);
 
-   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 3, false);
+   uint32_t * packet = terakan_gfx_command_writer_emit(
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DRAW, 2 + 3);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -174,7 +173,8 @@ terakan_CmdDrawIndexed(VkCommandBuffer const commandBuffer, uint32_t const index
 
    terakan_before_draw(command_writer);
 
-   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 4, false);
+   uint32_t * packet = terakan_gfx_command_writer_emit(
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DRAW, 2 + 4);
    if (unlikely(packet == NULL)) {
       return;
    }

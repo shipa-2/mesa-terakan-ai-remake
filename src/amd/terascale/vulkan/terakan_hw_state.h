@@ -129,8 +129,8 @@ enum terakan_hw_state_draw_index {
    TERAKAN_HW_STATE_DRAW_INDEX_COUNT,
 };
 
-/* State applied before performing application's or internal draws, and reapplied when switching to
- * a new indirect buffer in the Vulkan command buffer.
+/* State applied before performing application's or internal draws, and fully reapplied when first
+ * drawing in a new indirect buffer in the Vulkan command buffer.
  */
 struct terakan_hw_state_draw {
    /* Whether each state item has ever been written, and thus has a value that's not complete junk,
@@ -411,9 +411,9 @@ void terakan_hw_state_draw_set_cb_color(struct terakan_hw_state_draw * state, ui
 void terakan_hw_state_draw_set_cb_color1_dual_source(struct terakan_hw_state_draw * state,
                                                      uint32_t source_format);
 
-void terakan_hw_state_draw_emit_modified(struct terakan_gfx_command_writer * command_writer);
+void terakan_hw_state_draw_indirect_buffer_begun(struct terakan_hw_state_draw * state);
 
-void terakan_hw_state_draw_emit_all(struct terakan_gfx_command_writer * command_writer);
+void terakan_hw_state_draw_emit_modified(struct terakan_gfx_command_writer * command_writer);
 
 void terakan_hw_state_draw_reset(struct terakan_hw_state_draw * state);
 

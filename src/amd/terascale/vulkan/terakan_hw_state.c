@@ -78,7 +78,8 @@ uint32_t const terakan_standard_sample_max_dists[5] = {0, 4, 6, 7, 8};
 static void
 terakan_hw_state_draw_emit_vgt_index_type(struct terakan_gfx_command_writer * const command_writer)
 {
-   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2, true);
+   uint32_t * packet = terakan_gfx_command_writer_emit(
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -90,8 +91,8 @@ terakan_hw_state_draw_emit_vgt_index_type(struct terakan_gfx_command_writer * co
 static void
 terakan_hw_state_draw_emit_vgt_index_buffer(struct terakan_gfx_command_writer * const command_writer)
 {
-   uint32_t * packet =
-      terakan_gfx_command_writer_emit_with_bo(command_writer, 3 + 2, true, 1, 0, 1);
+   uint32_t * packet = terakan_gfx_command_writer_emit_with_bo(
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 3 + 2, 1, 0, 1);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -117,7 +118,8 @@ static void
 terakan_hw_state_draw_emit_vgt_primitive_type(
    struct terakan_gfx_command_writer * const command_writer)
 {
-   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, true);
+   uint32_t * packet = terakan_gfx_command_writer_emit(
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 1);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -130,7 +132,8 @@ terakan_hw_state_draw_emit_vgt_primitive_type(
 static void
 terakan_hw_state_draw_emit_vgt_index_offset(struct terakan_gfx_command_writer * const command_writer)
 {
-   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, true);
+   uint32_t * packet = terakan_gfx_command_writer_emit(
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 1);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -201,11 +204,11 @@ terakan_hw_state_draw_emit_sq_rings(struct terakan_gfx_command_writer * const co
        * conditionally.
        */
 
-      uint32_t * packet =
-         terakan_gfx_command_writer_emit_with_bo(command_writer, packet_dwords, true, 1,
-                                                 2 * base_size_emit_needed_for_rings_per_se_count +
-                                                    base_size_emit_needed_for_rings_broadcast_count,
-                                                 0);
+      uint32_t * packet = terakan_gfx_command_writer_emit_with_bo(
+         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, packet_dwords, 1,
+         2 * base_size_emit_needed_for_rings_per_se_count +
+            base_size_emit_needed_for_rings_broadcast_count,
+         0);
       if (unlikely(packet == NULL)) {
          return;
       }
@@ -320,7 +323,8 @@ terakan_hw_state_draw_emit_sq_rings(struct terakan_gfx_command_writer * const co
       command_writer->hw_state_draw.sq_rings.item_sizes_modified &
       command_writer->hw_state_draw.sq_rings.needed;
    u_foreach_bit (ring_index, item_size_emit_needed_for_rings) {
-      uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, true);
+      uint32_t * packet = terakan_gfx_command_writer_emit(
+         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 1);
       if (unlikely(packet == NULL)) {
          return;
       }
@@ -335,8 +339,8 @@ terakan_hw_state_draw_emit_sq_rings(struct terakan_gfx_command_writer * const co
 static void
 terakan_hw_state_draw_emit_sq_pgm_fs(struct terakan_gfx_command_writer * const command_writer)
 {
-   uint32_t * packet =
-      terakan_gfx_command_writer_emit_with_bo(command_writer, 2 + 1, true, 1, 1, 0);
+   uint32_t * packet = terakan_gfx_command_writer_emit_with_bo(
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 1, 1, 1, 0);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -371,8 +375,8 @@ terakan_hw_state_draw_emit_sq_pgm_vs(struct terakan_gfx_command_writer * const c
       /* R_02881C_PA_CL_VS_OUT_CNTL */
       2 + 1;
 
-   uint32_t * packet =
-      terakan_gfx_command_writer_emit_with_bo(command_writer, packet_dwords, true, 1, 1, 0);
+   uint32_t * packet = terakan_gfx_command_writer_emit_with_bo(
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, packet_dwords, 1, 1, 0);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -429,8 +433,8 @@ terakan_hw_state_draw_emit_sq_pgm_ps(struct terakan_gfx_command_writer * const c
       /* R_02823C_CB_SHADER_MASK */
       2 + 1;
 
-   uint32_t * packet =
-      terakan_gfx_command_writer_emit_with_bo(command_writer, packet_dwords, true, 1, 1, 0);
+   uint32_t * packet = terakan_gfx_command_writer_emit_with_bo(
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, packet_dwords, 1, 1, 0);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -482,7 +486,8 @@ static void
 terakan_hw_state_draw_emit_sq_vtx_start_inst_loc(
    struct terakan_gfx_command_writer * const command_writer)
 {
-   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, true);
+   uint32_t * packet = terakan_gfx_command_writer_emit(
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 1);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -495,7 +500,8 @@ terakan_hw_state_draw_emit_sq_vtx_start_inst_loc(
 static void
 terakan_hw_state_draw_emit_pa_cl_clip_cntl(struct terakan_gfx_command_writer * const command_writer)
 {
-   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, true);
+   uint32_t * packet = terakan_gfx_command_writer_emit(
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 1);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -509,7 +515,8 @@ static void
 terakan_hw_state_draw_emit_pa_su_sc_mode_cntl(
    struct terakan_gfx_command_writer * const command_writer)
 {
-   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, true);
+   uint32_t * packet = terakan_gfx_command_writer_emit(
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 1);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -522,7 +529,8 @@ terakan_hw_state_draw_emit_pa_su_sc_mode_cntl(
 static void
 terakan_hw_state_draw_emit_pa_cl_vte_cntl(struct terakan_gfx_command_writer * const command_writer)
 {
-   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, true);
+   uint32_t * packet = terakan_gfx_command_writer_emit(
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 1);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -536,7 +544,8 @@ static void
 terakan_hw_state_draw_emit_pa_sc_mode_cntl_0(
    struct terakan_gfx_command_writer * const command_writer)
 {
-   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, true);
+   uint32_t * packet = terakan_gfx_command_writer_emit(
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 1);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -550,7 +559,8 @@ static void
 terakan_hw_state_draw_emit_pa_su_poly_offset_db_fmt_cntl(
    struct terakan_gfx_command_writer * const command_writer)
 {
-   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, true);
+   uint32_t * packet = terakan_gfx_command_writer_emit(
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 1);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -568,7 +578,8 @@ terakan_hw_state_draw_emit_pa_su_poly_offset_clamp_scale_offset(
       (R_028B8C_PA_SU_POLY_OFFSET_BACK_OFFSET - R_028B7C_PA_SU_POLY_OFFSET_CLAMP) /
          sizeof(uint32_t) +
       1;
-   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + register_count, true);
+   uint32_t * packet = terakan_gfx_command_writer_emit(
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + register_count);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -589,7 +600,8 @@ terakan_hw_state_draw_emit_pa_su_poly_offset_clamp_scale_offset(
 static void
 terakan_hw_state_draw_emit_pa_cl_gb(struct terakan_gfx_command_writer * const command_writer)
 {
-   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 4, true);
+   uint32_t * packet = terakan_gfx_command_writer_emit(
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 4);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -629,7 +641,8 @@ terakan_hw_state_draw_emit_pa_sc_aa_samples(struct terakan_gfx_command_writer * 
       pa_sc_aa_config |= S_028BE0_MSAA_EXPOSED_SAMPLES(num_samples_log2);
 
       uint32_t * packet = terakan_gfx_command_writer_emit(
-         command_writer, (2 + 2) + (2 + 1) + (2 + num_sample_loc_dwords) * 4, true);
+         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE,
+         (2 + 2) + (2 + 1) + (2 + num_sample_loc_dwords) * 4);
       if (unlikely(packet == NULL)) {
          return;
       }
@@ -660,7 +673,8 @@ terakan_hw_state_draw_emit_pa_sc_aa_samples(struct terakan_gfx_command_writer * 
       terakan_gfx_command_writer_emit_done(command_writer, packet);
    } else {
       uint32_t * packet = terakan_gfx_command_writer_emit(
-         command_writer, (2 + 1) + (2 + num_sample_loc_dwords * 4), true);
+         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE,
+         (2 + 1) + (2 + num_sample_loc_dwords * 4));
       if (unlikely(packet == NULL)) {
          return;
       }
@@ -688,7 +702,8 @@ terakan_hw_state_draw_emit_pa_sc_aa_mask(struct terakan_gfx_command_writer * con
    aa_mask |= aa_mask << 16;
 
    if (terakan_gfx_command_writer_physical_device(command_writer)->chip_family_info.is_r9xx) {
-      uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 2, true);
+      uint32_t * packet = terakan_gfx_command_writer_emit(
+         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 2);
       if (unlikely(packet == NULL)) {
          return;
       }
@@ -701,7 +716,8 @@ terakan_hw_state_draw_emit_pa_sc_aa_mask(struct terakan_gfx_command_writer * con
       aa_mask &= (((uint32_t)1 << 8) - 1) | ((((uint32_t)1 << 8) - 1) << 16);
       aa_mask |= aa_mask << 8;
 
-      uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, true);
+      uint32_t * packet = terakan_gfx_command_writer_emit(
+         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 1);
       if (unlikely(packet == NULL)) {
          return;
       }
@@ -721,7 +737,8 @@ terakan_hw_state_draw_emit_db_depth_stencil_buffer(
 
    struct terakan_bo const * const bo = command_writer->hw_state_draw.db_depth_stencil_buffer.bo;
    if (bo == NULL) {
-      packet = terakan_gfx_command_writer_emit(command_writer, 2 + 2, true);
+      packet = terakan_gfx_command_writer_emit(
+         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 2);
       if (unlikely(packet == NULL)) {
          return;
       }
@@ -740,7 +757,8 @@ terakan_hw_state_draw_emit_db_depth_stencil_buffer(
    bool const stencil_bound = G_028044_FORMAT(descriptor->stencil_info) != V_028044_STENCIL_INVALID;
 
    if (!z_bound && !stencil_bound) {
-      packet = terakan_gfx_command_writer_emit(command_writer, 2 + 2, true);
+      packet = terakan_gfx_command_writer_emit(
+         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 2);
       if (unlikely(packet == NULL)) {
          return;
       }
@@ -753,7 +771,8 @@ terakan_hw_state_draw_emit_db_depth_stencil_buffer(
    }
 
    /* R_028008_DB_DEPTH_VIEW */
-   packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, true);
+   packet = terakan_gfx_command_writer_emit(command_writer,
+                                            TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 1);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -767,7 +786,8 @@ terakan_hw_state_draw_emit_db_depth_stencil_buffer(
       uint32_t const combined_depth_stencil_register_count =
          (R_02805C_DB_DEPTH_SLICE - R_028040_DB_Z_INFO) / sizeof(uint32_t) + 1;
       packet = terakan_gfx_command_writer_emit_with_bo(
-         command_writer, 2 + combined_depth_stencil_register_count, true, 1, 4, 0);
+         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE,
+         2 + combined_depth_stencil_register_count, 1, 4, 0);
       if (unlikely(packet == NULL)) {
          return;
       }
@@ -810,8 +830,8 @@ terakan_hw_state_draw_emit_db_depth_stencil_buffer(
          2 + 1 +
          /* R_028058_DB_DEPTH_SIZE, R_02805C_DB_DEPTH_SLICE */
          2 + 2;
-      packet =
-         terakan_gfx_command_writer_emit_with_bo(command_writer, packet_dwords, true, 1, 2, 0);
+      packet = terakan_gfx_command_writer_emit_with_bo(
+         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, packet_dwords, 1, 2, 0);
       if (unlikely(packet == NULL)) {
          return;
       }
@@ -853,7 +873,8 @@ static void
 terakan_hw_state_draw_emit_db_render_override(
    struct terakan_gfx_command_writer * const command_writer)
 {
-   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, true);
+   uint32_t * packet = terakan_gfx_command_writer_emit(
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 1);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -867,7 +888,8 @@ static void
 terakan_hw_state_draw_emit_db_stencilrefmask(
    struct terakan_gfx_command_writer * const command_writer)
 {
-   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 2, true);
+   uint32_t * packet = terakan_gfx_command_writer_emit(
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 2);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -881,7 +903,8 @@ terakan_hw_state_draw_emit_db_stencilrefmask(
 static void
 terakan_hw_state_draw_emit_db_depth_control(struct terakan_gfx_command_writer * const command_writer)
 {
-   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, true);
+   uint32_t * packet = terakan_gfx_command_writer_emit(
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 1);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -895,7 +918,8 @@ static void
 terakan_hw_state_draw_emit_db_shader_control(
    struct terakan_gfx_command_writer * const command_writer)
 {
-   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, true);
+   uint32_t * packet = terakan_gfx_command_writer_emit(
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 1);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -908,7 +932,8 @@ terakan_hw_state_draw_emit_db_shader_control(
 static void
 terakan_hw_state_draw_emit_cb_target_mask(struct terakan_gfx_command_writer * const command_writer)
 {
-   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, true);
+   uint32_t * packet = terakan_gfx_command_writer_emit(
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 1);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -921,7 +946,8 @@ terakan_hw_state_draw_emit_cb_target_mask(struct terakan_gfx_command_writer * co
 static void
 terakan_hw_state_draw_emit_cb_blend_rgba(struct terakan_gfx_command_writer * const command_writer)
 {
-   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 4, true);
+   uint32_t * packet = terakan_gfx_command_writer_emit(
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 4);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -935,7 +961,8 @@ terakan_hw_state_draw_emit_cb_blend_rgba(struct terakan_gfx_command_writer * con
 static void
 terakan_hw_state_draw_emit_cb_color_control(struct terakan_gfx_command_writer * const command_writer)
 {
-   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, true);
+   uint32_t * packet = terakan_gfx_command_writer_emit(
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 1);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -980,7 +1007,8 @@ terakan_hw_state_draw_emit_viewport(struct terakan_gfx_command_writer * const co
 
    if (state->viewport_counts.scale_offset_z_min_max_emitted < state->viewport_counts.needed) {
       packet = terakan_gfx_command_writer_emit(
-         command_writer, (2 * 2) + (2 * 3 + 2) * state->viewport_counts.needed, true);
+         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE,
+         (2 * 2) + (2 * 3 + 2) * state->viewport_counts.needed);
       if (unlikely(packet == NULL)) {
          return;
       }
@@ -1008,7 +1036,8 @@ terakan_hw_state_draw_emit_viewport(struct terakan_gfx_command_writer * const co
 
    if (state->viewport_counts.scissor_emitted < state->viewport_counts.needed) {
       packet = terakan_gfx_command_writer_emit(command_writer,
-                                               2 + 2 * state->viewport_counts.needed, true);
+                                               TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE,
+                                               2 + 2 * state->viewport_counts.needed);
       if (unlikely(packet == NULL)) {
          return;
       }
@@ -1040,7 +1069,8 @@ terakan_hw_state_draw_emit_cb_blend_control(struct terakan_gfx_command_writer * 
          1;
       uint32_t const range_length = range_end - range_start;
 
-      uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + range_length, true);
+      uint32_t * packet = terakan_gfx_command_writer_emit(
+         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + range_length);
       if (unlikely(packet == NULL)) {
          return;
       }
@@ -1068,7 +1098,8 @@ terakan_hw_state_draw_emit_cb_immed(struct terakan_gfx_command_writer * const co
 
    unsigned const modified_count = util_bitcount(modified);
    uint32_t * packet = terakan_gfx_command_writer_emit_with_bo(
-      command_writer, (2 + 1) * modified_count, true, 1, modified_count, 0);
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, (2 + 1) * modified_count, 1,
+      modified_count, 0);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -1125,7 +1156,7 @@ terakan_hw_state_draw_emit_cb_color(struct terakan_gfx_command_writer * const co
             sizeof(uint32_t);
 
          uint32_t * packet = terakan_gfx_command_writer_emit_with_bo(
-            command_writer, 2 + register_count, true, 1,
+            command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + register_count, 1,
             1 + (need_attrib_relocation ? 1 : 0) + (has_meta ? 2 : 0), 0);
          if (unlikely(packet == NULL)) {
             return;
@@ -1194,7 +1225,8 @@ terakan_hw_state_draw_emit_cb_color(struct terakan_gfx_command_writer * const co
           * dual-source blending, to the specified value, not requiring any relocations.
           */
          assert(G_028C70_FORMAT(descriptor->info) == TERASCALE_FORMAT_INDEX_INVALID);
-         uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, true);
+         uint32_t * packet = terakan_gfx_command_writer_emit(
+            command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 1);
          if (unlikely(packet == NULL)) {
             return;
          }
@@ -1363,30 +1395,12 @@ terakan_hw_state_draw_set_cb_color1_dual_source(struct terakan_hw_state_draw * c
 }
 
 void
-terakan_hw_state_draw_emit_modified(struct terakan_gfx_command_writer * const command_writer)
+terakan_hw_state_draw_indirect_buffer_begun(struct terakan_hw_state_draw * const state)
 {
-   struct terakan_hw_state_draw * const state = &command_writer->hw_state_draw;
-   unsigned state_index;
-   BITSET_FOREACH_SET (state_index, state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_COUNT) {
-      terakan_hw_state_draw_emit_functions[state_index](command_writer);
-      if (unlikely(!BITSET_TEST(state->state_modified, state_index))) {
-         /* If state_modified was zeroed during an emit call, switched to another indirect buffer,
-          * and all state has been applied.
-          */
-         return;
-      }
-      BITSET_CLEAR(state->state_modified, state_index);
-   }
-}
-
-void
-terakan_hw_state_draw_emit_all(struct terakan_gfx_command_writer * const command_writer)
-{
-   struct terakan_hw_state_draw * const state = &command_writer->hw_state_draw;
-
-   BITSET_ZERO(state->state_modified);
+   BITSET_COPY(state->state_modified, state->state_ever_written);
 
    /* Make sure emission callbacks with additional modification tracking emit everything needed. */
+
    state->sq_rings.item_sizes_modified = 0b0;
    for (size_t shader_ring_index = 0; shader_ring_index < TERAKAN_SHADER_RING_INDEX_COUNT;
         ++shader_ring_index) {
@@ -1394,16 +1408,26 @@ terakan_hw_state_draw_emit_all(struct terakan_gfx_command_writer * const command
          state->sq_rings.item_sizes_modified |= BITFIELD_BIT(shader_ring_index);
       }
    }
+
    state->viewport_counts.scale_offset_z_min_max_emitted = 0;
    state->viewport_counts.scissor_emitted = 0;
-   state->cb_blend_control.modified = state->cb_blend_control.ever_written;
-   state->cb_immed.modified = state->cb_immed.ever_written;
-   state->cb_color.modified = state->cb_color.ever_written;
 
+   state->cb_blend_control.modified = state->cb_blend_control.ever_written;
+
+   state->cb_immed.modified = state->cb_immed.ever_written;
+
+   state->cb_color.modified = state->cb_color.ever_written;
+}
+
+void
+terakan_hw_state_draw_emit_modified(struct terakan_gfx_command_writer * const command_writer)
+{
+   struct terakan_hw_state_draw * const state = &command_writer->hw_state_draw;
    unsigned state_index;
-   BITSET_FOREACH_SET (state_index, state->state_ever_written, TERAKAN_HW_STATE_DRAW_INDEX_COUNT) {
+   BITSET_FOREACH_SET (state_index, state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_COUNT) {
       terakan_hw_state_draw_emit_functions[state_index](command_writer);
    }
+   BITSET_ZERO(state->state_modified);
 }
 
 void
@@ -1957,9 +1981,9 @@ terakan_hw_state_sqc_emit_kcache_buffer(
     */
    bool const not_empty = buffer->size_lines != 0;
 
-   uint32_t * packet =
-      terakan_gfx_command_writer_emit_with_bo(command_writer, 2 + 1 + (not_empty ? 2 + 1 : 0), true,
-                                              not_empty ? 1 : 0, not_empty ? 1 : 0, 0);
+   uint32_t * packet = terakan_gfx_command_writer_emit_with_bo(
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE,
+      2 + 1 + (not_empty ? 2 + 1 : 0), not_empty ? 1 : 0, not_empty ? 1 : 0, 0);
    if (unlikely(packet == NULL)) {
       return false;
    }
@@ -1994,7 +2018,8 @@ terakan_hw_state_sqc_emit_resource(struct terakan_gfx_command_writer * const com
    uint32_t * packet;
 
    if (!not_null) {
-      packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, true);
+      packet = terakan_gfx_command_writer_emit(
+         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 1);
       if (unlikely(packet == NULL)) {
          return false;
       }
@@ -2015,8 +2040,8 @@ terakan_hw_state_sqc_emit_resource(struct terakan_gfx_command_writer * const com
       is_texture && (!is_multisampled || G_03000C_MIP_ADDRESS(descriptor[3]) != 0);
 
    packet = terakan_gfx_command_writer_emit_with_bo(
-      command_writer, 2 + 8, true, 1, is_texture ? 1 + (uint32_t)relocate_mips_or_fmask : 0,
-      is_texture ? 0 : 1);
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 8, 1,
+      is_texture ? 1 + (uint32_t)relocate_mips_or_fmask : 0, is_texture ? 0 : 1);
    if (unlikely(packet == NULL)) {
       return false;
    }
@@ -2060,7 +2085,8 @@ static bool
 terakan_hw_state_sqc_emit_sampler(struct terakan_gfx_command_writer * const command_writer,
                                   uint32_t const global_index, uint32_t const sampler[3])
 {
-   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 3, true);
+   uint32_t * packet = terakan_gfx_command_writer_emit(
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 3);
    if (unlikely(packet == NULL)) {
       return false;
    }
@@ -2077,7 +2103,8 @@ terakan_hw_state_sqc_emit_sampler_border_color(
    struct terakan_gfx_command_writer * const command_writer, uint32_t const index_register_offset,
    uint32_t const stage_local_index, float const border_color[4])
 {
-   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 5, true);
+   uint32_t * packet = terakan_gfx_command_writer_emit(
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 5);
    if (unlikely(packet == NULL)) {
       return false;
    }

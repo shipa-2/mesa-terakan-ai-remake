@@ -47,8 +47,8 @@
 void
 terakan_cp_dma_sync_cp_me(struct terakan_gfx_command_writer * const command_writer)
 {
-   uint32_t * packet =
-      terakan_gfx_command_writer_emit_with_bo(command_writer, 1 + 5, false, 1, 0, 2);
+   uint32_t * packet = terakan_gfx_command_writer_emit_with_bo(
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_OTHER, 1 + 5, 1, 0, 2);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -112,7 +112,8 @@ terakan_cp_dma_copy(struct terakan_gfx_command_writer * const command_writer,
    while (src_aligned_size_remaining != 0) {
       uint32_t const command_copy_size =
          (uint32_t)MIN2(src_aligned_size_remaining, TERAKAN_CP_DMA_MAX_ALIGNED_COPY_BYTE_COUNT);
-      packet = terakan_gfx_command_writer_emit_with_bo(command_writer, 1 + 5, false, 2, 0, 2);
+      packet = terakan_gfx_command_writer_emit_with_bo(
+         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_OTHER, 1 + 5, 2, 0, 2);
       if (unlikely(packet == NULL)) {
          return;
       }
@@ -141,7 +142,8 @@ terakan_cp_dma_copy(struct terakan_gfx_command_writer * const command_writer,
    }
 
    if (src_misaligned_head_size != 0) {
-      packet = terakan_gfx_command_writer_emit_with_bo(command_writer, 1 + 5, false, 2, 0, 2);
+      packet = terakan_gfx_command_writer_emit_with_bo(
+         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_OTHER, 1 + 5, 2, 0, 2);
       if (unlikely(packet == NULL)) {
          return;
       }
@@ -169,7 +171,8 @@ terakan_cp_dma_copy(struct terakan_gfx_command_writer * const command_writer,
    /* Align the internal total amount counter. */
    VkDeviceSize const size_misalignment = size & (TERAKAN_CP_DMA_COPY_OPTIMAL_ALIGNMENT - 1);
    if (size_misalignment != 0) {
-      packet = terakan_gfx_command_writer_emit_with_bo(command_writer, 1 + 5, false, 1, 0, 2);
+      packet = terakan_gfx_command_writer_emit_with_bo(
+         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_OTHER, 1 + 5, 1, 0, 2);
       if (unlikely(packet == NULL)) {
          return;
       }
@@ -268,8 +271,8 @@ terakan_CmdFillBuffer(VkCommandBuffer const commandBuffer, VkBuffer const dstBuf
       uint32_t command_fill_byte_count = (uint32_t)MIN2(
          bytes_end - bytes_next, TERAKAN_CP_DMA_MAX_BYTE_COUNT & ~(uint32_t)(sizeof(uint32_t) - 1));
 
-      uint32_t * packet =
-         terakan_gfx_command_writer_emit_with_bo(command_writer, 1 + 5, false, 1, 0, 1);
+      uint32_t * packet = terakan_gfx_command_writer_emit_with_bo(
+         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_OTHER, 1 + 5, 1, 0, 1);
       if (unlikely(packet == NULL)) {
          return;
       }

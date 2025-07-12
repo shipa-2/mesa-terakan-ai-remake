@@ -427,7 +427,7 @@ terakan_gfx_command_writer_end_indirect_buffer(
    struct terakan_gfx_command_writer * const command_writer)
 {
 #ifndef NDEBUG
-   assert(!command_writer->is_emitting &&
+   assert(!command_writer->is_emission_unclosed &&
           "terakan_gfx_command_writer_emit_done must be called with the final append pointer after "
           "every command emission");
 #endif
@@ -450,7 +450,8 @@ terakan_gfx_command_writer_end_indirect_buffer(
 }
 
 static void
-terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * const command_writer)
+terakan_gfx_command_writer_emit_preamble_and_sq_resource_clear(
+   struct terakan_gfx_command_writer * const command_writer)
 {
    /* According the Gallium R600 driver, the order of register setting matters, and sometimes the
     * wrong order may cause incorrect behavior or GPU hangs.
@@ -474,7 +475,8 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
    uint32_t * packet;
 
    /* Disable register shadowing before setting any registers. */
-   packet = terakan_gfx_command_writer_emit(command_writer, 3, false);
+   packet = terakan_gfx_command_writer_emit(command_writer,
+                                            TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 3);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -489,7 +491,8 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
        * allow it in submissions without virtual memory, but WDDM Radeon Software as of
        * 15.301.1901 does it in submissions after CONTEXT_CONTROL.
        */
-      packet = terakan_gfx_command_writer_emit(command_writer, 2, false);
+      packet = terakan_gfx_command_writer_emit(command_writer,
+                                               TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2);
       if (unlikely(packet == NULL)) {
          return;
       }
@@ -505,7 +508,8 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
    if (!is_r9xx) {
       /* Workaround for hardware issues with dynamic GPRs - must set all limits to 240 (in units of
        * 8 registers) instead of 0. */
-      packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, false);
+      packet = terakan_gfx_command_writer_emit(
+         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 1);
       if (unlikely(packet == NULL)) {
          return;
       }
@@ -747,7 +751,9 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
       0,
    };
 
-   packet = terakan_gfx_command_writer_emit(command_writer, ARRAY_SIZE(draw_context_regs), false);
+   packet = terakan_gfx_command_writer_emit(command_writer,
+                                            TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE,
+                                            ARRAY_SIZE(draw_context_regs));
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -757,7 +763,8 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
 
    if (is_r9xx) {
       /* TODO(Triang3l): Move to hw_state_draw. */
-      packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, false);
+      packet = terakan_gfx_command_writer_emit(
+         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 1);
       if (unlikely(packet == NULL)) {
          return;
       }
@@ -766,7 +773,8 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
       *packet++ = S_028AA8_PRIMGROUP_SIZE(128 - 1);
       terakan_gfx_command_writer_emit_done(command_writer, packet);
 
-      packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, false);
+      packet = terakan_gfx_command_writer_emit(
+         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 1);
       if (unlikely(packet == NULL)) {
          return;
       }
@@ -776,7 +784,8 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
       terakan_gfx_command_writer_emit_done(command_writer, packet);
 
       /* TODO(Triang3l): Move to hw_state_draw. */
-      packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, false);
+      packet = terakan_gfx_command_writer_emit(
+         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 1);
       if (unlikely(packet == NULL)) {
          return;
       }
@@ -787,7 +796,8 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
       terakan_gfx_command_writer_emit_done(command_writer, packet);
    }
 
-   packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, false);
+   packet = terakan_gfx_command_writer_emit(command_writer,
+                                            TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 1);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -812,7 +822,8 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
                    S_008C00_GS_PRIO(2) | S_008C00_VS_PRIO(1) | S_008C00_PS_PRIO(0) |
                    S_008C00_CS_PRIO(0);
    }
-   packet = terakan_gfx_command_writer_emit(command_writer, 2 + 2 + 2 + 2 + 2, false);
+   packet = terakan_gfx_command_writer_emit(
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 2 + 2 + 2 + 2);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -849,7 +860,8 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
    /* TODO(Triang3l): Dynamic GPR usage on R8xx - see evergreen_emit_config_state, and also disable
     * them for tessellation, see evergreen_adjust_gprs. Keep them always enabled for R9xx though.
     */
-   packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, false);
+   packet = terakan_gfx_command_writer_emit(command_writer,
+                                            TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 1);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -885,7 +897,8 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
       S_008A14_CLIP_VTX_REORDER_ENA(1) | S_008A14_NUM_CLIP_SEQ(3),
    };
 
-   packet = terakan_gfx_command_writer_emit(command_writer, ARRAY_SIZE(config_regs), false);
+   packet = terakan_gfx_command_writer_emit(
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, ARRAY_SIZE(config_regs));
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -912,7 +925,8 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
             sizeof(uint32_t) +
          1;
       packet = terakan_gfx_command_writer_emit(command_writer,
-                                               2 + sq_thread_stack_register_count + 2 + 1, false);
+                                               TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE,
+                                               2 + sq_thread_stack_register_count + 2 + 1);
       if (unlikely(packet == NULL)) {
          return;
       }
@@ -947,80 +961,39 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
                   S_008E2C_NUM_LS_LDS(TERAKAN_LIMITS_HW_LDS_SIMD_DWORD_COUNT / 2);
       terakan_gfx_command_writer_emit_done(command_writer, packet);
    }
-}
 
-static bool
-terakan_gfx_command_writer_new_indirect_buffer(
-   struct terakan_gfx_command_writer * const command_writer, bool * const all_state_emitted_out)
-{
-   terakan_gfx_command_writer_end_indirect_buffer(command_writer);
-
-   command_writer->indirect_buffer =
-      terakan_command_buffer_new_indirect_buffer(command_writer->base.command_buffer);
-   if (command_writer->indirect_buffer == NULL) {
-      return false;
-   }
-
-   terakan_bo_reference_writer_reset(&command_writer->base.bo_reference_writer,
-                                     command_writer->indirect_buffer->bo_references,
-                                     terakan_gfx_command_writer_device(command_writer)
-                                        ->command_buffer_submission_size_gfx.bo_references);
-
-   command_writer->indirect_buffer->shader_rings_bo_placeholder_reference = UINT32_MAX;
-   for (size_t shader_ring_index = 0; shader_ring_index < TERAKAN_SHADER_RING_INDEX_COUNT;
-        ++shader_ring_index) {
-      command_writer->indirect_buffer->shader_rings[shader_ring_index]
-         .set_base_argument_offsets_dwords[0] = UINT32_MAX;
-   }
-
-   command_writer->is_beginning_indirect_buffer = true;
-
-   terakan_gfx_command_writer_emit_preamble(command_writer);
-
-   /* Clear all resources in the hardware. */
-   uint32_t * packet = terakan_gfx_command_writer_emit(command_writer, 2 + 1, false);
+   /* Clear all sequencer resource constants in the hardware. */
+   packet = terakan_gfx_command_writer_emit(command_writer,
+                                            TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 1);
    if (unlikely(packet == NULL)) {
-      return false;
+      return;
    }
    *packet++ = PKT3(PKT3_SET_CTL_CONST, 1, 0);
    *packet++ = TERAKAN_CTL_CONST_OFFSET(R_03FF04_SQ_TEX_RESOURCE_CLEAR);
    *packet++ = UINT32_MAX;
    terakan_gfx_command_writer_emit_done(command_writer, packet);
+}
 
-   terakan_hw_state_sqc_indirect_buffer_begun_and_resources_cleared(&command_writer->hw_state_sqc);
-
-   bool const emit_all_state = command_writer->indirect_buffer_ever_begun;
-   if (emit_all_state) {
-      /* Re-emit the state from the previous indirect buffer. */
-      terakan_hw_state_draw_emit_all(command_writer);
-      /* `terakan_hw_state_sqc_emit_modified` will emit all needed constants after the
-       * `terakan_hw_state_sqc_indirect_buffer_begun_and_resources_cleared`.
-       */
+static void
+terakan_gfx_command_writer_emit_hw_state(
+   struct terakan_gfx_command_writer * const command_writer,
+   enum terakan_gfx_command_writer_emit_contents const contents)
+{
+   if (contents == TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DRAW) {
+      terakan_hw_state_draw_emit_modified(command_writer);
       terakan_hw_state_sqc_emit_modified(command_writer);
    }
-   command_writer->indirect_buffer_ever_begun = true;
-
-   command_writer->is_beginning_indirect_buffer = false;
-
-   if (vk_command_buffer_has_error(&command_writer->base.command_buffer->vk)) {
-      return false;
-   }
-
-   *all_state_emitted_out = emit_all_state;
-
-   return true;
 }
 
 uint32_t *
 terakan_gfx_command_writer_emit_with_bo(struct terakan_gfx_command_writer * const command_writer,
-                                        uint32_t const packet_dwords,
-                                        bool const abort_if_all_state_emitted,
-                                        uint32_t const bo_count,
+                                        enum terakan_gfx_command_writer_emit_contents const contents,
+                                        uint32_t const packet_dwords, uint32_t const bo_count,
                                         uint32_t const relocation_for_32_bits_count,
                                         uint32_t const relocation_for_40_bits_count)
 {
 #ifndef NDEBUG
-   assert(!command_writer->is_emitting &&
+   assert(!command_writer->is_emission_unclosed &&
           "terakan_gfx_command_writer_emit_done must be called with the final append pointer after "
           "every command emission");
 #endif
@@ -1032,6 +1005,21 @@ terakan_gfx_command_writer_emit_with_bo(struct terakan_gfx_command_writer * cons
 
    if (unlikely(vk_command_buffer_has_error(&command_writer->base.command_buffer->vk))) {
       return NULL;
+   }
+
+   assert(contents != TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_INVALID);
+   bool const is_inner = command_writer->is_in_outer_emit_call;
+   if (is_inner) {
+      assert((contents == TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE ||
+              contents == TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_OTHER) &&
+             "Draws and dispatches must be outer emissions, they must not be emitted by indirect "
+             "buffer setup or by hardware state applying");
+   } else {
+      assert((contents == TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DRAW ||
+              contents == TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_OTHER) &&
+             "hw_state emissions must be done only from within hw_state applying functions invoked "
+             "from outer emissions");
+      command_writer->is_in_outer_emit_call = true;
    }
 
    struct terakan_device const * const device = terakan_gfx_command_writer_device(command_writer);
@@ -1057,50 +1045,95 @@ terakan_gfx_command_writer_emit_with_bo(struct terakan_gfx_command_writer * cons
       relocation_count = 0;
    }
 
-   if (command_writer->indirect_buffer == NULL ||
-       (device->command_buffer_submission_size_gfx.indirect_buffer_dwords -
-        command_writer->indirect_buffer->indirect_buffer_size_dwords) < total_packet_dwords ||
-       (device->command_buffer_submission_size_gfx.bo_references -
-        command_writer->base.bo_reference_writer.reference_count) < bo_count ||
-       (relocation_array_used &&
-        (device->command_buffer_submission_size_gfx.relocations -
-         command_writer->indirect_buffer->relocation_count) < relocation_count)) {
-      assert(!command_writer->is_beginning_indirect_buffer);
-      if (unlikely(command_writer->is_beginning_indirect_buffer)) {
-         /* Possibly a recursive overflow while moving to the new indirect buffer, if this happens,
-          * it's a Terakan bug.
+   if (command_writer->indirect_buffer != NULL) {
+      if (!is_inner) {
+         /* Apply the modified tracked state in the existing indirect buffer. */
+         terakan_gfx_command_writer_emit_hw_state(command_writer, contents);
+      }
+
+      if (command_writer->indirect_buffer != NULL &&
+          ((device->command_buffer_submission_size_gfx.indirect_buffer_dwords -
+            command_writer->indirect_buffer->indirect_buffer_size_dwords) < total_packet_dwords ||
+           (device->command_buffer_submission_size_gfx.bo_references -
+            command_writer->base.bo_reference_writer.reference_count) < bo_count ||
+           (relocation_array_used &&
+            (device->command_buffer_submission_size_gfx.relocations -
+             command_writer->indirect_buffer->relocation_count) < relocation_count))) {
+         /* Space exhausted in the current indirect buffer, either by inner emissions, or by this
+          * emission.
           */
+         terakan_gfx_command_writer_end_indirect_buffer(command_writer);
+         assert(command_writer->indirect_buffer == NULL);
+      }
+   }
+
+   if (command_writer->indirect_buffer == NULL) {
+      if (is_inner) {
+         /* The outer emission that invoked this inner emission will handle the overflow. */
+         return NULL;
+      }
+
+      /* Start a new indirect buffer. */
+
+      command_writer->indirect_buffer =
+         terakan_command_buffer_new_indirect_buffer(command_writer->base.command_buffer);
+      if (command_writer->indirect_buffer == NULL) {
+         if (!is_inner) {
+            command_writer->is_in_outer_emit_call = false;
+         }
+         return NULL;
+      }
+
+      terakan_bo_reference_writer_reset(&command_writer->base.bo_reference_writer,
+                                        command_writer->indirect_buffer->bo_references,
+                                        terakan_gfx_command_writer_device(command_writer)
+                                           ->command_buffer_submission_size_gfx.bo_references);
+
+      command_writer->indirect_buffer->shader_rings_bo_placeholder_reference = UINT32_MAX;
+      for (size_t shader_ring_index = 0; shader_ring_index < TERAKAN_SHADER_RING_INDEX_COUNT;
+           ++shader_ring_index) {
+         command_writer->indirect_buffer->shader_rings[shader_ring_index]
+            .set_base_argument_offsets_dwords[0] = UINT32_MAX;
+      }
+
+      terakan_gfx_command_writer_emit_preamble_and_sq_resource_clear(command_writer);
+
+      terakan_hw_state_draw_indirect_buffer_begun(&command_writer->hw_state_draw);
+      terakan_hw_state_sqc_indirect_buffer_begun_and_resources_cleared(
+         &command_writer->hw_state_sqc);
+
+      /* Apply the tracked state in the new (either the first, or after an overflow) indirect
+       * buffer.
+       */
+      terakan_gfx_command_writer_emit_hw_state(command_writer, contents);
+
+      if (unlikely((device->command_buffer_submission_size_gfx.indirect_buffer_dwords -
+                    command_writer->indirect_buffer->indirect_buffer_size_dwords) <
+                      total_packet_dwords ||
+                   (device->command_buffer_submission_size_gfx.bo_references -
+                    command_writer->base.bo_reference_writer.reference_count) < bo_count) ||
+          (relocation_array_used &&
+           (device->command_buffer_submission_size_gfx.relocations -
+            command_writer->indirect_buffer->relocation_count) < relocation_count)) {
+         assert(
+            !"The command emission and all the needed state setting can't fit in a single indirect "
+             "buffer, this is likely a Terakan bug because an indirect buffer must be large enough "
+             "to support the worst case");
          vk_command_buffer_set_error(&command_writer->base.command_buffer->vk,
                                      VK_ERROR_OUT_OF_HOST_MEMORY);
-         return NULL;
-      }
-      bool all_state_emitted;
-      if (!terakan_gfx_command_writer_new_indirect_buffer(command_writer, &all_state_emitted)) {
-         return NULL;
-      }
-      if (abort_if_all_state_emitted && all_state_emitted) {
+         if (!is_inner) {
+            command_writer->is_in_outer_emit_call = false;
+         }
          return NULL;
       }
    }
 
-   if (unlikely((device->command_buffer_submission_size_gfx.indirect_buffer_dwords -
-                 command_writer->indirect_buffer->indirect_buffer_size_dwords) <
-                   total_packet_dwords ||
-                (device->command_buffer_submission_size_gfx.bo_references -
-                 command_writer->base.bo_reference_writer.reference_count) < bo_count) ||
-       (relocation_array_used &&
-        (device->command_buffer_submission_size_gfx.relocations -
-         command_writer->indirect_buffer->relocation_count) < relocation_count)) {
-      assert(
-         !"A single command emission is too large, no space even after moving to the new indirect "
-          "buffer");
-      vk_command_buffer_set_error(&command_writer->base.command_buffer->vk,
-                                  VK_ERROR_OUT_OF_HOST_MEMORY);
-      return NULL;
+   if (!is_inner) {
+      command_writer->is_in_outer_emit_call = false;
    }
 
 #ifndef NDEBUG
-   command_writer->is_emitting = true;
+   command_writer->is_emission_unclosed = true;
    command_writer->current_emission_relocations_remaining = relocation_count;
 #endif
 
@@ -1108,6 +1141,10 @@ terakan_gfx_command_writer_emit_with_bo(struct terakan_gfx_command_writer * cons
       command_writer->indirect_buffer->indirect_buffer +
       command_writer->indirect_buffer->indirect_buffer_size_dwords;
    command_writer->indirect_buffer->indirect_buffer_size_dwords += total_packet_dwords;
+   /* Note that if `indirect_buffer_size_dwords` becomes == the maximum size as a result of this
+    * call (or some other limit is reached exactly), `command_writer->indirect_buffer` must still
+    * not be set to NULL at this point, as during the emission, various things may reference it.
+    */
    return indirect_buffer_allocation;
 }
 
@@ -1128,7 +1165,7 @@ terakan_gfx_command_writer_add_relocation(struct terakan_gfx_command_writer * co
    }
 
 #ifndef NDEBUG
-   assert(command_writer->is_emitting);
+   assert(command_writer->is_emission_unclosed);
    assert(command_writer->current_emission_relocations_remaining != 0);
    --command_writer->current_emission_relocations_remaining;
 #endif
@@ -1173,7 +1210,8 @@ void
 terakan_gfx_command_writer_emit_event_write_eop_discarding_data(
    struct terakan_gfx_command_writer * const command_writer, uint32_t const event)
 {
-   uint32_t * packet = terakan_gfx_command_writer_emit_with_bo(command_writer, 6, false, 1, 0, 1);
+   uint32_t * packet = terakan_gfx_command_writer_emit_with_bo(
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_OTHER, 6, 1, 0, 1);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -1255,12 +1293,10 @@ terakan_BeginCommandBuffer(VkCommandBuffer const commandBuffer,
    /* The first emission will request the first indirect buffer. */
    gfx_command_writer->indirect_buffer = NULL;
 
-   gfx_command_writer->indirect_buffer_ever_begun = false;
-
-   gfx_command_writer->is_beginning_indirect_buffer = false;
+   gfx_command_writer->is_in_outer_emit_call = false;
 
 #ifndef NDEBUG
-   gfx_command_writer->is_emitting = false;
+   gfx_command_writer->is_emission_unclosed = false;
    gfx_command_writer->current_emission_relocations_remaining = 0;
 #endif
 
@@ -1330,7 +1366,8 @@ terakan_BeginCommandBuffer(VkCommandBuffer const commandBuffer,
    };
    {
       uint32_t * invalidate_cache_packets_ptr = terakan_gfx_command_writer_emit(
-         gfx_command_writer, ARRAY_SIZE(invalidate_caches_packets), false);
+         gfx_command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_OTHER,
+         ARRAY_SIZE(invalidate_caches_packets));
       if (likely(invalidate_cache_packets_ptr != NULL)) {
          memcpy(invalidate_cache_packets_ptr, invalidate_caches_packets,
                 sizeof(invalidate_caches_packets));
