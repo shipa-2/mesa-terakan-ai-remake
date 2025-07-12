@@ -54,6 +54,15 @@ struct terakan_instance {
    terakan_instance_destroy_fn destroy_fn;
 
    uint64_t debug_flags;
+#ifndef NDEBUG
+   /* For testing multiple indirect buffers in one Vulkan command buffer.
+    * If > 0, after each this many application's or internal draws or dispatches, a new indirect
+    * buffer will be started.
+    * In `#ifndef NDEBUG` because this debug option needs to be handled in a location called very
+    * frequently, and it's not useful to users.
+    */
+   int64_t debug_split_command_buffer_after_actions;
+#endif
 
    /* Binding allocation in the physical device limits. */
    /* From 4 to 8. The rest of UAV bindings will be used for storage images. */

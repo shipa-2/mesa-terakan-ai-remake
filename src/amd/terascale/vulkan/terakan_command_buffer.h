@@ -270,6 +270,14 @@ struct terakan_gfx_command_writer {
 
    struct terakan_command_buffer_indirect_buffer * indirect_buffer;
 
+#ifndef NDEBUG
+   /* For testing multiple indirect buffers in one Vulkan command buffer.
+    * If >= 0, this many more application's or internal draws or dispatches may be emitted in the
+    * current indirect buffer.
+    */
+   int64_t actions_before_next_indirect_buffer_split;
+#endif
+
    bool is_in_outer_emit_call;
 
 #ifndef NDEBUG

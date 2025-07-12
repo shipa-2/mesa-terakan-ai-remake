@@ -157,6 +157,10 @@ terakan_instance_init(struct terakan_instance * instance,
    instance->destroy_fn = destroy_fn;
 
    instance->debug_flags = parse_debug_string(getenv("TERAKAN_DEBUG"), terakan_debug_options);
+#ifndef NDEBUG
+   instance->debug_split_command_buffer_after_actions =
+      debug_get_num_option("TERAKAN_DEBUG_SPLIT_COMMAND_BUFFER_AFTER_ACTIONS", 0);
+#endif
 
    /* Allocate binding spaces. */
    /* TODO(Triang3l): Binding space allocation configuration via environment variables or

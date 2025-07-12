@@ -28,6 +28,7 @@
 #include "terakan_device.h"
 #include "terakan_entrypoints.h"
 #include "terakan_image.h"
+#include "terakan_instance.h"
 #include "terakan_limits.h"
 #include "terakan_physical_device.h"
 #include "terakan_queue.h"
@@ -1045,6 +1046,20 @@ terakan_gfx_command_writer_emit_with_bo(struct terakan_gfx_command_writer * cons
       relocation_count = 0;
    }
 
+#ifndef NDEBUG
+   if (contents == TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DRAW &&
+       command_writer->actions_before_next_indirect_buffer_split >= 0) {
+      if (command_writer->actions_before_next_indirect_buffer_split == 0) {
+         terakan_gfx_command_writer_end_indirect_buffer(command_writer);
+         command_writer->actions_before_next_indirect_buffer_split =
+            container_of(device->vk.physical->instance, struct terakan_instance const, vk)
+               ->debug_split_command_buffer_after_actions;
+         assert(command_writer->actions_before_next_indirect_buffer_split > 0);
+      }
+      --command_writer->actions_before_next_indirect_buffer_split;
+   }
+#endif
+
    if (command_writer->indirect_buffer != NULL) {
       if (!is_inner) {
          /* Apply the modified tracked state in the existing indirect buffer. */
@@ -1293,6 +1308,18 @@ terakan_BeginCommandBuffer(VkCommandBuffer const commandBuffer,
    /* The first emission will request the first indirect buffer. */
    gfx_command_writer->indirect_buffer = NULL;
 
+   struct terakan_device const * const device = terakan_command_buffer_device(command_buffer);
+
+#ifndef NDEBUG
+   gfx_command_writer->actions_before_next_indirect_buffer_split =
+      container_of(device->vk.physical->instance, struct terakan_instance const, vk)
+         ->debug_split_command_buffer_after_actions;
+   if (gfx_command_writer->actions_before_next_indirect_buffer_split <= 0) {
+      /* Don't enable indirect buffer splitting debugging. */
+      gfx_command_writer->actions_before_next_indirect_buffer_split = -1;
+   }
+#endif
+
    gfx_command_writer->is_in_outer_emit_call = false;
 
 #ifndef NDEBUG
@@ -1310,8 +1337,6 @@ terakan_BeginCommandBuffer(VkCommandBuffer const commandBuffer,
    terakan_hw_state_sqc_reset(&gfx_command_writer->hw_state_sqc);
 
    terakan_push_constants_state_reset(&gfx_command_writer->push_constants_state);
-
-   struct terakan_device const * const device = terakan_command_buffer_device(command_buffer);
 
    terakan_state_draw_reset(&gfx_command_writer->state_draw, device);
 
