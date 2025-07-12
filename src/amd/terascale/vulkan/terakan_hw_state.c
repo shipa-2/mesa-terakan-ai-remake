@@ -1436,6 +1436,17 @@ terakan_hw_state_draw_reset(struct terakan_hw_state_draw * const state)
    BITSET_ZERO(state->state_ever_written);
    BITSET_ZERO(state->state_modified);
 
+   /* DRM Radeon 2.50.0 performs `evergreen_cs_track_check` for INDEX_BASE packets, so if
+    * TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_BUFFER is ever written, registers checked when drawing
+    * must be valid too.
+    */
+   state->db_depth_control = 0;
+   BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_INDEX_DB_DEPTH_CONTROL);
+   BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_DB_DEPTH_CONTROL);
+   state->cb_target_mask = 0b0;
+   BITSET_SET(state->state_ever_written, TERAKAN_HW_STATE_DRAW_INDEX_CB_TARGET_MASK);
+   BITSET_SET(state->state_modified, TERAKAN_HW_STATE_DRAW_INDEX_CB_TARGET_MASK);
+
    state->sq_rings.needed = 0b0;
    state->sq_rings.item_sizes_modified = 0b0;
    memset(&state->sq_rings.item_sizes_dwords, 0, sizeof(state->sq_rings.item_sizes_dwords));

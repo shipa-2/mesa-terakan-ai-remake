@@ -65,8 +65,6 @@ enum terakan_hw_state_draw_index {
 
    TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_TYPE,
 
-   TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_BUFFER,
-
    TERAKAN_HW_STATE_DRAW_INDEX_VGT_PRIMITIVE_TYPE,
 
    TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_OFFSET,
@@ -111,12 +109,12 @@ enum terakan_hw_state_draw_index {
 
    TERAKAN_HW_STATE_DRAW_INDEX_CB_COLOR_CONTROL,
 
-   /* State items starting from TERAKAN_HW_STATE_DRAW_INDEX_SPECIAL_FIRST have their modified flags
-    * set via some method different from terakan_hw_state_draw_written.
+   /* Special state items have their modified flags set via some method different from
+    * terakan_hw_state_draw_written.
     */
-   TERAKAN_HW_STATE_DRAW_INDEX_SPECIAL_FIRST,
+   TERAKAN_HW_STATE_DRAW_INDEX_SPECIAL_START,
 
-   TERAKAN_HW_STATE_DRAW_INDEX_SQ_RINGS = TERAKAN_HW_STATE_DRAW_INDEX_SPECIAL_FIRST,
+   TERAKAN_HW_STATE_DRAW_INDEX_SQ_RINGS = TERAKAN_HW_STATE_DRAW_INDEX_SPECIAL_START,
 
    TERAKAN_HW_STATE_DRAW_INDEX_VIEWPORT,
 
@@ -126,8 +124,21 @@ enum terakan_hw_state_draw_index {
 
    TERAKAN_HW_STATE_DRAW_INDEX_CB_COLOR,
 
+   TERAKAN_HW_STATE_DRAW_INDEX_SPECIAL_END,
+
+   TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_BUFFER = TERAKAN_HW_STATE_DRAW_INDEX_SPECIAL_END,
+
    TERAKAN_HW_STATE_DRAW_INDEX_COUNT,
 };
+
+static_assert(
+   TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_BUFFER >
+         TERAKAN_HW_STATE_DRAW_INDEX_DB_DEPTH_STENCIL_BUFFER &&
+      TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_BUFFER > TERAKAN_HW_STATE_DRAW_INDEX_DB_DEPTH_CONTROL &&
+      TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_BUFFER > TERAKAN_HW_STATE_DRAW_INDEX_CB_COLOR &&
+      TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_BUFFER > TERAKAN_HW_STATE_DRAW_INDEX_CB_TARGET_MASK,
+   "DRM Radeon 2.50.0 performs `evergreen_cs_track_check` for INDEX_BASE packets, so everything "
+   "validated by it must be emitted before TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_BUFFER.");
 
 /* State applied before performing application's or internal draws, and fully reapplied when first
  * drawing in a new indirect buffer in the Vulkan command buffer.
@@ -142,14 +153,6 @@ struct terakan_hw_state_draw {
 
    /* TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_TYPE */
    uint32_t vgt_index_type;
-
-   /* TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_BUFFER */
-   struct {
-      struct terakan_bo const * bo;
-      uint64_t va;
-      /* In units of indices. */
-      uint32_t size;
-   } vgt_index_buffer;
 
    /* TERAKAN_HW_STATE_DRAW_INDEX_VGT_PRIMITIVE_TYPE */
    uint32_t vgt_primitive_type;
@@ -231,6 +234,14 @@ struct terakan_hw_state_draw {
    /* TERAKAN_HW_STATE_DRAW_INDEX_CB_COLOR_CONTROL */
    uint32_t cb_color_control;
 
+   /* TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_BUFFER */
+   struct {
+      struct terakan_bo const * bo;
+      uint64_t va;
+      /* In units of indices. */
+      uint32_t size;
+   } vgt_index_buffer;
+
    /* TERAKAN_HW_STATE_DRAW_INDEX_SQ_RINGS
     * Don't access externally directly, instead set via terakan_hw_state_draw_set_sq_ring.
     */
@@ -310,7 +321,8 @@ static inline void
 terakan_hw_state_draw_written(struct terakan_hw_state_draw * const state,
                               enum terakan_hw_state_draw_index const state_index, bool modified)
 {
-   assert(state_index < TERAKAN_HW_STATE_DRAW_INDEX_SPECIAL_FIRST);
+   assert(state_index < TERAKAN_HW_STATE_DRAW_INDEX_SPECIAL_START ||
+          state_index >= TERAKAN_HW_STATE_DRAW_INDEX_SPECIAL_END);
    if (!BITSET_TEST(state->state_ever_written, state_index)) {
       BITSET_SET(state->state_ever_written, state_index);
       modified = true;
