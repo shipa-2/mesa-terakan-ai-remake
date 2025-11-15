@@ -62,6 +62,9 @@ static struct vk_instance_extension_table const terakan_instance_extensions_supp
 
 #if defined(TERAKAN_USE_WSI_PLATFORM)
    .KHR_surface = true,
+#if defined(VK_USE_PLATFORM_WAYLAND_KHR)
+   .KHR_wayland_surface = true,
+#endif
 #if defined(VK_USE_PLATFORM_XCB_KHR)
    .KHR_xcb_surface = true,
 #endif
