@@ -23,6 +23,7 @@
 
 #include "terakan_queue.h"
 
+#include "terakan_barrier.h"
 #include "terakan_bo.h"
 #include "terakan_command_buffer.h"
 #include "terakan_device.h"
@@ -273,11 +274,11 @@ terakan_queue_get_graphics_signal_indirect_buffer(
    if (cp_coher_cntl) {
       assert(TERAKAN_QUEUE_SIGNAL_INDIRECT_BUFFER_MAX_DWORDS - indirect_buffer_size_dwords >= 5);
       indirect_buffer[indirect_buffer_size_dwords++] = PKT3(PKT3_SURFACE_SYNC, 4 - 1, 0);
-      /* In ME. */
-      indirect_buffer[indirect_buffer_size_dwords++] = cp_coher_cntl | ((uint32_t)1 << 31);
-      indirect_buffer[indirect_buffer_size_dwords++] = UINT32_MAX; /* CP_COHER_SIZE */
-      indirect_buffer[indirect_buffer_size_dwords++] = 0;          /* CP_COHER_BASE */
-      indirect_buffer[indirect_buffer_size_dwords++] = 10;         /* POLL_INTERVAL */
+      indirect_buffer[indirect_buffer_size_dwords++] =
+         cp_coher_cntl | TERAKAN_BARRIER_SURFACE_SYNC_ENGINE_ME;
+      indirect_buffer[indirect_buffer_size_dwords++] = UINT32_MAX;
+      indirect_buffer[indirect_buffer_size_dwords++] = 0;
+      indirect_buffer[indirect_buffer_size_dwords++] = TERAKAN_BARRIER_SURFACE_SYNC_POLL_INTERVAL;
    }
 
    /* Pad the GFX ring indirect buffer to the size alignment requirement with NOPs, and also prevent

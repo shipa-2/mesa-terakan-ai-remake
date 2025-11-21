@@ -398,10 +398,10 @@ terakan_barrier_emit_pending_actions(struct terakan_gfx_command_writer * const c
          return;
       }
       *surface_sync_packet++ = PKT3(PKT3_SURFACE_SYNC, 4 - 1, 0);
-      *surface_sync_packet++ = cp_coher_cntl | ((uint32_t)1 << 31);
-      *surface_sync_packet++ = UINT32_MAX; /* CP_COHER_SIZE */
-      *surface_sync_packet++ = 0;          /* CP_COHER_BASE */
-      *surface_sync_packet++ = 10;         /* POLL_INTERVAL */
+      *surface_sync_packet++ = cp_coher_cntl | TERAKAN_BARRIER_SURFACE_SYNC_ENGINE_ME;
+      *surface_sync_packet++ = UINT32_MAX;
+      *surface_sync_packet++ = 0;
+      *surface_sync_packet++ = TERAKAN_BARRIER_SURFACE_SYNC_POLL_INTERVAL;
       terakan_gfx_command_writer_emit_done(command_writer, surface_sync_packet);
    }
 

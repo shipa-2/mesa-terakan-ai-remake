@@ -23,6 +23,7 @@
 
 #include "terakan_command_buffer.h"
 
+#include "terakan_barrier.h"
 #include "terakan_cp_dma.h"
 #include "terakan_descriptor.h"
 #include "terakan_device.h"
@@ -1364,7 +1365,6 @@ terakan_BeginCommandBuffer(VkCommandBuffer const commandBuffer,
       EVENT_TYPE(EVENT_TYPE_CACHE_FLUSH_AND_INV_EVENT) | EVENT_INDEX(0),
 
       PKT3(PKT3_SURFACE_SYNC, 4 - 1, 0),
-      /* CP_COHER_CNTL and engine (ME). */
       S_0085F0_CB0_DEST_BASE_ENA(1) | S_0085F0_CB1_DEST_BASE_ENA(1) |
          S_0085F0_CB2_DEST_BASE_ENA(1) | S_0085F0_CB3_DEST_BASE_ENA(1) |
          S_0085F0_CB4_DEST_BASE_ENA(1) | S_0085F0_CB5_DEST_BASE_ENA(1) |
@@ -1375,13 +1375,10 @@ terakan_BeginCommandBuffer(VkCommandBuffer const commandBuffer,
          S_0085F0_VC_ACTION_ENA(
             terakan_device_physical_device(device)->chip_family_info.has_vertex_cache) |
          S_0085F0_CB_ACTION_ENA(1) | S_0085F0_DB_ACTION_ENA(1) | S_0085F0_SH_ACTION_ENA(1) |
-         S_0085F0_SMX_ACTION_ENA(1) | ((uint32_t)1 << 31),
-      /* CP_COHER_SIZE */
+         S_0085F0_SMX_ACTION_ENA(1) | TERAKAN_BARRIER_SURFACE_SYNC_ENGINE_ME,
       UINT32_MAX,
-      /* CP_COHER_BASE */
       0,
-      /* POLL_INTERVAL */
-      10,
+      TERAKAN_BARRIER_SURFACE_SYNC_POLL_INTERVAL,
 
       /* Make all prior writes made available by various packets in ME visible to PFP (indirect
        * arguments, index buffers).
