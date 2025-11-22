@@ -205,7 +205,7 @@ terakan_barrier_get_dst_actions(struct terakan_gfx_command_writer const * const 
    }
 
    if (dst_access & VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT) {
-      actions |= terakan_device_physical_device(device)->chip_family_info.has_vertex_cache
+      actions |= terakan_device_physical_device(device)->chip_info.has_vertex_cache
                     ? TERAKAN_BARRIER_ACTION_INV_VC
                     : TERAKAN_BARRIER_ACTION_INV_TC;
    }

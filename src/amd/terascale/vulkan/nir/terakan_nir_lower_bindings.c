@@ -592,12 +592,11 @@ terakan_nir_atomic_uav_op(nir_atomic_op const atomic_op, bool const result_used)
 }
 
 static nir_def *
-terakan_nir_uav_immed_index(
-   nir_builder * const b,
-   struct terakan_physical_device_chip_family_info const * const chip_family_info)
+terakan_nir_uav_immed_index(nir_builder * const b,
+                            struct terakan_physical_device_chip_info const * const chip_info)
 {
    nir_def * wave_id = nir_load_hw_wave_id_r600(b);
-   if (chip_family_info->two_shader_engines_max) {
+   if (chip_info->two_shader_engines_max) {
       wave_id =
          nir_umad24_relaxed(b, nir_imm_int(b, 2), wave_id, nir_load_shader_engine_id_r600(b));
    }
@@ -995,7 +994,7 @@ terakan_nir_lower_bindings_instr_ssbo_atomic(nir_builder * const b,
                b, intrin->def.num_components, 32, uav_array_index, coord, value, compare_value,
                terakan_nir_uav_immed_index(b, &container_of(state->layout->vk.base.device->physical,
                                                             struct terakan_physical_device const, vk)
-                                                  ->chip_family_info),
+                                                  ->chip_info),
                .uav_op_r600 = uav_op, .access = access, .id_base = uav_id_base,
                .uav_return_id_base_r600 = (b->shader->info.stage == MESA_SHADER_FRAGMENT
                                               ? TERAKAN_RESOURCE_RANGE_UAV_IMMEDIATE_BASE_PIXEL
@@ -1103,7 +1102,7 @@ terakan_nir_lower_bindings_instr_image_deref_load(
    nir_def * const immed_index =
       terakan_nir_uav_immed_index(b, &container_of(state->layout->vk.base.device->physical,
                                                    struct terakan_physical_device const, vk)
-                                         ->chip_family_info);
+                                         ->chip_info);
    nir_def * const undef = nir_undef(b, 1, 32);
    /* TODO(Triang3l): Proper bit size conversion depending on the destination type? */
    nir_def_rewrite_uses(
@@ -1252,7 +1251,7 @@ terakan_nir_lower_bindings_instr_image_deref_atomic(
                b, intrin->def.num_components, 32, uav_array_index, coord, value, compare_value,
                terakan_nir_uav_immed_index(b, &container_of(state->layout->vk.base.device->physical,
                                                             struct terakan_physical_device const, vk)
-                                                  ->chip_family_info),
+                                                  ->chip_info),
                .uav_op_r600 = uav_op, .access = access, .id_base = uav_id_base,
                .uav_return_id_base_r600 = (b->shader->info.stage == MESA_SHADER_FRAGMENT
                                               ? TERAKAN_RESOURCE_RANGE_UAV_IMMEDIATE_BASE_PIXEL

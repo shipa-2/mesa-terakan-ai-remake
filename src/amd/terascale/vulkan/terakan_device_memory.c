@@ -69,7 +69,7 @@ terakan_GetMemoryFdPropertiesKHR(VkDevice const deviceHandle,
    /* The domain can be changed from the initial one in command submissions, so technically any
     * memory type should be fine for importing, but prefer not to move BOs between VRAM and GTT.
     */
-   if (physical_device->chip_family_info.has_dedicated_vram) {
+   if (physical_device->chip_info.has_dedicated_vram) {
       VkMemoryPropertyFlags const device_local_flag_preferred =
          vram_preferred ? VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT : 0;
       for (uint32_t memory_type_index = 0;

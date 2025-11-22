@@ -210,7 +210,7 @@ terakan_state_draw_apply_sq_pgm_fs(struct terakan_gfx_command_writer * const com
       /* Dynamically create the fetch shader, allocated alongside push constants. */
       struct terakan_device const * const device =
          terakan_gfx_command_writer_device(command_writer);
-      bool const is_r9xx = terakan_device_physical_device(device)->chip_family_info.is_r9xx;
+      bool const is_r9xx = terakan_device_physical_device(device)->chip_info.is_r9xx;
       uint32_t fs_alu_qword_count, fs_alu_clause_count, fs_fetch_count;
       uint32_t fs_alu[2 * TERAKAN_VERTEX_INPUT_FS_MAX_ALU_QWORDS];
       uint8_t fs_alu_clause_qwords[TERAKAN_VERTEX_INPUT_FS_MAX_ALU_CLAUSES];
@@ -261,7 +261,7 @@ static void
 terakan_state_draw_apply_sq_resources_fs(struct terakan_gfx_command_writer * const command_writer)
 {
    bool const is_r9xx =
-      terakan_gfx_command_writer_physical_device(command_writer)->chip_family_info.is_r9xx;
+      terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_r9xx;
    uint32_t resource[8] = {
       [3] = S_03000C_DST_SEL_X(TERASCALE_SWIZZLE_X) | S_03000C_DST_SEL_Y(TERASCALE_SWIZZLE_Y) |
             S_03000C_DST_SEL_Z(TERASCALE_SWIZZLE_Z) | S_03000C_DST_SEL_W(TERASCALE_SWIZZLE_W),
@@ -370,9 +370,9 @@ terakan_state_draw_apply_sq_tmp(struct terakan_gfx_command_writer * const comman
       terakan_hw_state_draw_set_sq_ring(command_writer, ring_index, 0, 0);
       return;
    }
-   struct terakan_physical_device_chip_family_info const * const chip_family_info =
-      &terakan_gfx_command_writer_physical_device(command_writer)->chip_family_info;
-   if (chip_family_info->is_r9xx) {
+   struct terakan_physical_device_chip_info const * const chip_info =
+      &terakan_gfx_command_writer_physical_device(command_writer)->chip_info;
+   if (chip_info->is_r9xx) {
       /* R9xx doesn't have SQ_THREAD_RESOURCE_MGMT, use the maximum size. */
       /* TODO(Triang3l): Research smaller sizes for different stages. */
       num_threads = 256;
@@ -380,7 +380,7 @@ terakan_state_draw_apply_sq_tmp(struct terakan_gfx_command_writer * const comman
    terakan_hw_state_draw_set_sq_ring(
       command_writer, ring_index, item_size_dwords,
       (uint32_t)DIV_ROUND_UP((sizeof(uint32_t) * (uint64_t)item_size_dwords * num_threads)
-                                << chip_family_info->wave_lanes_log2,
+                                << chip_info->wave_lanes_log2,
                              (uint32_t)1 << 8));
 }
 
@@ -1363,7 +1363,7 @@ terakan_state_draw_reset(struct terakan_state_draw * const state,
    memcpy(
       state->sq_tmp.sq_thread_resource_mgmt,
       terakan_device_physical_device(device)
-         ->chip_family_info
+         ->chip_info
          .sq_thread_resource_mgmt_ts_gs_r8xx[device->vk.enabled_features.tessellationShader ? 1 : 0]
                                             [device->vk.enabled_features.geometryShader ? 1 : 0],
       sizeof(uint32_t) * 2);

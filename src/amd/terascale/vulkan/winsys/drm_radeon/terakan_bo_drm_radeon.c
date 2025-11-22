@@ -211,7 +211,7 @@ terakan_bo_drm_radeon_allocate_device_memory(
       /* If VRAM is just stolen system memory, allow both VRAM and GTT, whichever has free space.
        * If a buffer is evicted from VRAM to GTT, it will stay there.
        */
-      if (!terakan_device_physical_device(&device->base)->chip_family_info.has_dedicated_vram) {
+      if (!terakan_device_physical_device(&device->base)->chip_info.has_dedicated_vram) {
          initial_domains |= RADEON_GEM_DOMAIN_GTT;
       }
    } else {

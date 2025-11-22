@@ -54,7 +54,7 @@ terakan_physical_device_is_chip_family_supported(enum radeon_family const chip_f
 
 char const * terakan_physical_device_chip_family_name(enum radeon_family chip_family);
 
-struct terakan_physical_device_chip_family_info {
+struct terakan_physical_device_chip_info {
    uint32_t pci_device_id;
 
    enum radeon_family chip_family;
@@ -86,8 +86,9 @@ struct terakan_physical_device_chip_family_info {
    unsigned max_render_backends_log2;
 };
 
-void terakan_physical_device_chip_family_info_init(
-   uint32_t pci_device_id, struct terakan_physical_device_chip_family_info * chip_family_info_out);
+void
+terakan_physical_device_chip_info_init(uint32_t pci_device_id,
+                                       struct terakan_physical_device_chip_info * chip_info_out);
 
 struct terakan_physical_device_tiling_info {
    uint8_t pipes_log2;
@@ -176,7 +177,7 @@ struct terakan_physical_device {
    /* Private, use wrappers externally. */
    struct terakan_physical_device_winsys_fn const * winsys_fn;
 
-   struct terakan_physical_device_chip_family_info chip_family_info;
+   struct terakan_physical_device_chip_info chip_info;
 
    VkDeviceSize max_memory_allocation_size;
 

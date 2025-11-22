@@ -107,7 +107,7 @@ terakan_color_descriptor_info_to_uav_immediate_resource(struct terakan_device co
    uint32_t const va_shr8 = device->uav_immediate_va_shr8[util_logbase2(bytes_per_texel)];
 
    uint32_t const uav_immediate_size_texels =
-      terakan_device_physical_device(device)->chip_family_info.uav_immediate_size_texels;
+      terakan_device_physical_device(device)->chip_info.uav_immediate_size_texels;
 
    enum terascale_format_number_type const number_type =
       (enum terascale_format_number_type)G_028C70_NUMBER_TYPE(color_info);

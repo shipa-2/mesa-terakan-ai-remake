@@ -572,7 +572,7 @@ terakan_image_surface_tiling_compute(VkImageCreateInfo const * const image_creat
    }
 
    tiling_out->tc_non_display = terakan_image_compute_tc_non_display(
-      format_info, aspect_index, physical_device->chip_family_info.is_r9xx,
+      format_info, aspect_index, physical_device->chip_info.is_r9xx,
       array_mode <= V_028C70_ARRAY_LINEAR_ALIGNED);
 
    return array_mode;
@@ -1208,7 +1208,7 @@ terakan_image_create_resource_descriptor(
     */
    descriptor_out[0] =
       S_030000_DIM(dimension) |
-      (physical_device->chip_family_info.is_r9xx
+      (physical_device->chip_info.is_r9xx
           ? CM_S_030000_NON_DISP_TILING_ORDER(surface_aspect->tiling.tc_non_display)
           : S_030000_NON_DISP_TILING_ORDER(surface_aspect->tiling.tc_non_display)) |
       S_030000_PITCH(
@@ -1293,7 +1293,7 @@ terakan_image_create_resource_descriptor(
       descriptor_out[3] = S_03000C_MIP_ADDRESS(0);
 
       unsigned const samples_log2 = util_logbase2((uint32_t)image->vk.samples);
-      if (physical_device->chip_family_info.is_r9xx) {
+      if (physical_device->chip_info.is_r9xx) {
          descriptor_out[4] |= S_030010_LOG2_NUM_FRAGMENTS(samples_log2);
       }
       /* LAST_LEVEL is used for the sample count instead. */
@@ -1447,7 +1447,7 @@ terakan_image_create_color_descriptor(
       S_028C74_BANK_HEIGHT(surface_aspect->tiling.attrib_bank_height) |
       S_028C74_MACRO_TILE_ASPECT(surface_aspect->tiling.attrib_macro_tile_aspect) |
       S_028C74_FMASK_BANK_HEIGHT(surface_aspect->tiling.attrib_bank_height);
-   if (physical_device->chip_family_info.is_r9xx) {
+   if (physical_device->chip_info.is_r9xx) {
       /* R9xx has EQAA, and additionally doesn't support displayable tiling for 128 bits per pixel
        * color targets.
        * FORCE_DST_ALPHA_1 (or the equivalent CB_BLEND_CONTROL adjustment) is not needed as Vulkan
@@ -1539,7 +1539,7 @@ terakan_image_create_depth_stencil_descriptor(
       S_028040_BANK_WIDTH(main_surface_aspect->tiling.attrib_bank_width) |
       S_028040_BANK_HEIGHT(main_surface_aspect->tiling.attrib_bank_height) |
       S_028040_MACRO_TILE_ASPECT(main_surface_aspect->tiling.attrib_macro_tile_aspect);
-   if (physical_device->chip_family_info.is_r9xx) {
+   if (physical_device->chip_info.is_r9xx) {
       descriptor_out->z_info |= S_028040_NUM_SAMPLES(util_logbase2((uint32_t)image->vk.samples));
    }
    if (depth_format != TERASCALE_R8XX_DEPTH_FORMAT_INVALID) {

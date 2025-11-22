@@ -552,9 +552,8 @@ terakan_gfx_command_writer_emit_preamble_and_sq_resource_clear(
    struct terakan_device const * const device = terakan_gfx_command_writer_device(command_writer);
    struct terakan_physical_device const * const physical_device =
       terakan_device_physical_device(device);
-   struct terakan_physical_device_chip_family_info const * const chip_family_info =
-      &physical_device->chip_family_info;
-   bool const is_r9xx = chip_family_info->is_r9xx;
+   struct terakan_physical_device_chip_info const * const chip_info = &physical_device->chip_info;
+   bool const is_r9xx = chip_info->is_r9xx;
    struct terakan_physical_device_submission_info_gfx const * const submission_info_gfx =
       &physical_device->submission_info_gfx;
 
@@ -898,8 +897,7 @@ terakan_gfx_command_writer_emit_preamble_and_sq_resource_clear(
     * Setup configuration registers common between graphics and compute.
     */
 
-   uint32_t sq_config =
-      S_008C00_VC_ENABLE(chip_family_info->has_vertex_cache) | S_008C00_EXPORT_SRC_C(1);
+   uint32_t sq_config = S_008C00_VC_ENABLE(chip_info->has_vertex_cache) | S_008C00_EXPORT_SRC_C(1);
    /* Not raising CS2 priority in SQ_CONFIG on R9xx unlike in DRM Radeon 2.50.0 because it doesn't
     * expose the compute rings at all.
     */
@@ -1004,7 +1002,7 @@ terakan_gfx_command_writer_emit_preamble_and_sq_resource_clear(
                                               device->vk.enabled_features.geometryShader);
 
       uint32_t const sq_stage_stack_entries =
-         chip_family_info->sq_max_stack_entries / (sq_vertex_stage_count + 1);
+         chip_info->sq_max_stack_entries / (sq_vertex_stage_count + 1);
 
       uint32_t const sq_thread_stack_register_count =
          (R_008C28_SQ_STACK_RESOURCE_MGMT_3 - R_008C18_SQ_THREAD_RESOURCE_MGMT_1) /
@@ -1023,7 +1021,7 @@ terakan_gfx_command_writer_emit_preamble_and_sq_resource_clear(
        * Must be consistent with terakan_state_draw sq_tmp.sq_thread_resource_mgmt.
        */
       memcpy(packet,
-             chip_family_info->sq_thread_resource_mgmt_ts_gs_r8xx
+             chip_info->sq_thread_resource_mgmt_ts_gs_r8xx
                 [device->vk.enabled_features.tessellationShader ? 1 : 0]
                 [device->vk.enabled_features.geometryShader ? 1 : 0],
              sizeof(uint32_t) * 2);
@@ -1504,7 +1502,7 @@ terakan_BeginCommandBuffer(VkCommandBuffer const commandBuffer,
          S_0085F0_CB10_DEST_BASE_ENA(1) | S_0085F0_CB11_DEST_BASE_ENA(1) |
          S_0085F0_DB_DEST_BASE_ENA(1) | S_0085F0_TC_ACTION_ENA(1) |
          S_0085F0_VC_ACTION_ENA(
-            terakan_device_physical_device(device)->chip_family_info.has_vertex_cache) |
+            terakan_device_physical_device(device)->chip_info.has_vertex_cache) |
          S_0085F0_CB_ACTION_ENA(1) | S_0085F0_DB_ACTION_ENA(1) | S_0085F0_SH_ACTION_ENA(1) |
          S_0085F0_SMX_ACTION_ENA(1) | TERAKAN_BARRIER_SURFACE_SYNC_ENGINE_ME,
       UINT32_MAX,

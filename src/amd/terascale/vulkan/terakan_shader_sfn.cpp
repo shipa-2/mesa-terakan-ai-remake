@@ -57,9 +57,8 @@ terakan_shader_impl_compile(terakan_shader_impl * const shader, terakan_device *
    VkResult result;
 
    terakan_physical_device const & physical_device = *terakan_device_physical_device(device);
-   terakan_physical_device_chip_family_info const & chip_family_info =
-      physical_device.chip_family_info;
-   amd_gfx_level const gfx_level = chip_family_info.is_r9xx ? CAYMAN : EVERGREEN;
+   terakan_physical_device_chip_info const & chip_info = physical_device.chip_info;
+   amd_gfx_level const gfx_level = chip_info.is_r9xx ? CAYMAN : EVERGREEN;
 
    /* TODO(Triang3l): Fill stream output info from NIR. */
    pipe_stream_output_info so_info = {};
@@ -79,8 +78,8 @@ terakan_shader_impl_compile(terakan_shader_impl * const shader, terakan_device *
    binding_layout.texture_resource_offset = 0;
 
    r600::Shader * const unscheduled_sfn_shader = r600::Shader::translate_from_nir(
-      nir, &so_info, nullptr, *key, chip_family_info.is_r9xx ? ISA_CC_CAYMAN : ISA_CC_EVERGREEN,
-      chip_family_info.chip_family, binding_layout);
+      nir, &so_info, nullptr, *key, chip_info.is_r9xx ? ISA_CC_CAYMAN : ISA_CC_EVERGREEN,
+      chip_info.chip_family, binding_layout);
    if (unscheduled_sfn_shader == nullptr) {
       r600::release_pool();
       return vk_errorf(device, VK_ERROR_UNKNOWN, "Failed to translate the shader from NIR");
@@ -104,7 +103,7 @@ terakan_shader_impl_compile(terakan_shader_impl * const shader, terakan_device *
    shader->shader.rat_base = 0;
 
    /* TODO(Triang3l): has_compressed_msaa_texturing. */
-   r600_bytecode_init(&shader->shader.bc, gfx_level, chip_family_info.chip_family, false);
+   r600_bytecode_init(&shader->shader.bc, gfx_level, chip_info.chip_family, false);
 
    /* We already schedule the code with this in mind, no need to handle this in the backend
     * assembler.

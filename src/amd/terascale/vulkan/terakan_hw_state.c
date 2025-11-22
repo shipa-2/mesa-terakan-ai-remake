@@ -200,7 +200,7 @@ terakan_hw_state_draw_emit_sq_rings(struct terakan_gfx_command_writer * const co
       struct terakan_device const * const device =
          terakan_gfx_command_writer_device(command_writer);
       uint32_t const base_size_emit_needed_for_rings_per_se =
-         terakan_device_physical_device(device)->chip_family_info.two_shader_engines_max
+         terakan_device_physical_device(device)->chip_info.two_shader_engines_max
             ? base_size_emit_needed_for_rings & TERAKAN_SHADER_RINGS_PER_SHADER_ENGINE
             : 0b0;
       uint32_t const base_size_emit_needed_for_rings_broadcast =
@@ -656,7 +656,7 @@ terakan_hw_state_draw_emit_pa_cl_gb(struct terakan_gfx_command_writer * const co
     */
    *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 4, 0);
    *packet++ = TERAKAN_CONTEXT_REG_OFFSET(
-      terakan_gfx_command_writer_physical_device(command_writer)->chip_family_info.is_r9xx
+      terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_r9xx
          ? CM_R_028BE8_PA_CL_GB_VERT_CLIP_ADJ
          : R_028C0C_PA_CL_GB_VERT_CLIP_ADJ);
    memcpy(packet, command_writer->hw_state_draw.pa_cl_gb_vert_horz_clip_disc_adj,
@@ -669,7 +669,7 @@ static void
 terakan_hw_state_draw_emit_pa_sc_aa_samples(struct terakan_gfx_command_writer * const command_writer)
 {
    bool const is_r9xx =
-      terakan_gfx_command_writer_physical_device(command_writer)->chip_family_info.is_r9xx;
+      terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_r9xx;
 
    uint32_t const num_samples_log2 =
       command_writer->hw_state_draw.pa_sc_aa_samples.num_samples_log2;
@@ -746,7 +746,7 @@ terakan_hw_state_draw_emit_pa_sc_aa_mask(struct terakan_gfx_command_writer * con
    uint32_t aa_mask = command_writer->hw_state_draw.pa_sc_aa_mask;
    aa_mask |= aa_mask << 16;
 
-   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_family_info.is_r9xx) {
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_r9xx) {
       uint32_t * packet = terakan_gfx_command_writer_emit(
          command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 2);
       if (unlikely(packet == NULL)) {

@@ -74,7 +74,7 @@ terakan_CreateSampler(VkDevice const deviceHandle, VkSamplerCreateInfo const * c
       S_03C000_DEPTH_COMPARE_FUNCTION(pCreateInfo->compareEnable ? (uint32_t)pCreateInfo->compareOp
                                                                  : 0) |
       S_03C000_FORCE_UNNORMALIZED(pCreateInfo->unnormalizedCoordinates &&
-                                  terakan_device_physical_device(device)->chip_family_info.is_r9xx);
+                                  terakan_device_physical_device(device)->chip_info.is_r9xx);
    sampler->sampler[1] =
       S_03C004_MIN_LOD(terakan_sampler_translate_min_max_lod(pCreateInfo->minLod)) |
       S_03C004_MAX_LOD(terakan_sampler_translate_min_max_lod(pCreateInfo->maxLod));

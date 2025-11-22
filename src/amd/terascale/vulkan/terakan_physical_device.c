@@ -116,27 +116,26 @@ terakan_physical_device_chip_family_name(enum radeon_family const chip_family)
 }
 
 void
-terakan_physical_device_chip_family_info_init(
-   uint32_t const pci_device_id,
-   struct terakan_physical_device_chip_family_info * const chip_family_info_out)
+terakan_physical_device_chip_info_init(
+   uint32_t const pci_device_id, struct terakan_physical_device_chip_info * const chip_info_out)
 {
    enum radeon_family const chip_family = terakan_physical_device_get_chip_family(pci_device_id);
    assert(terakan_physical_device_is_chip_family_supported(chip_family));
 
-   chip_family_info_out->pci_device_id = pci_device_id;
-   chip_family_info_out->chip_family = chip_family;
+   chip_info_out->pci_device_id = pci_device_id;
+   chip_info_out->chip_family = chip_family;
    bool const is_r9xx = chip_family >= CHIP_CAYMAN;
-   chip_family_info_out->is_r9xx = is_r9xx;
+   chip_info_out->is_r9xx = is_r9xx;
 
    switch (chip_family) {
    case CHIP_PALM:
    case CHIP_SUMO:
    case CHIP_SUMO2:
    case CHIP_ARUBA:
-      chip_family_info_out->has_dedicated_vram = false;
+      chip_info_out->has_dedicated_vram = false;
       break;
    default:
-      chip_family_info_out->has_dedicated_vram = true;
+      chip_info_out->has_dedicated_vram = true;
    }
 
    switch (chip_family) {
@@ -145,13 +144,13 @@ terakan_physical_device_chip_family_info_init(
    case CHIP_SUMO:
    case CHIP_SUMO2:
    case CHIP_CAICOS:
-      chip_family_info_out->has_vertex_cache = false;
+      chip_info_out->has_vertex_cache = false;
       break;
    default:
       /* R9xx vertex fetch always goes through the texture cache, but DRM Radeon 2.50.0 and the
        * Gallium R600 driver set SQ_CONFIG.VC_ENABLE to 1 on it.
        */
-      chip_family_info_out->has_vertex_cache = true;
+      chip_info_out->has_vertex_cache = true;
    }
 
    switch (chip_family) {
@@ -159,28 +158,28 @@ terakan_physical_device_chip_family_info_init(
    case CHIP_HEMLOCK:
    case CHIP_BARTS:
    case CHIP_CAYMAN:
-      chip_family_info_out->two_shader_engines_max = true;
+      chip_info_out->two_shader_engines_max = true;
       break;
    default:
-      chip_family_info_out->two_shader_engines_max = false;
+      chip_info_out->two_shader_engines_max = false;
    }
 
    /* Thread allocation granularity is 8 according to the Evergreen 3D Register Reference Guide. */
-   memset(&chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx, 0,
-          sizeof(chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx));
+   memset(&chip_info_out->sq_thread_resource_mgmt_ts_gs_r8xx, 0,
+          sizeof(chip_info_out->sq_thread_resource_mgmt_ts_gs_r8xx));
    if (is_r9xx) {
-      chip_family_info_out->sq_max_threads_shr3 = 256 >> 3;
+      chip_info_out->sq_max_threads_shr3 = 256 >> 3;
    } else {
       bool const is_sumo = chip_family == CHIP_SUMO || chip_family == CHIP_SUMO2;
 
       uint32_t sq_ps_threads_shr3;
       uint32_t sq_max_gs_threads_shr3;
       if (chip_family == CHIP_CEDAR || chip_family == CHIP_PALM || chip_family == CHIP_CAICOS) {
-         chip_family_info_out->sq_max_threads_shr3 = 192 >> 3;
+         chip_info_out->sq_max_threads_shr3 = 192 >> 3;
          sq_ps_threads_shr3 = 96 >> 3;
          sq_max_gs_threads_shr3 = 16 >> 3;
       } else {
-         chip_family_info_out->sq_max_threads_shr3 = 248 >> 3;
+         chip_info_out->sq_max_threads_shr3 = 248 >> 3;
          /* TODO(Triang3l): This way, when rendering with VS only, CHIP_SUMO and CHIP_SUMO2 receive
           * more VS threads than PS threads, which may be suboptimal. However, both DRM Radeon
           * 2.50.0 and R600g at the time of writing allocate 96 threads to PS rather than 128 for
@@ -193,17 +192,17 @@ terakan_physical_device_chip_family_info_init(
 
       for (unsigned ts_enabled = 0; ts_enabled < 2; ++ts_enabled) {
          for (unsigned gs_enabled = 0; gs_enabled < 2; ++gs_enabled) {
-            chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[ts_enabled][gs_enabled][0] |=
+            chip_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[ts_enabled][gs_enabled][0] |=
                S_008C18_NUM_PS_THREADS(sq_ps_threads_shr3 << 3);
          }
       }
 
       uint32_t const sq_non_ps_threads_shr3 =
-         chip_family_info_out->sq_max_threads_shr3 - sq_ps_threads_shr3;
+         chip_info_out->sq_max_threads_shr3 - sq_ps_threads_shr3;
 
       uint32_t const sq_gs_threads_no_ts_shr3 =
          MIN2(sq_non_ps_threads_shr3 / 3, sq_max_gs_threads_shr3);
-      chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[0][1][0] |=
+      chip_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[0][1][0] |=
          S_008C18_NUM_VS_THREADS(((sq_non_ps_threads_shr3 - sq_gs_threads_no_ts_shr3) / 2) << 3) |
          S_008C18_NUM_GS_THREADS(sq_gs_threads_no_ts_shr3 << 3);
 
@@ -230,17 +229,17 @@ terakan_physical_device_chip_family_info_init(
          sq_ls_hs_threads_with_gs_shr3 = (sq_non_ps_threads_shr3 - sq_gs_threads_with_ts_shr3) / 4;
       }
 
-      chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[1][0][1] |=
+      chip_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[1][0][1] |=
          S_008C1C_NUM_HS_THREADS(sq_ls_hs_threads_no_gs_shr3 << 3) |
          S_008C1C_NUM_LS_THREADS(sq_ls_hs_threads_no_gs_shr3 << 3);
 
-      chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[1][1][0] |=
+      chip_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[1][1][0] |=
          S_008C18_NUM_VS_THREADS(((sq_non_ps_threads_shr3 - sq_ls_hs_threads_with_gs_shr3 * 2 -
                                    sq_gs_threads_with_ts_shr3) /
                                   2)
                                  << 3) |
          S_008C18_NUM_GS_THREADS(sq_gs_threads_with_ts_shr3 << 3);
-      chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[1][1][1] |=
+      chip_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[1][1][1] |=
          S_008C1C_NUM_HS_THREADS(sq_ls_hs_threads_with_gs_shr3 << 3) |
          S_008C1C_NUM_LS_THREADS(sq_ls_hs_threads_with_gs_shr3 << 3);
 
@@ -248,46 +247,38 @@ terakan_physical_device_chip_family_info_init(
        * the Vulkan vertex or tessellation evaluation stage.
        */
 
-      uint32_t const sq_max_threads = chip_family_info_out->sq_max_threads_shr3 << 3;
+      uint32_t const sq_max_threads = chip_info_out->sq_max_threads_shr3 << 3;
 
       uint32_t const sq_non_vs_threads_no_tess =
-         G_008C18_NUM_PS_THREADS(chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[0][0][0]);
+         G_008C18_NUM_PS_THREADS(chip_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[0][0][0]);
       assert(sq_non_vs_threads_no_tess < sq_max_threads);
-      chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[0][0][0] |=
+      chip_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[0][0][0] |=
          S_008C18_NUM_VS_THREADS(sq_max_threads - sq_non_vs_threads_no_tess);
 
       uint32_t const sq_non_es_threads_no_tess =
-         G_008C18_NUM_PS_THREADS(
-            chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[0][1][0]) +
-         G_008C18_NUM_VS_THREADS(
-            chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[0][1][0]) +
-         G_008C18_NUM_GS_THREADS(chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[0][1][0]);
+         G_008C18_NUM_PS_THREADS(chip_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[0][1][0]) +
+         G_008C18_NUM_VS_THREADS(chip_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[0][1][0]) +
+         G_008C18_NUM_GS_THREADS(chip_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[0][1][0]);
       assert(sq_non_es_threads_no_tess < sq_max_threads);
-      chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[0][1][0] |=
+      chip_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[0][1][0] |=
          S_008C18_NUM_ES_THREADS(sq_max_threads - sq_non_es_threads_no_tess);
 
       uint32_t const sq_non_vs_threads_with_tess =
-         G_008C18_NUM_PS_THREADS(
-            chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[1][0][0]) +
-         G_008C1C_NUM_HS_THREADS(
-            chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[1][0][1]) +
-         G_008C1C_NUM_LS_THREADS(chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[1][0][1]);
+         G_008C18_NUM_PS_THREADS(chip_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[1][0][0]) +
+         G_008C1C_NUM_HS_THREADS(chip_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[1][0][1]) +
+         G_008C1C_NUM_LS_THREADS(chip_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[1][0][1]);
       assert(sq_non_vs_threads_with_tess < sq_max_threads);
-      chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[1][0][0] |=
+      chip_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[1][0][0] |=
          S_008C18_NUM_VS_THREADS(sq_max_threads - sq_non_vs_threads_with_tess);
 
       uint32_t const sq_non_es_threads_with_tess =
-         G_008C18_NUM_PS_THREADS(
-            chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[1][1][0]) +
-         G_008C18_NUM_VS_THREADS(
-            chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[1][1][0]) +
-         G_008C18_NUM_GS_THREADS(
-            chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[1][1][0]) +
-         G_008C1C_NUM_HS_THREADS(
-            chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[1][1][1]) +
-         G_008C1C_NUM_LS_THREADS(chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[1][1][1]);
+         G_008C18_NUM_PS_THREADS(chip_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[1][1][0]) +
+         G_008C18_NUM_VS_THREADS(chip_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[1][1][0]) +
+         G_008C18_NUM_GS_THREADS(chip_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[1][1][0]) +
+         G_008C1C_NUM_HS_THREADS(chip_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[1][1][1]) +
+         G_008C1C_NUM_LS_THREADS(chip_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[1][1][1]);
       assert(sq_non_es_threads_with_tess < sq_max_threads);
-      chip_family_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[1][1][0] |=
+      chip_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[1][1][0] |=
          S_008C18_NUM_ES_THREADS(sq_max_threads - sq_non_es_threads_with_tess);
    }
 
@@ -298,10 +289,10 @@ terakan_physical_device_chip_family_info_init(
    case CHIP_SUMO:
    case CHIP_TURKS:
    case CHIP_CAICOS:
-      chip_family_info_out->sq_max_stack_entries = 256;
+      chip_info_out->sq_max_stack_entries = 256;
       break;
    default:
-      chip_family_info_out->sq_max_stack_entries = 512;
+      chip_info_out->sq_max_stack_entries = 512;
    }
 
    switch (chip_family) {
@@ -311,20 +302,20 @@ terakan_physical_device_chip_family_info_init(
        * device parameters table, for Cedar and Ontario / Zacate (Wrestler, or Palm),
        * Max Work-Items / GPU = 6144, Max Wavefronts / GPU = 192, therefore the wave size is 32.
        */
-      chip_family_info_out->wave_lanes_log2 = 5;
+      chip_info_out->wave_lanes_log2 = 5;
       break;
    default:
       /* For Caicos / Seymour, Max Work-Items / GPU = 12288, Max Wavefronts / GPU = 192. */
-      chip_family_info_out->wave_lanes_log2 = 6;
+      chip_info_out->wave_lanes_log2 = 6;
    }
 
    /* A compute shader may occupy all the available threads. */
    /* TODO(Triang3l): See how MBCNT behaves on wave32 chips and possibly scale the wave ID by 32
     * there.
     */
-   chip_family_info_out->uav_immediate_size_texels =
-      chip_family_info_out->sq_max_threads_shr3
-      << (3 + 6 + (unsigned)chip_family_info_out->two_shader_engines_max);
+   chip_info_out->uav_immediate_size_texels =
+      chip_info_out->sq_max_threads_shr3
+      << (3 + 6 + (unsigned)chip_info_out->two_shader_engines_max);
 
    unsigned max_render_backends_per_se_log2;
    switch (chip_family) {
@@ -352,8 +343,8 @@ terakan_physical_device_chip_family_info_init(
    default:
       max_render_backends_per_se_log2 = 2;
    }
-   chip_family_info_out->max_render_backends_log2 =
-      max_render_backends_per_se_log2 + (unsigned)chip_family_info_out->two_shader_engines_max;
+   chip_info_out->max_render_backends_log2 =
+      max_render_backends_per_se_log2 + (unsigned)chip_info_out->two_shader_engines_max;
 }
 
 /* Winsys-specific extensions are not handled, they should be configured by the
@@ -363,7 +354,7 @@ terakan_physical_device_chip_family_info_init(
 static void
 terakan_physical_device_get_capabilities(
    struct terakan_instance const * const instance,
-   struct terakan_physical_device_chip_family_info const * const chip_family_info,
+   struct terakan_physical_device_chip_info const * const chip_info,
    unsigned const tile_pipe_interleave_bytes_log2, VkDeviceSize const min_memory_map_alignment,
    uint32_t const clock_crystal_frequency_hz, VkDeviceSize const max_memory_allocation_size,
    struct vk_device_extension_table * const extensions_out, struct vk_features * const features_out,
@@ -468,13 +459,13 @@ terakan_physical_device_get_capabilities(
     */
    properties_out->driverVersion = VK_MAKE_API_VERSION(0, 0, 0, 1);
    properties_out->vendorID = TERAKAN_PHYSICAL_DEVICE_VENDOR_ID_ATI;
-   properties_out->deviceID = chip_family_info->pci_device_id;
-   properties_out->deviceType = chip_family_info->has_dedicated_vram
+   properties_out->deviceID = chip_info->pci_device_id;
+   properties_out->deviceType = chip_info->has_dedicated_vram
                                    ? VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU
                                    : VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
    snprintf(properties_out->deviceName, sizeof(properties_out->deviceName),
-            "AMD R%cxx %s (Terakan)", chip_family_info->is_r9xx ? '9' : '8',
-            terakan_physical_device_chip_family_name(chip_family_info->chip_family));
+            "AMD R%cxx %s (Terakan)", chip_info->is_r9xx ? '9' : '8',
+            terakan_physical_device_chip_family_name(chip_info->chip_family));
    /* TODO(Triang3l): pipelineCacheUUID when pipeline cache is implemented. */
 
    properties_out->maxImageDimension1D = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT;
@@ -590,7 +581,7 @@ terakan_physical_device_get_capabilities(
     * (when vertex shaders start loading the base instance to R0.Z when it's needed).
     */
    properties_out->maxVertexInputBindingStride =
-      ((uint32_t)1 << (chip_family_info->is_r9xx ? 12 : 11)) - 1;
+      ((uint32_t)1 << (chip_info->is_r9xx ? 12 : 11)) - 1;
 
    properties_out->maxVertexOutputComponents = 4 * TERAKAN_LIMITS_HW_PARAMETER_CACHE_VECTOR_COUNT;
 
@@ -662,7 +653,7 @@ terakan_physical_device_get_capabilities(
    properties_out->framebufferDepthSampleCounts = sample_counts;
    properties_out->framebufferStencilSampleCounts = sample_counts;
    properties_out->framebufferNoAttachmentsSampleCounts = sample_counts;
-   if (chip_family_info->is_r9xx) {
+   if (chip_info->is_r9xx) {
       properties_out->framebufferNoAttachmentsSampleCounts |= VK_SAMPLE_COUNT_16_BIT;
    }
 
@@ -1047,7 +1038,7 @@ terakan_physical_device_init(
 
    device->winsys_fn = winsys_fn_static;
 
-   terakan_physical_device_chip_family_info_init(pci_device_id, &device->chip_family_info);
+   terakan_physical_device_chip_info_init(pci_device_id, &device->chip_info);
 
    device->max_memory_allocation_size = max_memory_allocation_size;
 
@@ -1169,7 +1160,7 @@ terakan_physical_device_init(
 
       .lower_int64_options = ~(nir_lower_int64_options)0,
 
-      .lower_doubles_options = device->chip_family_info.is_r9xx
+      .lower_doubles_options = device->chip_info.is_r9xx
                                   ? nir_lower_ddiv | nir_lower_dfloor | nir_lower_dceil |
                                        nir_lower_dmod | nir_lower_dsub | nir_lower_dtrunc
                                   : nir_lower_fp64_full_software,
@@ -1195,7 +1186,7 @@ terakan_physical_device_init(
    if (device->isa == NULL) {
       return vk_error(instance, VK_ERROR_OUT_OF_HOST_MEMORY);
    }
-   if (r600_isa_init(device->chip_family_info.is_r9xx ? CAYMAN : EVERGREEN, device->isa) != 0) {
+   if (r600_isa_init(device->chip_info.is_r9xx ? CAYMAN : EVERGREEN, device->isa) != 0) {
       result = vk_error(instance, VK_ERROR_OUT_OF_HOST_MEMORY);
       goto fail_isa;
    }
@@ -1204,7 +1195,7 @@ terakan_physical_device_init(
    struct vk_features features;
    struct vk_properties properties;
    terakan_physical_device_get_capabilities(
-      instance, &device->chip_family_info, device->tiling_info.pipe_interleave_bytes_log2,
+      instance, &device->chip_info, device->tiling_info.pipe_interleave_bytes_log2,
       min_memory_map_alignment, clock_crystal_frequency_hz, max_memory_allocation_size, &extensions,
       &features, &properties);
    device->winsys_fn->get_winsys_extensions(device, &extensions, &features, &properties);
@@ -1223,7 +1214,7 @@ terakan_physical_device_init(
 
    device->vk.supported_sync_types = supported_sync_types_static;
 
-   terakan_physical_device_init_memory_properties(device->chip_family_info.has_dedicated_vram,
+   terakan_physical_device_init_memory_properties(device->chip_info.has_dedicated_vram,
                                                   gtt_allocation_granularity, gtt_size, vram_size,
                                                   vram_visible, &device->memory_properties);
 

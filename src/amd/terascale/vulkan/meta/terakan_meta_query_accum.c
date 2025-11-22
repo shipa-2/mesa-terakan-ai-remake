@@ -912,7 +912,7 @@ terakan_meta_query_accum_begin(struct terakan_gfx_command_writer * const command
    case VK_QUERY_TYPE_OCCLUSION: {
       unsigned const max_render_backends_log2 =
          terakan_gfx_command_writer_physical_device(command_writer)
-            ->chip_family_info.max_render_backends_log2;
+            ->chip_info.max_render_backends_log2;
       vs_index = TERAKAN_META_SHADER_QUERY_ACCUM_ZPASS_1_RB_VS + max_render_backends_log2;
       dst_uav_dwords = ((2 * 2) << max_render_backends_log2) - 2;
    } break;

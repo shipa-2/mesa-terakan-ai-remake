@@ -328,7 +328,7 @@ terakan_queue_submit(struct vk_queue * const queue_base, struct vk_queue_submit 
       shader_ring_offsets_shr8[shader_ring_index] = shader_ring_bytes_needed_total_shr8;
       shader_ring_bytes_needed_total_shr8 +=
          shader_ring_bytes_needed_for_se_shr8[shader_ring_index]
-         << (unsigned)(physical_device->chip_family_info.two_shader_engines_max &&
+         << (unsigned)(physical_device->chip_info.two_shader_engines_max &&
                        (TERAKAN_SHADER_RINGS_PER_SHADER_ENGINE & BITFIELD_BIT(shader_ring_index)));
    }
    if (queue->shader_rings_bytes_shr8 < shader_ring_bytes_needed_total_shr8) {
@@ -424,7 +424,7 @@ terakan_queue_submit(struct vk_queue * const queue_base, struct vk_queue_submit 
                      command_buffer_indirect_buffer->relocations,
                      indirect_buffer_shader_ring->set_base_relocation_handles[0],
                      shader_ring_va_shr8);
-                  if (physical_device->chip_family_info.two_shader_engines_max &&
+                  if (physical_device->chip_info.two_shader_engines_max &&
                       (TERAKAN_SHADER_RINGS_PER_SHADER_ENGINE & BITFIELD_BIT(shader_ring_index))) {
                      command_buffer_indirect_buffer->indirect_buffer
                         [indirect_buffer_shader_ring->set_base_argument_offsets_dwords[1]] =

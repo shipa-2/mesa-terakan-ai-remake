@@ -168,9 +168,9 @@ terakan_device_init(struct terakan_device * const device,
    uint32_t uav_immediate_bo_bytes_shr8 = 0;
    for (unsigned texel_bytes_log2 = 0; texel_bytes_log2 <= 4; ++texel_bytes_log2) {
       device->uav_immediate_va_shr8[texel_bytes_log2] = uav_immediate_bo_bytes_shr8;
-      uav_immediate_bo_bytes_shr8 += DIV_ROUND_UP(
-         physical_device->chip_family_info.uav_immediate_size_texels << texel_bytes_log2,
-         (uint32_t)1 << 8);
+      uav_immediate_bo_bytes_shr8 +=
+         DIV_ROUND_UP(physical_device->chip_info.uav_immediate_size_texels << texel_bytes_log2,
+                      (uint32_t)1 << 8);
    }
    result = device->winsys_fn->bo->allocate_device_memory(
       device, uav_immediate_bo_bytes_shr8 << 8, (VkDeviceSize)1 << 8,
@@ -210,7 +210,7 @@ terakan_device_init(struct terakan_device * const device,
       goto fail_uav_immediate_bo;
    }
 
-   bool const is_r9xx = physical_device->chip_family_info.is_r9xx;
+   bool const is_r9xx = physical_device->chip_info.is_r9xx;
 
    /* The first shader is the empty fetch shader. */
    VkDeviceSize meta_shaders_bo_size =

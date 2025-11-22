@@ -872,7 +872,7 @@ terakan_CreateQueryPool(VkDevice const deviceHandle,
     */
    switch (pCreateInfo->queryType) {
    case VK_QUERY_TYPE_OCCLUSION:
-      samples_size_counters = 2 << physical_device->chip_family_info.max_render_backends_log2;
+      samples_size_counters = 2 << physical_device->chip_info.max_render_backends_log2;
       break;
    case VK_QUERY_TYPE_PIPELINE_STATISTICS:
       /* #MemoryIntegrity: Don't allow invalid pipeline statistics flags to cause inconsistent
@@ -1028,7 +1028,7 @@ terakan_query_sample_in_new_indirect_buffer(struct terakan_gfx_command_writer * 
                memset(sample_mapping, 0,
                       (sizeof(uint64_t) * 2)
                          << terakan_gfx_command_writer_physical_device(command_writer)
-                               ->chip_family_info.max_render_backends_log2);
+                               ->chip_info.max_render_backends_log2);
             }
          }
          uint32_t * const packet_start = terakan_gfx_command_writer_emit_with_bo(

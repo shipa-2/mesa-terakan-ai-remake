@@ -1982,7 +1982,7 @@ terakan_CmdCopyQueryPoolResults(VkCommandBuffer const commandBuffer, VkQueryPool
    case VK_QUERY_TYPE_OCCLUSION:
       vs_index = (is_64_bit ? TERAKAN_META_SHADER_QUERY_COPY_ZPASS_64_BIT_1_RB_VS
                             : TERAKAN_META_SHADER_QUERY_COPY_ZPASS_32_BIT_1_RB_VS) +
-                 physical_device->chip_family_info.max_render_backends_log2;
+                 physical_device->chip_info.max_render_backends_log2;
       break;
    case VK_QUERY_TYPE_PIPELINE_STATISTICS:
       vs_index = is_64_bit ? TERAKAN_META_SHADER_QUERY_COPY_PIPELINESTAT_64_BIT_VS
@@ -2122,8 +2122,8 @@ terakan_CmdCopyQueryPoolResults(VkCommandBuffer const commandBuffer, VkQueryPool
          return;
       }
       *packet++ = PKT3(PKT3_SURFACE_SYNC, 4 - 1, 0);
-      *packet++ = (physical_device->chip_family_info.has_vertex_cache ? S_0085F0_VC_ACTION_ENA(1)
-                                                                      : S_0085F0_TC_ACTION_ENA(1)) |
+      *packet++ = (physical_device->chip_info.has_vertex_cache ? S_0085F0_VC_ACTION_ENA(1)
+                                                               : S_0085F0_TC_ACTION_ENA(1)) |
                   TERAKAN_BARRIER_SURFACE_SYNC_ENGINE_ME;
       *packet++ = UINT32_MAX;
       *packet++ = 0;
