@@ -193,9 +193,13 @@ terakan_descriptor_create_for_storage_buffer(
    resource_out[0] = (uint32_t)va;
    resource_out[1] = (uint32_t)(range_aligned - 1);
    resource_out[2] = S_030008_BASE_ADDRESS_HI(va >> 32) | S_030008_STRIDE(1);
-   resource_out[3] =
-      S_03000C_DST_SEL_X(TERASCALE_SWIZZLE_X) | S_03000C_DST_SEL_Y(TERASCALE_SWIZZLE_Y) |
-      S_03000C_DST_SEL_Z(TERASCALE_SWIZZLE_Z) | S_03000C_DST_SEL_W(TERASCALE_SWIZZLE_W);
+   /* TODO(Triang3l): Set UNCACHED based on whether the shader will actually be writing to this
+    * buffer.
+    */
+   resource_out[3] = S_03000C_DST_SEL_X(TERASCALE_SWIZZLE_X) |
+                     S_03000C_DST_SEL_Y(TERASCALE_SWIZZLE_Y) |
+                     S_03000C_DST_SEL_Z(TERASCALE_SWIZZLE_Z) |
+                     S_03000C_DST_SEL_W(TERASCALE_SWIZZLE_W) | S_03000C_UNCACHED(1);
    resource_out[4] = (uint32_t)range_aligned;
    resource_out[5] = 0;
    resource_out[6] = 0;

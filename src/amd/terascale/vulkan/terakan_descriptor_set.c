@@ -157,6 +157,12 @@ terakan_UpdateDescriptorSets(UNUSED VkDevice const device, uint32_t const descri
                 G_03001C_TYPE(buffer_view->resource[7]) == V_03001C_SQ_TEX_VTX_VALID_BUFFER) {
                dst_resource->bo = buffer_view->bo;
                memcpy(dst_resource->resource, buffer_view->resource, sizeof(uint32_t) * 8);
+               if (descriptor_write->descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER) {
+                  /* TODO(Triang3l): Set UNCACHED based on whether the shader will actually be
+                   * writing to this buffer.
+                   */
+                  dst_resource->resource[3] |= S_03000C_UNCACHED(1);
+               }
             } else {
                dst_resource->bo = NULL;
             }
