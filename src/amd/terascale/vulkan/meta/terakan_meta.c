@@ -133,6 +133,41 @@ struct terakan_meta_shader const * const terakan_meta_shaders[TERAKAN_META_SHADE
    [TERAKAN_META_SHADER_COPY_IMAGE_TO_BUFFER_PS] = &terakan_meta_copy_image_to_buffer_ps,
    [TERAKAN_META_SHADER_COPY_IMAGE_PS] = &terakan_meta_copy_image_ps,
    [TERAKAN_META_SHADER_COPY_EXPAND_3X_PS] = &terakan_meta_copy_expand_3x_ps,
+   [TERAKAN_META_SHADER_QUERY_ACCUM_ZPASS_1_RB_VS] = &terakan_meta_query_accum_zpass_1_rb_vs,
+   [TERAKAN_META_SHADER_QUERY_ACCUM_ZPASS_2_RB_VS] = &terakan_meta_query_accum_zpass_2_rb_vs,
+   [TERAKAN_META_SHADER_QUERY_ACCUM_ZPASS_4_RB_VS] = &terakan_meta_query_accum_zpass_4_rb_vs,
+   [TERAKAN_META_SHADER_QUERY_ACCUM_ZPASS_8_RB_VS] = &terakan_meta_query_accum_zpass_8_rb_vs,
+   [TERAKAN_META_SHADER_QUERY_ACCUM_PIPELINESTAT_VS] = &terakan_meta_query_accum_pipelinestat_vs,
+   [TERAKAN_META_SHADER_QUERY_ACCUM_STREAMOUTSTATS_VS] =
+      &terakan_meta_query_accum_streamoutstats_vs,
+   [TERAKAN_META_SHADER_QUERY_COPY_ZPASS_32_BIT_1_RB_VS] =
+      &terakan_meta_query_copy_zpass_32_bit_1_rb_vs,
+   [TERAKAN_META_SHADER_QUERY_COPY_ZPASS_32_BIT_2_RB_VS] =
+      &terakan_meta_query_copy_zpass_32_bit_2_rb_vs,
+   [TERAKAN_META_SHADER_QUERY_COPY_ZPASS_32_BIT_4_RB_VS] =
+      &terakan_meta_query_copy_zpass_32_bit_4_rb_vs,
+   [TERAKAN_META_SHADER_QUERY_COPY_ZPASS_32_BIT_8_RB_VS] =
+      &terakan_meta_query_copy_zpass_32_bit_8_rb_vs,
+   [TERAKAN_META_SHADER_QUERY_COPY_ZPASS_64_BIT_1_RB_VS] =
+      &terakan_meta_query_copy_zpass_64_bit_1_rb_vs,
+   [TERAKAN_META_SHADER_QUERY_COPY_ZPASS_64_BIT_2_RB_VS] =
+      &terakan_meta_query_copy_zpass_64_bit_2_rb_vs,
+   [TERAKAN_META_SHADER_QUERY_COPY_ZPASS_64_BIT_4_RB_VS] =
+      &terakan_meta_query_copy_zpass_64_bit_4_rb_vs,
+   [TERAKAN_META_SHADER_QUERY_COPY_ZPASS_64_BIT_8_RB_VS] =
+      &terakan_meta_query_copy_zpass_64_bit_8_rb_vs,
+   [TERAKAN_META_SHADER_QUERY_COPY_PIPELINESTAT_32_BIT_VS] =
+      &terakan_meta_query_copy_pipelinestat_32_bit_vs,
+   [TERAKAN_META_SHADER_QUERY_COPY_PIPELINESTAT_64_BIT_VS] =
+      &terakan_meta_query_copy_pipelinestat_64_bit_vs,
+   [TERAKAN_META_SHADER_QUERY_COPY_TIMESTAMP_32_BIT_VS] =
+      &terakan_meta_query_copy_timestamp_32_bit_vs,
+   [TERAKAN_META_SHADER_QUERY_COPY_TIMESTAMP_64_BIT_VS] =
+      &terakan_meta_query_copy_timestamp_64_bit_vs,
+   [TERAKAN_META_SHADER_QUERY_COPY_STREAMOUTSTATS_32_BIT_VS] =
+      &terakan_meta_query_copy_streamoutstats_32_bit_vs,
+   [TERAKAN_META_SHADER_QUERY_COPY_STREAMOUTSTATS_64_BIT_VS] =
+      &terakan_meta_query_copy_streamoutstats_64_bit_vs,
 };
 
 void
@@ -269,6 +304,25 @@ terakan_meta_set_ps(struct terakan_gfx_command_writer * const command_writer,
 
    terakan_hw_state_sqc_set_needed_by_fs(&command_writer->hw_state_sqc, shader->kcache_needed,
                                          shader->resources_needed, shader->samplers_needed);
+}
+
+void
+terakan_meta_begin(struct terakan_gfx_command_writer * const command_writer,
+                   bool const rasterization_used)
+{
+   terakan_state_draw_set_pending(&command_writer->state_draw,
+                                  TERAKAN_STATE_DRAW_INDEX_PIPELINESTAT);
+   bool const pipelinestat_modified = command_writer->hw_state_draw.pipelinestat != false;
+   command_writer->hw_state_draw.pipelinestat = false;
+   terakan_hw_state_draw_written(&command_writer->hw_state_draw,
+                                 TERAKAN_HW_STATE_DRAW_INDEX_PIPELINESTAT, pipelinestat_modified);
+
+   if (rasterization_used) {
+      terakan_meta_modify_state_draw_dword(
+         command_writer, TERAKAN_STATE_DRAW_INDEX_DB_COUNT_CONTROL,
+         TERAKAN_HW_STATE_DRAW_INDEX_DB_COUNT_CONTROL,
+         &command_writer->hw_state_draw.db_count_control, S_028004_ZPASS_INCREMENT_DISABLE(1));
+   }
 }
 
 void

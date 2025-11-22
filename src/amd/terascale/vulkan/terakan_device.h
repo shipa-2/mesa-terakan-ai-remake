@@ -70,7 +70,7 @@ struct terakan_device {
 
    /* BO for data that needs to be discarded on the graphics queue:
     * - EVENT_WRITE_EOP fence (4 bytes).
-    * - CP DMA size misalignment and sync (TERAKAN_CP_DMA_COPY_OPTIMAL_ALIGNMENT * 2).
+    * - CP DMA size misalignment (TERAKAN_CP_DMA_COPY_OPTIMAL_ALIGNMENT * 2).
     */
    struct terakan_bo * gfx_discard_bo;
 
@@ -83,6 +83,11 @@ struct terakan_device {
     */
    struct terakan_bo * uav_immediate_bo;
    uint32_t uav_immediate_va_shr8[4 + 1];
+
+   /* Buffer holding the intermediate result in accumulation of query results from multiple indirect
+    * buffers.
+    */
+   struct terakan_bo * query_accumulator_bo;
 
    struct terakan_bo * meta_shaders_bo;
    struct terakan_shader_static meta_shaders[TERAKAN_META_SHADER_COUNT];

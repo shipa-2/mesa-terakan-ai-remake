@@ -146,6 +146,7 @@ extern "C" {
  * GS and VS/TES ALT_CONST: Ring buffer.
  * CS: Number of workgroups.
  * Not needed in FS, so can be used for an additional input attachment.
+ * Can be used in meta non-pixel shaders for an additional resource.
  */
 #define TERAKAN_RESOURCE_RANGE_NON_PIXEL_STAGE_SPECIFIC (TERAKAN_RESOURCE_HW_COUNT_VERTEX - 1)
 /* Pixel and compute shaders provide additional 16 resource bindings beyond the 160 available in
@@ -234,8 +235,13 @@ struct terakan_color_descriptor {
 
 struct terakan_physical_device;
 
+/* May increase as `bytes_per_element` grows. */
 unsigned terakan_color_descriptor_buffer_uav_base_granularity_log2(
    unsigned bytes_per_element, struct terakan_physical_device const * physical_device);
+
+void terakan_color_descriptor_calculate_buffer_pitch_slice(
+   struct terakan_color_descriptor * descriptor, unsigned bytes_per_element,
+   struct terakan_physical_device const * physical_device);
 
 void terakan_color_descriptor_calculate_buffer_base_pitch_slice_dim_offset(
    struct terakan_color_descriptor * descriptor, uint64_t va, VkDeviceSize elements,

@@ -29,8 +29,10 @@
 #include "terakan_descriptor.h"
 #include "terakan_device.h"
 #include "terakan_hw_state.h"
+#include "terakan_instance.h"
 #include "terakan_physical_device.h"
 #include "terakan_push_constants.h"
+#include "terakan_query.h"
 #include "terakan_queue.h"
 #include "terakan_shader.h"
 #include "terakan_state.h"
@@ -38,6 +40,7 @@
 #include "gallium/drivers/r600/evergreend.h"
 #include "gallium/drivers/r600/r600d_common.h"
 #include "util/bitset.h"
+#include "util/hash_table.h"
 #include "util/list.h"
 #include "util/macros.h"
 #include "vk_command_buffer.h"
@@ -146,6 +149,11 @@ struct terakan_command_buffer_indirect_buffer_shader_ring {
    uint32_t set_size_argument_offset_dwords;
 };
 
+struct terakan_command_buffer_indirect_buffer_query_sample {
+   struct terakan_bo const * bo;
+   uint32_t va_kcache_lines;
+};
+
 struct terakan_command_buffer_indirect_buffer {
    /* If owned, within terakan_command_buffer::indirect_buffers.
     * If free, within terakan_command_pool::indirect_buffers_free.
@@ -168,6 +176,14 @@ struct terakan_command_buffer_indirect_buffer {
    uint32_t shader_rings_bo_placeholder_reference;
    struct terakan_command_buffer_indirect_buffer_shader_ring
       shader_rings[TERAKAN_SHADER_RING_INDEX_COUNT];
+
+   /* Hardware query counter samples at the beginning and the end of the indirect buffer, allocated
+    * in the push buffers of the command buffer.
+    * [0 = beginning, 1 = end].
+    * The BO is NULL if no sample yet.
+    */
+   struct terakan_command_buffer_indirect_buffer_query_sample
+      query_begin_end_samples[TERAKAN_QUERY_SAMPLE_INDEX_COUNT][2];
 };
 
 struct terakan_gfx_command_writer;
@@ -195,6 +211,8 @@ VK_DEFINE_HANDLE_CASTS(terakan_command_buffer, vk.base, VkCommandBuffer,
 TERAKAN_DEVICE_DEFINE_OBJECT_SHORTCUTS(command_buffer, container_of(command_buffer->vk.base.device,
                                                                     struct terakan_device, vk))
 
+extern struct vk_command_buffer_ops const terakan_command_buffer_ops;
+
 /* Note that `bo_references` in any optimal size must not exceed
  * `TERAKAN_BO_REFERENCE_WRITER_REFERENCE_COUNT` as `terakan_bo_reference_writer` has static limits
  * related to it.
@@ -210,6 +228,7 @@ struct terakan_queue_submission_size terakan_command_buffer_optimal_submission_s
  * - Other things within those bounds, such as small index buffers.
  *
  * Returns the mapping, or NULL if failed.
+ * `bo_out` and `va_out` are not modified in case of a failure.
  */
 void * terakan_push_buffer_allocate(struct terakan_command_buffer * command_buffer,
                                     uint32_t size_bytes, uint32_t alignment_bytes,
@@ -230,7 +249,18 @@ terakan_push_buffer_allocate_kcache(struct terakan_command_buffer * const comman
    return mapping;
 }
 
-extern struct vk_command_buffer_ops const terakan_command_buffer_ops;
+/* Must be allocated using ralloc (used as an allocation context for the hash table). */
+struct terakan_query_active_table {
+   /* Within terakan_command_pool::active_query_tables_free. */
+   struct list_head free_link;
+
+   /* Key: pointer to the query beginning and end samples in the memory mapping of the query pool.
+    *
+    * Value: pointer to the `terakan_command_buffer_indirect_buffer` containing the beginning sample
+    * packet.
+    */
+   struct hash_table begin_indirect_buffer_ht;
+};
 
 struct terakan_command_writer {
    /* Within terakan_command_pool::command_writers_free. */
@@ -270,20 +300,39 @@ struct terakan_gfx_command_writer {
 
    struct terakan_command_buffer_indirect_buffer * indirect_buffer;
 
-#ifndef NDEBUG
-   /* For testing multiple indirect buffers in one Vulkan command buffer.
-    * If >= 0, this many more application's or internal draws or dispatches may be emitted in the
-    * current indirect buffer.
+   uint32_t * indirect_buffer_append_ptr;
+   uint32_t * indirect_buffer_finalizer_prepend_ptr;
+
+   uint32_t indirect_buffer_finalizer_relocation_list;
+
+#ifdef TERAKAN_DEVTEST
+   /* For testing multiple indirect buffer submissions for one Vulkan command buffer.
+    *
+    * If >= 0, this is the number of draws or dispatches (done by the application or internally
+    * within the driver) remaining after which a new indirect buffer will be started.
+    *
+    * See `devtest_split_indirect_buffer_after_actions` in `terakan_instance`.
     */
-   int64_t actions_before_next_indirect_buffer_split;
+   int64_t actions_before_next_devtest_indirect_buffer_split;
 #endif
 
    bool is_in_outer_emit_call;
 
 #ifndef NDEBUG
-   bool is_emission_unclosed;
+   /* UINT32_MAX if not in an emission. Finalizers are subtracted. */
+   uint32_t current_emission_packet_dwords;
    uint32_t current_emission_relocations_remaining;
 #endif
+
+   /* For the last CP DMA packet in the current indirect buffer (not including the finalizers) for
+    * which completion confirmation in ME using PKT3_CP_DMA_CP_SYNC is not yet done, this is the
+    * pointer to the dword that PKT3_CP_DMA_CP_SYNC can be added to, or NULL if there's no such
+    * packet.
+    *
+    * Note that PKT3_CP_DMA_CP_SYNC does nothing for zero-size CP DMA operations (tested on Barts
+    * with the firmware used by DRM Radeon 2.50.0), so make sure not to emit them.
+    */
+   uint32_t * last_unsynced_cp_dma_sync_dword;
 
    enum terakan_barrier_action_flags pending_barrier_actions;
 
@@ -293,6 +342,9 @@ struct terakan_gfx_command_writer {
    enum terakan_barrier_action_flags post_buffer_copy_write_barrier_actions;
    enum terakan_barrier_action_flags post_color_image_copy_write_barrier_actions;
    enum terakan_barrier_action_flags post_depth_stencil_image_copy_write_barrier_actions;
+
+   struct terakan_query_active_table * active_queries;
+   size_t active_query_counts[TERAKAN_QUERY_SAMPLE_INDEX_COUNT];
 
    struct terakan_hw_state_draw hw_state_draw;
    struct terakan_hw_state_sqc hw_state_sqc;
@@ -307,32 +359,42 @@ struct terakan_gfx_command_writer {
 TERAKAN_DEVICE_DEFINE_OBJECT_SHORTCUTS(gfx_command_writer,
                                        terakan_command_writer_device(&gfx_command_writer->base))
 
+/* Finish the current indirect buffer if one is being recorded.
+ *
+ * Generally not for use outside the internal logic of the command writer, except for testing of
+ * areas where having multiple indirect buffers may affect the behavior.
+ *
+ * Must not be called while a packet emission is being done.
+ */
+void
+terakan_gfx_command_writer_end_indirect_buffer(struct terakan_gfx_command_writer * command_writer);
+
 static inline void
-terakan_gfx_command_writer_emit_done(ASSERTED struct terakan_gfx_command_writer * command_writer,
-                                     ASSERTED uint32_t const * const final_append_ptr)
+terakan_gfx_command_writer_emit_done(struct terakan_gfx_command_writer * const command_writer,
+                                     uint32_t * const final_append_ptr)
 {
 #ifndef NDEBUG
-   assert(command_writer->is_emission_unclosed);
-   assert(final_append_ptr == command_writer->indirect_buffer->indirect_buffer +
-                                 command_writer->indirect_buffer->indirect_buffer_size_dwords);
-   assert(command_writer->current_emission_relocations_remaining == 0);
-   command_writer->is_emission_unclosed = false;
+   assert(command_writer->current_emission_packet_dwords != UINT32_MAX &&
+          "Command buffer emission should have been started");
+   /* Check that there was no overflow. */
+   assert(final_append_ptr >= command_writer->indirect_buffer_append_ptr);
+   assert(final_append_ptr - command_writer->indirect_buffer_append_ptr <=
+          command_writer->current_emission_packet_dwords);
+   command_writer->current_emission_packet_dwords = UINT32_MAX;
 #endif
+   command_writer->indirect_buffer_append_ptr = final_append_ptr;
 }
 
 /* Entry point for emitting packets.
  *
- * Allocates space for `packet_dwords` and `relocation_*_count` relocations, and assumes that the
- * application will write them all.
- * `packet_dwords` must not be 0.
- *
- * Also ensures that `bo_count` calls to `terakan_bo_reference_writer_add_reference` for
+ * Ensures that `packet_dwords` of commands and `relocation_*_count` relocations can be written to
+ * an indirect buffer, and that `bo_count` calls to `terakan_bo_reference_writer_add_reference` for
  * `terakan_gfx_command_writer::bo_reference_writer` will succeed (regardless of which BOs are
- * specified). Unlike for `packet_dwords` and relocations, it's also okay to allocate more BO
- * references than the number of `terakan_bo_reference_writer_add_reference` calls that will
- * actually be done subsequently (`terakan_bo_reference_writer_add_reference` calls may thus be done
- * conditionally based on whether this emission has started a new indirect buffer and thus a new
- * list of BO references, for instance).
+ * specified).
+ *
+ * Assumes that the caller will write no more than the specified amount, but not necessarily exactly
+ * that amount (so, for instance, the caller can emit different packets depending on whether the
+ * emission ended up in a new indirect buffer or not).
  *
  * A Vulkan command buffer may need to be split into multiple kernel driver submissions, and the
  * kernel may not preserve the GPU state between those submissions. Therefore, there are two types
@@ -352,8 +414,8 @@ terakan_gfx_command_writer_emit_done(ASSERTED struct terakan_gfx_command_writer 
  *
  * - Inner emissions.
  *
- *   These are invoked by an outer `terakan_gfx_command_writer_emit_with_bo` and contain preamble
- *   packets or `terakan_hw_state` applying packets.
+ *   These are invoked by an outer `terakan_gfx_command_writer_emit*` and contain preamble packets
+ *   or `terakan_hw_state` applying packets.
  *
  *   If the current indirect buffer was overflown, inner emit calls return NULL, because the outer
  *   emit call will reapply all the tracked state when it switches to a new indirect buffer.
@@ -385,10 +447,58 @@ terakan_gfx_command_writer_emit_done(ASSERTED struct terakan_gfx_command_writer 
  * exhausted, returns NULL. Otherwise, returns a pointer to the packet dwords.
  *
  * The returned BO reference allocation is valid within the current command buffer recording until
- * the next `terakan_gfx_command_writer_emit_with_bo` call for it.
+ * the next `terakan_gfx_command_writer_emit*` call for it.
  *
  * After writing, `terakan_gfx_command_writer_emit_done` must be called with the actual append
  * pointer for the end of the emission to verify that `packet_dwords` have been written via it.
+ *
+ * Note that when commands referencing BOs are emitted, it must be ensured (including in descriptor
+ * sets) that the actions performed by them should not write outside the boundaries of the BOs (and
+ * preferably of the actual Vulkan object such as VkBuffer). Submission validation in the
+ * kernel-mode driver may be incorrect or insufficient (like in DRM Radeon 2.50.0), or even
+ * non-existent, and virtual memory may be either unsupported by the GPU or disabled, so the
+ * user-mode driver needs to ensure that applications running on it are unable to modify memory not
+ * allocated to them.
+ *
+ * Section 3.7. "Valid Usage" of the "Fundamentals" chapter of the Vulkan 1.4.322 specification
+ * says:
+ *
+ *     "The core layer assumes applications are using the API correctly. Except as documented
+ *     elsewhere in the Specification, the behavior of the core layer to an application using the
+ *     API incorrectly is undefined, and may include program termination. However, implementations
+ *     must ensure that incorrect usage by an application does not affect the integrity of the
+ *     operating system, the Vulkan implementation, or other applications in the system using
+ *     Vulkan."
+ *
+ * For higher compatibility, the preferred approach to preventing out-of-bounds BO access should be
+ * graceful degradation, such as by clamping for buffers, or by scissoring for images, as opposed to
+ * throwing away the entire command including all the inbounds accesses in it. The guard code must
+ * carefully consider integer overflow possibilities, especially on hosts with 32-bit pointers and
+ * sizes.
+ *
+ * Some potential out-of-bounds access patterns may be obvious (such as ranges in transfer
+ * operations), and must be guarded in the first place. Some are much more complex, for instance,
+ * when invalid pointers (including use-after-free cases) are involved, and it may be impossible to
+ * handle all of them accurately. Scenarios where validation would introduce unreasonable complexity
+ * (such as counting references to kernel BOs or to Vulkan device memory object structures in
+ * existing descriptor sets or command buffers to defer deallocation) or performance impact (like
+ * lookups of object handles in live object tables) may be ignored at least until they start causing
+ * issues when running existing applications.
+ *
+ * Validation of alignment in vkBindBufferMemory or vkBindImageMemory is also insufficient, it needs
+ * to be done at the actual usage location, because the wrong buffer or image may be passed to a
+ * command.
+ *
+ * For reads, preventing out-of-bounds access is preferable, but not mandatory (assume that they may
+ * be treated, for instance, like non-zeroed BOs given by the kernel driver).
+ *
+ * Use the #MemoryIntegrity tag to mark locations where BO out-of-bounds access prevention measures
+ * are employed to quickly explain the reasoning behind the code that handles invalid usage cases by
+ * referencing this comment.
+ */
+/* TODO(Triang3l): Actually implement BO out-of-bounds access prevention mechanisms everywhere.
+ * The part of the comment about memory integrity was written when a lot of logic not caring about
+ * invalid usage has already been written.
  */
 uint32_t * terakan_gfx_command_writer_emit_with_bo(
    struct terakan_gfx_command_writer * command_writer,
@@ -402,6 +512,26 @@ terakan_gfx_command_writer_emit(struct terakan_gfx_command_writer * const comman
 {
    return terakan_gfx_command_writer_emit_with_bo(command_writer, contents, packet_dwords, 0, 0, 0);
 }
+
+/* Uses the space allocated by the current emission to write packets in the end of the current
+ * indirect buffer, so it can be used to perform finalization of some work done in the indirect
+ * buffer within the same kernel driver submission.
+ *
+ * Note that the finalizer emissions will be executed in reverse order. Finalizer commands from
+ * earlier emit calls are executed after finalizer commands from later emit calls, like:
+ *  1) Regular commands from emission 1;
+ *  2) Regular commands from emission 2;
+ *  3) Finalizer from emission 2;
+ *  4) Finalizer from emission 1.
+ * This makes it possible to, for instance, emit a cache flush finalizer when starting an indirect
+ * buffer, so that it will also flush the work done by all other finalizers.
+ *
+ * Unlike for emissions themselves, the caller must write exactly the specified number of packet
+ * dwords and relocations.
+ */
+uint32_t * terakan_gfx_command_writer_add_finalizer(
+   struct terakan_gfx_command_writer * command_writer, uint32_t packet_dwords,
+   uint32_t relocation_for_32_bits_count, uint32_t relocation_for_40_bits_count);
 
 /* DRM Radeon relocation NOP packets are inserted after the packet containing the relative address,
  * so `indirect_buffer_append_ptr` must be after the corresponding packet (and previous relocations
@@ -459,6 +589,8 @@ struct terakan_command_pool {
    struct list_head push_buffers_free;
 
    struct list_head indirect_buffers_free;
+
+   struct list_head active_query_tables_free;
 
    struct list_head command_writers_free;
 };

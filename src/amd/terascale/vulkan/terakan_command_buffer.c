@@ -40,7 +40,9 @@
 #include "gallium/drivers/r600/evergreend.h"
 #include "gallium/drivers/r600/r600d_common.h"
 #include "util/bitscan.h"
+#include "util/hash_table.h"
 #include "util/macros.h"
+#include "util/ralloc.h"
 #include "vk_alloc.h"
 #include "vk_log.h"
 
@@ -336,16 +338,35 @@ terakan_command_buffer_new_indirect_buffer(struct terakan_command_buffer * const
 }
 
 static void
+terakan_command_buffer_release_command_writer(struct terakan_command_buffer * const command_buffer)
+{
+   struct terakan_gfx_command_writer * const gfx_command_writer =
+      command_buffer->command_writer.gfx;
+   if (gfx_command_writer == NULL) {
+      return;
+   }
+
+   struct terakan_command_pool * const command_pool =
+      container_of(command_buffer->vk.pool, struct terakan_command_pool, vk);
+
+   if (gfx_command_writer->active_queries != NULL) {
+      _mesa_hash_table_clear(&gfx_command_writer->active_queries->begin_indirect_buffer_ht, NULL);
+      list_add(&gfx_command_writer->active_queries->free_link,
+               &command_pool->active_query_tables_free);
+      gfx_command_writer->active_queries = NULL;
+   }
+
+   list_add(&gfx_command_writer->base.free_link, &command_pool->command_writers_free);
+   command_buffer->command_writer.gfx = NULL;
+}
+
+static void
 terakan_command_buffer_release_resources(struct terakan_command_buffer * const command_buffer)
 {
    struct terakan_command_pool * const command_pool =
       container_of(command_buffer->vk.pool, struct terakan_command_pool, vk);
 
-   if (command_buffer->command_writer.gfx != NULL) {
-      list_add(&command_buffer->command_writer.gfx->base.free_link,
-               &command_pool->command_writers_free);
-      command_buffer->command_writer.gfx = NULL;
-   }
+   terakan_command_buffer_release_command_writer(command_buffer);
 
    list_for_each_entry_safe (struct terakan_command_buffer_indirect_buffer, indirect_buffer,
                              &command_buffer->indirect_buffers, link) {
@@ -424,12 +445,28 @@ struct vk_command_buffer_ops const terakan_command_buffer_ops = {
    .destroy = terakan_command_buffer_destroy,
 };
 
+#ifdef TERAKAN_DEVTEST
 static void
+terakan_gfx_command_writer_reset_devtest_indirect_buffer_splitting(
+   struct terakan_gfx_command_writer * const command_writer)
+{
+   command_writer->actions_before_next_devtest_indirect_buffer_split =
+      container_of(terakan_gfx_command_writer_physical_device(command_writer)->vk.instance,
+                   struct terakan_instance const, vk)
+         ->devtest_split_indirect_buffer_after_actions;
+   if (command_writer->actions_before_next_devtest_indirect_buffer_split <= 0) {
+      /* Don't enable indirect buffer splitting debugging. */
+      command_writer->actions_before_next_devtest_indirect_buffer_split = -1;
+   }
+}
+#endif
+
+void
 terakan_gfx_command_writer_end_indirect_buffer(
    struct terakan_gfx_command_writer * const command_writer)
 {
 #ifndef NDEBUG
-   assert(!command_writer->is_emission_unclosed &&
+   assert(command_writer->current_emission_packet_dwords == UINT32_MAX &&
           "terakan_gfx_command_writer_emit_done must be called with the final append pointer after "
           "every command emission");
 #endif
@@ -438,17 +475,64 @@ terakan_gfx_command_writer_end_indirect_buffer(
       return;
    }
 
+   /* Make sure that there are no pending CP DMA commands after the indirect buffer submission is
+    * executed, so memory accessed by CP DMA in it can be released to the kernel after it.
+    */
+   terakan_cp_dma_sync_cp_me(command_writer);
+
    command_writer->indirect_buffer->bo_reference_count =
       command_writer->base.bo_reference_writer.reference_count;
 
-   while (command_writer->indirect_buffer->indirect_buffer_size_dwords &
+   struct terakan_device const * const device = terakan_gfx_command_writer_device(command_writer);
+
+   /* Move finalizers to the end of the rest of the packets. */
+   uint32_t const finalizer_size_dwords =
+      device->command_buffer_submission_size_gfx.indirect_buffer_dwords -
+      (uint32_t)(command_writer->indirect_buffer_finalizer_prepend_ptr -
+                 command_writer->indirect_buffer->indirect_buffer);
+   if (likely(command_writer->indirect_buffer_finalizer_prepend_ptr !=
+              command_writer->indirect_buffer_append_ptr)) {
+      memmove(command_writer->indirect_buffer_append_ptr,
+              command_writer->indirect_buffer_finalizer_prepend_ptr,
+              sizeof(uint32_t) * finalizer_size_dwords);
+   }
+   if (terakan_device_physical_device(device)->submission_info_gfx.base.relocation_type ==
+       TERAKAN_QUEUE_RELOCATION_TYPE_WDDM_PATCH) {
+      /* Adjust finalizer relocation patch offsets, and clear the split offset field that's used by
+       * Terakan to store the linked list of finalizer relocations.
+       */
+      struct terakan_queue_relocation_wddm_patch * const patches =
+         (struct terakan_queue_relocation_wddm_patch *)command_writer->indirect_buffer->relocations;
+      uint32_t const finalizer_distance_bytes =
+         (uint32_t)(sizeof(uint32_t) * (command_writer->indirect_buffer_finalizer_prepend_ptr -
+                                        command_writer->indirect_buffer_append_ptr));
+      while (command_writer->indirect_buffer_finalizer_relocation_list != UINT32_MAX) {
+         struct terakan_queue_relocation_wddm_patch * const patch =
+            &patches[command_writer->indirect_buffer_finalizer_relocation_list];
+         patch->patch_offset -= finalizer_distance_bytes;
+         command_writer->indirect_buffer_finalizer_relocation_list = patch->split_offset;
+         patch->split_offset = 0;
+      }
+   }
+
+   uint32_t indirect_buffer_size_dwords =
+      (uint32_t)(command_writer->indirect_buffer_append_ptr -
+                 command_writer->indirect_buffer->indirect_buffer) +
+      finalizer_size_dwords;
+
+   while (indirect_buffer_size_dwords &
           (TERAKAN_QUEUE_INDIRECT_BUFFER_SIZE_ALIGNMENT_DWORDS_GFX - 1)) {
-      command_writer->indirect_buffer
-         ->indirect_buffer[command_writer->indirect_buffer->indirect_buffer_size_dwords++] =
+      command_writer->indirect_buffer->indirect_buffer[indirect_buffer_size_dwords++] =
          PKT_TYPE_S(2);
    }
 
+   command_writer->indirect_buffer->indirect_buffer_size_dwords = indirect_buffer_size_dwords;
+
    command_writer->indirect_buffer = NULL;
+
+#ifdef TERAKAN_DEVTEST
+   terakan_gfx_command_writer_reset_devtest_indirect_buffer_splitting(command_writer);
+#endif
 }
 
 static void
@@ -995,15 +1079,10 @@ terakan_gfx_command_writer_emit_with_bo(struct terakan_gfx_command_writer * cons
                                         uint32_t const relocation_for_40_bits_count)
 {
 #ifndef NDEBUG
-   assert(!command_writer->is_emission_unclosed &&
+   assert(command_writer->current_emission_packet_dwords == UINT32_MAX &&
           "terakan_gfx_command_writer_emit_done must be called with the final append pointer after "
           "every command emission");
 #endif
-
-   /* Empty indirect buffer submissions may not be supported by the queue, make sure indirect
-    * buffers can't be allocated only to end up being empty.
-    */
-   assert(packet_dwords != 0);
 
    if (unlikely(vk_command_buffer_has_error(&command_writer->base.command_buffer->vk))) {
       return NULL;
@@ -1047,17 +1126,13 @@ terakan_gfx_command_writer_emit_with_bo(struct terakan_gfx_command_writer * cons
       relocation_count = 0;
    }
 
-#ifndef NDEBUG
+#ifdef TERAKAN_DEVTEST
    if (contents == TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DRAW &&
-       command_writer->actions_before_next_indirect_buffer_split >= 0) {
-      if (command_writer->actions_before_next_indirect_buffer_split == 0) {
+       command_writer->actions_before_next_devtest_indirect_buffer_split >= 0) {
+      if (command_writer->actions_before_next_devtest_indirect_buffer_split == 0) {
          terakan_gfx_command_writer_end_indirect_buffer(command_writer);
-         command_writer->actions_before_next_indirect_buffer_split =
-            container_of(device->vk.physical->instance, struct terakan_instance const, vk)
-               ->debug_split_command_buffer_after_actions;
-         assert(command_writer->actions_before_next_indirect_buffer_split > 0);
       }
-      --command_writer->actions_before_next_indirect_buffer_split;
+      --command_writer->actions_before_next_devtest_indirect_buffer_split;
    }
 #endif
 
@@ -1068,8 +1143,8 @@ terakan_gfx_command_writer_emit_with_bo(struct terakan_gfx_command_writer * cons
       }
 
       if (command_writer->indirect_buffer != NULL &&
-          ((device->command_buffer_submission_size_gfx.indirect_buffer_dwords -
-            command_writer->indirect_buffer->indirect_buffer_size_dwords) < total_packet_dwords ||
+          ((command_writer->indirect_buffer_finalizer_prepend_ptr -
+            command_writer->indirect_buffer_append_ptr) < total_packet_dwords ||
            (device->command_buffer_submission_size_gfx.bo_references -
             command_writer->base.bo_reference_writer.reference_count) < bo_count ||
            (relocation_array_used &&
@@ -1100,6 +1175,16 @@ terakan_gfx_command_writer_emit_with_bo(struct terakan_gfx_command_writer * cons
          return NULL;
       }
 
+      command_writer->indirect_buffer_append_ptr = command_writer->indirect_buffer->indirect_buffer;
+      command_writer->indirect_buffer_finalizer_prepend_ptr =
+         command_writer->indirect_buffer->indirect_buffer +
+         device->command_buffer_submission_size_gfx.indirect_buffer_dwords;
+
+      command_writer->indirect_buffer_finalizer_relocation_list = UINT32_MAX;
+
+      /* Closing the previous indirect buffer should have synced it. */
+      assert(command_writer->last_unsynced_cp_dma_sync_dword == NULL);
+
       terakan_bo_reference_writer_reset(&command_writer->base.bo_reference_writer,
                                         command_writer->indirect_buffer->bo_references,
                                         terakan_gfx_command_writer_device(command_writer)
@@ -1112,25 +1197,29 @@ terakan_gfx_command_writer_emit_with_bo(struct terakan_gfx_command_writer * cons
             .set_base_argument_offsets_dwords[0] = UINT32_MAX;
       }
 
+      memset(&command_writer->indirect_buffer->query_begin_end_samples, 0,
+             sizeof(command_writer->indirect_buffer->query_begin_end_samples));
+
       terakan_gfx_command_writer_emit_preamble_and_sq_resource_clear(command_writer);
 
       terakan_hw_state_draw_indirect_buffer_begun(&command_writer->hw_state_draw);
       terakan_hw_state_sqc_indirect_buffer_begun_and_resources_cleared(
          &command_writer->hw_state_sqc);
 
+      terakan_query_sample_in_new_indirect_buffer(command_writer);
+
       /* Apply the tracked state in the new (either the first, or after an overflow) indirect
        * buffer.
        */
       terakan_gfx_command_writer_emit_hw_state(command_writer, contents);
 
-      if (unlikely((device->command_buffer_submission_size_gfx.indirect_buffer_dwords -
-                    command_writer->indirect_buffer->indirect_buffer_size_dwords) <
-                      total_packet_dwords ||
+      if (unlikely((command_writer->indirect_buffer_finalizer_prepend_ptr -
+                    command_writer->indirect_buffer_append_ptr) < total_packet_dwords ||
                    (device->command_buffer_submission_size_gfx.bo_references -
-                    command_writer->base.bo_reference_writer.reference_count) < bo_count) ||
-          (relocation_array_used &&
-           (device->command_buffer_submission_size_gfx.relocations -
-            command_writer->indirect_buffer->relocation_count) < relocation_count)) {
+                    command_writer->base.bo_reference_writer.reference_count) < bo_count ||
+                   (relocation_array_used &&
+                    (device->command_buffer_submission_size_gfx.relocations -
+                     command_writer->indirect_buffer->relocation_count) < relocation_count))) {
          assert(
             !"The command emission and all the needed state setting can't fit in a single indirect "
              "buffer, this is likely a Terakan bug because an indirect buffer must be large enough "
@@ -1149,19 +1238,41 @@ terakan_gfx_command_writer_emit_with_bo(struct terakan_gfx_command_writer * cons
    }
 
 #ifndef NDEBUG
-   command_writer->is_emission_unclosed = true;
+   command_writer->current_emission_packet_dwords = total_packet_dwords;
    command_writer->current_emission_relocations_remaining = relocation_count;
 #endif
 
-   uint32_t * const indirect_buffer_allocation =
-      command_writer->indirect_buffer->indirect_buffer +
-      command_writer->indirect_buffer->indirect_buffer_size_dwords;
-   command_writer->indirect_buffer->indirect_buffer_size_dwords += total_packet_dwords;
-   /* Note that if `indirect_buffer_size_dwords` becomes == the maximum size as a result of this
-    * call (or some other limit is reached exactly), `command_writer->indirect_buffer` must still
-    * not be set to NULL at this point, as during the emission, various things may reference it.
-    */
-   return indirect_buffer_allocation;
+   return command_writer->indirect_buffer_append_ptr;
+}
+
+uint32_t *
+terakan_gfx_command_writer_add_finalizer(struct terakan_gfx_command_writer * const command_writer,
+                                         uint32_t const packet_dwords,
+                                         uint32_t const relocation_for_32_bits_count,
+                                         uint32_t const relocation_for_40_bits_count)
+{
+#ifndef NDEBUG
+   assert(command_writer->current_emission_packet_dwords != UINT32_MAX &&
+          "Command emission must be started");
+#endif
+
+   uint32_t total_packet_dwords = packet_dwords;
+   switch (terakan_gfx_command_writer_physical_device(command_writer)
+              ->submission_info_gfx.base.relocation_type) {
+   case TERAKAN_QUEUE_RELOCATION_TYPE_DRM_NOP:
+      total_packet_dwords += 2 * (relocation_for_32_bits_count + relocation_for_40_bits_count);
+      break;
+   default:
+      break;
+   }
+
+#ifndef NDEBUG
+   assert(command_writer->current_emission_packet_dwords >= total_packet_dwords);
+   command_writer->current_emission_packet_dwords -= total_packet_dwords;
+#endif
+
+   command_writer->indirect_buffer_finalizer_prepend_ptr -= total_packet_dwords;
+   return command_writer->indirect_buffer_finalizer_prepend_ptr;
 }
 
 uint32_t
@@ -1181,7 +1292,8 @@ terakan_gfx_command_writer_add_relocation(struct terakan_gfx_command_writer * co
    }
 
 #ifndef NDEBUG
-   assert(command_writer->is_emission_unclosed);
+   assert(command_writer->current_emission_packet_dwords != UINT32_MAX &&
+          "Command emission must be started");
    assert(command_writer->current_emission_relocations_remaining != 0);
    --command_writer->current_emission_relocations_remaining;
 #endif
@@ -1211,7 +1323,15 @@ terakan_gfx_command_writer_add_relocation(struct terakan_gfx_command_writer * co
       patch->patch_offset =
          sizeof(uint32_t) *
          (uint32_t)(address_in_packet - command_writer->indirect_buffer->indirect_buffer);
-      patch->split_offset = 0;
+      if (unlikely(address_in_packet >= command_writer->indirect_buffer_finalizer_prepend_ptr)) {
+         /* Will need to adjust the patch offset in this relocation when the finalizers are moved
+          * to the rest of the packets.
+          */
+         patch->split_offset = command_writer->indirect_buffer_finalizer_relocation_list;
+         command_writer->indirect_buffer_finalizer_relocation_list = relocation_handle;
+      } else {
+         patch->split_offset = 0;
+      }
       return relocation_handle;
    } break;
 
@@ -1273,6 +1393,8 @@ terakan_EndCommandBuffer(VkCommandBuffer const commandBuffer)
 
    terakan_gfx_command_writer_end_indirect_buffer(gfx_command_writer);
 
+   terakan_command_buffer_release_command_writer(command_buffer);
+
    return vk_command_buffer_end(&command_buffer->vk);
 }
 
@@ -1301,6 +1423,7 @@ terakan_BeginCommandBuffer(VkCommandBuffer const commandBuffer,
       if (gfx_command_writer == NULL) {
          return vk_command_buffer_set_error(&command_buffer->vk, VK_ERROR_OUT_OF_HOST_MEMORY);
       }
+      gfx_command_writer->active_queries = NULL;
    }
    command_buffer->command_writer.gfx = gfx_command_writer;
 
@@ -1309,24 +1432,23 @@ terakan_BeginCommandBuffer(VkCommandBuffer const commandBuffer,
    /* The first emission will request the first indirect buffer. */
    gfx_command_writer->indirect_buffer = NULL;
 
-   struct terakan_device const * const device = terakan_command_buffer_device(command_buffer);
+   gfx_command_writer->indirect_buffer_append_ptr = NULL;
+   gfx_command_writer->indirect_buffer_finalizer_prepend_ptr = NULL;
 
-#ifndef NDEBUG
-   gfx_command_writer->actions_before_next_indirect_buffer_split =
-      container_of(device->vk.physical->instance, struct terakan_instance const, vk)
-         ->debug_split_command_buffer_after_actions;
-   if (gfx_command_writer->actions_before_next_indirect_buffer_split <= 0) {
-      /* Don't enable indirect buffer splitting debugging. */
-      gfx_command_writer->actions_before_next_indirect_buffer_split = -1;
-   }
+   gfx_command_writer->indirect_buffer_finalizer_relocation_list = UINT32_MAX;
+
+#ifdef TERAKAN_DEVTEST
+   terakan_gfx_command_writer_reset_devtest_indirect_buffer_splitting(gfx_command_writer);
 #endif
 
    gfx_command_writer->is_in_outer_emit_call = false;
 
 #ifndef NDEBUG
-   gfx_command_writer->is_emission_unclosed = false;
+   gfx_command_writer->current_emission_packet_dwords = UINT32_MAX;
    gfx_command_writer->current_emission_relocations_remaining = 0;
 #endif
+
+   gfx_command_writer->last_unsynced_cp_dma_sync_dword = NULL;
 
    gfx_command_writer->pending_barrier_actions = 0;
 
@@ -1334,10 +1456,15 @@ terakan_BeginCommandBuffer(VkCommandBuffer const commandBuffer,
    gfx_command_writer->post_color_image_copy_write_barrier_actions = 0;
    gfx_command_writer->post_depth_stencil_image_copy_write_barrier_actions = 0;
 
+   memset(&gfx_command_writer->active_query_counts, 0,
+          sizeof(gfx_command_writer->active_query_counts));
+
    terakan_hw_state_draw_reset(&gfx_command_writer->hw_state_draw);
    terakan_hw_state_sqc_reset(&gfx_command_writer->hw_state_sqc);
 
    terakan_push_constants_state_reset(&gfx_command_writer->push_constants_state);
+
+   struct terakan_device const * const device = terakan_command_buffer_device(command_buffer);
 
    terakan_state_draw_reset(&gfx_command_writer->state_draw, device);
 
@@ -1357,9 +1484,13 @@ terakan_BeginCommandBuffer(VkCommandBuffer const commandBuffer,
    uint32_t const invalidate_caches_packets[] = {
       PKT3(PKT3_SET_CONTEXT_REG, 1, 0),
       TERAKAN_CONTEXT_REG_OFFSET(R_028354_SX_SURFACE_SYNC),
-      /* Scratch buffers. */
-      /* TODO(Triang3l): Everything else once implemented: stream output, geometry ring buffers. */
-      S_028354_SURFACE_SYNC_MASK(0b10000),
+      /* Scratch buffers, cacheless UAV accesses. */
+      /* TODO(Triang3l): Everything else once implemented: stream output, geometry ring buffers.
+       * Research how exactly SX surface sync works overall, and whether this register applies to
+       * the context being flushed (so that it needs to be set before draws and dispatches) or to
+       * the flush itself (so that it must be set before the SURFACE_SYNC packet).
+       */
+      S_028354_SURFACE_SYNC_MASK(0b1000010000),
 
       PKT3(PKT3_EVENT_WRITE, 1 - 1, 0),
       EVENT_TYPE(EVENT_TYPE_CACHE_FLUSH_AND_INV_EVENT) | EVENT_INDEX(0),
@@ -1409,6 +1540,12 @@ terakan_command_pool_trim_resources(struct terakan_command_pool * const command_
       vk_free(&command_pool->vk.alloc, command_writer);
    }
    list_inithead(&command_pool->command_writers_free);
+
+   list_for_each_entry_safe (struct terakan_query_active_table, active_query_table,
+                             &command_pool->active_query_tables_free, free_link) {
+      ralloc_free(active_query_table);
+   }
+   list_inithead(&command_pool->active_query_tables_free);
 
    list_for_each_entry_safe (struct terakan_command_buffer_indirect_buffer, indirect_buffer,
                              &command_pool->indirect_buffers_free, link) {
@@ -1481,6 +1618,8 @@ terakan_CreateCommandPool(VkDevice const deviceHandle,
    list_inithead(&command_pool->push_buffers_free);
 
    list_inithead(&command_pool->indirect_buffers_free);
+
+   list_inithead(&command_pool->active_query_tables_free);
 
    list_inithead(&command_pool->command_writers_free);
 

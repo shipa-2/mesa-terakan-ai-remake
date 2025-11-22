@@ -63,6 +63,8 @@ enum terakan_hw_state_draw_index {
     * each unit, by the register addresses.
     */
 
+   TERAKAN_HW_STATE_DRAW_INDEX_PIPELINESTAT,
+
    TERAKAN_HW_STATE_DRAW_INDEX_VGT_PRIMITIVE_TYPE,
 
    TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_TYPE,
@@ -74,6 +76,8 @@ enum terakan_hw_state_draw_index {
    TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_FS,
    TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_VS,
    TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_PS,
+
+   TERAKAN_HW_STATE_DRAW_INDEX_SQ_BOOL_CONST_VSES,
 
    TERAKAN_HW_STATE_DRAW_INDEX_SQ_VTX_START_INST_LOC,
 
@@ -96,6 +100,8 @@ enum terakan_hw_state_draw_index {
    TERAKAN_HW_STATE_DRAW_INDEX_PA_SC_AA_MASK,
 
    TERAKAN_HW_STATE_DRAW_INDEX_DB_DEPTH_STENCIL_BUFFER,
+
+   TERAKAN_HW_STATE_DRAW_INDEX_DB_COUNT_CONTROL,
 
    TERAKAN_HW_STATE_DRAW_INDEX_DB_RENDER_OVERRIDE,
 
@@ -153,6 +159,9 @@ struct terakan_hw_state_draw {
    /* Whether each state item has been modified and needs to be emitted before the next draw. */
    BITSET_DECLARE(state_modified, TERAKAN_HW_STATE_DRAW_INDEX_COUNT);
 
+   /* TERAKAN_HW_STATE_DRAW_INDEX_PIPELINESTAT */
+   bool pipelinestat;
+
    /* TERAKAN_HW_STATE_DRAW_INDEX_VGT_PRIMITIVE_TYPE */
    uint32_t vgt_primitive_type;
 
@@ -176,6 +185,9 @@ struct terakan_hw_state_draw {
 
    /* TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_PS */
    struct terakan_shader_static const * sq_pgm_ps;
+
+   /* TERAKAN_HW_STATE_DRAW_INDEX_SQ_BOOL_CONST_VSES */
+   uint32_t sq_bool_const_vses;
 
    /* TERAKAN_HW_STATE_DRAW_INDEX_SQ_VTX_START_INST_LOC */
    uint32_t sq_vtx_start_inst_loc;
@@ -217,6 +229,9 @@ struct terakan_hw_state_draw {
       /* The descriptor is undefined if the BO is NULL. */
       struct terakan_depth_stencil_descriptor descriptor;
    } db_depth_stencil_buffer;
+
+   /* TERAKAN_HW_STATE_DRAW_INDEX_DB_COUNT_CONTROL */
+   uint32_t db_count_control;
 
    /* TERAKAN_HW_STATE_DRAW_INDEX_DB_RENDER_OVERRIDE */
    uint32_t db_render_override;

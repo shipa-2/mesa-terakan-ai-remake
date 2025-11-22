@@ -57,6 +57,22 @@ terakan_color_descriptor_buffer_uav_base_granularity_log2(
 }
 
 void
+terakan_color_descriptor_calculate_buffer_pitch_slice(
+   struct terakan_color_descriptor * const descriptor, unsigned const bytes_per_element,
+   struct terakan_physical_device const * const physical_device)
+{
+   /* PITCH_TILE_MAX and SLICE_TILE_MAX are ignored by the hardware for buffers, and PITCH_TILE_MAX
+    * can't store large buffer sizes, but DRM Radeon 2.50.0 validates the surface size based on
+    * PITCH_TILE_MAX and SLICE_TILE_MAX regardless of whether the color surface is a buffer UAV.
+    * Provide the smallest valid values.
+    */
+   uint32_t const pitch_elements = terakan_format_pitch_alignment_linear_surfels(
+      bytes_per_element, physical_device->tiling_info.pipe_interleave_bytes_log2);
+   descriptor->pitch = S_028C64_PITCH_TILE_MAX(pitch_elements / 8 - 1);
+   descriptor->slice = S_028C68_SLICE_TILE_MAX(pitch_elements / 64 - 1);
+}
+
+void
 terakan_color_descriptor_calculate_buffer_base_pitch_slice_dim_offset(
    struct terakan_color_descriptor * const descriptor, uint64_t const va,
    VkDeviceSize const elements, unsigned const bytes_per_element,
@@ -68,15 +84,8 @@ terakan_color_descriptor_calculate_buffer_base_pitch_slice_dim_offset(
    uint64_t const va_granularity_aligned = va >> base_granularity_log2 << base_granularity_log2;
    descriptor->base = (uint32_t)(va_granularity_aligned >> 8);
 
-   /* PITCH_TILE_MAX and SLICE_TILE_MAX are ignored by the hardware for buffers, and PITCH_TILE_MAX
-    * can't store large buffer sizes, but DRM Radeon 2.50.0 validates the surface size based on
-    * PITCH_TILE_MAX and SLICE_TILE_MAX regardless of whether the color surface is a buffer UAV.
-    * Provide the smallest valid values.
-    */
-   uint32_t const pitch_elements = terakan_format_pitch_alignment_linear_surfels(
-      bytes_per_element, physical_device->tiling_info.pipe_interleave_bytes_log2);
-   descriptor->pitch = S_028C64_PITCH_TILE_MAX(pitch_elements / 8 - 1);
-   descriptor->slice = S_028C68_SLICE_TILE_MAX(pitch_elements / 64 - 1);
+   terakan_color_descriptor_calculate_buffer_pitch_slice(descriptor, bytes_per_element,
+                                                         physical_device);
 
    uint32_t const base_granularity_offset_bytes = (uint32_t)(va - va_granularity_aligned);
    *base_granularity_offset_bytes_out = base_granularity_offset_bytes;

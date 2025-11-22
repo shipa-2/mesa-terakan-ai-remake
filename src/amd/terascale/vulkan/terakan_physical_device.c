@@ -117,11 +117,13 @@ terakan_physical_device_chip_family_name(enum radeon_family const chip_family)
 
 void
 terakan_physical_device_chip_family_info_init(
-   enum radeon_family const chip_family,
+   uint32_t const pci_device_id,
    struct terakan_physical_device_chip_family_info * const chip_family_info_out)
 {
+   enum radeon_family const chip_family = terakan_physical_device_get_chip_family(pci_device_id);
    assert(terakan_physical_device_is_chip_family_supported(chip_family));
 
+   chip_family_info_out->pci_device_id = pci_device_id;
    chip_family_info_out->chip_family = chip_family;
    bool const is_r9xx = chip_family >= CHIP_CAYMAN;
    chip_family_info_out->is_r9xx = is_r9xx;
@@ -323,6 +325,35 @@ terakan_physical_device_chip_family_info_init(
    chip_family_info_out->uav_immediate_size_texels =
       chip_family_info_out->sq_max_threads_shr3
       << (3 + 6 + (unsigned)chip_family_info_out->two_shader_engines_max);
+
+   unsigned max_render_backends_per_se_log2;
+   switch (chip_family) {
+   case CHIP_REDWOOD:
+   case CHIP_SUMO:
+   case CHIP_TURKS:
+      max_render_backends_per_se_log2 = 1;
+      break;
+   case CHIP_CEDAR:
+   case CHIP_PALM:
+   case CHIP_SUMO2:
+   case CHIP_CAICOS:
+      max_render_backends_per_se_log2 = 0;
+      break;
+   case CHIP_ARUBA:
+      if ((pci_device_id >= 0x9990 && pci_device_id <= 0x999B && pci_device_id != 0x9999) ||
+          pci_device_id == 0x99A0 || pci_device_id == 0x99A2 || pci_device_id == 0x99A4) {
+         /* "Scrapper" chip family. */
+         max_render_backends_per_se_log2 = 0;
+      } else {
+         /* "Devastator" chip family. */
+         max_render_backends_per_se_log2 = 1;
+      }
+      break;
+   default:
+      max_render_backends_per_se_log2 = 2;
+   }
+   chip_family_info_out->max_render_backends_log2 =
+      max_render_backends_per_se_log2 + (unsigned)chip_family_info_out->two_shader_engines_max;
 }
 
 /* Winsys-specific extensions are not handled, they should be configured by the
@@ -331,7 +362,7 @@ terakan_physical_device_chip_family_info_init(
  */
 static void
 terakan_physical_device_get_capabilities(
-   struct terakan_instance const * const instance, uint32_t const pci_device_id,
+   struct terakan_instance const * const instance,
    struct terakan_physical_device_chip_family_info const * const chip_family_info,
    unsigned const tile_pipe_interleave_bytes_log2, VkDeviceSize const min_memory_map_alignment,
    uint32_t const clock_crystal_frequency_hz, VkDeviceSize const max_memory_allocation_size,
@@ -411,8 +442,12 @@ terakan_physical_device_get_capabilities(
    features_out->multiViewport = true;
    features_out->samplerAnisotropy = true;
    features_out->textureCompressionBC = true;
-   /* TODO(Triang3l): occlusionQueryPrecise. */
-   /* TODO(Triang3l): pipelineStatisticsQuery. */
+   features_out->occlusionQueryPrecise = true;
+   features_out->pipelineStatisticsQuery = true;
+   /* vertexPipelineStoresAndAtomics are unconditionally used by meta shaders, primarily for query
+    * operations, but can't be provided to applications because of the very small UAV binding count
+    * limit in the hardware.
+    */
    /* fragmentStoresAndAtomics are unconditionally used by meta shaders, primarily for transfers to
     * buffers or to 3x-expanded images.
     */
@@ -426,14 +461,14 @@ terakan_physical_device_get_capabilities(
    /* TODO(Triang3l): shaderFloat64. */
    /* TODO(Triang3l): shaderResourceMinLod. */
    /* TODO(Triang3l): variableMultisampleRate. */
-   /* TODO(Triang3l): inheritedQueries. */
+   features_out->inheritedQueries = true;
 
    properties_out->apiVersion = TERAKAN_API_VERSION;
    /* TODO(Triang3l): Change to vk_get_driver_version() when Vulkan 1.0 compatibility is achieved.
     */
    properties_out->driverVersion = VK_MAKE_API_VERSION(0, 0, 0, 1);
    properties_out->vendorID = TERAKAN_PHYSICAL_DEVICE_VENDOR_ID_ATI;
-   properties_out->deviceID = pci_device_id;
+   properties_out->deviceID = chip_family_info->pci_device_id;
    properties_out->deviceType = chip_family_info->has_dedicated_vram
                                    ? VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU
                                    : VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
@@ -706,6 +741,10 @@ terakan_physical_device_get_capabilities(
    features_out->transformFeedbackPreservesProvokingVertex = true;
    properties_out->provokingVertexModePerPipeline = VK_TRUE;
    properties_out->transformFeedbackPreservesTriangleFanProvokingVertex = VK_TRUE;
+
+   /* VK_EXT_host_query_reset (#262, Vulkan 1.2). */
+   extensions_out->EXT_host_query_reset = true;
+   features_out->hostQueryReset = true;
 
    /* VK_EXT_extended_dynamic_state (#268, Vulkan 1.3). */
    extensions_out->EXT_extended_dynamic_state = true;
@@ -1008,10 +1047,7 @@ terakan_physical_device_init(
 
    device->winsys_fn = winsys_fn_static;
 
-   device->pci_device_id = pci_device_id;
-
-   terakan_physical_device_chip_family_info_init(
-      terakan_physical_device_get_chip_family(device->pci_device_id), &device->chip_family_info);
+   terakan_physical_device_chip_family_info_init(pci_device_id, &device->chip_family_info);
 
    device->max_memory_allocation_size = max_memory_allocation_size;
 
@@ -1168,9 +1204,9 @@ terakan_physical_device_init(
    struct vk_features features;
    struct vk_properties properties;
    terakan_physical_device_get_capabilities(
-      instance, device->pci_device_id, &device->chip_family_info,
-      device->tiling_info.pipe_interleave_bytes_log2, min_memory_map_alignment,
-      clock_crystal_frequency_hz, max_memory_allocation_size, &extensions, &features, &properties);
+      instance, &device->chip_family_info, device->tiling_info.pipe_interleave_bytes_log2,
+      min_memory_map_alignment, clock_crystal_frequency_hz, max_memory_allocation_size, &extensions,
+      &features, &properties);
    device->winsys_fn->get_winsys_extensions(device, &extensions, &features, &properties);
 
    struct vk_physical_device_dispatch_table dispatch_table;

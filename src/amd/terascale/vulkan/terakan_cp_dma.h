@@ -56,6 +56,10 @@ void terakan_cp_dma_copy(struct terakan_gfx_command_writer * command_writer,
                          uint64_t dst_va, enum terakan_bo_priority dst_bo_priority,
                          VkDeviceSize size);
 
+void terakan_cp_dma_fill(struct terakan_gfx_command_writer * command_writer, uint32_t data_dword,
+                         struct terakan_bo const * bo, uint64_t va,
+                         enum terakan_bo_priority bo_priority, VkDeviceSize size_bytes);
+
 #ifdef __cplusplus
 }
 #endif

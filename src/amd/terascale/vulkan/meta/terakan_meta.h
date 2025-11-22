@@ -138,6 +138,30 @@ enum terakan_meta_shader_index {
    TERAKAN_META_SHADER_COPY_IMAGE_PS,
    TERAKAN_META_SHADER_COPY_EXPAND_3X_PS,
 
+   /* Z pass query accumulation shader indices for each render backend count must be consecutive. */
+   TERAKAN_META_SHADER_QUERY_ACCUM_ZPASS_1_RB_VS,
+   TERAKAN_META_SHADER_QUERY_ACCUM_ZPASS_2_RB_VS,
+   TERAKAN_META_SHADER_QUERY_ACCUM_ZPASS_4_RB_VS,
+   TERAKAN_META_SHADER_QUERY_ACCUM_ZPASS_8_RB_VS,
+   TERAKAN_META_SHADER_QUERY_ACCUM_PIPELINESTAT_VS,
+   TERAKAN_META_SHADER_QUERY_ACCUM_STREAMOUTSTATS_VS,
+
+   /* Z pass query copy shader indices for each render backend count must be consecutive. */
+   TERAKAN_META_SHADER_QUERY_COPY_ZPASS_32_BIT_1_RB_VS,
+   TERAKAN_META_SHADER_QUERY_COPY_ZPASS_32_BIT_2_RB_VS,
+   TERAKAN_META_SHADER_QUERY_COPY_ZPASS_32_BIT_4_RB_VS,
+   TERAKAN_META_SHADER_QUERY_COPY_ZPASS_32_BIT_8_RB_VS,
+   TERAKAN_META_SHADER_QUERY_COPY_ZPASS_64_BIT_1_RB_VS,
+   TERAKAN_META_SHADER_QUERY_COPY_ZPASS_64_BIT_2_RB_VS,
+   TERAKAN_META_SHADER_QUERY_COPY_ZPASS_64_BIT_4_RB_VS,
+   TERAKAN_META_SHADER_QUERY_COPY_ZPASS_64_BIT_8_RB_VS,
+   TERAKAN_META_SHADER_QUERY_COPY_PIPELINESTAT_32_BIT_VS,
+   TERAKAN_META_SHADER_QUERY_COPY_PIPELINESTAT_64_BIT_VS,
+   TERAKAN_META_SHADER_QUERY_COPY_TIMESTAMP_32_BIT_VS,
+   TERAKAN_META_SHADER_QUERY_COPY_TIMESTAMP_64_BIT_VS,
+   TERAKAN_META_SHADER_QUERY_COPY_STREAMOUTSTATS_32_BIT_VS,
+   TERAKAN_META_SHADER_QUERY_COPY_STREAMOUTSTATS_64_BIT_VS,
+
    TERAKAN_META_SHADER_COUNT,
 };
 
@@ -148,6 +172,26 @@ extern struct terakan_meta_shader const terakan_meta_copy_buffer_to_image_ps;
 extern struct terakan_meta_shader const terakan_meta_copy_image_to_buffer_ps;
 extern struct terakan_meta_shader const terakan_meta_copy_image_ps;
 extern struct terakan_meta_shader const terakan_meta_copy_expand_3x_ps;
+extern struct terakan_meta_shader const terakan_meta_query_accum_zpass_1_rb_vs;
+extern struct terakan_meta_shader const terakan_meta_query_accum_zpass_2_rb_vs;
+extern struct terakan_meta_shader const terakan_meta_query_accum_zpass_4_rb_vs;
+extern struct terakan_meta_shader const terakan_meta_query_accum_zpass_8_rb_vs;
+extern struct terakan_meta_shader const terakan_meta_query_accum_pipelinestat_vs;
+extern struct terakan_meta_shader const terakan_meta_query_accum_streamoutstats_vs;
+extern struct terakan_meta_shader const terakan_meta_query_copy_zpass_32_bit_1_rb_vs;
+extern struct terakan_meta_shader const terakan_meta_query_copy_zpass_32_bit_2_rb_vs;
+extern struct terakan_meta_shader const terakan_meta_query_copy_zpass_32_bit_4_rb_vs;
+extern struct terakan_meta_shader const terakan_meta_query_copy_zpass_32_bit_8_rb_vs;
+extern struct terakan_meta_shader const terakan_meta_query_copy_zpass_64_bit_1_rb_vs;
+extern struct terakan_meta_shader const terakan_meta_query_copy_zpass_64_bit_2_rb_vs;
+extern struct terakan_meta_shader const terakan_meta_query_copy_zpass_64_bit_4_rb_vs;
+extern struct terakan_meta_shader const terakan_meta_query_copy_zpass_64_bit_8_rb_vs;
+extern struct terakan_meta_shader const terakan_meta_query_copy_pipelinestat_32_bit_vs;
+extern struct terakan_meta_shader const terakan_meta_query_copy_pipelinestat_64_bit_vs;
+extern struct terakan_meta_shader const terakan_meta_query_copy_timestamp_32_bit_vs;
+extern struct terakan_meta_shader const terakan_meta_query_copy_timestamp_64_bit_vs;
+extern struct terakan_meta_shader const terakan_meta_query_copy_streamoutstats_32_bit_vs;
+extern struct terakan_meta_shader const terakan_meta_query_copy_streamoutstats_64_bit_vs;
 
 extern struct terakan_meta_shader const * const terakan_meta_shaders[TERAKAN_META_SHADER_COUNT];
 
@@ -190,6 +234,9 @@ void terakan_meta_set_vs(struct terakan_gfx_command_writer * command_writer,
 void terakan_meta_set_ps(struct terakan_gfx_command_writer * command_writer,
                          enum terakan_meta_shader_index shader_index, bool set_db_shader_control);
 
+void terakan_meta_begin(struct terakan_gfx_command_writer * command_writer,
+                        bool rasterization_used);
+
 void terakan_meta_begin_cb(struct terakan_gfx_command_writer * command_writer,
                            uint32_t cb_target_mask, uint8_t disable_blend_for_targets);
 
@@ -206,6 +253,7 @@ terakan_meta_begin_2d_immediate_rects(struct terakan_gfx_command_writer * const 
                                       uint32_t const db_render_override,
                                       bool const clear_db_depth_control)
 {
+   terakan_meta_begin(command_writer, true);
    terakan_meta_set_db_render_override(command_writer, db_render_override);
    terakan_meta_begin_2d(command_writer, pa_cl_vte_cntl);
    terakan_meta_begin_rects(command_writer);
@@ -336,6 +384,28 @@ void terakan_meta_copy_expand_3x_image_to_buffer(
    VkCopyImageToBufferInfo2 const * copy_image_to_buffer_info);
 void terakan_meta_copy_expand_3x_image(struct terakan_gfx_command_writer * command_writer,
                                        VkCopyImageInfo2 const * copy_image_info);
+
+#define TERAKAN_META_QUERY_ACCUM_UAV_CP_COHER_CNTL                                                 \
+   (S_0085F0_CB0_DEST_BASE_ENA(1) | S_0085F0_SMX_ACTION_ENA(1))
+
+/* Returns `dst_uav_dwords` for `terakan_meta_query_accum`. */
+unsigned terakan_meta_query_accum_begin(struct terakan_gfx_command_writer * command_writer,
+                                        VkQueryType query_type);
+
+struct terakan_command_buffer_indirect_buffer_query_sample;
+
+/* `ib_end_sample` and `ib_begin_sample` will be read via the kcache.
+ * `query_accumulator_bo` of the device will be used as the accumulator source via the kcache.
+ */
+void terakan_meta_query_accum(
+   struct terakan_gfx_command_writer * command_writer,
+   struct terakan_command_buffer_indirect_buffer_query_sample const * ib_end_sample,
+   struct terakan_command_buffer_indirect_buffer_query_sample const * ib_begin_sample,
+   struct terakan_bo const * dst_uav_bo, uint64_t dst_uav_va, unsigned dst_uav_dwords);
+
+/* Initializes the offset constants for the pipeline statistics query result copy shaders. */
+void terakan_meta_query_copy_init_offsets(VkQueryPipelineStatisticFlags flags,
+                                          int8_t * offsets_32_bit_out, int8_t * offsets_64_bit_out);
 
 #ifdef __cplusplus
 }

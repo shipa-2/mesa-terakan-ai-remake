@@ -64,7 +64,12 @@ struct terakan_queue_relocation_wddm_patch {
    uint32_t allocation_offset;
    /* In bytes. */
    uint32_t patch_offset;
-   /* 0 in AMD's driver. */
+   /* 0 in AMD's driver.
+    * In Terakan, during command buffer recording, if this relocation is for the indirect buffer
+    * finalizer, this is the next relocation index in the linked list of finalizer relocations or
+    * UINT32_MAX if this relocation terminates it (but zeroed when the command buffer is closed,
+    * after the patch offsets are adjusted in the finalizer).
+    */
    uint32_t split_offset;
 };
 

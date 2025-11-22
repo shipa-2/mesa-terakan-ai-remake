@@ -80,6 +80,16 @@ typedef void (*terakan_state_draw_apply_function)(
    struct terakan_gfx_command_writer * command_writer);
 
 static void
+terakan_state_draw_apply_pipelinestat(struct terakan_gfx_command_writer * const command_writer)
+{
+   bool const pipelinestat_active = command_writer->state_draw.pipelinestat_active_count != 0;
+   bool const modified = command_writer->hw_state_draw.pipelinestat != pipelinestat_active;
+   command_writer->hw_state_draw.pipelinestat = pipelinestat_active;
+   terakan_hw_state_draw_written(&command_writer->hw_state_draw,
+                                 TERAKAN_HW_STATE_DRAW_INDEX_PIPELINESTAT, modified);
+}
+
+static void
 terakan_state_draw_apply_vgt_index_type(struct terakan_gfx_command_writer * const command_writer)
 {
    bool const modified =
@@ -749,6 +759,27 @@ terakan_state_draw_apply_pa_su_poly_offset_db_fmt_cntl(
 }
 
 static void
+terakan_state_draw_apply_db_count_control(struct terakan_gfx_command_writer * const command_writer)
+{
+   uint32_t db_count_control;
+   if (command_writer->state_draw.db_count_control.zpass_count_active_count) {
+      /* Even if all active occlusion queries aren't precise, enable perfect Z pass counts, because
+       * otherwise samples may not be counted in depth-only render passes with depth writing
+       * disabled (see Gallium RadeonSI and PAL), or may be counted even if they're discarded as a
+       * result of the fragment shader (see https://gitlab.freedesktop.org/mesa/mesa/-/issues/3218).
+       */
+      db_count_control = S_028004_PERFECT_ZPASS_COUNTS(1);
+      /* TODO(Triang3l): MSAA sample count on R9xx. */
+   } else {
+      db_count_control = S_028004_ZPASS_INCREMENT_DISABLE(1);
+   }
+   bool const modified = command_writer->hw_state_draw.db_count_control != db_count_control;
+   command_writer->hw_state_draw.db_count_control = db_count_control;
+   terakan_hw_state_draw_written(&command_writer->hw_state_draw,
+                                 TERAKAN_HW_STATE_DRAW_INDEX_DB_COUNT_CONTROL, modified);
+}
+
+static void
 terakan_state_draw_apply_db_render_override(struct terakan_gfx_command_writer * const command_writer)
 {
    bool const modified = command_writer->hw_state_draw.db_render_override !=
@@ -1203,6 +1234,7 @@ terakan_state_draw_apply_db_shader_control(struct terakan_gfx_command_writer * c
 
 static terakan_state_draw_apply_function const
    terakan_state_draw_apply_functions[TERAKAN_STATE_DRAW_INDEX_COUNT] = {
+      [TERAKAN_STATE_DRAW_INDEX_PIPELINESTAT] = terakan_state_draw_apply_pipelinestat,
       [TERAKAN_STATE_DRAW_INDEX_VGT_INDEX_TYPE] = terakan_state_draw_apply_vgt_index_type,
       [TERAKAN_STATE_DRAW_INDEX_VGT_PRIMITIVE_TYPE] = terakan_state_draw_apply_vgt_primitive_type,
       [TERAKAN_STATE_DRAW_INDEX_VGT_INDEX_OFFSET] = terakan_state_draw_apply_vgt_index_offset,
@@ -1224,6 +1256,7 @@ static terakan_state_draw_apply_function const
          terakan_state_draw_apply_db_depth_stencil_buffer,
       [TERAKAN_STATE_DRAW_INDEX_PA_SU_POLY_OFFSET_DB_FMT_CNTL] =
          terakan_state_draw_apply_pa_su_poly_offset_db_fmt_cntl,
+      [TERAKAN_STATE_DRAW_INDEX_DB_COUNT_CONTROL] = terakan_state_draw_apply_db_count_control,
       [TERAKAN_STATE_DRAW_INDEX_DB_RENDER_OVERRIDE] = terakan_state_draw_apply_db_render_override,
       [TERAKAN_STATE_DRAW_INDEX_DB_STENCILREFMASK] = terakan_state_draw_apply_db_stencilrefmask,
       [TERAKAN_STATE_DRAW_INDEX_DB_DEPTH_CONTROL] = terakan_state_draw_apply_db_depth_control,
@@ -1294,6 +1327,9 @@ terakan_state_draw_reset(struct terakan_state_draw * const state,
    /* No VK_DYNAMIC_STATE_DEPTH_CLIP_ENABLE_EXT,
     * no VkPipelineRasterizationDepthClipStateCreateInfoEXT */
    state->cmd_set_depth_clamp_enable_sets_depth_clip_enable = true;
+
+   /* VK_QUERY_TYPE_PIPELINE_STATISTICS or VK_QUERY_TYPE_TRANSFORM_FEEDBACK_STREAM_EXT not active */
+   state->pipelinestat_active_count = 0;
 
    /* indexType = VK_INDEX_TYPE_UINT16 */
 #if UTIL_ARCH_BIG_ENDIAN
@@ -1392,6 +1428,9 @@ terakan_state_draw_reset(struct terakan_state_draw * const state,
    state->pa_su_poly_offset_db_fmt_cntl.representation =
       VK_DEPTH_BIAS_REPRESENTATION_LEAST_REPRESENTABLE_VALUE_FORMAT_EXT;
    state->pa_su_poly_offset_db_fmt_cntl.representation_exact = false;
+
+   /* VK_QUERY_TYPE_OCCLUSION not active */
+   state->db_count_control.zpass_count_active_count = 0;
 
    /* depthClampEnable = VK_FALSE */
    state->db_render_override = S_02800C_DISABLE_VIEWPORT_CLAMP(depth_range_unrestricted);

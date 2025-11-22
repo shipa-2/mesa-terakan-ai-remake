@@ -27,6 +27,7 @@
 #include "terakan_entrypoints.h"
 #include "terakan_physical_device.h"
 
+#include "util/log.h"
 #include "util/macros.h"
 #include "util/u_debug.h"
 #include "util/u_math.h"
@@ -51,8 +52,15 @@
 #include "winsys/wddm/terakan_instance_wddm.h"
 #endif
 
-static struct debug_control const terakan_debug_options[] = {{"startup", TERAKAN_DEBUG_STARTUP},
-                                                             {NULL, 0}};
+static struct debug_control const terakan_debug_flags[] = {{"startup", TERAKAN_DEBUG_STARTUP},
+                                                           {NULL, 0}};
+
+#ifdef TERAKAN_DEVTEST
+static struct debug_control const terakan_devtest_flags[] = {
+   {"split_indirect_buffer_at_query_begin_end",
+    TERAKAN_DEVTEST_SPLIT_INDIRECT_BUFFER_AT_QUERY_BEGIN_END},
+   {NULL, 0}};
+#endif
 
 static struct vk_instance_extension_table const terakan_instance_extensions_supported = {
    .EXT_debug_report = true,
@@ -159,10 +167,18 @@ terakan_instance_init(struct terakan_instance * instance,
 
    instance->destroy_fn = destroy_fn;
 
-   instance->debug_flags = parse_debug_string(getenv("TERAKAN_DEBUG"), terakan_debug_options);
-#ifndef NDEBUG
-   instance->debug_split_command_buffer_after_actions =
-      debug_get_num_option("TERAKAN_DEBUG_SPLIT_COMMAND_BUFFER_AFTER_ACTIONS", 0);
+   instance->debug_flags = parse_debug_string(getenv("TERAKAN_DEBUG"), terakan_debug_flags);
+
+#ifdef TERAKAN_DEVTEST
+   instance->devtest_flags = parse_debug_string(getenv("TERAKAN_DEVTEST"), terakan_devtest_flags);
+   instance->devtest_split_indirect_buffer_after_actions =
+      debug_get_num_option("TERAKAN_DEVTEST_SPLIT_INDIRECT_BUFFER_AFTER_ACTIONS", 0);
+   if (instance->devtest_flags || instance->devtest_split_indirect_buffer_after_actions > 0) {
+      /* Report that development testing options have been activated successfully, and therefore the
+       * driver was in fact compiled with them enabled.
+       */
+      mesa_logi("terakan: Development testing options are active.\n");
+   }
 #endif
 
    /* Allocate binding spaces. */

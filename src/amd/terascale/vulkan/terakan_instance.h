@@ -39,9 +39,48 @@ extern "C" {
 
 #define TERAKAN_API_VERSION VK_MAKE_API_VERSION(0, 1, 0, VK_HEADER_VERSION)
 
+/* "Debug" options are intended to be potentially useful to both driver developers and users, mainly
+ * for pinpointing the causes of issues (especially those observable in real applications), as well
+ * as for performance analysis.
+ * They are available in release builds.
+ */
+
 enum {
    TERAKAN_DEBUG_STARTUP = (uint64_t)1 << 0,
 };
+
+/* "Development test" options are provided primarily for unit or regression testing of very specific
+ * scenarios inside the driver, and generally offer nothing valuable to users.
+ * They are eliminated from release builds, and not intended to be documented outside the code
+ * itself, as their usage may result in significant performance costs or things done very wrong
+ * ways, and they may be checked in frequently called functions, while providing no advantages to
+ * driver users.
+ */
+
+#ifndef NDEBUG
+#define TERAKAN_DEVTEST
+#endif
+
+#ifdef TERAKAN_DEVTEST
+enum {
+   /* Switch to a new indirect buffer when beginning or ending a query.
+    *
+    * This causes query sample accumulation operations to be performed for all queries with both a
+    * beginning and an end, allowing for debugging of whether accumulation is performed correctly,
+    * and that query results are not affected by other work potentially executed by the GPU between
+    * indirect buffer submissions if a command buffer ends up being split into multiple indirect
+    * buffers when a query is active in it.
+    *
+    * In addition, this may be used to potentially observe how the GPU switching to other work
+    * between indirect buffer submissions may affect the stability of timestamp queries, especially
+    * when performing multiple measurements of the time it takes to perform the same amount of work.
+    *
+    * Also see `devtest_split_indirect_buffer_after_actions`, which can be used to introduce more
+    * split points within a query.
+    */
+   TERAKAN_DEVTEST_SPLIT_INDIRECT_BUFFER_AT_QUERY_BEGIN_END = (uint64_t)1 << 0,
+};
+#endif
 
 struct terakan_instance;
 
@@ -54,14 +93,25 @@ struct terakan_instance {
    terakan_instance_destroy_fn destroy_fn;
 
    uint64_t debug_flags;
-#ifndef NDEBUG
-   /* For testing multiple indirect buffers in one Vulkan command buffer.
-    * If > 0, after each this many application's or internal draws or dispatches, a new indirect
-    * buffer will be started.
-    * In `#ifndef NDEBUG` because this debug option needs to be handled in a location called very
-    * frequently, and it's not useful to users.
+
+#ifdef TERAKAN_DEVTEST
+   uint64_t devtest_flags;
+
+   /* For testing multiple indirect buffer submissions for one Vulkan command buffer.
+    *
+    * If > 0, this is the number of draws or dispatches (done by the application or internally
+    * within the driver) after which a new indirect buffer will be started, causing the hardware
+    * state configuration to be reapplied in the new indirect buffer, and samples for queries active
+    * during the split to be accumulated from multiple indirect buffer submissions.
+    *
+    * For query debugging, also see `TERAKAN_DEVTEST_SPLIT_INDIRECT_BUFFER_AT_QUERY_BEGIN_END`.
+    * This may be useful for splitting the command buffer even further.
+    * Specifically for pipeline statistics query sample accumulation, a good test case is Sascha
+    * Willems's pipeline statistics example, which, as of the commit
+    * bb2f03ad5059c3f92ffaed4e2a38980c42efb07d, draws each object on the grid using a separate draw
+    * command.
     */
-   int64_t debug_split_command_buffer_after_actions;
+   int64_t devtest_split_indirect_buffer_after_actions;
 #endif
 
    /* Binding allocation in the physical device limits. */

@@ -25,6 +25,7 @@
 
 #include "terakan_command_buffer.h"
 #include "terakan_cp_dma.h"
+#include "terakan_descriptor.h"
 #include "terakan_entrypoints.h"
 #include "terakan_physical_device.h"
 #include "terakan_queue.h"
@@ -42,6 +43,7 @@
 #include <assert.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 void
 terakan_device_finish(struct terakan_device * const device)
@@ -59,6 +61,8 @@ terakan_device_finish(struct terakan_device * const device)
    mtx_destroy(&device->completion_mutex);
 
    terakan_bo_free(device->meta_shaders_bo, NULL);
+
+   terakan_bo_free(device->query_accumulator_bo, NULL);
 
    terakan_bo_free(device->uav_immediate_bo, NULL);
 
@@ -183,6 +187,29 @@ terakan_device_init(struct terakan_device * const device,
       device->uav_immediate_va_shr8[texel_bytes_log2] += uav_immediate_bo_va_shr8;
    }
 
+   /* Accessed via query sampling (never larger than a kcache line), kcache, and a UAV with 4 bytes
+    * per element.
+    */
+   unsigned const query_accumulator_uav_bytes_per_element = sizeof(uint32_t);
+   unsigned const query_accumulator_uav_base_granularity_log2 =
+      terakan_color_descriptor_buffer_uav_base_granularity_log2(
+         query_accumulator_uav_bytes_per_element, physical_device);
+   result = device->winsys_fn->bo->allocate_device_memory(
+      device,
+      ALIGN_POT(TERAKAN_KCACHE_HW_LINE_BYTES,
+                query_accumulator_uav_bytes_per_element *
+                   terakan_format_pitch_alignment_linear_surfels(
+                      query_accumulator_uav_bytes_per_element,
+                      physical_device->tiling_info.pipe_interleave_bytes_log2)),
+      1u << MAX2(TERAKAN_KCACHE_HW_LINE_BYTES_LOG2, query_accumulator_uav_base_granularity_log2),
+      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0, NULL, VK_SYSTEM_ALLOCATION_SCOPE_DEVICE,
+      &device->query_accumulator_bo);
+   if (result != VK_SUCCESS) {
+      result = vk_errorf(physical_device->vk.instance, result,
+                         "Failed to allocate memory for the query result accumulator");
+      goto fail_uav_immediate_bo;
+   }
+
    bool const is_r9xx = physical_device->chip_family_info.is_r9xx;
 
    /* The first shader is the empty fetch shader. */
@@ -214,7 +241,7 @@ terakan_device_init(struct terakan_device * const device,
    if (result != VK_SUCCESS) {
       result = vk_errorf(physical_device->vk.instance, result,
                          "Failed to allocate memory for internal shaders");
-      goto fail_uav_immediate_bo;
+      goto fail_query_accumulator_bo;
    }
    uint32_t const meta_shaders_va_shr8 = (uint32_t)(device->meta_shaders_bo->va >> 8);
    {
@@ -312,6 +339,8 @@ fail_completion_mutex:
    mtx_destroy(&device->completion_mutex);
 fail_meta_shaders_bo:
    terakan_bo_free(device->meta_shaders_bo, NULL);
+fail_query_accumulator_bo:
+   terakan_bo_free(device->query_accumulator_bo, NULL);
 fail_uav_immediate_bo:
    terakan_bo_free(device->uav_immediate_bo, NULL);
 fail_gfx_discard_bo:

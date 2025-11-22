@@ -135,7 +135,7 @@ terakan_GetDeviceBufferMemoryRequirements(VkDevice const deviceHandle,
    } else if (usage &
               (VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT)) {
       /* Largest random access target element (R32G32B32A32) alignment, including for image to
-       * buffer transfers.
+       * buffer transfers. Also query result copying may require an alignment of up to 8 bytes.
        */
       alignment = sizeof(uint32_t) * 4;
    } else {

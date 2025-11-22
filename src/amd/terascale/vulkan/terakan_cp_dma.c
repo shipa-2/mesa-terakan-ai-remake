@@ -47,35 +47,15 @@
 void
 terakan_cp_dma_sync_cp_me(struct terakan_gfx_command_writer * const command_writer)
 {
-   uint32_t * packet = terakan_gfx_command_writer_emit_with_bo(
-      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_OTHER, 1 + 5, 1, 0, 2);
-   if (unlikely(packet == NULL)) {
+   /* This function must not emit any commands, because synchronization must be done in the same
+    * indirect buffer as the last CP DMA command, so memory accessed by CP DMA in the indirect
+    * buffer submission can be released to the kernel after the submission is executed.
+    */
+   if (command_writer->last_unsynced_cp_dma_sync_dword == NULL) {
       return;
    }
-   struct terakan_bo const * const gfx_discard_bo =
-      terakan_gfx_command_writer_device(command_writer)->gfx_discard_bo;
-   uint64_t const discard_dest_va = gfx_discard_bo->va + TERAKAN_CP_DMA_COPY_OPTIMAL_ALIGNMENT;
-   *packet++ = PKT3(PKT3_CP_DMA, 5 - 1, 0);
-   uint32_t const * const packet_src = packet;
-   *packet++ = (uint32_t)gfx_discard_bo->va;
-   *packet++ = ((gfx_discard_bo->va >> 32) & 0xFF) | PKT3_CP_DMA_CP_SYNC;
-   uint32_t const * const packet_dst = packet;
-   *packet++ = (uint32_t)discard_dest_va;
-   *packet++ = (discard_dest_va >> 32) & 0xFF;
-   /* The size must not be zero, otherwise nothing would happen (tested on Barts with the firmware
-    * used by DRM Radeon 2.50.0).
-    */
-   *packet++ = TERAKAN_CP_DMA_COPY_OPTIMAL_ALIGNMENT;
-   uint32_t const discard_bo_reference = terakan_bo_reference_writer_add_reference(
-      &command_writer->base.bo_reference_writer, gfx_discard_bo, true, true,
-      TERAKAN_BO_PRIORITY_SYNC);
-   terakan_gfx_command_writer_add_relocation_for_40_bits(
-      command_writer, &packet, packet_src, packet_src + 1, TERASCALE_WDDM_PATCH_IDS_CP_DMA_SRC_LO,
-      TERASCALE_WDDM_PATCH_IDS_CP_DMA_SRC_HI, discard_bo_reference);
-   terakan_gfx_command_writer_add_relocation_for_40_bits(
-      command_writer, &packet, packet_dst, packet_dst + 1, TERASCALE_WDDM_PATCH_IDS_CP_DMA_DST_LO,
-      TERASCALE_WDDM_PATCH_IDS_CP_DMA_DST_HI, discard_bo_reference);
-   terakan_gfx_command_writer_emit_done(command_writer, packet);
+   *command_writer->last_unsynced_cp_dma_sync_dword |= PKT3_CP_DMA_CP_SYNC;
+   command_writer->last_unsynced_cp_dma_sync_dword = NULL;
 }
 
 static void
@@ -120,6 +100,7 @@ terakan_cp_dma_copy(struct terakan_gfx_command_writer * const command_writer,
       *packet++ = PKT3(PKT3_CP_DMA, 5 - 1, 0);
       uint32_t const * const packet_src = packet;
       *packet++ = (uint32_t)current_src_va_aligned;
+      command_writer->last_unsynced_cp_dma_sync_dword = packet;
       *packet++ = (current_src_va_aligned >> 32) & 0xFF;
       uint32_t const * const packet_dst = packet;
       *packet++ = (uint32_t)current_dst_va_src_aligned;
@@ -150,6 +131,7 @@ terakan_cp_dma_copy(struct terakan_gfx_command_writer * const command_writer,
       *packet++ = PKT3(PKT3_CP_DMA, 5 - 1, 0);
       uint32_t const * const packet_src = packet;
       *packet++ = (uint32_t)src_va;
+      command_writer->last_unsynced_cp_dma_sync_dword = packet;
       *packet++ = (src_va >> 32) & 0xFF;
       uint32_t const * const packet_dst = packet;
       *packet++ = (uint32_t)dst_va;
@@ -182,6 +164,7 @@ terakan_cp_dma_copy(struct terakan_gfx_command_writer * const command_writer,
       *packet++ = PKT3(PKT3_CP_DMA, 5 - 1, 0);
       uint32_t const * const packet_src = packet;
       *packet++ = (uint32_t)gfx_discard_bo->va;
+      command_writer->last_unsynced_cp_dma_sync_dword = packet;
       *packet++ = (gfx_discard_bo->va >> 32) & 0xFF;
       uint32_t const * const packet_dst = packet;
       *packet++ = (uint32_t)discard_dest_va;
@@ -252,24 +235,16 @@ terakan_CmdUpdateBuffer(VkCommandBuffer const commandBuffer, VkBuffer const dstB
                        dst_buffer->va + dstOffset, TERAKAN_BO_PRIORITY_CP_DMA, dataSize);
 }
 
-VKAPI_ATTR void VKAPI_CALL
-terakan_CmdFillBuffer(VkCommandBuffer const commandBuffer, VkBuffer const dstBuffer,
-                      VkDeviceSize const dstOffset, VkDeviceSize const size, uint32_t const data)
+void
+terakan_cp_dma_fill(struct terakan_gfx_command_writer * const command_writer,
+                    uint32_t const data_dword, struct terakan_bo const * const bo, uint64_t va,
+                    enum terakan_bo_priority const bo_priority, VkDeviceSize size_bytes)
 {
-   struct terakan_gfx_command_writer * const command_writer =
-      terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx;
-
-   struct terakan_buffer const * const dst_buffer = terakan_buffer_from_handle(dstBuffer);
-
-   VkDeviceSize bytes_next = dstOffset & ~(VkDeviceSize)(sizeof(uint32_t) - 1);
-   VkDeviceSize const bytes_end = (dstOffset + vk_buffer_range(&dst_buffer->vk, dstOffset, size)) &
-                                  ~(VkDeviceSize)(sizeof(uint32_t) - 1);
-
    terakan_cp_dma_prepare(command_writer);
 
-   while (bytes_next < bytes_end) {
-      uint32_t command_fill_byte_count = (uint32_t)MIN2(
-         bytes_end - bytes_next, TERAKAN_CP_DMA_MAX_BYTE_COUNT & ~(uint32_t)(sizeof(uint32_t) - 1));
+   while (size_bytes != 0) {
+      uint32_t command_fill_size = (uint32_t)MIN2(
+         size_bytes, TERAKAN_CP_DMA_MAX_BYTE_COUNT & ~(uint32_t)(sizeof(uint32_t) - 1));
 
       uint32_t * packet = terakan_gfx_command_writer_emit_with_bo(
          command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_OTHER, 1 + 5, 1, 0, 1);
@@ -280,21 +255,35 @@ terakan_CmdFillBuffer(VkCommandBuffer const commandBuffer, VkBuffer const dstBuf
       /* TODO(Triang3l): On big-endian hosts, should the data be byte-swapped, or do INDIRECT_BUFFER
        * swap and BUF_SWAP_32BIT cancel each other for CP DMA?
        */
-      *packet++ = data;
+      *packet++ = data_dword;
+      command_writer->last_unsynced_cp_dma_sync_dword = packet;
       *packet++ = PKT3_CP_DMA_SRC_SEL(2);
-      uint64_t const dst_va = dst_buffer->va + bytes_next;
       uint32_t const * const packet_dst = packet;
-      *packet++ = (uint32_t)dst_va;
-      *packet++ = (dst_va >> 32) & 0xFF;
-      *packet++ = command_fill_byte_count;
+      *packet++ = (uint32_t)va;
+      *packet++ = (va >> 32) & 0xFF;
+      *packet++ = command_fill_size;
       terakan_gfx_command_writer_add_relocation_for_40_bits(
          command_writer, &packet, packet_dst, packet_dst + 1,
          TERASCALE_WDDM_PATCH_IDS_CP_DMA_DST_LO, TERASCALE_WDDM_PATCH_IDS_CP_DMA_DST_HI,
-         terakan_bo_reference_writer_add_reference(&command_writer->base.bo_reference_writer,
-                                                   dst_buffer->bo, false, true,
-                                                   TERAKAN_BO_PRIORITY_CP_DMA));
+         terakan_bo_reference_writer_add_reference(&command_writer->base.bo_reference_writer, bo,
+                                                   false, true, bo_priority));
       terakan_gfx_command_writer_emit_done(command_writer, packet);
 
-      bytes_next += command_fill_byte_count;
+      va += command_fill_size;
+      size_bytes -= command_fill_size;
    }
+}
+
+VKAPI_ATTR void VKAPI_CALL
+terakan_CmdFillBuffer(VkCommandBuffer const commandBuffer, VkBuffer const dstBuffer,
+                      VkDeviceSize const dstOffset, VkDeviceSize const size, uint32_t const data)
+{
+   struct terakan_buffer const * const dst_buffer = terakan_buffer_from_handle(dstBuffer);
+   VkDeviceSize const dst_offset_aligned = dstOffset & ~(VkDeviceSize)(sizeof(uint32_t) - 1);
+   terakan_cp_dma_fill(terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx, data,
+                       dst_buffer->bo, dst_buffer->va + dst_offset_aligned,
+                       TERAKAN_BO_PRIORITY_CP_DMA,
+                       ((dstOffset + vk_buffer_range(&dst_buffer->vk, dstOffset, size)) &
+                        ~(VkDeviceSize)(sizeof(uint32_t) - 1)) -
+                          dst_offset_aligned);
 }

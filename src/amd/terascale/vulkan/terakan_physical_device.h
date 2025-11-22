@@ -55,6 +55,8 @@ terakan_physical_device_is_chip_family_supported(enum radeon_family const chip_f
 char const * terakan_physical_device_chip_family_name(enum radeon_family chip_family);
 
 struct terakan_physical_device_chip_family_info {
+   uint32_t pci_device_id;
+
    enum radeon_family chip_family;
 
    bool is_r9xx;
@@ -80,11 +82,12 @@ struct terakan_physical_device_chip_family_info {
    unsigned wave_lanes_log2;
    /* Lanes * waves * shader engines. */
    uint32_t uav_immediate_size_texels;
+
+   unsigned max_render_backends_log2;
 };
 
 void terakan_physical_device_chip_family_info_init(
-   enum radeon_family chip_family,
-   struct terakan_physical_device_chip_family_info * chip_family_info_out);
+   uint32_t pci_device_id, struct terakan_physical_device_chip_family_info * chip_family_info_out);
 
 struct terakan_physical_device_tiling_info {
    uint8_t pipes_log2;
@@ -172,8 +175,6 @@ struct terakan_physical_device {
 
    /* Private, use wrappers externally. */
    struct terakan_physical_device_winsys_fn const * winsys_fn;
-
-   uint32_t pci_device_id;
 
    struct terakan_physical_device_chip_family_info chip_family_info;
 

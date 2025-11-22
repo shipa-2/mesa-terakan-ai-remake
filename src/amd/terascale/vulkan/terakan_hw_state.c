@@ -76,6 +76,22 @@ uint32_t const terakan_standard_sample_locs[5][16 / 4] = {
 uint32_t const terakan_standard_sample_max_dists[5] = {0, 4, 6, 7, 8};
 
 static void
+terakan_hw_state_draw_emit_pipelinestat(struct terakan_gfx_command_writer * const command_writer)
+{
+   uint32_t * packet = terakan_gfx_command_writer_emit(
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2);
+   if (unlikely(packet == NULL)) {
+      return;
+   }
+   *packet++ = PKT3(PKT3_EVENT_WRITE, 1 - 1, 0);
+   *packet++ =
+      EVENT_TYPE(command_writer->hw_state_draw.pipelinestat ? EVENT_TYPE_PIPELINESTAT_START
+                                                            : EVENT_TYPE_PIPELINESTAT_STOP) |
+      EVENT_INDEX(0);
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
+}
+
+static void
 terakan_hw_state_draw_emit_vgt_primitive_type(
    struct terakan_gfx_command_writer * const command_writer)
 {
@@ -497,6 +513,21 @@ terakan_hw_state_draw_emit_sq_pgm_ps(struct terakan_gfx_command_writer * const c
 }
 
 static void
+terakan_hw_state_draw_emit_sq_bool_const_vses(
+   struct terakan_gfx_command_writer * const command_writer)
+{
+   uint32_t * packet = terakan_gfx_command_writer_emit(
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 1);
+   if (unlikely(packet == NULL)) {
+      return;
+   }
+   *packet++ = PKT3(PKT3_SET_BOOL_CONST, 1, 0);
+   *packet++ = 1;
+   *packet++ = command_writer->hw_state_draw.sq_bool_const_vses;
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
+}
+
+static void
 terakan_hw_state_draw_emit_sq_vtx_start_inst_loc(
    struct terakan_gfx_command_writer * const command_writer)
 {
@@ -884,6 +915,20 @@ terakan_hw_state_draw_emit_db_depth_stencil_buffer(
 }
 
 static void
+terakan_hw_state_draw_emit_db_count_control(struct terakan_gfx_command_writer * const command_writer)
+{
+   uint32_t * packet = terakan_gfx_command_writer_emit(
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 1);
+   if (unlikely(packet == NULL)) {
+      return;
+   }
+   *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
+   *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028004_DB_COUNT_CONTROL);
+   *packet++ = command_writer->hw_state_draw.db_count_control;
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
+}
+
+static void
 terakan_hw_state_draw_emit_db_render_override(
    struct terakan_gfx_command_writer * const command_writer)
 {
@@ -1184,6 +1229,10 @@ terakan_hw_state_draw_emit_cb_color(struct terakan_gfx_command_writer * const co
          /* For single-sampled images, FMASK must be equal to BASE. */
          bool const has_fmask = has_meta && meta_descriptor->fmask != descriptor->base;
 
+         /* TODO(Triang3l): Possibly accept the priority explicitly, at least for buffer UAVs.
+          * Meta functions may use CB targets for wildly different purposes (such as query
+          * operations).
+          */
          uint32_t const bo_reference = terakan_bo_reference_writer_add_reference(
             &command_writer->base.bo_reference_writer, bo, true, true,
             G_028C70_RAT(descriptor->info) ? TERAKAN_BO_PRIORITY_SHADER_RW_IMAGE
@@ -1256,6 +1305,7 @@ terakan_hw_state_draw_emit_cb_color(struct terakan_gfx_command_writer * const co
 
 static terakan_hw_state_emit_function const
    terakan_hw_state_draw_emit_functions[TERAKAN_HW_STATE_DRAW_INDEX_COUNT] = {
+      [TERAKAN_HW_STATE_DRAW_INDEX_PIPELINESTAT] = terakan_hw_state_draw_emit_pipelinestat,
       [TERAKAN_HW_STATE_DRAW_INDEX_VGT_PRIMITIVE_TYPE] =
          terakan_hw_state_draw_emit_vgt_primitive_type,
       [TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_TYPE] = terakan_hw_state_draw_emit_vgt_index_type,
@@ -1266,6 +1316,8 @@ static terakan_hw_state_emit_function const
       [TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_FS] = terakan_hw_state_draw_emit_sq_pgm_fs,
       [TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_VS] = terakan_hw_state_draw_emit_sq_pgm_vs,
       [TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_PS] = terakan_hw_state_draw_emit_sq_pgm_ps,
+      [TERAKAN_HW_STATE_DRAW_INDEX_SQ_BOOL_CONST_VSES] =
+         terakan_hw_state_draw_emit_sq_bool_const_vses,
       [TERAKAN_HW_STATE_DRAW_INDEX_SQ_VTX_START_INST_LOC] =
          terakan_hw_state_draw_emit_sq_vtx_start_inst_loc,
       [TERAKAN_HW_STATE_DRAW_INDEX_PA_CL_CLIP_CNTL] = terakan_hw_state_draw_emit_pa_cl_clip_cntl,
@@ -1283,6 +1335,7 @@ static terakan_hw_state_emit_function const
       [TERAKAN_HW_STATE_DRAW_INDEX_PA_SC_AA_MASK] = terakan_hw_state_draw_emit_pa_sc_aa_mask,
       [TERAKAN_HW_STATE_DRAW_INDEX_DB_DEPTH_STENCIL_BUFFER] =
          terakan_hw_state_draw_emit_db_depth_stencil_buffer,
+      [TERAKAN_HW_STATE_DRAW_INDEX_DB_COUNT_CONTROL] = terakan_hw_state_draw_emit_db_count_control,
       [TERAKAN_HW_STATE_DRAW_INDEX_DB_RENDER_OVERRIDE] =
          terakan_hw_state_draw_emit_db_render_override,
       [TERAKAN_HW_STATE_DRAW_INDEX_DB_STENCILREFMASK] =

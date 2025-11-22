@@ -36,6 +36,7 @@
 
 #include <assert.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -52,6 +53,8 @@ extern "C" {
 void terakan_state_translate_window_rect_unpacked(VkRect2D const * rect, uint16_t tl_br_xy_out[4]);
 
 enum terakan_state_draw_index {
+   TERAKAN_STATE_DRAW_INDEX_PIPELINESTAT,
+
    TERAKAN_STATE_DRAW_INDEX_VGT_INDEX_TYPE,
 
    TERAKAN_STATE_DRAW_INDEX_VGT_PRIMITIVE_TYPE,
@@ -90,6 +93,8 @@ enum terakan_state_draw_index {
 
    /* Depends on TERAKAN_STATE_DRAW_INDEX_DB_DEPTH_STENCIL_BUFFER. */
    TERAKAN_STATE_DRAW_INDEX_PA_SU_POLY_OFFSET_DB_FMT_CNTL,
+
+   TERAKAN_STATE_DRAW_INDEX_DB_COUNT_CONTROL,
 
    TERAKAN_STATE_DRAW_INDEX_DB_RENDER_OVERRIDE,
 
@@ -160,6 +165,9 @@ struct terakan_state_draw {
 
    /* Configuration of state setting commands themselves. */
    bool cmd_set_depth_clamp_enable_sets_depth_clip_enable;
+
+   /* TERAKAN_STATE_DRAW_INDEX_PIPELINESTAT */
+   size_t pipelinestat_active_count;
 
    /* TERAKAN_STATE_DRAW_INDEX_VGT_INDEX_TYPE */
    uint32_t vgt_index_type;
@@ -319,6 +327,11 @@ struct terakan_state_draw {
          uint32_t poly_offset_z_format;
       } from_apply_db_depth_stencil_buffer;
    } pa_su_poly_offset_db_fmt_cntl;
+
+   /* TERAKAN_STATE_DRAW_INDEX_DB_COUNT_CONTROL */
+   struct {
+      size_t zpass_count_active_count;
+   } db_count_control;
 
    /* TERAKAN_STATE_DRAW_INDEX_DB_RENDER_OVERRIDE */
    uint32_t db_render_override;
