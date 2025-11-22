@@ -304,14 +304,12 @@ terakan_CreateBufferView(VkDevice const deviceHandle,
             terakan_color_descriptor_calculate_buffer_base_pitch_slice_view_dim(
                &buffer_view->color, va, buffer_view->vk.elements, bytes_per_element,
                terakan_device_physical_device(device), true);
-            buffer_view->color.info =
-               S_028C70_ENDIAN(endian_swap) | S_028C70_FORMAT(format_info.format) |
-               S_028C70_ARRAY_MODE(V_028C70_ARRAY_LINEAR_ALIGNED) |
-               S_028C70_NUMBER_TYPE(format_info.number_type) |
-               S_028C70_COMP_SWAP(format_info.cb_color_swap) | S_028C70_BLEND_BYPASS(1) |
-               S_028C70_SOURCE_FORMAT(V_028C70_EXPORT_4C_32BPC) | S_028C70_RAT(1) |
-               S_028C70_RESOURCE_TYPE(V_028C70_BUFFER);
-            buffer_view->color.attrib = S_028C74_NON_DISP_TILING_ORDER(1);
+            buffer_view->color.info = S_028C70_ENDIAN(endian_swap) |
+                                      S_028C70_FORMAT(format_info.format) |
+                                      S_028C70_NUMBER_TYPE(format_info.number_type) |
+                                      S_028C70_COMP_SWAP(format_info.cb_color_swap) |
+                                      TERAKAN_COLOR_DESCRIPTOR_BUFFER_UAV_INFO_CONST_FIELDS;
+            buffer_view->color.attrib = TERAKAN_COLOR_DESCRIPTOR_BUFFER_UAV_ATTRIB;
          }
       }
    }

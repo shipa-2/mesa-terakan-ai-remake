@@ -389,6 +389,9 @@ terakan_physical_device_get_capabilities(
     */
    features_out->robustBufferAccess = true;
 
+   /* fullDrawIndexUint32 is unconditionally used by meta shaders, primarily for 2D vertex positions
+    * packed in an immediate index buffer.
+    */
    features_out->fullDrawIndexUint32 = true;
    features_out->imageCubeArray = true;
    features_out->independentBlend = true;
@@ -410,6 +413,9 @@ terakan_physical_device_get_capabilities(
    features_out->textureCompressionBC = true;
    /* TODO(Triang3l): occlusionQueryPrecise. */
    /* TODO(Triang3l): pipelineStatisticsQuery. */
+   /* fragmentStoresAndAtomics are unconditionally used by meta shaders, primarily for transfers to
+    * buffers or to 3x-expanded images.
+    */
    features_out->fragmentStoresAndAtomics = true;
    /* TODO(Triang3l): shaderTessellationAndGeometryPointSize. */
    /* TODO(Triang3l): Possibly shaderImageGatherExtended. */

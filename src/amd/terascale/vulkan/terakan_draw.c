@@ -135,24 +135,19 @@ terakan_CmdDraw(VkCommandBuffer const commandBuffer, uint32_t const vertexCount,
    struct terakan_gfx_command_writer * const command_writer =
       terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx;
 
+   terakan_hw_state_draw_set_vgt_num_instances(&command_writer->hw_state_draw, instanceCount);
    terakan_set_vertex_instance_offsets(command_writer, firstVertex, firstInstance);
 
    terakan_before_draw(command_writer);
 
    uint32_t * packet = terakan_gfx_command_writer_emit(
-      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DRAW, 2 + 3);
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DRAW, 3);
    if (unlikely(packet == NULL)) {
       return;
    }
-
-   /* NUM_INSTANCES in the same indirect buffer as the draw. */
-   *packet++ = PKT3(PKT3_NUM_INSTANCES, 0, 0);
-   *packet++ = instanceCount;
-
    *packet++ = PKT3(PKT3_DRAW_INDEX_AUTO, 3 - 2, 0);
    *packet++ = vertexCount;
    *packet++ = S_0287F0_SOURCE_SELECT(V_0287F0_DI_SRC_SEL_AUTO_INDEX);
-
    terakan_gfx_command_writer_emit_done(command_writer, packet);
 }
 
@@ -169,24 +164,19 @@ terakan_CmdDrawIndexed(VkCommandBuffer const commandBuffer, uint32_t const index
    struct terakan_gfx_command_writer * const command_writer =
       terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx;
 
+   terakan_hw_state_draw_set_vgt_num_instances(&command_writer->hw_state_draw, instanceCount);
    terakan_set_vertex_instance_offsets(command_writer, (uint32_t)vertexOffset, firstInstance);
 
    terakan_before_draw(command_writer);
 
    uint32_t * packet = terakan_gfx_command_writer_emit(
-      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DRAW, 2 + 4);
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DRAW, 4);
    if (unlikely(packet == NULL)) {
       return;
    }
-
-   /* NUM_INSTANCES in the same indirect buffer as the draw. */
-   *packet++ = PKT3(PKT3_NUM_INSTANCES, 0, 0);
-   *packet++ = instanceCount;
-
    *packet++ = PKT3(EG_PKT3_DRAW_INDEX_OFFSET, 4 - 2, 0);
    *packet++ = firstIndex;
    *packet++ = indexCount;
    *packet++ = S_0287F0_SOURCE_SELECT(V_0287F0_DI_SRC_SEL_DMA);
-
    terakan_gfx_command_writer_emit_done(command_writer, packet);
 }

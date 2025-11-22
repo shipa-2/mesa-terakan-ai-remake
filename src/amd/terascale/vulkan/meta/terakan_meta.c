@@ -26,14 +26,9 @@
 #include "terakan_command_buffer.h"
 #include "terakan_device.h"
 
-#include "gallium/drivers/r600/eg_sq.h"
-#include "gallium/drivers/r600/evergreend.h"
-#include "gallium/drivers/r600/r600_opcodes.h"
 #include "util/bitscan.h"
 
 #include <assert.h>
-#include <stdbool.h>
-#include <stdint.h>
 
 static uint32_t terakan_meta_empty_opaque_ps_r8xx[] = {
    /* 0: Export the color with an alpha of 1 and end the program. */
@@ -44,7 +39,7 @@ static uint32_t terakan_meta_empty_opaque_ps_r8xx[] = {
       S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Y(TERASCALE_SWIZZLE_0) |
       S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Z(TERASCALE_SWIZZLE_0) |
       S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_W(TERASCALE_SWIZZLE_1) |
-      S_SQ_CF_ALLOC_EXPORT_WORD1_END_OF_PROGRAM(1) |
+      S_SQ_CF_ALLOC_EXPORT_WORD1_END_OF_PROGRAM(true) |
       EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_EXPORT_DONE,
 };
 
@@ -61,8 +56,7 @@ static uint32_t terakan_meta_empty_opaque_ps_r9xx[] = {
 
    /* 1: End the program. */
 
-   0,
-   S_SQ_CF_WORD1_BARRIER(1) | CM_V_SQ_CF_WORD1_SQ_CF_INST_END,
+   TERAKAN_SHADER_CF_END_R9XX,
 };
 
 static struct terakan_meta_shader const terakan_meta_empty_opaque_ps = {

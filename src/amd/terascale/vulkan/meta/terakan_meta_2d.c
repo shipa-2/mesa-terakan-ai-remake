@@ -24,27 +24,18 @@
 #include "terakan_meta.h"
 
 #include "terakan_command_buffer.h"
-#include "terakan_device.h"
 #include "terakan_draw.h"
 
 #include "amd/terascale/common/terascale_wddm.h"
-#include "gallium/drivers/r600/eg_sq.h"
-#include "gallium/drivers/r600/evergreend.h"
-#include "gallium/drivers/r600/r600_opcodes.h"
 #include "gallium/drivers/r600/r600d_common.h"
 #include "util/macros.h"
 #include "util/u_math.h"
 
 #include <assert.h>
-#include <stdbool.h>
 #include <stddef.h>
-#include <stdint.h>
 
 static uint32_t const terakan_meta_position_from_index_vs_r8xx[] = {
-   /* Control flow. */
-
    /* 0: Export the instance ID as the first parameter. */
-
    S_SQ_CF_ALLOC_EXPORT_WORD0_TYPE(V_SQ_CF_ALLOC_EXPORT_WORD0_SQ_EXPORT_PARAM) |
       S_SQ_CF_ALLOC_EXPORT_WORD0_ARRAY_BASE(0) | S_SQ_CF_ALLOC_EXPORT_WORD0_RW_GPR(0),
    S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_X(TERASCALE_SWIZZLE_W) |
@@ -54,78 +45,45 @@ static uint32_t const terakan_meta_position_from_index_vs_r8xx[] = {
       EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_EXPORT_DONE,
 
    /* 1: Vertex position calculation. */
-
    S_SQ_CF_WORD0_ADDR(3),
-   S_SQ_CF_ALU_WORD1_COUNT(8 - 3) | S_SQ_CF_ALU_WORD1_BARRIER(1) |
+   S_SQ_CF_ALU_WORD1_COUNT(5) | S_SQ_CF_ALU_WORD1_BARRIER(true) |
       EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
    /* 2: Export the position in R0.XY01 and end the program. */
-
    S_SQ_CF_ALLOC_EXPORT_WORD0_TYPE(V_SQ_CF_ALLOC_EXPORT_WORD0_SQ_EXPORT_POS) |
       S_SQ_CF_ALLOC_EXPORT_WORD0_ARRAY_BASE(60) | S_SQ_CF_ALLOC_EXPORT_WORD0_RW_GPR(0),
    S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_X(TERASCALE_SWIZZLE_X) |
       S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Y(TERASCALE_SWIZZLE_Y) |
       S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Z(TERASCALE_SWIZZLE_0) |
       S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_W(TERASCALE_SWIZZLE_1) |
-      S_SQ_CF_ALLOC_EXPORT_WORD1_BARRIER(1) | S_SQ_CF_ALLOC_EXPORT_WORD1_END_OF_PROGRAM(1) |
+      S_SQ_CF_ALLOC_EXPORT_WORD1_BARRIER(true) | S_SQ_CF_ALLOC_EXPORT_WORD1_END_OF_PROGRAM(true) |
       EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_EXPORT_DONE,
 
-   /* ALU clause. */
+   /* 3: ALU clause. */
 
-   /* Extract bits 15:0 of the vertex index (to be used as position) to PV.X and bits 31:16 to PV.Y.
-    *
-    * 3:     PV.X = BFE_INT R0.X, 0, 16
-    * 4: (V) PV.Y = BFE_INT R0.X, 16, 16
-    * 5: Literal X = 16, Y = unused
-    * Cycle 0: X = R0
+   /* +0-2: Extract bits 15:0 of the vertex index (to be used as position) to PV.X and bits 31:16 to
+    * PV.Y.
+    * Cycle 0: X = R0.
     */
-
-   S_SQ_ALU_WORD0_SRC0_SEL(0) | S_SQ_ALU_WORD0_SRC0_CHAN(0) |
-      S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_0),
-   S_SQ_ALU_WORD1_OP3_SRC2_SEL(V_SQ_ALU_SRC_LITERAL) | S_SQ_ALU_WORD1_OP3_SRC2_CHAN(0) |
-      S_SQ_ALU_WORD1_DST_GPR(0x7F - 4) | S_SQ_ALU_WORD1_DST_CHAN(0) |
-      S_SQ_ALU_WORD1_OP3_ALU_INST(EG_V_SQ_ALU_WORD1_OP3_SQ_OP3_INST_BFE_INT),
-
-   S_SQ_ALU_WORD0_LAST(1) | S_SQ_ALU_WORD0_SRC0_SEL(0) | S_SQ_ALU_WORD0_SRC0_CHAN(0) |
-      S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_LITERAL) | S_SQ_ALU_WORD0_SRC1_CHAN(0),
-   S_SQ_ALU_WORD1_OP3_SRC2_SEL(V_SQ_ALU_SRC_LITERAL) | S_SQ_ALU_WORD1_OP3_SRC2_CHAN(0) |
-      S_SQ_ALU_WORD1_DST_GPR(0x7F - 4) | S_SQ_ALU_WORD1_DST_CHAN(1) |
-      S_SQ_ALU_WORD1_OP3_ALU_INST(EG_V_SQ_ALU_WORD1_OP3_SQ_OP3_INST_BFE_INT),
-
+   TERAKAN_SHADER_OP3_NW(false, 'X', BFE_INT, EG, 0, 'X', V_SQ_ALU_SRC_0, 0, V_SQ_ALU_SRC_LITERAL,
+                         'X', VEC_012),
+   TERAKAN_SHADER_OP3_NW(true, 'Y', BFE_INT, EG, 0, 'X', V_SQ_ALU_SRC_LITERAL, 'X',
+                         V_SQ_ALU_SRC_LITERAL, 'X', VEC_012),
    16,
    0,
 
-   /* Convert the vertex position X from int to float.
-    *
-    * 6:     PV.Y = PV.Y, unused PV.Y
-    * 7: (T) R0.X = INT_TO_FLT PV.X, unused PV.X
+   /* +3-4: Convert the vertex position X from int to float to R0.X, and pass PV.Y further
+    * (INT_TO_FLT can be executed only on the transcendental unit).
     */
+   TERAKAN_SHADER_OP1_NW(false, 'Y', MOV, EG, V_SQ_ALU_SRC_PV, 'Y', VEC_012),
+   TERAKAN_SHADER_OP1(true, 0, 'X', INT_TO_FLT, EG, V_SQ_ALU_SRC_PV, 'X', SCL_210),
 
-   S_SQ_ALU_WORD0_SRC0_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC0_CHAN(1) |
-      S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC1_CHAN(1),
-   S_SQ_ALU_WORD1_DST_CHAN(1) | S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MOV),
-
-   S_SQ_ALU_WORD0_LAST(1) | S_SQ_ALU_WORD0_SRC0_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC0_CHAN(0) |
-      S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC1_CHAN(0),
-   S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(0) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_INT_TO_FLT),
-
-   /* Convert the vertex position Y from int to float.
-    *
-    * 8: (T) R0.Y = INT_TO_FLT PV.Y, unused PV.Y
-    */
-
-   S_SQ_ALU_WORD0_LAST(1) | S_SQ_ALU_WORD0_SRC0_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC0_CHAN(1) |
-      S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC1_CHAN(1),
-   S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(1) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_INT_TO_FLT),
+   /* +5: Convert the vertex position Y from int to float to R0.Y. */
+   TERAKAN_SHADER_OP1(true, 0, 'Y', INT_TO_FLT, EG, V_SQ_ALU_SRC_PV, 'Y', SCL_210),
 };
 
 static uint32_t const terakan_meta_position_and_layer_from_index_vs_r8xx[] = {
-   /* Control flow. */
-
    /* 0: Export the instance ID as the first parameter. */
-
    S_SQ_CF_ALLOC_EXPORT_WORD0_TYPE(V_SQ_CF_ALLOC_EXPORT_WORD0_SQ_EXPORT_PARAM) |
       S_SQ_CF_ALLOC_EXPORT_WORD0_ARRAY_BASE(0) | S_SQ_CF_ALLOC_EXPORT_WORD0_RW_GPR(0),
    S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_X(TERASCALE_SWIZZLE_W) |
@@ -135,7 +93,6 @@ static uint32_t const terakan_meta_position_and_layer_from_index_vs_r8xx[] = {
       EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_EXPORT_DONE,
 
    /* 1: Export the instance ID as the render target array layer index. */
-
    S_SQ_CF_ALLOC_EXPORT_WORD0_TYPE(V_SQ_CF_ALLOC_EXPORT_WORD0_SQ_EXPORT_POS) |
       S_SQ_CF_ALLOC_EXPORT_WORD0_ARRAY_BASE(61) | S_SQ_CF_ALLOC_EXPORT_WORD0_RW_GPR(0),
    S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_X(TERASCALE_SWIZZLE_MASK) |
@@ -145,78 +102,45 @@ static uint32_t const terakan_meta_position_and_layer_from_index_vs_r8xx[] = {
       EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_EXPORT,
 
    /* 2: Vertex position calculation. */
-
    S_SQ_CF_WORD0_ADDR(4),
-   S_SQ_CF_ALU_WORD1_COUNT(9 - 4) | S_SQ_CF_ALU_WORD1_BARRIER(1) |
+   S_SQ_CF_ALU_WORD1_COUNT(5) | S_SQ_CF_ALU_WORD1_BARRIER(true) |
       EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
    /* 3: Export the position in R0.XY01 and end the program. */
-
    S_SQ_CF_ALLOC_EXPORT_WORD0_TYPE(V_SQ_CF_ALLOC_EXPORT_WORD0_SQ_EXPORT_POS) |
       S_SQ_CF_ALLOC_EXPORT_WORD0_ARRAY_BASE(60) | S_SQ_CF_ALLOC_EXPORT_WORD0_RW_GPR(0),
    S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_X(TERASCALE_SWIZZLE_X) |
       S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Y(TERASCALE_SWIZZLE_Y) |
       S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Z(TERASCALE_SWIZZLE_0) |
       S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_W(TERASCALE_SWIZZLE_1) |
-      S_SQ_CF_ALLOC_EXPORT_WORD1_BARRIER(1) | S_SQ_CF_ALLOC_EXPORT_WORD1_END_OF_PROGRAM(1) |
+      S_SQ_CF_ALLOC_EXPORT_WORD1_BARRIER(true) | S_SQ_CF_ALLOC_EXPORT_WORD1_END_OF_PROGRAM(true) |
       EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_EXPORT_DONE,
 
-   /* ALU clause. */
+   /* 4: ALU clause. */
 
-   /* Extract bits 15:0 of the vertex index (to be used as position) to PV.X and bits 31:16 to PV.Y.
-    *
-    * 4:     PV.X = BFE_INT R0.X, 0, 16
-    * 5: (V) PV.Y = BFE_INT R0.X, 16, 16
-    * 6: Literal X = 16, Y = unused
-    * Cycle 0: X = R0
+   /* +0-2: Extract bits 15:0 of the vertex index (to be used as position) to PV.X and bits 31:16 to
+    * PV.Y.
+    * Cycle 0: X = R0.
     */
-
-   S_SQ_ALU_WORD0_SRC0_SEL(0) | S_SQ_ALU_WORD0_SRC0_CHAN(0) |
-      S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_0),
-   S_SQ_ALU_WORD1_OP3_SRC2_SEL(V_SQ_ALU_SRC_LITERAL) | S_SQ_ALU_WORD1_OP3_SRC2_CHAN(0) |
-      S_SQ_ALU_WORD1_DST_GPR(0x7F - 4) | S_SQ_ALU_WORD1_DST_CHAN(0) |
-      S_SQ_ALU_WORD1_OP3_ALU_INST(EG_V_SQ_ALU_WORD1_OP3_SQ_OP3_INST_BFE_INT),
-
-   S_SQ_ALU_WORD0_LAST(1) | S_SQ_ALU_WORD0_SRC0_SEL(0) | S_SQ_ALU_WORD0_SRC0_CHAN(0) |
-      S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_LITERAL) | S_SQ_ALU_WORD0_SRC1_CHAN(0),
-   S_SQ_ALU_WORD1_OP3_SRC2_SEL(V_SQ_ALU_SRC_LITERAL) | S_SQ_ALU_WORD1_OP3_SRC2_CHAN(0) |
-      S_SQ_ALU_WORD1_DST_GPR(0x7F - 4) | S_SQ_ALU_WORD1_DST_CHAN(1) |
-      S_SQ_ALU_WORD1_OP3_ALU_INST(EG_V_SQ_ALU_WORD1_OP3_SQ_OP3_INST_BFE_INT),
-
+   TERAKAN_SHADER_OP3_NW(false, 'X', BFE_INT, EG, 0, 'X', V_SQ_ALU_SRC_0, 0, V_SQ_ALU_SRC_LITERAL,
+                         'X', VEC_012),
+   TERAKAN_SHADER_OP3_NW(true, 'Y', BFE_INT, EG, 0, 'X', V_SQ_ALU_SRC_LITERAL, 'X',
+                         V_SQ_ALU_SRC_LITERAL, 'X', VEC_012),
    16,
    0,
 
-   /* Convert the vertex position X from int to float.
-    *
-    * 7:     PV.Y = PV.Y, unused PV.Y
-    * 8: (T) R0.X = INT_TO_FLT PV.X, unused PV.X
+   /* +3-4: Convert the vertex position X from int to float to R0.X, and pass PV.Y further
+    * (INT_TO_FLT can be executed only on the transcendental unit).
     */
+   TERAKAN_SHADER_OP1_NW(false, 'Y', MOV, EG, V_SQ_ALU_SRC_PV, 'Y', VEC_012),
+   TERAKAN_SHADER_OP1(true, 0, 'X', INT_TO_FLT, EG, V_SQ_ALU_SRC_PV, 'X', SCL_210),
 
-   S_SQ_ALU_WORD0_SRC0_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC0_CHAN(1) |
-      S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC1_CHAN(1),
-   S_SQ_ALU_WORD1_DST_CHAN(1) | S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MOV),
-
-   S_SQ_ALU_WORD0_LAST(1) | S_SQ_ALU_WORD0_SRC0_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC0_CHAN(0) |
-      S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC1_CHAN(0),
-   S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(0) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_INT_TO_FLT),
-
-   /* Convert the vertex position Y from int to float.
-    *
-    * 9: (T) R0.Y = INT_TO_FLT PV.Y, unused PV.Y
-    */
-
-   S_SQ_ALU_WORD0_LAST(1) | S_SQ_ALU_WORD0_SRC0_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC0_CHAN(1) |
-      S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC1_CHAN(1),
-   S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(1) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_INT_TO_FLT),
+   /* +5: Convert the vertex position Y from int to float to R0.Y. */
+   TERAKAN_SHADER_OP1(true, 0, 'Y', INT_TO_FLT, EG, V_SQ_ALU_SRC_PV, 'Y', SCL_210),
 };
 
 static uint32_t const terakan_meta_position_from_index_vs_r9xx[] = {
-   /* Control flow. */
-
    /* 0: Export the instance ID as the first parameter. */
-
    S_SQ_CF_ALLOC_EXPORT_WORD0_TYPE(V_SQ_CF_ALLOC_EXPORT_WORD0_SQ_EXPORT_PARAM) |
       S_SQ_CF_ALLOC_EXPORT_WORD0_ARRAY_BASE(0) | S_SQ_CF_ALLOC_EXPORT_WORD0_RW_GPR(0),
    S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_X(TERASCALE_SWIZZLE_W) |
@@ -226,73 +150,43 @@ static uint32_t const terakan_meta_position_from_index_vs_r9xx[] = {
       EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_EXPORT_DONE,
 
    /* 1: Vertex position calculation. */
-
    S_SQ_CF_WORD0_ADDR(4),
-   S_SQ_CF_ALU_WORD1_COUNT(8 - 4) | S_SQ_CF_ALU_WORD1_BARRIER(1) |
+   S_SQ_CF_ALU_WORD1_COUNT(4) | S_SQ_CF_ALU_WORD1_BARRIER(true) |
       EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
    /* 2: Export the position in R0.XY01. */
-
    S_SQ_CF_ALLOC_EXPORT_WORD0_TYPE(V_SQ_CF_ALLOC_EXPORT_WORD0_SQ_EXPORT_POS) |
       S_SQ_CF_ALLOC_EXPORT_WORD0_ARRAY_BASE(60) | S_SQ_CF_ALLOC_EXPORT_WORD0_RW_GPR(0),
    S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_X(TERASCALE_SWIZZLE_X) |
       S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Y(TERASCALE_SWIZZLE_Y) |
       S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Z(TERASCALE_SWIZZLE_0) |
       S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_W(TERASCALE_SWIZZLE_1) |
-      S_SQ_CF_ALLOC_EXPORT_WORD1_BARRIER(1) | EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_EXPORT_DONE,
+      S_SQ_CF_ALLOC_EXPORT_WORD1_BARRIER(true) |
+      EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_EXPORT_DONE,
 
    /* 3: End the program. */
+   TERAKAN_SHADER_CF_END_R9XX,
 
-   0,
-   S_SQ_CF_WORD1_BARRIER(1) | CM_V_SQ_CF_WORD1_SQ_CF_INST_END,
+   /* 4: ALU clause. */
 
-   /* ALU clause. */
-
-   /* Extract bits 15:0 of the vertex index (to be used as position) to PV.X and bits 31:16 to PV.Y.
-    *
-    * 4: PV.X = BFE_INT R0.X, 0, 16
-    * 5: PV.Y = BFE_INT R0.X, 16, 16
-    * 6: Literal X = 16, Y = unused
-    * Cycle 0: X = R0
+   /* +0-2: Extract bits 15:0 of the vertex index (to be used as position) to PV.X and bits 31:16 to
+    * PV.Y.
+    * Cycle 0: X = R0.
     */
-
-   S_SQ_ALU_WORD0_SRC0_SEL(0) | S_SQ_ALU_WORD0_SRC0_CHAN(0) |
-      S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_0),
-   S_SQ_ALU_WORD1_OP3_SRC2_SEL(V_SQ_ALU_SRC_LITERAL) | S_SQ_ALU_WORD1_OP3_SRC2_CHAN(0) |
-      S_SQ_ALU_WORD1_DST_GPR(0x7F - 4) | S_SQ_ALU_WORD1_DST_CHAN(0) |
-      S_SQ_ALU_WORD1_OP3_ALU_INST(EG_V_SQ_ALU_WORD1_OP3_SQ_OP3_INST_BFE_INT),
-
-   S_SQ_ALU_WORD0_LAST(1) | S_SQ_ALU_WORD0_SRC0_SEL(0) | S_SQ_ALU_WORD0_SRC0_CHAN(0) |
-      S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_LITERAL) | S_SQ_ALU_WORD0_SRC1_CHAN(0),
-   S_SQ_ALU_WORD1_OP3_SRC2_SEL(V_SQ_ALU_SRC_LITERAL) | S_SQ_ALU_WORD1_OP3_SRC2_CHAN(0) |
-      S_SQ_ALU_WORD1_DST_GPR(0x7F - 4) | S_SQ_ALU_WORD1_DST_CHAN(1) |
-      S_SQ_ALU_WORD1_OP3_ALU_INST(EG_V_SQ_ALU_WORD1_OP3_SQ_OP3_INST_BFE_INT),
-
+   TERAKAN_SHADER_OP3_NW(false, 'X', BFE_INT, EG, 0, 'X', V_SQ_ALU_SRC_0, 0, V_SQ_ALU_SRC_LITERAL,
+                         'X', VEC_012),
+   TERAKAN_SHADER_OP3_NW(true, 'Y', BFE_INT, EG, 0, 'X', V_SQ_ALU_SRC_LITERAL, 'X',
+                         V_SQ_ALU_SRC_LITERAL, 'X', VEC_012),
    16,
    0,
 
-   /* Convert the vertex position from int to float.
-    *
-    * 7: R0.X = INT_TO_FLT PV.X, unused PV.X
-    * 8: R0.Y = INT_TO_FLT PV.Y, unused PV.Y
-    */
-
-   S_SQ_ALU_WORD0_SRC0_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC0_CHAN(0) |
-      S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC1_CHAN(0),
-   S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(0) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_INT_TO_FLT),
-
-   S_SQ_ALU_WORD0_LAST(1) | S_SQ_ALU_WORD0_SRC0_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC0_CHAN(1) |
-      S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC1_CHAN(1),
-   S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(1) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_INT_TO_FLT),
+   /* +3-4: Convert the vertex position from int to float to R0.XY. */
+   TERAKAN_SHADER_OP1(false, 0, 'X', INT_TO_FLT, EG, V_SQ_ALU_SRC_PV, 'X', VEC_012),
+   TERAKAN_SHADER_OP1(true, 0, 'Y', INT_TO_FLT, EG, V_SQ_ALU_SRC_PV, 'Y', VEC_012),
 };
 
 static uint32_t const terakan_meta_position_and_layer_from_index_vs_r9xx[] = {
-   /* Control flow. */
-
    /* 0: Export the instance ID as the first parameter. */
-
    S_SQ_CF_ALLOC_EXPORT_WORD0_TYPE(V_SQ_CF_ALLOC_EXPORT_WORD0_SQ_EXPORT_PARAM) |
       S_SQ_CF_ALLOC_EXPORT_WORD0_ARRAY_BASE(0) | S_SQ_CF_ALLOC_EXPORT_WORD0_RW_GPR(0),
    S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_X(TERASCALE_SWIZZLE_W) |
@@ -302,7 +196,6 @@ static uint32_t const terakan_meta_position_and_layer_from_index_vs_r9xx[] = {
       EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_EXPORT_DONE,
 
    /* 1: Export the instance ID as the render target array layer index. */
-
    S_SQ_CF_ALLOC_EXPORT_WORD0_TYPE(V_SQ_CF_ALLOC_EXPORT_WORD0_SQ_EXPORT_POS) |
       S_SQ_CF_ALLOC_EXPORT_WORD0_ARRAY_BASE(61) | S_SQ_CF_ALLOC_EXPORT_WORD0_RW_GPR(0),
    S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_X(TERASCALE_SWIZZLE_MASK) |
@@ -312,66 +205,39 @@ static uint32_t const terakan_meta_position_and_layer_from_index_vs_r9xx[] = {
       EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_EXPORT,
 
    /* 2: Vertex position calculation. */
-
    S_SQ_CF_WORD0_ADDR(5),
-   S_SQ_CF_ALU_WORD1_COUNT(9 - 5) | S_SQ_CF_ALU_WORD1_BARRIER(1) |
+   S_SQ_CF_ALU_WORD1_COUNT(4) | S_SQ_CF_ALU_WORD1_BARRIER(true) |
       EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
    /* 3: Export the position in R0.XY01. */
-
    S_SQ_CF_ALLOC_EXPORT_WORD0_TYPE(V_SQ_CF_ALLOC_EXPORT_WORD0_SQ_EXPORT_POS) |
       S_SQ_CF_ALLOC_EXPORT_WORD0_ARRAY_BASE(60) | S_SQ_CF_ALLOC_EXPORT_WORD0_RW_GPR(0),
    S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_X(TERASCALE_SWIZZLE_X) |
       S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Y(TERASCALE_SWIZZLE_Y) |
       S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Z(TERASCALE_SWIZZLE_0) |
       S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_W(TERASCALE_SWIZZLE_1) |
-      S_SQ_CF_ALLOC_EXPORT_WORD1_BARRIER(1) | EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_EXPORT_DONE,
+      S_SQ_CF_ALLOC_EXPORT_WORD1_BARRIER(true) |
+      EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_EXPORT_DONE,
 
    /* 4: End the program. */
+   TERAKAN_SHADER_CF_END_R9XX,
 
-   0,
-   S_SQ_CF_WORD1_BARRIER(1) | CM_V_SQ_CF_WORD1_SQ_CF_INST_END,
+   /* 5: ALU clause. */
 
-   /* ALU clause. */
-
-   /* Extract bits 15:0 of the vertex index (to be used as position) to PV.X and bits 31:16 to PV.Y.
-    *
-    * 5: PV.X = BFE_INT R0.X, 0, 16
-    * 6: PV.Y = BFE_INT R0.X, 16, 16
-    * 7: Literal X = 16, Y = unused
-    * Cycle 0: X = R0
+   /* +0-2: Extract bits 15:0 of the vertex index (to be used as position) to PV.X and bits 31:16 to
+    * PV.Y.
+    * Cycle 0: X = R0.
     */
-
-   S_SQ_ALU_WORD0_SRC0_SEL(0) | S_SQ_ALU_WORD0_SRC0_CHAN(0) |
-      S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_0),
-   S_SQ_ALU_WORD1_OP3_SRC2_SEL(V_SQ_ALU_SRC_LITERAL) | S_SQ_ALU_WORD1_OP3_SRC2_CHAN(0) |
-      S_SQ_ALU_WORD1_DST_GPR(0x7F - 4) | S_SQ_ALU_WORD1_DST_CHAN(0) |
-      S_SQ_ALU_WORD1_OP3_ALU_INST(EG_V_SQ_ALU_WORD1_OP3_SQ_OP3_INST_BFE_INT),
-
-   S_SQ_ALU_WORD0_LAST(1) | S_SQ_ALU_WORD0_SRC0_SEL(0) | S_SQ_ALU_WORD0_SRC0_CHAN(0) |
-      S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_LITERAL) | S_SQ_ALU_WORD0_SRC1_CHAN(0),
-   S_SQ_ALU_WORD1_OP3_SRC2_SEL(V_SQ_ALU_SRC_LITERAL) | S_SQ_ALU_WORD1_OP3_SRC2_CHAN(0) |
-      S_SQ_ALU_WORD1_DST_GPR(0x7F - 4) | S_SQ_ALU_WORD1_DST_CHAN(1) |
-      S_SQ_ALU_WORD1_OP3_ALU_INST(EG_V_SQ_ALU_WORD1_OP3_SQ_OP3_INST_BFE_INT),
-
+   TERAKAN_SHADER_OP3_NW(false, 'X', BFE_INT, EG, 0, 'X', V_SQ_ALU_SRC_0, 0, V_SQ_ALU_SRC_LITERAL,
+                         'X', VEC_012),
+   TERAKAN_SHADER_OP3_NW(true, 'Y', BFE_INT, EG, 0, 'X', V_SQ_ALU_SRC_LITERAL, 'X',
+                         V_SQ_ALU_SRC_LITERAL, 'X', VEC_012),
    16,
    0,
 
-   /* Convert the vertex position from int to float.
-    *
-    * 8: R0.X = INT_TO_FLT PV.X, unused PV.X
-    * 9: R0.Y = INT_TO_FLT PV.Y, unused PV.Y
-    */
-
-   S_SQ_ALU_WORD0_SRC0_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC0_CHAN(0) |
-      S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC1_CHAN(0),
-   S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(0) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_INT_TO_FLT),
-
-   S_SQ_ALU_WORD0_LAST(1) | S_SQ_ALU_WORD0_SRC0_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC0_CHAN(1) |
-      S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC1_CHAN(1),
-   S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(1) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_INT_TO_FLT),
+   /* +3-4: Convert the vertex position from int to float to R0.XY. */
+   TERAKAN_SHADER_OP1(false, 0, 'X', INT_TO_FLT, EG, V_SQ_ALU_SRC_PV, 'X', VEC_012),
+   TERAKAN_SHADER_OP1(true, 0, 'Y', INT_TO_FLT, EG, V_SQ_ALU_SRC_PV, 'Y', VEC_012),
 };
 
 struct terakan_meta_shader const terakan_meta_position_from_index_vs = {
@@ -513,6 +379,8 @@ void
 terakan_meta_emit_rect_3_vertices_draw(struct terakan_gfx_command_writer * const command_writer,
                                        VkRect2D const * const rect, uint32_t const instance_count)
 {
+   terakan_hw_state_draw_set_vgt_num_instances(&command_writer->hw_state_draw, instance_count);
+
    terakan_before_hw_draw(command_writer);
 
    uint32_t * packet;
@@ -538,15 +406,10 @@ terakan_meta_emit_rect_3_vertices_draw(struct terakan_gfx_command_writer * const
       util_memcpy_cpu_to_le32(index_buffer_mapping, vertices, sizeof(vertices));
 
       packet = terakan_gfx_command_writer_emit_with_bo(
-         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DRAW, 2 + 5, 1, 0, 1);
+         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DRAW, 5, 1, 0, 1);
       if (unlikely(packet == NULL)) {
          return;
       }
-
-      /* NUM_INSTANCES in the same indirect buffer as the draw. */
-      *packet++ = PKT3(PKT3_NUM_INSTANCES, 0, 0);
-      *packet++ = instance_count;
-
       *packet++ = PKT3(PKT3_DRAW_INDEX, 5 - 2, 0);
       uint32_t const * const packet_index_base = packet;
       *packet++ = (uint32_t)index_buffer_va;
@@ -562,27 +425,20 @@ terakan_meta_emit_rect_3_vertices_draw(struct terakan_gfx_command_writer * const
          terakan_bo_reference_writer_add_reference(&command_writer->base.bo_reference_writer,
                                                    index_buffer_bo, true, false,
                                                    TERAKAN_BO_PRIORITY_INDEX_BUFFER));
-
       terakan_gfx_command_writer_emit_done(command_writer, packet);
 
       return;
    }
 
    packet = terakan_gfx_command_writer_emit(
-      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DRAW, 2 + 3 + ARRAY_SIZE(vertices));
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DRAW, 3 + ARRAY_SIZE(vertices));
    if (unlikely(packet == NULL)) {
       return;
    }
-
-   /* NUM_INSTANCES in the same indirect buffer as the draw. */
-   *packet++ = PKT3(PKT3_NUM_INSTANCES, 0, 0);
-   *packet++ = instance_count;
-
    *packet++ = PKT3(PKT3_DRAW_INDEX_IMMD, 1 + ARRAY_SIZE(vertices), 0);
    *packet++ = ARRAY_SIZE(vertices);
    *packet++ = S_0287F0_SOURCE_SELECT(V_0287F0_DI_SRC_SEL_IMMEDIATE);
    memcpy(packet, vertices, sizeof(vertices));
    packet += ARRAY_SIZE(vertices);
-
    terakan_gfx_command_writer_emit_done(command_writer, packet);
 }

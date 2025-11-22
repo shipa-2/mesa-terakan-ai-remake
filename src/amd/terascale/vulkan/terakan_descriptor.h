@@ -84,21 +84,26 @@ extern "C" {
 /* For easier writing of meta shaders.
  * offsetof doesn't produce a constant on MSVC 2022, so using dword offsets instead.
  */
+#define TERAKAN_KCACHE_BANK_SOURCE_BASE(bank) ((0x80 << ((bank) >> 1)) + (((bank) & 0b1) << 5))
 #define TERAKAN_KCACHE_DWORD_LINE(offset_dwords)                                                   \
    ((offset_dwords) / (TERAKAN_KCACHE_HW_LINE_BYTES / sizeof(uint32_t)))
 #define TERAKAN_KCACHE_DWORD_VECTOR(offset_dwords)                                                 \
    (((offset_dwords) & (TERAKAN_KCACHE_HW_LINE_BYTES / sizeof(uint32_t) - 1)) / 4)
-#define TERAKAN_KCACHE_DWORD_SOURCE(offset_dwords)                                                 \
-   (0x80 + TERAKAN_KCACHE_DWORD_VECTOR(offset_dwords))
+#define TERAKAN_KCACHE_DWORD_SOURCE(bank, offset_dwords)                                           \
+   (TERAKAN_KCACHE_BANK_SOURCE_BASE(bank) + TERAKAN_KCACHE_DWORD_VECTOR(offset_dwords))
 #define TERAKAN_KCACHE_DWORD_COMPONENT(offset_dwords) ((offset_dwords) & 3)
-#define TERAKAN_KCACHE_DWORD_WORD0_SRC0(offset_dwords)                                             \
-   (S_SQ_ALU_WORD0_SRC0_SEL(TERAKAN_KCACHE_DWORD_SOURCE(offset_dwords)) |                          \
+#define TERAKAN_KCACHE_DWORD_WORD0_SRC0(bank, offset_dwords)                                       \
+   (S_SQ_ALU_WORD0_SRC0_SEL(TERAKAN_KCACHE_DWORD_SOURCE(bank, offset_dwords)) |                    \
     S_SQ_ALU_WORD0_SRC0_CHAN(TERAKAN_KCACHE_DWORD_COMPONENT(offset_dwords)))
-#define TERAKAN_KCACHE_DWORD_WORD0_SRC1(offset_dwords)                                             \
-   (S_SQ_ALU_WORD0_SRC1_SEL(TERAKAN_KCACHE_DWORD_SOURCE(offset_dwords)) |                          \
+#define TERAKAN_KCACHE_DWORD_WORD0_SRC1(bank, offset_dwords)                                       \
+   (S_SQ_ALU_WORD0_SRC1_SEL(TERAKAN_KCACHE_DWORD_SOURCE(bank, offset_dwords)) |                    \
     S_SQ_ALU_WORD0_SRC1_CHAN(TERAKAN_KCACHE_DWORD_COMPONENT(offset_dwords)))
-#define TERAKAN_KCACHE_DWORD_WORD1_SRC2(offset_dwords)                                             \
-   (S_SQ_ALU_WORD1_OP3_SRC2_SEL(TERAKAN_KCACHE_DWORD_SOURCE(offset_dwords)) |                      \
+/* With a filler for the second OP2 operand for single-operand instructions. */
+#define TERAKAN_KCACHE_DWORD_WORD0_SRC01(bank, offset_dwords)                                      \
+   (TERAKAN_KCACHE_DWORD_WORD0_SRC0(bank, offset_dwords) |                                         \
+    TERAKAN_KCACHE_DWORD_WORD0_SRC1(bank, offset_dwords))
+#define TERAKAN_KCACHE_DWORD_WORD1_SRC2(bank, offset_dwords)                                       \
+   (S_SQ_ALU_WORD1_OP3_SRC2_SEL(TERAKAN_KCACHE_DWORD_SOURCE(bank, offset_dwords)) |                \
     S_SQ_ALU_WORD1_OP3_SRC2_CHAN(TERAKAN_KCACHE_DWORD_COMPONENT(offset_dwords)))
 
 #define TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE 176
@@ -220,6 +225,12 @@ struct terakan_color_descriptor {
    /* In image views, the DIM register is for a storage image. */
    uint32_t dim;
 };
+
+#define TERAKAN_COLOR_DESCRIPTOR_BUFFER_UAV_INFO_CONST_FIELDS                                      \
+   (S_028C70_ARRAY_MODE(V_028C70_ARRAY_LINEAR_ALIGNED) | S_028C70_BLEND_BYPASS(1) |                \
+    S_028C70_SOURCE_FORMAT(V_028C70_EXPORT_4C_32BPC) | S_028C70_RAT(1) |                           \
+    S_028C70_RESOURCE_TYPE(V_028C70_BUFFER))
+#define TERAKAN_COLOR_DESCRIPTOR_BUFFER_UAV_ATTRIB (S_028C74_NON_DISP_TILING_ORDER(1))
 
 struct terakan_physical_device;
 

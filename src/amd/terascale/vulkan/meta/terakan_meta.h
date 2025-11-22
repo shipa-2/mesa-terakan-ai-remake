@@ -24,18 +24,28 @@
 #ifndef TERAKAN_META_H
 #define TERAKAN_META_H
 
+/* Most meta operations, not only terakan_meta.h itself, need these Terakan headers, as well as
+ * evergreend.h and the ISA headers (plus stdint.h and stdbool.h for shader code, and stddef.h for
+ * NULL checks when emitting packets), so by including terakan_meta.h, meta operation code can
+ * assume that these headers are also included.
+ */
+
+#include "terakan_bo.h"
 #include "terakan_descriptor.h"
 #include "terakan_format.h"
 #include "terakan_hw_state.h"
 #include "terakan_shader.h"
 #include "terakan_state.h"
 
+#include "gallium/drivers/r600/eg_sq.h"
 #include "gallium/drivers/r600/evergreend.h"
+#include "gallium/drivers/r600/r600_opcodes.h"
 #include "util/bitset.h"
 #include "util/format/u_formats.h"
 #include "vk_format.h"
 
 #include <assert.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -43,6 +53,28 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/* Note that there are various differences from the other Vulkan drivers in Mesa in how Terakan
+ * implements meta passes.
+ *
+ * The common Mesa Vulkan meta passes aren't used, primarily because of the more limited compute
+ * capabilities of TeraScale. Most importantly, according to the R800 AddrLib, "Tex2D UAV on cypress
+ * will fail/hang if tile mode is linear", so transfers to images must be done via an RTV rather
+ * than a UAV.
+ *
+ * Also, shaders are written directly in the hardware microcode rather than NIR. There's no need for
+ * compiling shaders from a single representation for many ISA versions as the driver targets only 2
+ * (R8xx VLIW5 and R9xx VLIW4), and the shaders perform mostly simple operations, so using NIR
+ * largely would not offer significant advantages. On the other hand, using NIR and the backend
+ * shader compiler would require very careful selection of instructions and lowerings (some may be
+ * mandatory, while some may break compilation), as well as continuously making sure that the meta
+ * shaders (and any special case logic in the compilation infrastructure potentially added for them,
+ * such as using special binding registers to avoid interfering with the bindings set by the
+ * application) don't end up broken when changes are made to the backend compiler or NIR itself
+ * (including for the needs of other, unrelated drivers). So the meta shaders are kept isolated and
+ * stable with respect to the compiler infrastructure changes, and any work related to NIR usage in
+ * Terakan can focus purely on supporting application shaders.
+ */
 
 #define TERAKAN_META_PA_CL_VTE_CNTL_2D (S_028818_VTX_XY_FMT(1) | S_028818_VTX_Z_FMT(1))
 
@@ -289,11 +321,10 @@ terakan_meta_transfer_expand_3x_uav(unsigned const bytes_per_surfel,
                                  bytes_per_surfel, tile_pipe_interleave_bytes_log2) /
                                  8 -
                               1);
-   descriptor.info = S_028C70_FORMAT(format) | S_028C70_ARRAY_MODE(V_028C70_ARRAY_LINEAR_ALIGNED) |
+   descriptor.info = S_028C70_FORMAT(format) |
                      S_028C70_NUMBER_TYPE(TERASCALE_FORMAT_NUMBER_TYPE_UINT) |
-                     S_028C70_BLEND_BYPASS(1) | S_028C70_SOURCE_FORMAT(V_028C70_EXPORT_4C_32BPC) |
-                     S_028C70_RAT(1) | S_028C70_RESOURCE_TYPE(V_028C70_BUFFER);
-   descriptor.attrib = S_028C74_NON_DISP_TILING_ORDER(1);
+                     TERAKAN_COLOR_DESCRIPTOR_BUFFER_UAV_INFO_CONST_FIELDS;
+   descriptor.attrib = TERAKAN_COLOR_DESCRIPTOR_BUFFER_UAV_ATTRIB;
    return descriptor;
 }
 

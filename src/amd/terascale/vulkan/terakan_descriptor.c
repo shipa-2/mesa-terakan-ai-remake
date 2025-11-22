@@ -158,6 +158,8 @@ terakan_descriptor_create_for_uniform_buffer(struct terakan_bo const * const bo,
       S_03000C_DST_SEL_X(TERASCALE_SWIZZLE_X) | S_03000C_DST_SEL_Y(TERASCALE_SWIZZLE_Y) |
       S_03000C_DST_SEL_Z(TERASCALE_SWIZZLE_Z) | S_03000C_DST_SEL_W(TERASCALE_SWIZZLE_W);
    resource_out[4] = (uint32_t)range_aligned;
+   resource_out[5] = 0;
+   resource_out[6] = 0;
    resource_out[7] = S_03001C_TYPE(V_03001C_SQ_TEX_VTX_VALID_BUFFER);
    resource_out[TERAKAN_RESOURCE_BUFFER_PRIORITY_WORD] = TERAKAN_BO_PRIORITY_UNIFORM_BUFFER;
 
@@ -186,18 +188,19 @@ terakan_descriptor_create_for_storage_buffer(
       S_03000C_DST_SEL_X(TERASCALE_SWIZZLE_X) | S_03000C_DST_SEL_Y(TERASCALE_SWIZZLE_Y) |
       S_03000C_DST_SEL_Z(TERASCALE_SWIZZLE_Z) | S_03000C_DST_SEL_W(TERASCALE_SWIZZLE_W);
    resource_out[4] = (uint32_t)range_aligned;
+   resource_out[5] = 0;
+   resource_out[6] = 0;
    resource_out[7] = S_03001C_TYPE(V_03001C_SQ_TEX_VTX_VALID_BUFFER);
    resource_out[TERAKAN_RESOURCE_BUFFER_PRIORITY_WORD] = TERAKAN_BO_PRIORITY_SHADER_READ_BUFFER;
 
    terakan_color_descriptor_calculate_buffer_base_pitch_slice_view_dim(
       color_out, va, range_aligned / sizeof(uint32_t), sizeof(uint32_t), physical_device, false);
-   color_out->info = S_028C70_FORMAT(TERASCALE_FORMAT_INDEX_32) |
-                     S_028C70_ARRAY_MODE(V_028C70_ARRAY_LINEAR_ALIGNED) |
+   color_out->info = S_028C70_ENDIAN(UTIL_ARCH_BIG_ENDIAN ? TERASCALE_ENDIAN_SWAP_8IN32
+                                                          : TERASCALE_ENDIAN_SWAP_NONE) |
+                     S_028C70_FORMAT(TERASCALE_FORMAT_INDEX_32) |
                      S_028C70_NUMBER_TYPE(TERASCALE_FORMAT_NUMBER_TYPE_UINT) |
-                     S_028C70_COMP_SWAP(TERASCALE_FORMAT_CB_COLOR_SWAP_STD) |
-                     S_028C70_BLEND_BYPASS(1) | S_028C70_SOURCE_FORMAT(V_028C70_EXPORT_4C_32BPC) |
-                     S_028C70_RAT(1) | S_028C70_RESOURCE_TYPE(V_028C70_BUFFER);
-   color_out->attrib = S_028C74_NON_DISP_TILING_ORDER(1);
+                     TERAKAN_COLOR_DESCRIPTOR_BUFFER_UAV_INFO_CONST_FIELDS;
+   color_out->attrib = TERAKAN_COLOR_DESCRIPTOR_BUFFER_UAV_ATTRIB;
 
    return true;
 }

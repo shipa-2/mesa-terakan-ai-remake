@@ -26,21 +26,14 @@
 #include "terakan_bo.h"
 #include "terakan_buffer.h"
 #include "terakan_command_buffer.h"
-#include "terakan_descriptor.h"
 #include "terakan_entrypoints.h"
-#include "terakan_format.h"
 #include "terakan_image.h"
 #include "terakan_physical_device.h"
 
-#include "gallium/drivers/r600/eg_sq.h"
-#include "gallium/drivers/r600/evergreend.h"
-#include "gallium/drivers/r600/r600_opcodes.h"
 #include "util/macros.h"
 #include "vk_format.h"
 
 #include <assert.h>
-#include <stdbool.h>
-#include <stdint.h>
 #include <string.h>
 
 /* Buffer to image copying by drawing to a color attachment.
@@ -64,167 +57,121 @@ enum {
    TERAKAN_META_COPY_BUFFER_IMAGE_CONSTS_COUNT,
 };
 
+/* clang-format off */
+
+#define TERAKAN_META_COPY_IMAGE_TO_BUFFER_ADDRESS_ALU_R8XX                                         \
+   /* +0-2: Convert from image XY to buffer XY, and apply the layer pitch to the layer index.      \
+    *                                                                                              \
+    *     PV.X = SUB_INT R0.X, CB[push].image_offset_x_minus_buffer_offset                         \
+    *     PV.Y = SUB_INT R0.Y, CB[push].image_offset_y                                             \
+    * (T) PS (Z) = MULLO_UINT CB[push].buffer_z_pitch, R0.Z                                        \
+    * Cycle 0: X = R0, Y = R0, T constant.                                                         \
+    * Cycle 1: Z = R0.                                                                             \
+    */                                                                                             \
+   TERAKAN_KCACHE_DWORD_WORD0_SRC1(                                                                \
+      0, TERAKAN_META_COPY_BUFFER_IMAGE_CONST_IMAGE_OFFSET_X_MINUS_BUFFER_OFFSET) |                \
+      TERAKAN_SHADER_OP2_NW(false, 'X', SUB_INT, EG, 0, 'X', 0, 0, VEC_012),                       \
+   TERAKAN_KCACHE_DWORD_WORD0_SRC1(0, TERAKAN_META_COPY_BUFFER_IMAGE_CONST_IMAGE_OFFSET_Y) |       \
+      TERAKAN_SHADER_OP2_NW(false, 'Y', SUB_INT, EG, 0, 'Y', 0, 0, VEC_012),                       \
+   TERAKAN_KCACHE_DWORD_WORD0_SRC0(0, TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Z_PITCH) |       \
+      TERAKAN_SHADER_OP2_NW(true, 'Z', MULLO_UINT, EG, 0, 0, 0, 'Z', SCL_210),                     \
+                                                                                                   \
+   /* +3-4: Apply the layer offset to the address, and apply the row pitch to the row index.       \
+    *                                                                                              \
+    *     PV.X = ADD_INT PV.X, PS                                                                  \
+    * (T) PS (Y) = MULLO_UINT CB[push].buffer_y_pitch, PV.Y                                        \
+    * Cycle 0: T constant.                                                                         \
+    */                                                                                             \
+   TERAKAN_SHADER_OP2_NW(false, 'X', ADD_INT, EG, V_SQ_ALU_SRC_PV, 'X', V_SQ_ALU_SRC_PS, 0,        \
+                         VEC_012),                                                                 \
+   TERAKAN_KCACHE_DWORD_WORD0_SRC0(0, TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Y_PITCH) |       \
+      TERAKAN_SHADER_OP2_NW(true, 'Y', MULLO_UINT, EG, 0, 0, V_SQ_ALU_SRC_PV, 'Y', SCL_210),       \
+                                                                                                   \
+   /* +5: Apply the row offset to the address written to R0.X.                                     \
+    *                                                                                              \
+    * (v) R0.X = ADD_INT PV.X, PS                                                                  \
+    */                                                                                             \
+   TERAKAN_SHADER_OP2(true, 0, 'X', ADD_INT, EG, V_SQ_ALU_SRC_PV, 'X', V_SQ_ALU_SRC_PS, 0, VEC_012)
+
+/* clang-format on */
+
+#define TERAKAN_META_COPY_IMAGE_TO_BUFFER_ADDRESS_ALU_COUNT_R8XX 5
+
 static uint32_t const terakan_meta_copy_buffer_to_image_ps_r8xx[] = {
-   /* Control flow. */
-
    /* 0: Address calculation. */
-
-   S_SQ_CF_WORD0_ADDR(3) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS) |
+   S_SQ_CF_WORD0_ADDR(6) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS) |
       S_SQ_CF_ALU_WORD0_KCACHE_MODE0(V_SQ_CF_KCACHE_LOCK_1),
    S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(TERAKAN_KCACHE_DWORD_LINE(
       TERAKAN_META_COPY_BUFFER_IMAGE_CONST_IMAGE_OFFSET_X_MINUS_BUFFER_OFFSET)) |
-      S_SQ_CF_ALU_WORD1_COUNT(8 - 3) | EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
+      S_SQ_CF_ALU_WORD1_COUNT(TERAKAN_META_COPY_IMAGE_TO_BUFFER_ADDRESS_ALU_COUNT_R8XX) |
+      EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
    /* 1: Fetch from the source buffer. */
-
-   S_SQ_CF_WORD0_ADDR(10),
-   S_SQ_CF_WORD1_COUNT(0) | S_SQ_CF_WORD1_BARRIER(1) | EG_V_SQ_CF_WORD1_SQ_CF_INST_TEX,
+   S_SQ_CF_WORD0_ADDR(4),
+   S_SQ_CF_WORD1_COUNT(0) | S_SQ_CF_WORD1_BARRIER(true) | EG_V_SQ_CF_WORD1_SQ_CF_INST_TEX,
 
    /* 2: Export the color and end the program. */
-
    S_SQ_CF_ALLOC_EXPORT_WORD0_TYPE(V_SQ_CF_ALLOC_EXPORT_WORD0_SQ_EXPORT_PIXEL) |
       S_SQ_CF_ALLOC_EXPORT_WORD0_ARRAY_BASE(0) | S_SQ_CF_ALLOC_EXPORT_WORD0_RW_GPR(0),
    S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_X(TERASCALE_SWIZZLE_X) |
       S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Y(TERASCALE_SWIZZLE_Y) |
       S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Z(TERASCALE_SWIZZLE_Z) |
       S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_W(TERASCALE_SWIZZLE_W) |
-      S_SQ_CF_ALLOC_EXPORT_WORD1_BARRIER(1) | S_SQ_CF_ALLOC_EXPORT_WORD1_END_OF_PROGRAM(1) |
+      S_SQ_CF_ALLOC_EXPORT_WORD1_BARRIER(true) | S_SQ_CF_ALLOC_EXPORT_WORD1_END_OF_PROGRAM(true) |
       EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_EXPORT_DONE,
 
-   /* ALU clause. */
-
-   /* The buffer address formula is identical to the one in image to buffer copying. */
-
-   /* Convert from image XY to buffer XY, and apply the layer pitch to the layer index.
-    *
-    * 3:     PV.X = SUB_INT R0.X, CB[push].image_offset_x_minus_buffer_offset
-    * 4:     PV.Y = SUB_INT R0.Y, CB[push].image_offset_y
-    * 5: (T) PS (Z) = MULLO_UINT CB[push].buffer_z_pitch, R0.Z
-    * Cycle 0: X = R0, Y = R0, T constant
-    * Cycle 1: Z = R0
-    */
-
-   S_SQ_ALU_WORD0_SRC0_SEL(0) | S_SQ_ALU_WORD0_SRC0_CHAN(0) |
-      TERAKAN_KCACHE_DWORD_WORD0_SRC1(
-         TERAKAN_META_COPY_BUFFER_IMAGE_CONST_IMAGE_OFFSET_X_MINUS_BUFFER_OFFSET),
-   S_SQ_ALU_WORD1_DST_CHAN(0) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_SUB_INT),
-
-   S_SQ_ALU_WORD0_SRC0_SEL(0) | S_SQ_ALU_WORD0_SRC0_CHAN(1) |
-      TERAKAN_KCACHE_DWORD_WORD0_SRC1(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_IMAGE_OFFSET_Y),
-   S_SQ_ALU_WORD1_DST_CHAN(1) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_SUB_INT),
-
-   S_SQ_ALU_WORD0_LAST(1) |
-      TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Z_PITCH) |
-      S_SQ_ALU_WORD0_SRC1_SEL(0) | S_SQ_ALU_WORD0_SRC1_CHAN(2),
-   S_SQ_ALU_WORD1_DST_CHAN(2) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MULLO_UINT),
-
-   /* Apply the layer offset to the address, and apply the row pitch to the row index.
-    *
-    * 6:     PV.X = ADD_INT PV.X, PS
-    * 7: (T) PS (Y) = MULLO_UINT CB[push].buffer_y_pitch, PV.Y
-    * Cycle 0: T constant
-    */
-
-   S_SQ_ALU_WORD0_SRC0_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC0_CHAN(0) |
-      S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_PS),
-   S_SQ_ALU_WORD1_DST_CHAN(0) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_ADD_INT),
-
-   S_SQ_ALU_WORD0_LAST(1) |
-      TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Y_PITCH) |
-      S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC1_CHAN(1),
-   S_SQ_ALU_WORD1_DST_CHAN(1) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MULLO_UINT),
-
-   /* Apply the row offset to the address written to R0.X.
-    *
-    * 8: (v) R0.X = ADD_INT PV.X, PS
-    */
-
-   S_SQ_ALU_WORD0_LAST(1) | S_SQ_ALU_WORD0_SRC0_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC0_CHAN(0) |
-      S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_PS),
-   S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(0) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_ADD_INT),
-
-   /* 9 (alignment padding), 10, 11: Vertex-fetch from the source buffer to R0. */
-
+   /* 3 (alignment padding), 4-5: Vertex-fetch from the source buffer to R0. */
    0,
    0,
-
-   S_SQ_VTX_WORD0_VTX_INST(0) | S_SQ_VTX_WORD0_FETCH_TYPE(SQ_VTX_FETCH_NO_INDEX_OFFSET) |
+   S_SQ_VTX_WORD0_FETCH_TYPE(SQ_VTX_FETCH_NO_INDEX_OFFSET) |
       S_SQ_VTX_WORD0_BUFFER_ID(TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META) |
       S_SQ_VTX_WORD0_SRC_GPR(0) | S_SQ_VTX_WORD0_SRC_SEL_X(TERASCALE_SWIZZLE_X) |
       S_SQ_VTX_WORD0_MEGA_FETCH_COUNT(16 - 1),
    S_SQ_VTX_WORD1_GPR_DST_GPR(0) | S_SQ_VTX_WORD1_DST_SEL_X(TERASCALE_SWIZZLE_X) |
       S_SQ_VTX_WORD1_DST_SEL_Y(TERASCALE_SWIZZLE_Y) |
       S_SQ_VTX_WORD1_DST_SEL_Z(TERASCALE_SWIZZLE_Z) |
-      S_SQ_VTX_WORD1_DST_SEL_W(TERASCALE_SWIZZLE_W) | S_SQ_VTX_WORD1_USE_CONST_FIELDS(1),
-   S_SQ_VTX_WORD2_MEGA_FETCH(1),
+      S_SQ_VTX_WORD1_DST_SEL_W(TERASCALE_SWIZZLE_W) | S_SQ_VTX_WORD1_USE_CONST_FIELDS(true),
+   S_SQ_VTX_WORD2_MEGA_FETCH(true),
    0,
+
+   /* 6: Address calculation ALU clause. */
+   TERAKAN_META_COPY_IMAGE_TO_BUFFER_ADDRESS_ALU_R8XX,
 };
 
 static uint32_t const terakan_meta_copy_image_to_buffer_ps_r8xx[] = {
-   /* Control flow. */
-
    /* 0: Loading the array layer index (may exceed the maximum number of attachment layers for
     * images without attachment usage enabled).
     */
-
    S_SQ_CF_WORD0_ADDR(5),
-   S_SQ_CF_ALU_WORD1_COUNT(5 - 5) | EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
+   S_SQ_CF_ALU_WORD1_COUNT(0) | EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
    /* 1: Fetch from the source texture. */
-
    S_SQ_CF_WORD0_ADDR(6),
-   S_SQ_CF_WORD1_COUNT(0) | S_SQ_CF_WORD1_BARRIER(1) | EG_V_SQ_CF_WORD1_SQ_CF_INST_TEX,
+   S_SQ_CF_WORD1_COUNT(0) | S_SQ_CF_WORD1_BARRIER(true) | EG_V_SQ_CF_WORD1_SQ_CF_INST_TEX,
 
    /* 2: Address calculation. */
-
    S_SQ_CF_WORD0_ADDR(8) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS) |
       S_SQ_CF_ALU_WORD0_KCACHE_MODE0(V_SQ_CF_KCACHE_LOCK_1),
    S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(TERAKAN_KCACHE_DWORD_LINE(
       TERAKAN_META_COPY_BUFFER_IMAGE_CONST_IMAGE_OFFSET_X_MINUS_BUFFER_OFFSET)) |
-      S_SQ_CF_ALU_WORD1_COUNT(13 - 8) | S_SQ_CF_ALU_WORD1_BARRIER(1) |
-      EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
+      S_SQ_CF_ALU_WORD1_COUNT(TERAKAN_META_COPY_IMAGE_TO_BUFFER_ADDRESS_ALU_COUNT_R8XX) |
+      S_SQ_CF_ALU_WORD1_BARRIER(true) | EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
    /* 3: Write to the UAV. */
-
-   S_SQ_CF_ALLOC_EXPORT_WORD0_RAT_RAT_ID(0) |
-      S_SQ_CF_ALLOC_EXPORT_WORD0_RAT_RAT_INST(V_RAT_INST_STORE_TYPED) |
-      S_SQ_CF_ALLOC_EXPORT_WORD0_TYPE(V_SQ_CF_ALLOC_EXPORT_WORD0_SQ_EXPORT_WRITE_IND) |
-      S_SQ_CF_ALLOC_EXPORT_WORD0_RW_GPR(1) | S_SQ_CF_ALLOC_EXPORT_WORD0_INDEX_GPR(0),
-   S_SQ_CF_ALLOC_EXPORT_WORD1_BUF_COMP_MASK(0b1111) |
-      S_SQ_CF_ALLOC_EXPORT_WORD1_VALID_PIXEL_MODE(1) | S_SQ_CF_ALLOC_EXPORT_WORD1_BARRIER(1) |
-      EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_MEM_RAT,
+   TERAKAN_SHADER_CF_UAV(false, STORE_TYPED, 0, 0, 1, 0xF, true),
 
    /* 4: Perform a dummy export and end the program. */
+   TERAKAN_SHADER_CF_PS_DUMMY_EXPORT_DONE_AND_END_R8XX,
 
-   S_SQ_CF_ALLOC_EXPORT_WORD0_TYPE(V_SQ_CF_ALLOC_EXPORT_WORD0_SQ_EXPORT_PIXEL) |
-      S_SQ_CF_ALLOC_EXPORT_WORD0_ARRAY_BASE(0),
-   S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_X(TERASCALE_SWIZZLE_MASK) |
-      S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Y(TERASCALE_SWIZZLE_MASK) |
-      S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Z(TERASCALE_SWIZZLE_MASK) |
-      S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_W(TERASCALE_SWIZZLE_MASK) |
-      S_SQ_CF_ALLOC_EXPORT_WORD1_BARRIER(1) | S_SQ_CF_ALLOC_EXPORT_WORD1_END_OF_PROGRAM(1) |
-      EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_EXPORT_DONE,
+   /* 5: ALU clause. */
 
-   /* ALU clause. */
-
-   /* Load the array layer index.
+   /* +0: Load the array layer index.
     *
-    * 5: (V) INTERP_LOAD_P0 R0.Z, Param0.X, unused 0
+    * (V) INTERP_LOAD_P0 R0.Z, Param0.X
     */
+   TERAKAN_SHADER_OP1(true, 0, 'Z', INTERP_LOAD_P0, EG, V_SQ_ALU_SRC_PARAM_BASE, 'X', VEC_012),
 
-   S_SQ_ALU_WORD0_LAST(1) | S_SQ_ALU_WORD0_SRC0_SEL(V_SQ_ALU_SRC_PARAM_BASE) |
-      S_SQ_ALU_WORD0_SRC0_CHAN(0) | S_SQ_ALU_WORD0_SRC0_SEL(V_SQ_ALU_SRC_0),
-   S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(2) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_INTERP_LOAD_P0),
-
-   /* 6, 7: Fetch from the source texture to R1. */
-
+   /* 6-7: Fetch from the source texture to R1. */
    S_SQ_TEX_WORD0_TEX_INST(3) |
       S_SQ_TEX_WORD0_RESOURCE_ID(TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META) |
       S_SQ_TEX_WORD0_SRC_GPR(0),
@@ -235,279 +182,157 @@ static uint32_t const terakan_meta_copy_image_to_buffer_ps_r8xx[] = {
       S_SQ_TEX_WORD2_SRC_SEL_Z(TERASCALE_SWIZZLE_Z) | S_SQ_TEX_WORD2_SRC_SEL_W(TERASCALE_SWIZZLE_0),
    0,
 
-   /* ALU clause. */
-
-   /* The buffer address formula is identical to the one in buffer to image copying. */
-
-   /* Convert from image XY to buffer XY, and apply the layer pitch to the layer index.
-    *
-    *  8:     PV.X = SUB_INT R0.X, CB[push].image_offset_x_minus_buffer_offset
-    *  9:     PV.Y = SUB_INT R0.Y, CB[push].image_offset_y
-    * 10: (T) PS (Z) = MULLO_UINT CB[push].buffer_z_pitch, R0.Z
-    * Cycle 0: X = R0, Y = R0, T constant
-    * Cycle 1: Z = R0
-    */
-
-   S_SQ_ALU_WORD0_SRC0_SEL(0) | S_SQ_ALU_WORD0_SRC0_CHAN(0) |
-      TERAKAN_KCACHE_DWORD_WORD0_SRC1(
-         TERAKAN_META_COPY_BUFFER_IMAGE_CONST_IMAGE_OFFSET_X_MINUS_BUFFER_OFFSET),
-   S_SQ_ALU_WORD1_DST_CHAN(0) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_SUB_INT),
-
-   S_SQ_ALU_WORD0_SRC0_SEL(0) | S_SQ_ALU_WORD0_SRC0_CHAN(1) |
-      TERAKAN_KCACHE_DWORD_WORD0_SRC1(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_IMAGE_OFFSET_Y),
-   S_SQ_ALU_WORD1_DST_CHAN(1) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_SUB_INT),
-
-   S_SQ_ALU_WORD0_LAST(1) |
-      TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Z_PITCH) |
-      S_SQ_ALU_WORD0_SRC1_SEL(0) | S_SQ_ALU_WORD0_SRC1_CHAN(2),
-   S_SQ_ALU_WORD1_DST_CHAN(2) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MULLO_UINT),
-
-   /* Apply the layer offset to the address, and apply the row pitch to the row index.
-    *
-    * 11:     PV.X = ADD_INT PV.X, PS
-    * 12: (T) PS (Y) = MULLO_UINT CB[push].buffer_y_pitch, PV.Y
-    * Cycle 0: T constant
-    */
-
-   S_SQ_ALU_WORD0_SRC0_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC0_CHAN(0) |
-      S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_PS),
-   S_SQ_ALU_WORD1_DST_CHAN(0) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_ADD_INT),
-
-   S_SQ_ALU_WORD0_LAST(1) |
-      TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Y_PITCH) |
-      S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC1_CHAN(1),
-   S_SQ_ALU_WORD1_DST_CHAN(1) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MULLO_UINT),
-
-   /* Apply the row offset to the address written to R0.X.
-    *
-    * 13: (v) R0.X = ADD_INT PV.X, PS
-    */
-
-   S_SQ_ALU_WORD0_LAST(1) | S_SQ_ALU_WORD0_SRC0_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC0_CHAN(0) |
-      S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_PS),
-   S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(0) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_ADD_INT),
+   /* 8: Address calculation ALU clause. */
+   TERAKAN_META_COPY_IMAGE_TO_BUFFER_ADDRESS_ALU_R8XX,
 };
 
+/* clang-format off */
+
+#define TERAKAN_META_COPY_IMAGE_TO_BUFFER_ADDRESS_ALU_R9XX                                         \
+   /* +0-1: Convert from image XY to buffer XY, and apply the layer pitch to the layer index.      \
+    *                                                                                              \
+    * R0.X = SUB_INT R0.X, CB[push].image_offset_x_minus_buffer_offset                             \
+    * PV.Y = SUB_INT R0.Y, CB[push].image_offset_y                                                 \
+    * Cycle 0: X = R0, Y = R0.                                                                     \
+    */                                                                                             \
+   TERAKAN_KCACHE_DWORD_WORD0_SRC1(                                                                \
+      0, TERAKAN_META_COPY_BUFFER_IMAGE_CONST_IMAGE_OFFSET_X_MINUS_BUFFER_OFFSET) |                \
+      TERAKAN_SHADER_OP2(false, 0, 'X', SUB_INT, EG, 0, 'X', 0, 0, VEC_012),                       \
+   TERAKAN_KCACHE_DWORD_WORD0_SRC1(0, TERAKAN_META_COPY_BUFFER_IMAGE_CONST_IMAGE_OFFSET_Y) |       \
+      TERAKAN_SHADER_OP2_NW(true, 'Y', SUB_INT, EG, 0, 'Y', 0, 0, VEC_012),                        \
+                                                                                                   \
+   /* +2-5: Apply the row pitch to the row index.                                                  \
+    *                                                                                              \
+    * MULLO_UINT uses 4 slots.                                                                     \
+    * PV.X = MULLO_UINT CB[push].buffer_y_pitch, PV.Y                                              \
+    * R0.Y = MULLO_UINT CB[push].buffer_y_pitch, PV.Y                                              \
+    * PV.Z = MULLO_UINT CB[push].buffer_y_pitch, PV.Y                                              \
+    * PV.W = MULLO_UINT CB[push].buffer_y_pitch, PV.Y                                              \
+    */                                                                                             \
+   TERAKAN_KCACHE_DWORD_WORD0_SRC0(0, TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Y_PITCH) |       \
+      TERAKAN_SHADER_OP2_NW(false, 'X', MULLO_UINT, EG, 0, 0, V_SQ_ALU_SRC_PV, 'Y', VEC_012),      \
+   TERAKAN_KCACHE_DWORD_WORD0_SRC0(0, TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Y_PITCH) |       \
+      TERAKAN_SHADER_OP2(false, 0, 'Y', MULLO_UINT, EG, 0, 0, V_SQ_ALU_SRC_PV, 'Y', VEC_012),      \
+   TERAKAN_KCACHE_DWORD_WORD0_SRC0(0, TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Y_PITCH) |       \
+      TERAKAN_SHADER_OP2_NW(false, 'Z', MULLO_UINT, EG, 0, 0, V_SQ_ALU_SRC_PV, 'Y', VEC_012),      \
+   TERAKAN_KCACHE_DWORD_WORD0_SRC0(0, TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Y_PITCH) |       \
+      TERAKAN_SHADER_OP2_NW(true, 'W', MULLO_UINT, EG, 0, 0, V_SQ_ALU_SRC_PV, 'Y', VEC_012),       \
+                                                                                                   \
+   /* +6-9: Apply the layer pitch to the layer index.                                              \
+    *                                                                                              \
+    * MULLO_UINT uses 4 slots.                                                                     \
+    * PV.X = MULLO_UINT CB[push].buffer_z_pitch, R0.Z                                              \
+    * PV.Y = MULLO_UINT CB[push].buffer_z_pitch, R0.Z                                              \
+    * PV.Z = MULLO_UINT CB[push].buffer_z_pitch, R0.Z                                              \
+    * PV.W = MULLO_UINT CB[push].buffer_z_pitch, R0.Z                                              \
+    */                                                                                             \
+   TERAKAN_KCACHE_DWORD_WORD0_SRC0(0, TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Z_PITCH) |       \
+      TERAKAN_SHADER_OP2_NW(false, 'X', MULLO_UINT, EG, 0, 0, 0, 'Z', VEC_012),                    \
+   TERAKAN_KCACHE_DWORD_WORD0_SRC0(0, TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Z_PITCH) |       \
+      TERAKAN_SHADER_OP2_NW(false, 'Y', MULLO_UINT, EG, 0, 0, 0, 'Z', VEC_012),                    \
+   TERAKAN_KCACHE_DWORD_WORD0_SRC0(0, TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Z_PITCH) |       \
+      TERAKAN_SHADER_OP2_NW(false, 'Z', MULLO_UINT, EG, 0, 0, 0, 'Z', VEC_012),                    \
+   TERAKAN_KCACHE_DWORD_WORD0_SRC0(0, TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Z_PITCH) |       \
+      TERAKAN_SHADER_OP2_NW(true, 'W', MULLO_UINT, EG, 0, 0, 0, 'Z', VEC_012),                     \
+                                                                                                   \
+   /* +10: Apply the layer offset to the address.                                                  \
+    *                                                                                              \
+    * PV.X = ADD_INT R0.X, PV.Z                                                                    \
+    * Cycle 0: X = R0.                                                                             \
+    */                                                                                             \
+   TERAKAN_SHADER_OP2_NW(true, 'X', ADD_INT, EG, 0, 'X', V_SQ_ALU_SRC_PV, 'Z', VEC_012),           \
+                                                                                                   \
+   /* +11: Apply the row offset to the address written to R0.X.                                    \
+    *                                                                                              \
+    * R0.X = ADD_INT PV.X, R0.Y                                                                    \
+    * Cycle 1: Y = R0.                                                                             \
+    */                                                                                             \
+   TERAKAN_SHADER_OP2(true, 0, 'X', ADD_INT, EG, V_SQ_ALU_SRC_PV, 'X', 0, 'Y', VEC_012)
+
+/* clang-format off */
+
+#define TERAKAN_META_COPY_IMAGE_TO_BUFFER_ADDRESS_ALU_COUNT_R9XX 11
+
 static uint32_t const terakan_meta_copy_buffer_to_image_ps_r9xx[] = {
-   /* Control flow. */
-
    /* 0: Address calculation. */
-
-   S_SQ_CF_WORD0_ADDR(4) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS) |
+   S_SQ_CF_WORD0_ADDR(6) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS) |
       S_SQ_CF_ALU_WORD0_KCACHE_MODE0(V_SQ_CF_KCACHE_LOCK_1),
    S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(TERAKAN_KCACHE_DWORD_LINE(
       TERAKAN_META_COPY_BUFFER_IMAGE_CONST_IMAGE_OFFSET_X_MINUS_BUFFER_OFFSET)) |
-      S_SQ_CF_ALU_WORD1_COUNT(15 - 4) | EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
+      S_SQ_CF_ALU_WORD1_COUNT(TERAKAN_META_COPY_IMAGE_TO_BUFFER_ADDRESS_ALU_COUNT_R9XX) |
+      EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
    /* 1: Fetch from the source buffer. */
-
-   S_SQ_CF_WORD0_ADDR(16),
-   S_SQ_CF_WORD1_COUNT(0) | S_SQ_CF_WORD1_BARRIER(1) | EG_V_SQ_CF_WORD1_SQ_CF_INST_TEX,
+   S_SQ_CF_WORD0_ADDR(4),
+   S_SQ_CF_WORD1_COUNT(0) | S_SQ_CF_WORD1_BARRIER(true) | EG_V_SQ_CF_WORD1_SQ_CF_INST_TEX,
 
    /* 2: Export the color. */
-
    S_SQ_CF_ALLOC_EXPORT_WORD0_TYPE(V_SQ_CF_ALLOC_EXPORT_WORD0_SQ_EXPORT_PIXEL) |
       S_SQ_CF_ALLOC_EXPORT_WORD0_ARRAY_BASE(0) | S_SQ_CF_ALLOC_EXPORT_WORD0_RW_GPR(0),
    S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_X(TERASCALE_SWIZZLE_X) |
       S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Y(TERASCALE_SWIZZLE_Y) |
       S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Z(TERASCALE_SWIZZLE_Z) |
       S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_W(TERASCALE_SWIZZLE_W) |
-      S_SQ_CF_ALLOC_EXPORT_WORD1_BARRIER(1) | EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_EXPORT_DONE,
+      S_SQ_CF_ALLOC_EXPORT_WORD1_BARRIER(true) |
+      EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_EXPORT_DONE,
 
    /* 3: End the program. */
+   TERAKAN_SHADER_CF_END_R9XX,
 
-   0,
-   S_SQ_CF_WORD1_BARRIER(1) | CM_V_SQ_CF_WORD1_SQ_CF_INST_END,
-
-   /* ALU clause. */
-
-   /* The buffer address formula is identical to the one in image to buffer copying. */
-
-   /* Convert from image XY to buffer XY, and apply the layer pitch to the layer index.
-    *
-    * 4: R0.X = SUB_INT R0.X, CB[push].image_offset_x_minus_buffer_offset
-    * 5: PV.Y = SUB_INT R0.Y, CB[push].image_offset_y
-    * Cycle 0: X = R0, Y = R0
-    */
-
-   S_SQ_ALU_WORD0_SRC0_SEL(0) | S_SQ_ALU_WORD0_SRC0_CHAN(0) |
-      TERAKAN_KCACHE_DWORD_WORD0_SRC1(
-         TERAKAN_META_COPY_BUFFER_IMAGE_CONST_IMAGE_OFFSET_X_MINUS_BUFFER_OFFSET),
-   S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(0) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_SUB_INT),
-
-   S_SQ_ALU_WORD0_LAST(1) | S_SQ_ALU_WORD0_SRC0_SEL(0) | S_SQ_ALU_WORD0_SRC0_CHAN(1) |
-      TERAKAN_KCACHE_DWORD_WORD0_SRC1(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_IMAGE_OFFSET_Y),
-   S_SQ_ALU_WORD1_DST_CHAN(1) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_SUB_INT),
-
-   /* Apply the row pitch to the row index.
-    *
-    * MULLO_UINT uses 4 slots.
-    * 6: PV.X = MULLO_UINT CB[push].buffer_y_pitch, PV.Y
-    * 7: R0.Y = MULLO_UINT CB[push].buffer_y_pitch, PV.Y
-    * 8: PV.Z = MULLO_UINT CB[push].buffer_y_pitch, PV.Y
-    * 9: PV.W = MULLO_UINT CB[push].buffer_y_pitch, PV.Y
-    */
-
-   TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Y_PITCH) |
-      S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC1_CHAN(1),
-   S_SQ_ALU_WORD1_DST_CHAN(0) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MULLO_UINT),
-
-   TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Y_PITCH) |
-      S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC1_CHAN(1),
-   S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(1) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MULLO_UINT),
-
-   TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Y_PITCH) |
-      S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC1_CHAN(1),
-   S_SQ_ALU_WORD1_DST_CHAN(2) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MULLO_UINT),
-
-   S_SQ_ALU_WORD0_LAST(1) |
-      TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Y_PITCH) |
-      S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC1_CHAN(1),
-   S_SQ_ALU_WORD1_DST_CHAN(3) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MULLO_UINT),
-
-   /* Apply the layer pitch to the layer index.
-    *
-    * MULLO_UINT uses 4 slots.
-    * 10: PV.X = MULLO_UINT CB[push].buffer_z_pitch, R0.Z
-    * 11: PV.Y = MULLO_UINT CB[push].buffer_z_pitch, R0.Z
-    * 12: PV.Z = MULLO_UINT CB[push].buffer_z_pitch, R0.Z
-    * 13: PV.W = MULLO_UINT CB[push].buffer_z_pitch, R0.Z
-    */
-
-   TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Z_PITCH) |
-      S_SQ_ALU_WORD0_SRC1_SEL(0) | S_SQ_ALU_WORD0_SRC1_CHAN(2),
-   S_SQ_ALU_WORD1_DST_CHAN(0) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MULLO_UINT),
-
-   TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Z_PITCH) |
-      S_SQ_ALU_WORD0_SRC1_SEL(0) | S_SQ_ALU_WORD0_SRC1_CHAN(2),
-   S_SQ_ALU_WORD1_DST_CHAN(1) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MULLO_UINT),
-
-   TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Z_PITCH) |
-      S_SQ_ALU_WORD0_SRC1_SEL(0) | S_SQ_ALU_WORD0_SRC1_CHAN(2),
-   S_SQ_ALU_WORD1_DST_CHAN(2) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MULLO_UINT),
-
-   S_SQ_ALU_WORD0_LAST(1) |
-      TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Z_PITCH) |
-      S_SQ_ALU_WORD0_SRC1_SEL(0) | S_SQ_ALU_WORD0_SRC1_CHAN(2),
-   S_SQ_ALU_WORD1_DST_CHAN(3) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MULLO_UINT),
-
-   /* Apply the layer offset to the address.
-    *
-    * 14: PV.X = ADD_INT R0.X, PV.Z
-    * Cycle 0: X = R0
-    */
-
-   S_SQ_ALU_WORD0_LAST(1) | S_SQ_ALU_WORD0_SRC0_SEL(0) | S_SQ_ALU_WORD0_SRC0_CHAN(0) |
-      S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC1_CHAN(2),
-   S_SQ_ALU_WORD1_DST_CHAN(0) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_ADD_INT),
-
-   /* Apply the row offset to the address written to R0.X.
-    *
-    * 15: R0.X = ADD_INT PV.X, R0.Y
-    * Cycle 1: Y = R0
-    */
-
-   S_SQ_ALU_WORD0_LAST(1) | S_SQ_ALU_WORD0_SRC0_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC0_CHAN(0) |
-      S_SQ_ALU_WORD0_SRC1_SEL(0) | S_SQ_ALU_WORD0_SRC1_CHAN(1),
-   S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(0) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_ADD_INT),
-
-   /* 16, 17: Vertex-fetch from the source buffer to R0. */
-
-   S_SQ_VTX_WORD0_VTX_INST(0) | S_SQ_VTX_WORD0_FETCH_TYPE(SQ_VTX_FETCH_NO_INDEX_OFFSET) |
+   /* 4-5: Vertex-fetch from the source buffer to R0. */
+   S_SQ_VTX_WORD0_FETCH_TYPE(SQ_VTX_FETCH_NO_INDEX_OFFSET) |
       S_SQ_VTX_WORD0_BUFFER_ID(TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META) |
       S_SQ_VTX_WORD0_SRC_GPR(0) | S_SQ_VTX_WORD0_SRC_SEL_X(TERASCALE_SWIZZLE_X),
    S_SQ_VTX_WORD1_GPR_DST_GPR(0) | S_SQ_VTX_WORD1_DST_SEL_X(TERASCALE_SWIZZLE_X) |
       S_SQ_VTX_WORD1_DST_SEL_Y(TERASCALE_SWIZZLE_Y) |
       S_SQ_VTX_WORD1_DST_SEL_Z(TERASCALE_SWIZZLE_Z) |
-      S_SQ_VTX_WORD1_DST_SEL_W(TERASCALE_SWIZZLE_W) | S_SQ_VTX_WORD1_USE_CONST_FIELDS(1),
+      S_SQ_VTX_WORD1_DST_SEL_W(TERASCALE_SWIZZLE_W) | S_SQ_VTX_WORD1_USE_CONST_FIELDS(true),
    0,
    0,
+
+   /* 6: Address calculation ALU clause. */
+   TERAKAN_META_COPY_IMAGE_TO_BUFFER_ADDRESS_ALU_R9XX,
 };
 
 static uint32_t const terakan_meta_copy_image_to_buffer_ps_r9xx[] = {
-   /* Control flow. */
-
    /* 0: Loading the array layer index (may exceed the maximum number of attachment layers for
     * images without attachment usage enabled).
     */
-
    S_SQ_CF_WORD0_ADDR(6),
-   S_SQ_CF_ALU_WORD1_COUNT(6 - 6) | EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
+   S_SQ_CF_ALU_WORD1_COUNT(0) | EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
    /* 1: Fetch from the source texture. */
-
    S_SQ_CF_WORD0_ADDR(8),
-   S_SQ_CF_WORD1_COUNT(0) | S_SQ_CF_WORD1_BARRIER(1) | EG_V_SQ_CF_WORD1_SQ_CF_INST_TEX,
+   S_SQ_CF_WORD1_COUNT(0) | S_SQ_CF_WORD1_BARRIER(true) | EG_V_SQ_CF_WORD1_SQ_CF_INST_TEX,
 
    /* 2: Address calculation. */
-
    S_SQ_CF_WORD0_ADDR(10) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS) |
       S_SQ_CF_ALU_WORD0_KCACHE_MODE0(V_SQ_CF_KCACHE_LOCK_1),
    S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(TERAKAN_KCACHE_DWORD_LINE(
       TERAKAN_META_COPY_BUFFER_IMAGE_CONST_IMAGE_OFFSET_X_MINUS_BUFFER_OFFSET)) |
-      S_SQ_CF_ALU_WORD1_COUNT(21 - 10) | S_SQ_CF_ALU_WORD1_BARRIER(1) |
-      EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
+      S_SQ_CF_ALU_WORD1_COUNT(TERAKAN_META_COPY_IMAGE_TO_BUFFER_ADDRESS_ALU_COUNT_R9XX) |
+      S_SQ_CF_ALU_WORD1_BARRIER(true) | EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
    /* 3: Write to the UAV. */
-
-   S_SQ_CF_ALLOC_EXPORT_WORD0_RAT_RAT_ID(0) |
-      S_SQ_CF_ALLOC_EXPORT_WORD0_RAT_RAT_INST(V_RAT_INST_STORE_TYPED) |
-      S_SQ_CF_ALLOC_EXPORT_WORD0_TYPE(V_SQ_CF_ALLOC_EXPORT_WORD0_SQ_EXPORT_WRITE_IND) |
-      S_SQ_CF_ALLOC_EXPORT_WORD0_RW_GPR(1) | S_SQ_CF_ALLOC_EXPORT_WORD0_INDEX_GPR(0),
-   S_SQ_CF_ALLOC_EXPORT_WORD1_BUF_COMP_MASK(0b1111) |
-      S_SQ_CF_ALLOC_EXPORT_WORD1_VALID_PIXEL_MODE(1) | S_SQ_CF_ALLOC_EXPORT_WORD1_BARRIER(1) |
-      EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_MEM_RAT,
+   TERAKAN_SHADER_CF_UAV(false, STORE_TYPED, 0, 0, 1, 0xF, true),
 
    /* 4: Perform a dummy export. */
-
-   S_SQ_CF_ALLOC_EXPORT_WORD0_TYPE(V_SQ_CF_ALLOC_EXPORT_WORD0_SQ_EXPORT_PIXEL) |
-      S_SQ_CF_ALLOC_EXPORT_WORD0_ARRAY_BASE(0),
-   S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_X(TERASCALE_SWIZZLE_MASK) |
-      S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Y(TERASCALE_SWIZZLE_MASK) |
-      S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Z(TERASCALE_SWIZZLE_MASK) |
-      S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_W(TERASCALE_SWIZZLE_MASK) |
-      EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_EXPORT_DONE,
+   TERAKAN_SHADER_CF_PS_DUMMY_EXPORT_DONE_R9XX,
 
    /* 5: End the program. */
+   TERAKAN_SHADER_CF_END_R9XX,
 
-   0,
-   S_SQ_CF_WORD1_BARRIER(1) | CM_V_SQ_CF_WORD1_SQ_CF_INST_END,
+   /* 6: ALU clause. */
 
-   /* ALU clause. */
-
-   /* Load the array layer index.
+   /* +0: Load the array layer index.
     *
-    * 6: INTERP_LOAD_P0 R0.Z, Param0.X, unused 0
+    * INTERP_LOAD_P0 R0.Z, Param0.X, unused 0
     */
+   TERAKAN_SHADER_OP1(true, 0, 'Z', INTERP_LOAD_P0, EG, V_SQ_ALU_SRC_PARAM_BASE, 'X', VEC_012),
 
-   S_SQ_ALU_WORD0_LAST(1) | S_SQ_ALU_WORD0_SRC0_SEL(V_SQ_ALU_SRC_PARAM_BASE) |
-      S_SQ_ALU_WORD0_SRC0_CHAN(0) | S_SQ_ALU_WORD0_SRC0_SEL(V_SQ_ALU_SRC_0),
-   S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(2) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_INTERP_LOAD_P0),
-
-   /* 7 (alignment padding), 8, 9: Fetch from the source texture to R1. */
-
+   /* 7 (alignment padding), 8-9: Fetch from the source texture to R1. */
    0,
    0,
-
    S_SQ_TEX_WORD0_TEX_INST(3) |
       S_SQ_TEX_WORD0_RESOURCE_ID(TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META) |
       S_SQ_TEX_WORD0_SRC_GPR(0),
@@ -518,109 +343,8 @@ static uint32_t const terakan_meta_copy_image_to_buffer_ps_r9xx[] = {
       S_SQ_TEX_WORD2_SRC_SEL_Z(TERASCALE_SWIZZLE_Z) | S_SQ_TEX_WORD2_SRC_SEL_W(TERASCALE_SWIZZLE_0),
    0,
 
-   /* ALU clause. */
-
-   /* The buffer address formula is identical to the one in buffer to image copying. */
-
-   /* Convert from image XY to buffer XY, and apply the layer pitch to the layer index.
-    *
-    * 10: R0.X = SUB_INT R0.X, CB[push].image_offset_x_minus_buffer_offset
-    * 11: PV.Y = SUB_INT R0.Y, CB[push].image_offset_y
-    * Cycle 0: X = R0, Y = R0
-    */
-
-   S_SQ_ALU_WORD0_SRC0_SEL(0) | S_SQ_ALU_WORD0_SRC0_CHAN(0) |
-      TERAKAN_KCACHE_DWORD_WORD0_SRC1(
-         TERAKAN_META_COPY_BUFFER_IMAGE_CONST_IMAGE_OFFSET_X_MINUS_BUFFER_OFFSET),
-   S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(0) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_SUB_INT),
-
-   S_SQ_ALU_WORD0_LAST(1) | S_SQ_ALU_WORD0_SRC0_SEL(0) | S_SQ_ALU_WORD0_SRC0_CHAN(1) |
-      TERAKAN_KCACHE_DWORD_WORD0_SRC1(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_IMAGE_OFFSET_Y),
-   S_SQ_ALU_WORD1_DST_CHAN(1) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_SUB_INT),
-
-   /* Apply the row pitch to the row index.
-    *
-    * MULLO_UINT uses 4 slots.
-    * 12: PV.X = MULLO_UINT CB[push].buffer_y_pitch, PV.Y
-    * 13: R0.Y = MULLO_UINT CB[push].buffer_y_pitch, PV.Y
-    * 14: PV.Z = MULLO_UINT CB[push].buffer_y_pitch, PV.Y
-    * 15: PV.W = MULLO_UINT CB[push].buffer_y_pitch, PV.Y
-    */
-
-   TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Y_PITCH) |
-      S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC1_CHAN(1),
-   S_SQ_ALU_WORD1_DST_CHAN(0) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MULLO_UINT),
-
-   TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Y_PITCH) |
-      S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC1_CHAN(1),
-   S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(1) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MULLO_UINT),
-
-   TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Y_PITCH) |
-      S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC1_CHAN(1),
-   S_SQ_ALU_WORD1_DST_CHAN(2) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MULLO_UINT),
-
-   S_SQ_ALU_WORD0_LAST(1) |
-      TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Y_PITCH) |
-      S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC1_CHAN(1),
-   S_SQ_ALU_WORD1_DST_CHAN(3) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MULLO_UINT),
-
-   /* Apply the layer pitch to the layer index.
-    *
-    * MULLO_UINT uses 4 slots.
-    * 16: PV.X = MULLO_UINT CB[push].buffer_z_pitch, R0.Z
-    * 17: PV.Y = MULLO_UINT CB[push].buffer_z_pitch, R0.Z
-    * 18: PV.Z = MULLO_UINT CB[push].buffer_z_pitch, R0.Z
-    * 19: PV.W = MULLO_UINT CB[push].buffer_z_pitch, R0.Z
-    */
-
-   TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Z_PITCH) |
-      S_SQ_ALU_WORD0_SRC1_SEL(0) | S_SQ_ALU_WORD0_SRC1_CHAN(2),
-   S_SQ_ALU_WORD1_DST_CHAN(0) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MULLO_UINT),
-
-   TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Z_PITCH) |
-      S_SQ_ALU_WORD0_SRC1_SEL(0) | S_SQ_ALU_WORD0_SRC1_CHAN(2),
-   S_SQ_ALU_WORD1_DST_CHAN(1) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MULLO_UINT),
-
-   TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Z_PITCH) |
-      S_SQ_ALU_WORD0_SRC1_SEL(0) | S_SQ_ALU_WORD0_SRC1_CHAN(2),
-   S_SQ_ALU_WORD1_DST_CHAN(2) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MULLO_UINT),
-
-   S_SQ_ALU_WORD0_LAST(1) |
-      TERAKAN_KCACHE_DWORD_WORD0_SRC0(TERAKAN_META_COPY_BUFFER_IMAGE_CONST_BUFFER_Z_PITCH) |
-      S_SQ_ALU_WORD0_SRC1_SEL(0) | S_SQ_ALU_WORD0_SRC1_CHAN(2),
-   S_SQ_ALU_WORD1_DST_CHAN(3) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MULLO_UINT),
-
-   /* Apply the layer offset to the address.
-    *
-    * 20: PV.X = ADD_INT R0.X, PV.Z
-    * Cycle 0: X = R0
-    */
-
-   S_SQ_ALU_WORD0_LAST(1) | S_SQ_ALU_WORD0_SRC0_SEL(0) | S_SQ_ALU_WORD0_SRC0_CHAN(0) |
-      S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC1_CHAN(2),
-   S_SQ_ALU_WORD1_DST_CHAN(0) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_ADD_INT),
-
-   /* Apply the row offset to the address written to R0.X.
-    *
-    * 21: R0.X = ADD_INT PV.X, R0.Y
-    * Cycle 1: Y = R0
-    */
-
-   S_SQ_ALU_WORD0_LAST(1) | S_SQ_ALU_WORD0_SRC0_SEL(V_SQ_ALU_SRC_PV) | S_SQ_ALU_WORD0_SRC0_CHAN(0) |
-      S_SQ_ALU_WORD0_SRC1_SEL(0) | S_SQ_ALU_WORD0_SRC1_CHAN(1),
-   S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(0) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_ADD_INT),
+   /* 10: Address calculation ALU clause. */
+   TERAKAN_META_COPY_IMAGE_TO_BUFFER_ADDRESS_ALU_R9XX,
 };
 
 struct terakan_meta_shader const terakan_meta_copy_buffer_to_image_ps = {
@@ -991,7 +715,7 @@ terakan_CmdCopyImageToBuffer2(VkCommandBuffer const commandBuffer,
       terakan_buffer_from_handle(pCopyImageToBufferInfo->dstBuffer);
 
    struct terakan_color_descriptor buffer_uav = {
-      .attrib = S_028C74_NON_DISP_TILING_ORDER(1),
+      .attrib = TERAKAN_COLOR_DESCRIPTOR_BUFFER_UAV_ATTRIB,
    };
 
    struct terakan_physical_device const * const physical_device =
@@ -1075,12 +799,8 @@ terakan_CmdCopyImageToBuffer2(VkCommandBuffer const commandBuffer,
          terakan_meta_transfer_image_block_format_info(region_bytes_per_block);
 
       buffer_uav.info = S_028C70_FORMAT(image_descriptor_create_info.view_format.format) |
-                        S_028C70_ARRAY_MODE(V_028C70_ARRAY_LINEAR_ALIGNED) |
                         S_028C70_NUMBER_TYPE(image_descriptor_create_info.view_format.number_type) |
-                        S_028C70_COMP_SWAP(TERASCALE_FORMAT_CB_COLOR_SWAP_STD) |
-                        S_028C70_BLEND_BYPASS(1) |
-                        S_028C70_SOURCE_FORMAT(V_028C70_EXPORT_4C_32BPC) | S_028C70_RAT(1) |
-                        S_028C70_RESOURCE_TYPE(V_028C70_BUFFER);
+                        TERAKAN_COLOR_DESCRIPTOR_BUFFER_UAV_INFO_CONST_FIELDS;
 
       terakan_hw_state_draw_set_cb_color(&command_writer->hw_state_draw, 0, buffer->bo, &buffer_uav,
                                          NULL, true);

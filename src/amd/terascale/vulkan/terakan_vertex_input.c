@@ -1103,7 +1103,6 @@ terakan_vertex_input_create_fs_alu_and_fetches(
                                ? address_gpr_set_index_2048_stride
                                : address_gpr_set_index_generic_stride];
       fetch_out[fetch_dword_count++] =
-         S_SQ_VTX_WORD0_VTX_INST(0) |
          S_SQ_VTX_WORD0_FETCH_TYPE(instance_bindings & binding_bit ? SQ_VTX_FETCH_INSTANCE_DATA
                                                                    : SQ_VTX_FETCH_NO_INDEX_OFFSET) |
          S_SQ_VTX_WORD0_BUFFER_ID(binding_index) | S_SQ_VTX_WORD0_SRC_GPR(gpr_set->current_gpr) |

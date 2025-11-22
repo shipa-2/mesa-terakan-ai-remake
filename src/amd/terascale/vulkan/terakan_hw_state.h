@@ -63,11 +63,13 @@ enum terakan_hw_state_draw_index {
     * each unit, by the register addresses.
     */
 
-   TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_TYPE,
-
    TERAKAN_HW_STATE_DRAW_INDEX_VGT_PRIMITIVE_TYPE,
 
+   TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_TYPE,
+
    TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_OFFSET,
+
+   TERAKAN_HW_STATE_DRAW_INDEX_VGT_NUM_INSTANCES,
 
    TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_FS,
    TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_VS,
@@ -151,14 +153,17 @@ struct terakan_hw_state_draw {
    /* Whether each state item has been modified and needs to be emitted before the next draw. */
    BITSET_DECLARE(state_modified, TERAKAN_HW_STATE_DRAW_INDEX_COUNT);
 
-   /* TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_TYPE */
-   uint32_t vgt_index_type;
-
    /* TERAKAN_HW_STATE_DRAW_INDEX_VGT_PRIMITIVE_TYPE */
    uint32_t vgt_primitive_type;
 
+   /* TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_TYPE */
+   uint32_t vgt_index_type;
+
    /* TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_OFFSET */
    uint32_t vgt_index_offset;
+
+   /* TERAKAN_HW_STATE_DRAW_INDEX_VGT_NUM_INSTANCES */
+   uint32_t vgt_num_instances;
 
    /* TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_FS */
    struct {
@@ -333,6 +338,18 @@ terakan_hw_state_draw_written(struct terakan_hw_state_draw * const state,
 }
 
 struct terakan_gfx_command_writer;
+
+/* Uses the same modification logic as other non-special state items, but is updated for almost
+ * every draw.
+ */
+static inline void
+terakan_hw_state_draw_set_vgt_num_instances(struct terakan_hw_state_draw * const state,
+                                            uint32_t const vgt_num_instances)
+{
+   bool const modified = state->vgt_num_instances != vgt_num_instances;
+   state->vgt_num_instances = vgt_num_instances;
+   terakan_hw_state_draw_written(state, TERAKAN_HW_STATE_DRAW_INDEX_VGT_NUM_INSTANCES, modified);
+}
 
 void terakan_hw_state_draw_set_sq_ring(struct terakan_gfx_command_writer * command_writer,
                                        enum terakan_shader_ring_index ring_index,

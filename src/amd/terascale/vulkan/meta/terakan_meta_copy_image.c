@@ -24,20 +24,13 @@
 #include "terakan_meta.h"
 
 #include "terakan_command_buffer.h"
-#include "terakan_descriptor.h"
 #include "terakan_entrypoints.h"
-#include "terakan_format.h"
 #include "terakan_image.h"
 
-#include "gallium/drivers/r600/eg_sq.h"
-#include "gallium/drivers/r600/evergreend.h"
-#include "gallium/drivers/r600/r600_opcodes.h"
 #include "util/bitscan.h"
 #include "util/macros.h"
 
 #include <assert.h>
-#include <stddef.h>
-#include <stdint.h>
 
 enum {
    /* In blocks, signed. */
@@ -48,58 +41,42 @@ enum {
 };
 
 static uint32_t const terakan_meta_copy_image_ps_r8xx[] = {
-   /* Control flow. */
-
    /* 0: Address offsetting. */
-
    S_SQ_CF_WORD0_ADDR(3) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS) |
       S_SQ_CF_ALU_WORD0_KCACHE_MODE0(V_SQ_CF_KCACHE_LOCK_1),
    S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(
       TERAKAN_KCACHE_DWORD_LINE(TERAKAN_META_COPY_IMAGE_CONST_TEXTURE_MINUS_SCREEN_POSITION_X)) |
-      S_SQ_CF_ALU_WORD1_COUNT(4 - 3) | EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
+      S_SQ_CF_ALU_WORD1_COUNT(1) | EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
    /* 1: Fetch from the source texture. */
-
    S_SQ_CF_WORD0_ADDR(6),
-   S_SQ_CF_WORD1_COUNT(0) | S_SQ_CF_WORD1_BARRIER(1) | EG_V_SQ_CF_WORD1_SQ_CF_INST_TEX,
+   S_SQ_CF_WORD1_COUNT(0) | S_SQ_CF_WORD1_BARRIER(true) | EG_V_SQ_CF_WORD1_SQ_CF_INST_TEX,
 
    /* 2: Export the color and end the program. */
-
    S_SQ_CF_ALLOC_EXPORT_WORD0_TYPE(V_SQ_CF_ALLOC_EXPORT_WORD0_SQ_EXPORT_PIXEL) |
       S_SQ_CF_ALLOC_EXPORT_WORD0_ARRAY_BASE(0) | S_SQ_CF_ALLOC_EXPORT_WORD0_RW_GPR(0),
    S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_X(TERASCALE_SWIZZLE_X) |
       S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Y(TERASCALE_SWIZZLE_Y) |
       S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Z(TERASCALE_SWIZZLE_Z) |
       S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_W(TERASCALE_SWIZZLE_W) |
-      S_SQ_CF_ALLOC_EXPORT_WORD1_BARRIER(1) | S_SQ_CF_ALLOC_EXPORT_WORD1_END_OF_PROGRAM(1) |
+      S_SQ_CF_ALLOC_EXPORT_WORD1_BARRIER(true) | S_SQ_CF_ALLOC_EXPORT_WORD1_END_OF_PROGRAM(true) |
       EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_EXPORT_DONE,
 
-   /* ALU clause. */
+   /* 3: ALU clause. */
 
-   /* Apply the address offset.
-    *
-    * 3:     R0.X = ADD_INT R0.X, CB[push].texture_minus_screen_position_x
-    * 4: (v) R0.Y = ADD_INT R0.Y, CB[push].texture_minus_screen_position_y
-    * Cycle 0: X = R0, Y = R0
+   /* +0-1: Apply the address offset to R0.XY.
+    * Cycle 0: X = R0, Y = R0.
     */
+   TERAKAN_KCACHE_DWORD_WORD0_SRC1(0,
+                                   TERAKAN_META_COPY_IMAGE_CONST_TEXTURE_MINUS_SCREEN_POSITION_X) |
+      TERAKAN_SHADER_OP2(false, 0, 'X', ADD_INT, EG, 0, 'X', 0, 0, VEC_012),
+   TERAKAN_KCACHE_DWORD_WORD0_SRC1(0,
+                                   TERAKAN_META_COPY_IMAGE_CONST_TEXTURE_MINUS_SCREEN_POSITION_Y) |
+      TERAKAN_SHADER_OP2(true, 0, 'Y', ADD_INT, EG, 0, 'Y', 0, 0, VEC_012),
 
-   S_SQ_ALU_WORD0_SRC0_SEL(0) | S_SQ_ALU_WORD0_SRC0_CHAN(0) |
-      TERAKAN_KCACHE_DWORD_WORD0_SRC1(
-         TERAKAN_META_COPY_IMAGE_CONST_TEXTURE_MINUS_SCREEN_POSITION_X),
-   S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(0) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_ADD_INT),
-
-   S_SQ_ALU_WORD0_LAST(1) | S_SQ_ALU_WORD0_SRC0_SEL(0) | S_SQ_ALU_WORD0_SRC0_CHAN(1) |
-      TERAKAN_KCACHE_DWORD_WORD0_SRC1(
-         TERAKAN_META_COPY_IMAGE_CONST_TEXTURE_MINUS_SCREEN_POSITION_Y),
-   S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(1) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_ADD_INT),
-
-   /* 5 (alignment padding), 6, 7: Fetch from the source texture to R0. */
-
+   /* 5 (alignment padding), 6-7: Fetch from the source texture to R0. */
    0,
    0,
-
    S_SQ_TEX_WORD0_TEX_INST(3) |
       S_SQ_TEX_WORD0_RESOURCE_ID(TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META) |
       S_SQ_TEX_WORD0_SRC_GPR(0),
@@ -112,59 +89,43 @@ static uint32_t const terakan_meta_copy_image_ps_r8xx[] = {
 };
 
 static uint32_t const terakan_meta_copy_image_ps_r9xx[] = {
-   /* Control flow. */
-
    /* 0: Address offsetting. */
-
    S_SQ_CF_WORD0_ADDR(4) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS) |
       S_SQ_CF_ALU_WORD0_KCACHE_MODE0(V_SQ_CF_KCACHE_LOCK_1),
    S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(
       TERAKAN_KCACHE_DWORD_LINE(TERAKAN_META_COPY_IMAGE_CONST_TEXTURE_MINUS_SCREEN_POSITION_X)) |
-      S_SQ_CF_ALU_WORD1_COUNT(5 - 4) | EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
+      S_SQ_CF_ALU_WORD1_COUNT(1) | EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
    /* 1: Fetch from the source texture. */
-
    S_SQ_CF_WORD0_ADDR(6),
-   S_SQ_CF_WORD1_COUNT(0) | S_SQ_CF_WORD1_BARRIER(1) | EG_V_SQ_CF_WORD1_SQ_CF_INST_TEX,
+   S_SQ_CF_WORD1_COUNT(0) | S_SQ_CF_WORD1_BARRIER(true) | EG_V_SQ_CF_WORD1_SQ_CF_INST_TEX,
 
    /* 2: Export the color. */
-
    S_SQ_CF_ALLOC_EXPORT_WORD0_TYPE(V_SQ_CF_ALLOC_EXPORT_WORD0_SQ_EXPORT_PIXEL) |
       S_SQ_CF_ALLOC_EXPORT_WORD0_ARRAY_BASE(0) | S_SQ_CF_ALLOC_EXPORT_WORD0_RW_GPR(0),
    S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_X(TERASCALE_SWIZZLE_X) |
       S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Y(TERASCALE_SWIZZLE_Y) |
       S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Z(TERASCALE_SWIZZLE_Z) |
       S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_W(TERASCALE_SWIZZLE_W) |
-      S_SQ_CF_ALLOC_EXPORT_WORD1_BARRIER(1) | EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_EXPORT_DONE,
+      S_SQ_CF_ALLOC_EXPORT_WORD1_BARRIER(true) |
+      EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_EXPORT_DONE,
 
    /* 3: End the program. */
+   TERAKAN_SHADER_CF_END_R9XX,
 
-   0,
-   S_SQ_CF_WORD1_BARRIER(1) | CM_V_SQ_CF_WORD1_SQ_CF_INST_END,
+   /* 4: ALU clause. */
 
-   /* ALU clause. */
-
-   /* Apply the address offset.
-    *
-    * 4: R0.X = ADD_INT R0.X, CB[push].texture_minus_screen_position_x
-    * 5: R0.Y = ADD_INT R0.Y, CB[push].texture_minus_screen_position_y
-    * Cycle 0: X = R0, Y = R0
+   /* +0-1: Apply the address offset to R0.XY.
+    * Cycle 0: X = R0, Y = R0.
     */
+   TERAKAN_KCACHE_DWORD_WORD0_SRC1(0,
+                                   TERAKAN_META_COPY_IMAGE_CONST_TEXTURE_MINUS_SCREEN_POSITION_X) |
+      TERAKAN_SHADER_OP2(false, 0, 'X', ADD_INT, EG, 0, 'X', 0, 0, VEC_012),
+   TERAKAN_KCACHE_DWORD_WORD0_SRC1(0,
+                                   TERAKAN_META_COPY_IMAGE_CONST_TEXTURE_MINUS_SCREEN_POSITION_Y) |
+      TERAKAN_SHADER_OP2(true, 0, 'Y', ADD_INT, EG, 0, 'Y', 0, 0, VEC_012),
 
-   S_SQ_ALU_WORD0_SRC0_SEL(0) | S_SQ_ALU_WORD0_SRC0_CHAN(0) |
-      TERAKAN_KCACHE_DWORD_WORD0_SRC1(
-         TERAKAN_META_COPY_IMAGE_CONST_TEXTURE_MINUS_SCREEN_POSITION_X),
-   S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(0) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_ADD_INT),
-
-   S_SQ_ALU_WORD0_LAST(1) | S_SQ_ALU_WORD0_SRC0_SEL(0) | S_SQ_ALU_WORD0_SRC0_CHAN(1) |
-      TERAKAN_KCACHE_DWORD_WORD0_SRC1(
-         TERAKAN_META_COPY_IMAGE_CONST_TEXTURE_MINUS_SCREEN_POSITION_Y),
-   S_SQ_ALU_WORD1_DST_GPR(0) | S_SQ_ALU_WORD1_DST_CHAN(1) | S_SQ_ALU_WORD1_OP2_WRITE_MASK(1) |
-      S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_ADD_INT),
-
-   /* 6, 7: Fetch from the source texture to R0. */
-
+   /* 6-7: Fetch from the source texture to R0. */
    S_SQ_TEX_WORD0_TEX_INST(3) |
       S_SQ_TEX_WORD0_RESOURCE_ID(TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META) |
       S_SQ_TEX_WORD0_SRC_GPR(0),

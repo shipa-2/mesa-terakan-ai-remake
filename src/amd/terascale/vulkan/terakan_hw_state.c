@@ -76,6 +76,21 @@ uint32_t const terakan_standard_sample_locs[5][16 / 4] = {
 uint32_t const terakan_standard_sample_max_dists[5] = {0, 4, 6, 7, 8};
 
 static void
+terakan_hw_state_draw_emit_vgt_primitive_type(
+   struct terakan_gfx_command_writer * const command_writer)
+{
+   uint32_t * packet = terakan_gfx_command_writer_emit(
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 1);
+   if (unlikely(packet == NULL)) {
+      return;
+   }
+   *packet++ = PKT3(PKT3_SET_CONFIG_REG, 1, 0);
+   *packet++ = TERAKAN_CONFIG_REG_OFFSET(R_008958_VGT_PRIMITIVE_TYPE);
+   *packet++ = command_writer->hw_state_draw.vgt_primitive_type;
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
+}
+
+static void
 terakan_hw_state_draw_emit_vgt_index_type(struct terakan_gfx_command_writer * const command_writer)
 {
    uint32_t * packet = terakan_gfx_command_writer_emit(
@@ -115,21 +130,6 @@ terakan_hw_state_draw_emit_vgt_index_buffer(struct terakan_gfx_command_writer * 
 }
 
 static void
-terakan_hw_state_draw_emit_vgt_primitive_type(
-   struct terakan_gfx_command_writer * const command_writer)
-{
-   uint32_t * packet = terakan_gfx_command_writer_emit(
-      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 1);
-   if (unlikely(packet == NULL)) {
-      return;
-   }
-   *packet++ = PKT3(PKT3_SET_CONFIG_REG, 1, 0);
-   *packet++ = TERAKAN_CONFIG_REG_OFFSET(R_008958_VGT_PRIMITIVE_TYPE);
-   *packet++ = command_writer->hw_state_draw.vgt_primitive_type;
-   terakan_gfx_command_writer_emit_done(command_writer, packet);
-}
-
-static void
 terakan_hw_state_draw_emit_vgt_index_offset(struct terakan_gfx_command_writer * const command_writer)
 {
    uint32_t * packet = terakan_gfx_command_writer_emit(
@@ -140,6 +140,20 @@ terakan_hw_state_draw_emit_vgt_index_offset(struct terakan_gfx_command_writer * 
    *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
    *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028408_VGT_INDX_OFFSET);
    *packet++ = command_writer->hw_state_draw.vgt_index_offset;
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
+}
+
+static void
+terakan_hw_state_draw_emit_vgt_num_instances(
+   struct terakan_gfx_command_writer * const command_writer)
+{
+   uint32_t * packet = terakan_gfx_command_writer_emit(
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2);
+   if (unlikely(packet == NULL)) {
+      return;
+   }
+   *packet++ = PKT3(PKT3_NUM_INSTANCES, 1 - 1, 0);
+   *packet++ = command_writer->hw_state_draw.vgt_num_instances;
    terakan_gfx_command_writer_emit_done(command_writer, packet);
 }
 
@@ -1242,11 +1256,13 @@ terakan_hw_state_draw_emit_cb_color(struct terakan_gfx_command_writer * const co
 
 static terakan_hw_state_emit_function const
    terakan_hw_state_draw_emit_functions[TERAKAN_HW_STATE_DRAW_INDEX_COUNT] = {
-      [TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_TYPE] = terakan_hw_state_draw_emit_vgt_index_type,
-      [TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_BUFFER] = terakan_hw_state_draw_emit_vgt_index_buffer,
       [TERAKAN_HW_STATE_DRAW_INDEX_VGT_PRIMITIVE_TYPE] =
          terakan_hw_state_draw_emit_vgt_primitive_type,
+      [TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_TYPE] = terakan_hw_state_draw_emit_vgt_index_type,
+      [TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_BUFFER] = terakan_hw_state_draw_emit_vgt_index_buffer,
       [TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_OFFSET] = terakan_hw_state_draw_emit_vgt_index_offset,
+      [TERAKAN_HW_STATE_DRAW_INDEX_VGT_NUM_INSTANCES] =
+         terakan_hw_state_draw_emit_vgt_num_instances,
       [TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_FS] = terakan_hw_state_draw_emit_sq_pgm_fs,
       [TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_VS] = terakan_hw_state_draw_emit_sq_pgm_vs,
       [TERAKAN_HW_STATE_DRAW_INDEX_SQ_PGM_PS] = terakan_hw_state_draw_emit_sq_pgm_ps,
