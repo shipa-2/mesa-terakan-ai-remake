@@ -83,9 +83,9 @@
 
 /* As of June 29, 2022, according to vulkan.gpuinfo.org, the only GPUs
  * claiming support for maxSampleLocationGridSize greater than 1x1 is AMD
- * which supports 2x2 but only up to 8 samples.
+ * which supports 2x2.
  */
-#define MESA_VK_MAX_SAMPLE_LOCATIONS 32
+#define MESA_VK_MAX_SAMPLE_LOCATIONS (MESA_VK_MAX_SAMPLES * 2 * 2)
 
 #define MESA_VK_MAX_COLOR_ATTACHMENTS 8
 
