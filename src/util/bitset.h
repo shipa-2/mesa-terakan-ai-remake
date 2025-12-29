@@ -83,6 +83,13 @@ __bitset_or(BITSET_WORD *r, const BITSET_WORD *x, const BITSET_WORD *y, unsigned
 }
 
 static inline void
+__bitset_xor(BITSET_WORD *r, const BITSET_WORD *x, const BITSET_WORD *y, unsigned n)
+{
+   for (unsigned i = 0; i < n; i++)
+      r[i] = x[i] ^ y[i];
+}
+
+static inline void
 __bitset_not(BITSET_WORD *x, unsigned n)
 {
    for (unsigned i = 0; i < n; i++)
@@ -108,6 +115,13 @@ __bitset_andnot(BITSET_WORD *r, const BITSET_WORD *x, const BITSET_WORD *y, unsi
       STATIC_ASSERT(ARRAY_SIZE(r) == ARRAY_SIZE(x)); \
       STATIC_ASSERT(ARRAY_SIZE(r) == ARRAY_SIZE(y)); \
       __bitset_or(r, x, y, ARRAY_SIZE(r)); \
+   } while (0)
+
+#define BITSET_XOR(r, x, y)   \
+   do { \
+      STATIC_ASSERT(ARRAY_SIZE(r) == ARRAY_SIZE(x)); \
+      STATIC_ASSERT(ARRAY_SIZE(r) == ARRAY_SIZE(y)); \
+      __bitset_xor(r, x, y, ARRAY_SIZE(r)); \
    } while (0)
 
 #define BITSET_NOT(x)   \
