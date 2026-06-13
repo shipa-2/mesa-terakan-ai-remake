@@ -323,28 +323,36 @@
 #define   S_008C00_EXPORT_SRC_C(x)                     (((unsigned)(x) & 0x1) << 1)
 #define   G_008C00_EXPORT_SRC_C(x)                     (((x) >> 1) & 0x1)
 #define   C_008C00_EXPORT_SRC_C(x)                     0xFFFFFFFD
-/* different */
-#define   S_008C00_CS_PRIO(x)                          (((unsigned)(x) & 0x3) << 18)
-#define   G_008C00_CS_PRIO(x)                          (((x) >> 18) & 0x3)
-#define   C_008C00_CS_PRIO(x)                          0xFFF3FFFF
-#define   S_008C00_LS_PRIO(x)                          (((unsigned)(x) & 0x3) << 20)
-#define   G_008C00_LS_PRIO(x)                          (((x) >> 20) & 0x3)
-#define   C_008C00_LS_PRIO(x)                          0xFFCFFFFF
-#define   S_008C00_HS_PRIO(x)                          (((unsigned)(x) & 0x3) << 22)
-#define   G_008C00_HS_PRIO(x)                          (((x) >> 22) & 0x3)
-#define   C_008C00_HS_PRIO(x)                          0xFF3FFFFF
-#define   S_008C00_PS_PRIO(x)                          (((unsigned)(x) & 0x3) << 24)
-#define   G_008C00_PS_PRIO(x)                          (((x) >> 24) & 0x3)
-#define   C_008C00_PS_PRIO(x)                          0xFCFFFFFF
-#define   S_008C00_VS_PRIO(x)                          (((unsigned)(x) & 0x3) << 26)
-#define   G_008C00_VS_PRIO(x)                          (((x) >> 26) & 0x3)
-#define   C_008C00_VS_PRIO(x)                          0xF3FFFFFF
-#define   S_008C00_GS_PRIO(x)                          (((unsigned)(x) & 0x3) << 28)
-#define   G_008C00_GS_PRIO(x)                          (((x) >> 28) & 0x3)
-#define   C_008C00_GS_PRIO(x)                          0xCFFFFFFF
-#define   S_008C00_ES_PRIO(x)                          (((unsigned)(x) & 0x3) << 30)
-#define   G_008C00_ES_PRIO(x)                          (((x) >> 30) & 0x3)
-#define   C_008C00_ES_PRIO(x)                          0x3FFFFFFF
+#define   S_008C00_GFX_PRIO(x)                         (((unsigned)(x) & 0x3) << 2) /* cayman only */
+#define   G_008C00_GFX_PRIO(x)                         (((x) >> 2) & 0x3) /* cayman only */
+#define   C_008C00_GFX_PRIO(x)                         0xFFFFFFF3 /* cayman only */
+#define   S_008C00_CS1_PRIO(x)                         (((unsigned)(x) & 0x3) << 4) /* cayman only */
+#define   G_008C00_CS1_PRIO(x)                         (((x) >> 4) & 0x3) /* cayman only */
+#define   C_008C00_CS1_PRIO(x)                         0xFFFFFFCF /* cayman only */
+#define   S_008C00_CS2_PRIO(x)                         (((unsigned)(x) & 0x3) << 6) /* cayman only */
+#define   G_008C00_CS2_PRIO(x)                         (((x) >> 6) & 0x3) /* cayman only */
+#define   C_008C00_CS2_PRIO(x)                         0xFFFFFF3F /* cayman only */
+#define   S_008C00_CS_PRIO(x)                          (((unsigned)(x) & 0x3) << 18) /* evergreen only */
+#define   G_008C00_CS_PRIO(x)                          (((x) >> 18) & 0x3) /* evergreen only */
+#define   C_008C00_CS_PRIO(x)                          0xFFF3FFFF /* evergreen only */
+#define   S_008C00_LS_PRIO(x)                          (((unsigned)(x) & 0x3) << 20) /* evergreen only */
+#define   G_008C00_LS_PRIO(x)                          (((x) >> 20) & 0x3) /* evergreen only */
+#define   C_008C00_LS_PRIO(x)                          0xFFCFFFFF /* evergreen only */
+#define   S_008C00_HS_PRIO(x)                          (((unsigned)(x) & 0x3) << 22) /* evergreen only */
+#define   G_008C00_HS_PRIO(x)                          (((x) >> 22) & 0x3) /* evergreen only */
+#define   C_008C00_HS_PRIO(x)                          0xFF3FFFFF /* evergreen only */
+#define   S_008C00_PS_PRIO(x)                          (((unsigned)(x) & 0x3) << 24) /* evergreen only */
+#define   G_008C00_PS_PRIO(x)                          (((x) >> 24) & 0x3) /* evergreen only */
+#define   C_008C00_PS_PRIO(x)                          0xFCFFFFFF /* evergreen only */
+#define   S_008C00_VS_PRIO(x)                          (((unsigned)(x) & 0x3) << 26) /* evergreen only */
+#define   G_008C00_VS_PRIO(x)                          (((x) >> 26) & 0x3) /* evergreen only */
+#define   C_008C00_VS_PRIO(x)                          0xF3FFFFFF /* evergreen only */
+#define   S_008C00_GS_PRIO(x)                          (((unsigned)(x) & 0x3) << 28) /* evergreen only */
+#define   G_008C00_GS_PRIO(x)                          (((x) >> 28) & 0x3) /* evergreen only */
+#define   C_008C00_GS_PRIO(x)                          0xCFFFFFFF /* evergreen only */
+#define   S_008C00_ES_PRIO(x)                          (((unsigned)(x) & 0x3) << 30) /* evergreen only */
+#define   G_008C00_ES_PRIO(x)                          (((x) >> 30) & 0x3) /* evergreen only */
+#define   C_008C00_ES_PRIO(x)                          0x3FFFFFFF /* evergreen only */
 #define R_008C04_SQ_GPR_RESOURCE_MGMT_1              0x00008C04
 #define   S_008C04_NUM_PS_GPRS(x)                      (((unsigned)(x) & 0xFF) << 0)
 #define   G_008C04_NUM_PS_GPRS(x)                      (((x) >> 0) & 0xFF)
@@ -632,7 +640,8 @@
 #define   C_028C70_SOURCE_FORMAT                       0xFCFFFFFF
 #define     V_028C70_EXPORT_4C_32BPC                   0x0
 #define     V_028C70_EXPORT_4C_16BPC                   0x1
-#define     V_028C70_EXPORT_2C_32BPC                   0x2 /* Do not use */
+#define     V_028C70_EXPORT_2C_32BPC_GR                0x2 /* cayman only */
+#define     V_028C70_EXPORT_2C_32BPC_AR                0x3 /* cayman only */
 #define   S_028C70_RAT(x)                              (((unsigned)(x) & 0x1) << 26)
 #define   G_028C70_RAT(x)                              (((x) >> 26) & 0x1)
 #define   C_028C70_RAT                                 0xFBFFFFFF
@@ -658,7 +667,11 @@
 #define   S_028C74_MACRO_TILE_ASPECT(x)                (((unsigned)(x) & 0x3) << 19)
 #define   S_028C74_FMASK_BANK_HEIGHT(x)                (((unsigned)(x) & 0x3) << 22)
 #define   S_028C74_NUM_SAMPLES(x)                      (((unsigned)(x) & 0x7) << 24) /* cayman only */
+#define   G_028C74_NUM_SAMPLES(x)                      (((x) >> 24) & 0x7) /* cayman only */
+#define   C_028C74_NUM_SAMPLES                         0xF8FFFFFF /* cayman only */
 #define   S_028C74_NUM_FRAGMENTS(x)                    (((unsigned)(x) & 0x3) << 27) /* cayman only */
+#define   G_028C74_NUM_FRAGMENTS(x)                    (((x) >> 27) & 0x3) /* cayman only */
+#define   C_028C74_NUM_FRAGMENTS                       0xE7FFFFFF /* cayman only */
 #define   S_028C74_FORCE_DST_ALPHA_1(x)                (((unsigned)(x) & 0x1) << 31) /* cayman only */
 #define   G_028C74_FORCE_DST_ALPHA_1(x)                (((x) >> 31) & 0x1) /* cayman only */
 #define   C_028C74_FORCE_DST_ALPHA_1                   0x7FFFFFFF /* cayman only */
@@ -863,6 +876,8 @@
 #define     V_028040_Z_24                          0x00000002
 #define     V_028040_Z_32_FLOAT                    0x00000003
 #define   S_028040_NUM_SAMPLES(x)                      (((unsigned)(x) & 0x3) << 2) /* cayman only */
+#define   G_028040_NUM_SAMPLES(x)                      (((x) >> 2) & 0x3) /* cayman only */
+#define   C_028040_NUM_SAMPLES                         0xFFFFFFF3 /* cayman only */
 #define   S_028040_ARRAY_MODE(x)                       (((unsigned)(x) & 0xF) << 4)
 #define   G_028040_ARRAY_MODE(x)                       (((x) >> 4) & 0xF)
 #define   C_028040_ARRAY_MODE                          0xFFFFFF0F
@@ -1103,9 +1118,17 @@
 #define   C_028A00_WIDTH                               0x0000FFFF
 #define R_028A0C_PA_SC_LINE_STIPPLE                  0x028A0C
 #define   S_028A0C_LINE_PATTERN(x)                     (((unsigned)(x) & 0xFFFF) << 0)
+#define   G_028A0C_LINE_PATTERN(x)                     (((x) >> 0) & 0xFFFF)
+#define   C_028A0C_LINE_PATTERN                        0xFFFF0000
 #define   S_028A0C_REPEAT_COUNT(x)                     (((unsigned)(x) & 0xFF) << 16)
+#define   G_028A0C_REPEAT_COUNT(x)                     (((x) >> 16) & 0xFF)
+#define   C_028A0C_REPEAT_COUNT                        0xFF00FFFF
 #define   S_028A0C_PATTERN_BIT_ORDER(x)                (((unsigned)(x) & 0x1) << 28)
+#define   G_028A0C_PATTERN_BIT_ORDER(x)                (((x) >> 28) & 0x1)
+#define   C_028A0C_PATTERN_BIT_ORDER                   0xEFFFFFFF
 #define   S_028A0C_AUTO_RESET_CNTL(x)                  (((unsigned)(x) & 0x3) << 29)
+#define   G_028A0C_AUTO_RESET_CNTL(x)                  (((x) >> 29) & 0x3)
+#define   C_028A0C_AUTO_RESET_CNTL                     0x9FFFFFFF
 #define R_028A40_VGT_GS_MODE                         0x028A40
 #define   S_028A40_MODE(x)                             (((unsigned)(x) & 0x3) << 0)
 #define   G_028A40_MODE(x)                             (((x) >> 0) & 0x3)
@@ -1416,6 +1439,8 @@
 #define   G_030010_ENDIAN_SWAP(x)                      (((x) >> 12) & 0x3)
 #define   C_030010_ENDIAN_SWAP                         0xFFFFCFFF
 #define   S_030010_LOG2_NUM_FRAGMENTS(x)               (((unsigned)(x) & 0x3) << 14) /* cayman only */
+#define   G_030010_LOG2_NUM_FRAGMENTS(x)               (((x) >> 14) & 0x3) /* cayman only */
+#define   C_030010_LOG2_NUM_FRAGMENTS                  0xFFFF3FFF /* cayman only */
 #define   S_030010_DST_SEL_X(x)                        (((unsigned)(x) & 0x7) << 16)
 #define   G_030010_DST_SEL_X(x)                        (((x) >> 16) & 0x7)
 #define   C_030010_DST_SEL_X                           0xFFF8FFFF
@@ -1509,6 +1534,8 @@
 
 #define R_03000C_SQ_VTX_CONSTANT_WORD3_0             0x03000C
 #define   S_03000C_UNCACHED(x)                         (((unsigned)(x) & 0x1) << 2)
+#define   G_03000C_UNCACHED(x)                         (((x) >> 2) & 0x1)
+#define   C_03000C_UNCACHED                            0xFFFFFFFB
 #define   S_03000C_DST_SEL_X(x)                        (((unsigned)(x) & 0x7) << 3)
 #define   G_03000C_DST_SEL_X(x)                        (((x) >> 3) & 0x7)
 #define     V_03000C_SQ_SEL_X                          0x00000000
@@ -2348,6 +2375,15 @@
 #define R_0288B8_SQ_PGM_START_HS                     0x000288B8
 #define R_0288D0_SQ_PGM_START_LS                     0x000288D0
 #define R_0288A8_SQ_PGM_RESOURCES_FS                 0x000288A8
+#define   S_0288A8_NUM_GPRS(x)                         (((unsigned)(x) & 0xFF) << 0)
+#define   G_0288A8_NUM_GPRS(x)                         (((x) >> 0) & 0xFF)
+#define   C_0288A8_NUM_GPRS                            0xFFFFFF00
+#define   S_0288A8_STACK_SIZE(x)                       (((unsigned)(x) & 0xFF) << 8)
+#define   G_0288A8_STACK_SIZE(x)                       (((x) >> 8) & 0xFF)
+#define   C_0288A8_STACK_SIZE                          0xFFFF00FF
+#define   S_0288A8_DX10_CLAMP(x)                       (((unsigned)(x) & 0x1) << 21)
+#define   G_0288A8_DX10_CLAMP(x)                       (((x) >> 21) & 0x1)
+#define   C_0288A8_DX10_CLAMP                          0xFFDFFFFF
 #define R_0288E8_SQ_LDS_ALLOC                        0x000288E8
 #define R_0288EC_SQ_LDS_ALLOC_PS                     0x000288EC
 #define R_028900_SQ_ESGS_RING_ITEMSIZE               0x00028900
@@ -2515,12 +2551,24 @@
 #define   G_028B68_STRIDE(x)                                          (((x) >> 13) & 0x1FFF)
 #define   C_028B68_STRIDE                                             0xFC001FFF
 #define R_028B70_DB_ALPHA_TO_MASK                    0x00028B70
-#define   S_028B70_ALPHA_TO_MASK_ENABLE(x)		(((unsigned)(x) & 0x1) << 0)
-#define   S_028B70_ALPHA_TO_MASK_OFFSET0(x)		(((unsigned)(x) & 0x3) << 8)
-#define   S_028B70_ALPHA_TO_MASK_OFFSET1(x)		(((unsigned)(x) & 0x3) << 10)
-#define   S_028B70_ALPHA_TO_MASK_OFFSET2(x)		(((unsigned)(x) & 0x3) << 12)
-#define   S_028B70_ALPHA_TO_MASK_OFFSET3(x)		(((unsigned)(x) & 0x3) << 14)
-#define   S_028B70_OFFSET_ROUND(x)			(((unsigned)(x) & 0x1) << 16)
+#define   S_028B70_ALPHA_TO_MASK_ENABLE(x)             (((unsigned)(x) & 0x1) << 0)
+#define   G_028B70_ALPHA_TO_MASK_ENABLE(x)             (((x) >> 0) & 0x1)
+#define   C_028B70_ALPHA_TO_MASK_ENABLE                0xFFFFFFFE
+#define   S_028B70_ALPHA_TO_MASK_OFFSET0(x)            (((unsigned)(x) & 0x3) << 8)
+#define   G_028B70_ALPHA_TO_MASK_OFFSET0(x)            (((x) >> 8) & 0x3)
+#define   C_028B70_ALPHA_TO_MASK_OFFSET0               0xFFFFFCFF
+#define   S_028B70_ALPHA_TO_MASK_OFFSET1(x)            (((unsigned)(x) & 0x3) << 10)
+#define   G_028B70_ALPHA_TO_MASK_OFFSET1(x)            (((x) >> 10) & 0x3)
+#define   C_028B70_ALPHA_TO_MASK_OFFSET1               0xFFFFF3FF
+#define   S_028B70_ALPHA_TO_MASK_OFFSET2(x)            (((unsigned)(x) & 0x3) << 12)
+#define   G_028B70_ALPHA_TO_MASK_OFFSET2(x)            (((x) >> 12) & 0x3)
+#define   C_028B70_ALPHA_TO_MASK_OFFSET2               0xFFFFCFFF
+#define   S_028B70_ALPHA_TO_MASK_OFFSET3(x)            (((unsigned)(x) & 0x3) << 14)
+#define   G_028B70_ALPHA_TO_MASK_OFFSET3(x)            (((x) >> 14) & 0x3)
+#define   C_028B70_ALPHA_TO_MASK_OFFSET3               0xFFFF3FFF
+#define   S_028B70_OFFSET_ROUND(x)                     (((unsigned)(x) & 0x1) << 16)
+#define   G_028B70_OFFSET_ROUND(x)                     (((x) >> 16) & 0x1)
+#define   C_028B70_OFFSET_ROUND                        0xFFFEFFFF
 #define R_028B78_PA_SU_POLY_OFFSET_DB_FMT_CNTL       0x00028B78
 #define   S_028B78_POLY_OFFSET_NEG_NUM_DB_BITS(x)      (((unsigned)(x) & 0xFF) << 0)
 #define   G_028B78_POLY_OFFSET_NEG_NUM_DB_BITS(x)      (((x) >> 0) & 0xFF)
@@ -2573,9 +2621,15 @@
 #define   G_028C00_LAST_PIXEL(x)                       (((x) >> 10) & 0x1)
 #define   C_028C00_LAST_PIXEL                          0xFFFFFBFF
 #define R_028C04_PA_SC_AA_CONFIG                     0x00028C04
-#define   S_028C04_MSAA_NUM_SAMPLES(x)                  (((unsigned)(x) & 0x3) << 0)
-#define   S_028C04_AA_MASK_CENTROID_DTMN(x)		(((unsigned)(x) & 0x1) << 4)
-#define   S_028C04_MAX_SAMPLE_DIST(x)			(((unsigned)(x) & 0xf) << 13)
+#define   S_028C04_MSAA_NUM_SAMPLES(x)                 (((unsigned)(x) & 0x3) << 0)
+#define   G_028C04_MSAA_NUM_SAMPLES(x)                 (((x) >> 0) & 0x3)
+#define   C_028C04_MSAA_NUM_SAMPLES                    0xFFFFFFFC
+#define   S_028C04_AA_MASK_CENTROID_DTMN(x)            (((unsigned)(x) & 0x1) << 4)
+#define   G_028C04_AA_MASK_CENTROID_DTMN(x)            (((x) >> 4) & 0x1)
+#define   C_028C04_AA_MASK_CENTROID_DTMN               0xFFFFFFEF
+#define   S_028C04_MAX_SAMPLE_DIST(x)                  (((unsigned)(x) & 0xF) << 13)
+#define   G_028C04_MAX_SAMPLE_DIST(x)                  (((x) >> 13) & 0xF)
+#define   C_028C04_MAX_SAMPLE_DIST                     0xFFFE1FFF
 #define R_028C08_PA_SU_VTX_CNTL                      0x00028C08
 #define   S_028C08_PIX_CENTER_HALF(x)                  (((unsigned)(x) & 0x1) << 0)
 #define   G_028C08_PIX_CENTER_HALF(x)                  (((x) >> 0) & 0x1)
