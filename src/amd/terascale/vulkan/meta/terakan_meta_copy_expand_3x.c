@@ -1,5 +1,5 @@
 /*
- * Copyright © 2024 Vitaliy Triang3l Kuzmin
+ * Copyright © 2026 Vitaliy Triang3l Kuzmin
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -21,10 +21,9 @@
  * IN THE SOFTWARE.
  */
 
-#include "terakan_meta.h"
+#include "terakan_meta_impl.h"
 
 #include "terakan_buffer.h"
-#include "terakan_command_buffer.h"
 #include "terakan_image.h"
 #include "terakan_physical_device.h"
 
@@ -32,7 +31,9 @@
 
 #include <assert.h>
 
-/* One layer per draw for simplicity (eliminates lots of per-pixel instructions). */
+/* One layer per draw for simplicity (eliminates lots of per-pixel instructions).
+ * 3x-expanded images have only the color aspect, so always using the aspect 0 is sufficient.
+ */
 
 enum {
    /* All values are in surface elements (components) and unsigned. */
@@ -64,7 +65,7 @@ static uint32_t const terakan_meta_copy_expand_3x_ps_r8xx[] = {
    S_SQ_CF_WORD1_COUNT(0) | S_SQ_CF_WORD1_BARRIER(true) | EG_V_SQ_CF_WORD1_SQ_CF_INST_TEX,
 
    /* 2: Store the R component. */
-   TERAKAN_SHADER_CF_UAV(false, STORE_TYPED, 0, 1, 0, 0xF, true),
+   TERAKAN_SHADER_CF_UAV(false, STORE_TYPED, 0, 1, 0, 0xF, true, true),
 
    /* 3: Moving the G and B components to GPR.X. */
    S_SQ_CF_WORD0_ADDR(18) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS) |
@@ -73,10 +74,10 @@ static uint32_t const terakan_meta_copy_expand_3x_ps_r8xx[] = {
       EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
    /* 4: Store the G component. */
-   TERAKAN_SHADER_CF_UAV(false, STORE_TYPED, 0, 2, 0, 0xF, true),
+   TERAKAN_SHADER_CF_UAV(false, STORE_TYPED, 0, 2, 0, 0xF, true, true),
 
    /* 5: Store the B component. */
-   TERAKAN_SHADER_CF_UAV(false, STORE_TYPED, 0, 3, 1, 0xF, false),
+   TERAKAN_SHADER_CF_UAV(false, STORE_TYPED, 0, 3, 1, 0xF, true, false),
 
    /* 6: End. */
    TERAKAN_SHADER_CF_PS_DUMMY_EXPORT_DONE_AND_END_R8XX,
@@ -178,7 +179,7 @@ static uint32_t const terakan_meta_copy_expand_3x_ps_r9xx[] = {
    S_SQ_CF_WORD1_COUNT(0) | S_SQ_CF_WORD1_BARRIER(true) | EG_V_SQ_CF_WORD1_SQ_CF_INST_TEX,
 
    /* 2: Store the R component. */
-   TERAKAN_SHADER_CF_UAV(false, STORE_TYPED, 0, 1, 0, 0xF, true),
+   TERAKAN_SHADER_CF_UAV(false, STORE_TYPED, 0, 1, 0, 0xF, true, true),
 
    /* 3: Moving the G and B components to GPR.X. */
    S_SQ_CF_WORD0_ADDR(24) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS) |
@@ -187,10 +188,10 @@ static uint32_t const terakan_meta_copy_expand_3x_ps_r9xx[] = {
       EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
    /* 4: Store the G component. */
-   TERAKAN_SHADER_CF_UAV(false, STORE_TYPED, 0, 2, 0, 0xF, true),
+   TERAKAN_SHADER_CF_UAV(false, STORE_TYPED, 0, 2, 0, 0xF, true, true),
 
    /* 5: Store the B component. */
-   TERAKAN_SHADER_CF_UAV(false, STORE_TYPED, 0, 3, 1, 0xF, false),
+   TERAKAN_SHADER_CF_UAV(false, STORE_TYPED, 0, 3, 1, 0xF, true, false),
 
    /* 6-7: End. */
    TERAKAN_SHADER_CF_PS_DUMMY_EXPORT_DONE_R9XX,
@@ -357,19 +358,8 @@ struct terakan_meta_shader const terakan_meta_copy_expand_3x_ps = {
                   },
             },
       },
-   .kcache_needed = (uint16_t)1 << TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS,
-   .resources_needed =
-      {
-         [BITSET_BITWORD(TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META)] =
-            BITSET_BIT(TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META),
-      },
-   .stage =
-      {
-         .ps =
-            {
-               .db_shader_control = TERAKAN_META_DB_SHADER_CONTROL_PS_MEMORY_EXPORT,
-            },
-      },
+   .kcache_used = BITFIELD_BIT(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS),
+   .primary_meta_resource_used = true,
 };
 
 static void
@@ -378,16 +368,15 @@ terakan_meta_copy_expand_3x_begin(struct terakan_gfx_command_writer * const comm
    command_writer->post_color_image_copy_write_barrier_actions |=
       TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_UAV | TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_PS;
 
-   terakan_meta_begin_2d_immediate_rects(command_writer, TERAKAN_META_PA_CL_VTE_CNTL_2D,
-                                         TERAKAN_META_DB_RENDER_OVERRIDE_DEFAULT, true);
-
-   terakan_meta_set_vs(command_writer, TERAKAN_META_SHADER_POSITION_FROM_INDEX_VS);
-   terakan_meta_set_ps(command_writer, TERAKAN_META_SHADER_COPY_EXPAND_3X_PS, true);
-
-   terakan_meta_begin_cb(command_writer, 0xF, 0b0);
-
-   command_writer->push_constants_state.up_to_date_push_constants_bound_to_stages &=
-      ~VK_SHADER_STAGE_FRAGMENT_BIT;
+   struct terakan_meta_config_draw_begin_options const meta_begin_options = {
+      .vgt_primitive_type = V_008958_DI_PT_RECTLIST,
+      .cb_and_db_shader_control_mode = TERAKAN_META_CONFIG_DRAW_BEGIN_CB_MODE_NORMAL_UAV_ONLY,
+      .rasterization = {.enable = true},
+   };
+   terakan_meta_config_draw_begin(command_writer, &meta_begin_options);
+   terakan_meta_config_draw_set_sq_pgm_vs(command_writer,
+                                          TERAKAN_META_SHADER_POSITION_FROM_INDEX_VS);
+   terakan_meta_config_draw_set_sq_pgm_ps(command_writer, TERAKAN_META_SHADER_COPY_EXPAND_3X_PS);
 }
 
 void
@@ -397,112 +386,104 @@ terakan_meta_copy_expand_3x_buffer_to_image(
 {
    terakan_meta_copy_expand_3x_begin(command_writer);
 
-   struct terakan_buffer const * const src_buffer =
-      terakan_buffer_from_handle(copy_buffer_to_image_info->srcBuffer);
-   struct terakan_image const * const dst_image =
+   struct terakan_image const * const image =
       terakan_image_from_handle(copy_buffer_to_image_info->dstImage);
+   struct terakan_buffer const * const buffer =
+      terakan_buffer_from_handle(copy_buffer_to_image_info->srcBuffer);
 
-   unsigned const bytes_per_surfel = dst_image->surface.aspects[0].bytes_per_block / 3;
+   unsigned const bytes_per_block = image->surface.aspects[0].bytes_per_block;
+   unsigned const bytes_per_surfel = bytes_per_block / 3u;
+   /* The image descriptor base is the slice origin. */
+   struct terakan_color_descriptor image_descriptor =
+      terakan_meta_transfer_expand_3x_uav(bytes_per_surfel);
+   /* The buffer descriptor base is the rectangle origin. */
+   struct terakan_resource_descriptor buffer_descriptor =
+      terakan_meta_transfer_expand_3x_resource(bytes_per_surfel);
 
-   uint32_t src_resource[8];
-   terakan_meta_transfer_expand_3x_resource(bytes_per_surfel, src_resource);
-
-   struct terakan_color_descriptor dst_uav = terakan_meta_transfer_expand_3x_uav(
-      bytes_per_surfel, terakan_gfx_command_writer_physical_device(command_writer)
-                           ->tiling_info.pipe_interleave_bytes_log2);
-   /* For simplicity and not to explicitly handle UAV alignment as image slices are always aligned,
-    * adjusting only the destination offset in the push constants.
-    * `buffer_uav_validated_as_image` doesn't need to be handled because surfel rows already have
-    * the necessary pitch alignment, and using the same element format for the UAV as for the
-    * surfels.
-    * Assuming that images are never 2^32 surfels or larger.
-    */
-   VkDeviceSize const dst_aspect_size_surfels_minus_one =
-      ((VkDeviceSize)dst_image->surface.aspects[0].size_bytes_shr8 << 8) / bytes_per_surfel - 1;
-   assert(dst_aspect_size_surfels_minus_one <= UINT32_MAX);
-   dst_uav.base =
-      (uint32_t)(dst_image->va >> 8) + dst_image->surface.aspects[0].offset_in_memory_bytes_shr8;
-   dst_uav.dim = (uint32_t)dst_aspect_size_surfels_minus_one;
-   terakan_hw_state_draw_set_cb_color(&command_writer->hw_state_draw, 0, dst_image->bo, &dst_uav,
-                                      NULL, true);
+   uint32_t constants[TERAKAN_META_COPY_EXPAND_3X_CONSTS_COUNT] = {};
+   bool constants_set = false;
 
    for (uint32_t region_index = 0; region_index < copy_buffer_to_image_info->regionCount;
         ++region_index) {
       VkBufferImageCopy2 const * const region = &copy_buffer_to_image_info->pRegions[region_index];
 
-      uint32_t base_layer, layer_count;
-      if (dst_image->vk.image_type == VK_IMAGE_TYPE_3D) {
-         base_layer = (uint32_t)region->imageOffset.z;
-         layer_count = region->imageExtent.depth;
-      } else {
-         base_layer = region->imageSubresource.baseArrayLayer;
-         layer_count = vk_image_subresource_layer_count(&dst_image->vk, &region->imageSubresource);
+      struct terakan_meta_copy_buffer_image_region_image region_image;
+      if (unlikely(!terakan_meta_copy_buffer_image_translate_region_image(image, region,
+                                                                          &region_image))) {
+         continue;
       }
 
-      uint32_t const src_y_pitch_surfels =
-         3 * (region->bufferRowLength != 0 ? region->bufferRowLength : region->imageExtent.width);
-      VkDeviceSize const src_z_pitch_bytes =
-         bytes_per_surfel * (VkDeviceSize)src_y_pitch_surfels *
-         (region->bufferImageHeight != 0 ? region->bufferImageHeight : region->imageExtent.height);
-      VkDeviceSize const src_rect_extent_surfels =
-         (VkDeviceSize)src_y_pitch_surfels * (region->imageExtent.height - 1) +
-         3 * region->imageExtent.width;
-      src_resource[1] = (uint32_t)(bytes_per_surfel * src_rect_extent_surfels - 1);
-      src_resource[4] = (uint32_t)src_rect_extent_surfels;
-      uint64_t src_va = src_buffer->va + region->bufferOffset;
+      struct terakan_image_surface_level const * const surface_level =
+         &image->surface.aspects[region_image.image_descriptor_create_info.image_aspect_index]
+             .levels[region_image.image_descriptor_create_info.subresource_range.base_mip_level];
+      image_descriptor.base =
+         (image->va >> 8) + surface_level->offset_in_memory_bytes_shr8 +
+         surface_level->slice_size_bytes_shr8 *
+            region_image.image_descriptor_create_info.subresource_range.base_z_or_array_layer;
+      image_descriptor.dim = ((uint32_t)surface_level->aligned_extent_surfels[0] *
+                              surface_level->aligned_extent_surfels[1]) -
+                             1u;
+      uint32_t const image_texel_offset_surfels =
+         3u * region_image.rect_blocks.bounds[0][0] +
+         surface_level->aligned_extent_surfels[0] * (uint32_t)region_image.rect_blocks.bounds[0][1];
 
-      struct terakan_image_surface_level const * const dst_surface_level =
-         &dst_image->surface.aspects[0].levels[region->imageSubresource.mipLevel];
-      uint32_t const dst_z_pitch_surfels =
-         ((VkDeviceSize)dst_surface_level->slice_size_bytes_shr8 << 8) / bytes_per_surfel;
-      uint32_t dst_offset_surfels =
-         (uint32_t)(((VkDeviceSize)(dst_surface_level->offset_in_memory_bytes_shr8 -
-                                    dst_image->surface.aspects[0].offset_in_memory_bytes_shr8)
-                     << 8) /
-                    bytes_per_surfel) +
-         dst_z_pitch_surfels * base_layer +
-         (dst_surface_level->aligned_extent_surfels[0] * (uint32_t)region->imageOffset.y +
-          3 * (uint32_t)region->imageOffset.x);
+      uint64_t const buffer_slice_extent_bytes_minus_1 =
+         bytes_per_block *
+            terakan_meta_copy_buffer_image_region_image_buffer_slice_extent_blocks(&region_image) -
+         1u;
+      buffer_descriptor.resource[1] = (uint32_t)MIN2(buffer_slice_extent_bytes_minus_1, UINT32_MAX);
+      uint64_t const buffer_y_pitch_surfels = (uint64_t)3u * region_image.buffer_y_pitch_blocks;
+      uint64_t const buffer_z_pitch_bytes = bytes_per_block * region_image.buffer_z_pitch_blocks;
+      uint64_t buffer_offset = region->bufferOffset;
 
-      for (uint32_t layer_index = 0; layer_index < layer_count; ++layer_index) {
-         /* Constants are always changed because the destination offset is. */
-         struct terakan_bo const * constants_bo;
-         uint32_t constants_va_lines;
-         uint32_t * const constants = terakan_push_buffer_allocate_kcache(
-            command_writer->base.command_buffer,
-            sizeof(uint32_t) * TERAKAN_META_COPY_EXPAND_3X_CONSTS_COUNT, &constants_bo,
-            &constants_va_lines);
-         if (unlikely(constants == NULL)) {
-            return;
-         }
-         constants[TERAKAN_META_COPY_EXPAND_3X_CONST_SRC_PITCH] = src_y_pitch_surfels;
+      if (constants[TERAKAN_META_COPY_EXPAND_3X_CONST_SRC_PITCH] !=
+             (uint32_t)buffer_y_pitch_surfels ||
+          constants[TERAKAN_META_COPY_EXPAND_3X_CONST_DST_PITCH] !=
+             surface_level->aligned_extent_surfels[0] ||
+          constants[TERAKAN_META_COPY_EXPAND_3X_CONST_DST_OFFSET] != image_texel_offset_surfels) {
+         constants_set = false;
+         constants[TERAKAN_META_COPY_EXPAND_3X_CONST_SRC_PITCH] = (uint32_t)buffer_y_pitch_surfels;
          constants[TERAKAN_META_COPY_EXPAND_3X_CONST_DST_PITCH] =
-            dst_surface_level->aligned_extent_surfels[0];
-         constants[TERAKAN_META_COPY_EXPAND_3X_CONST_DST_OFFSET] = dst_offset_surfels;
-         terakan_hw_state_sqc_set_kcache_fs(
-            &command_writer->hw_state_sqc, TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS,
-            DIV_ROUND_UP(sizeof(uint32_t) * TERAKAN_META_COPY_EXPAND_3X_CONSTS_COUNT,
-                         TERAKAN_KCACHE_HW_LINE_BYTES),
-            constants_bo, constants_va_lines);
+            surface_level->aligned_extent_surfels[0];
+         constants[TERAKAN_META_COPY_EXPAND_3X_CONST_DST_OFFSET] = image_texel_offset_surfels;
+      }
+      if (!constants_set) {
+         terakan_meta_config_draw_set_kcache_push_constants(command_writer, sizeof(constants),
+                                                            constants, false, true);
+         constants_set = true;
+      }
 
-         src_resource[0] = (uint32_t)src_va;
-         src_resource[2] =
-            (src_resource[2] & C_030008_BASE_ADDRESS_HI) | S_030008_BASE_ADDRESS_HI(src_va >> 32);
-         terakan_hw_state_sqc_set_resource_fs(&command_writer->hw_state_sqc,
-                                              TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META,
-                                              src_buffer->bo, src_resource);
+      struct terakan_screen_rect const region_extent_rect = {
+         .bounds = {
+            [1] = {region_image.rect_blocks.bounds[1][0] - region_image.rect_blocks.bounds[0][0],
+                   region_image.rect_blocks.bounds[1][1] - region_image.rect_blocks.bounds[0][1]}}};
 
-         VkRect2D const rect = {
-            .extent =
-               {
-                  .width = region->imageExtent.width,
-                  .height = region->imageExtent.height,
-               },
-         };
-         terakan_meta_emit_rect_3_vertices_draw(command_writer, &rect, 1);
+      for (uint32_t subresource_range_slice = 0;
+           subresource_range_slice <
+           region_image.image_descriptor_create_info.subresource_range.max_depth_or_layer_count;
+           ++subresource_range_slice) {
+         if (unlikely(buffer_offset >= buffer->vk.size)) {
+            /* #MemoryIntegrity. */
+            break;
+         }
 
-         src_va += src_z_pitch_bytes;
-         dst_offset_surfels += dst_z_pitch_surfels;
+         terakan_meta_config_draw_set_cb_uav(command_writer, 0, image->bo, &image_descriptor);
+
+         uint64_t const buffer_descriptor_base = buffer->va + buffer_offset;
+         buffer_descriptor.resource[0] = (uint32_t)buffer_descriptor_base;
+         buffer_descriptor.resource[2] =
+            (buffer_descriptor.resource[2] & C_030008_BASE_ADDRESS_HI) |
+            S_030008_BASE_ADDRESS_HI(buffer_descriptor_base >> 32);
+         buffer_descriptor.resource[1] =
+            (uint32_t)MIN2(buffer_descriptor.resource[1], buffer->vk.size - buffer->va - 1u);
+         terakan_hw_config_sqk_set_resource_fs(
+            &command_writer->hw_config_sqk, TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META,
+            buffer->bo, &buffer_descriptor);
+
+         terakan_meta_draw_rect(command_writer, region_extent_rect, 1);
+
+         image_descriptor.base += surface_level->slice_size_bytes_shr8;
+         buffer_offset += buffer_z_pitch_bytes;
       }
    }
 }
@@ -514,123 +495,135 @@ terakan_meta_copy_expand_3x_image_to_buffer(
 {
    terakan_meta_copy_expand_3x_begin(command_writer);
 
-   struct terakan_image const * const src_image =
-      terakan_image_from_handle(copy_image_to_buffer_info->srcImage);
-   struct terakan_buffer const * const dst_buffer =
-      terakan_buffer_from_handle(copy_image_to_buffer_info->dstBuffer);
-
-   unsigned const bytes_per_surfel = src_image->surface.aspects[0].bytes_per_block / 3;
-
-   uint32_t src_resource[8];
-   terakan_meta_transfer_expand_3x_resource(bytes_per_surfel, src_resource);
-
-   unsigned const tile_pipe_interleave_bytes_log2 =
+   uint8_t const pipe_interleave_bytes_log2 =
       terakan_gfx_command_writer_physical_device(command_writer)
          ->tiling_info.pipe_interleave_bytes_log2;
 
-   struct terakan_color_descriptor dst_uav =
-      terakan_meta_transfer_expand_3x_uav(bytes_per_surfel, tile_pipe_interleave_bytes_log2);
+   struct terakan_buffer const * const buffer =
+      terakan_buffer_from_handle(copy_image_to_buffer_info->dstBuffer);
+   struct terakan_image const * const image =
+      terakan_image_from_handle(copy_image_to_buffer_info->srcImage);
+
+   unsigned const bytes_per_block = image->surface.aspects[0].bytes_per_block;
+   unsigned const bytes_per_surfel = bytes_per_block / 3u;
+   /* The buffer descriptor base is the rectangle origin aligned to the pipe interleave. */
+   struct terakan_color_descriptor buffer_descriptor =
+      terakan_meta_transfer_expand_3x_uav(bytes_per_surfel);
+   /* The image descriptor base is the rectangle origin. */
+   struct terakan_resource_descriptor image_descriptor =
+      terakan_meta_transfer_expand_3x_resource(bytes_per_surfel);
 
    uint32_t constants[TERAKAN_META_COPY_EXPAND_3X_CONSTS_COUNT] = {};
-   struct terakan_bo const * constants_bo = NULL;
-   uint32_t constants_va_lines;
+   bool constants_set = false;
 
    for (uint32_t region_index = 0; region_index < copy_image_to_buffer_info->regionCount;
         ++region_index) {
       VkBufferImageCopy2 const * const region = &copy_image_to_buffer_info->pRegions[region_index];
 
-      uint32_t base_layer, layer_count;
-      if (src_image->vk.image_type == VK_IMAGE_TYPE_3D) {
-         base_layer = (uint32_t)region->imageOffset.z;
-         layer_count = region->imageExtent.depth;
-      } else {
-         base_layer = region->imageSubresource.baseArrayLayer;
-         layer_count = vk_image_subresource_layer_count(&src_image->vk, &region->imageSubresource);
+      struct terakan_meta_copy_buffer_image_region_image region_image;
+      if (unlikely(!terakan_meta_copy_buffer_image_translate_region_image(image, region,
+                                                                          &region_image))) {
+         continue;
       }
+      uint64_t const buffer_y_pitch_surfels = (uint64_t)3u * region_image.buffer_y_pitch_blocks;
+      uint64_t const buffer_z_pitch_bytes = bytes_per_block * region_image.buffer_z_pitch_blocks;
+      uint64_t buffer_offset = region->bufferOffset;
 
-      struct terakan_image_surface_level const * const src_surface_level =
-         &src_image->surface.aspects[0].levels[region->imageSubresource.mipLevel];
-      VkDeviceSize const src_z_pitch_bytes = (VkDeviceSize)src_surface_level->slice_size_bytes_shr8
-                                             << 8;
-      uint32_t const src_rect_extent_surfels =
-         src_surface_level->aligned_extent_surfels[0] * (region->imageExtent.height - 1) +
-         3 * region->imageExtent.width;
-      src_resource[1] = bytes_per_surfel * src_rect_extent_surfels - 1;
-      src_resource[4] = src_rect_extent_surfels;
-      uint64_t src_va =
-         src_image->va + ((VkDeviceSize)src_surface_level->offset_in_memory_bytes_shr8 << 8) +
-         src_z_pitch_bytes * base_layer +
-         bytes_per_surfel * (VkDeviceSize)(src_surface_level->aligned_extent_surfels[0] *
-                                              (uint32_t)region->imageOffset.y +
-                                           3 * (uint32_t)region->imageOffset.x);
+      uint64_t const buffer_slice_extent_surfels_minus_1 =
+         3u *
+            terakan_meta_copy_buffer_image_region_image_buffer_slice_extent_blocks(&region_image) -
+         1u;
 
-      uint32_t const dst_y_pitch_surfels =
-         3 * (region->bufferRowLength != 0 ? region->bufferRowLength : region->imageExtent.width);
-      VkDeviceSize const dst_z_pitch_bytes =
-         bytes_per_surfel * (VkDeviceSize)dst_y_pitch_surfels *
-         (region->bufferImageHeight != 0 ? region->bufferImageHeight : region->imageExtent.height);
-      VkDeviceSize const dst_rect_extent_surfels =
-         (VkDeviceSize)dst_y_pitch_surfels * (region->imageExtent.height - 1) +
-         3 * region->imageExtent.width;
-      uint64_t dst_va = dst_buffer->va + region->bufferOffset;
+      struct terakan_screen_rect const region_extent_rect = {
+         .bounds = {
+            [1] = {region_image.rect_blocks.bounds[1][0] - region_image.rect_blocks.bounds[0][0],
+                   region_image.rect_blocks.bounds[1][1] - region_image.rect_blocks.bounds[0][1]}}};
+
+      struct terakan_image_surface_level const * const surface_level =
+         &image->surface.aspects[region_image.image_descriptor_create_info.image_aspect_index]
+             .levels[region_image.image_descriptor_create_info.subresource_range.base_mip_level];
+
+      uint32_t const image_y_pitch_bytes =
+         bytes_per_surfel * (uint32_t)surface_level->aligned_extent_surfels[0];
+      uint64_t image_descriptor_base =
+         image->va +
+         ((uint64_t)(surface_level->offset_in_memory_bytes_shr8 +
+                     surface_level->slice_size_bytes_shr8 *
+                        region_image.image_descriptor_create_info.subresource_range
+                           .base_z_or_array_layer)
+          << 8) +
+         (image_y_pitch_bytes * region_image.rect_blocks.bounds[0][1] +
+          bytes_per_block * (uint32_t)region_image.rect_blocks.bounds[0][0]);
+      image_descriptor.resource[1] = bytes_per_block * (uint32_t)region_extent_rect.bounds[1][0] -
+                                     1u +
+                                     image_y_pitch_bytes * (region_extent_rect.bounds[1][1] - 1u);
 
       if (constants[TERAKAN_META_COPY_EXPAND_3X_CONST_SRC_PITCH] !=
-             src_surface_level->aligned_extent_surfels[0] ||
-          constants[TERAKAN_META_COPY_EXPAND_3X_CONST_DST_PITCH] != dst_y_pitch_surfels) {
-         constants_bo = NULL;
+             surface_level->aligned_extent_surfels[0] ||
+          constants[TERAKAN_META_COPY_EXPAND_3X_CONST_DST_PITCH] !=
+             (uint32_t)buffer_y_pitch_surfels) {
+         constants_set = false;
          constants[TERAKAN_META_COPY_EXPAND_3X_CONST_SRC_PITCH] =
-            src_surface_level->aligned_extent_surfels[0];
-         constants[TERAKAN_META_COPY_EXPAND_3X_CONST_DST_PITCH] = dst_y_pitch_surfels;
+            surface_level->aligned_extent_surfels[0];
+         constants[TERAKAN_META_COPY_EXPAND_3X_CONST_DST_PITCH] = (uint32_t)buffer_y_pitch_surfels;
       }
 
-      for (uint32_t layer_index = 0; layer_index < layer_count; ++layer_index) {
-         uint64_t const dst_va_aligned = dst_va >> tile_pipe_interleave_bytes_log2
-                                                      << tile_pipe_interleave_bytes_log2;
-         uint32_t const dst_offset_surfels =
-            (uint32_t)((dst_va - dst_va_aligned) / bytes_per_surfel);
+      for (uint32_t subresource_range_slice = 0;
+           subresource_range_slice <
+           region_image.image_descriptor_create_info.subresource_range.max_depth_or_layer_count;
+           ++subresource_range_slice) {
+         if (unlikely(buffer_offset >= buffer->vk.size)) {
+            /* #MemoryIntegrity: Prevent a large offset from causing an integer wraparound. */
+            break;
+         }
+         uint64_t const buffer_va_surfel_aligned_non_uav_aligned =
+            (buffer->va + buffer_offset) & ~(uint64_t)(bytes_per_surfel - 1);
+         /* #MemoryIntegrity. */
+         uint64_t const buffer_object_end_va_surfel_aligned =
+            (buffer->va + buffer->vk.size) & ~(uint64_t)(bytes_per_surfel - 1);
+         if (unlikely(buffer_va_surfel_aligned_non_uav_aligned >=
+                      buffer_object_end_va_surfel_aligned)) {
+            /* Don't subtract 1 from 0. */
+            continue;
+         }
+         uint64_t const buffer_va_aligned =
+            buffer_va_surfel_aligned_non_uav_aligned >> pipe_interleave_bytes_log2
+                                                           << pipe_interleave_bytes_log2;
+         uint32_t const buffer_uav_alignment_offset_surfels =
+            (uint32_t)(buffer_va_surfel_aligned_non_uav_aligned - buffer_va_aligned) /
+            bytes_per_surfel;
+         uint32_t const buffer_max_surfels_minus_1 = (uint32_t)MIN2(
+            (buffer_object_end_va_surfel_aligned - buffer_va_aligned) / bytes_per_surfel - 1u,
+            UINT32_MAX);
+         buffer_descriptor.base = (uint32_t)(buffer_va_aligned >> 8);
+         buffer_descriptor.dim = (uint32_t)MIN2(
+            buffer_uav_alignment_offset_surfels + buffer_slice_extent_surfels_minus_1,
+            buffer_max_surfels_minus_1);
+         terakan_meta_config_draw_set_cb_uav(command_writer, 0, buffer->bo, &buffer_descriptor);
 
-         if (constants[TERAKAN_META_COPY_EXPAND_3X_CONST_DST_OFFSET] != dst_offset_surfels) {
-            constants_bo = NULL;
-            constants[TERAKAN_META_COPY_EXPAND_3X_CONST_DST_OFFSET] = dst_offset_surfels;
+         image_descriptor.resource[0] = (uint32_t)image_descriptor_base;
+         image_descriptor.resource[2] = (image_descriptor.resource[2] & C_030008_BASE_ADDRESS_HI) |
+                                        S_030008_BASE_ADDRESS_HI(image_descriptor_base >> 32);
+         terakan_hw_config_sqk_set_resource_fs(
+            &command_writer->hw_config_sqk, TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META,
+            image->bo, &image_descriptor);
+
+         if (constants[TERAKAN_META_COPY_EXPAND_3X_CONST_DST_OFFSET] !=
+             buffer_uav_alignment_offset_surfels) {
+            constants_set = false;
+            constants[TERAKAN_META_COPY_EXPAND_3X_CONST_DST_OFFSET] =
+               buffer_uav_alignment_offset_surfels;
+         }
+         if (!constants_set) {
+            terakan_meta_config_draw_set_kcache_push_constants(command_writer, sizeof(constants),
+                                                               constants, false, true);
+            constants_set = true;
          }
 
-         if (constants_bo == NULL) {
-            void * const constants_mapping = terakan_push_buffer_allocate_kcache(
-               command_writer->base.command_buffer, sizeof(constants), &constants_bo,
-               &constants_va_lines);
-            if (unlikely(constants_mapping == NULL)) {
-               return;
-            }
-            memcpy(constants_mapping, constants, sizeof(constants));
-            terakan_hw_state_sqc_set_kcache_fs(
-               &command_writer->hw_state_sqc, TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS,
-               DIV_ROUND_UP(sizeof(constants), TERAKAN_KCACHE_HW_LINE_BYTES), constants_bo,
-               constants_va_lines);
-         }
+         terakan_meta_draw_rect(command_writer, region_extent_rect, 1);
 
-         src_resource[0] = (uint32_t)src_va;
-         src_resource[2] =
-            (src_resource[2] & C_030008_BASE_ADDRESS_HI) | S_030008_BASE_ADDRESS_HI(src_va >> 32);
-         terakan_hw_state_sqc_set_resource_fs(&command_writer->hw_state_sqc,
-                                              TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META,
-                                              src_image->bo, src_resource);
-
-         dst_uav.base = (uint32_t)(dst_va_aligned >> 8);
-         dst_uav.dim = (uint32_t)(dst_offset_surfels + dst_rect_extent_surfels - 1);
-         terakan_hw_state_draw_set_cb_color(&command_writer->hw_state_draw, 0, dst_buffer->bo,
-                                            &dst_uav, NULL, true);
-
-         VkRect2D const rect = {
-            .extent =
-               {
-                  .width = region->imageExtent.width,
-                  .height = region->imageExtent.height,
-               },
-         };
-         terakan_meta_emit_rect_3_vertices_draw(command_writer, &rect, 1);
-
-         src_va += src_z_pitch_bytes;
-         dst_va += dst_z_pitch_bytes;
+         image_descriptor_base += surface_level->slice_size_bytes_shr8 << 8;
+         buffer_offset += buffer_z_pitch_bytes;
       }
    }
 }
@@ -646,111 +639,162 @@ terakan_meta_copy_expand_3x_image(struct terakan_gfx_command_writer * const comm
    struct terakan_image const * const dst_image =
       terakan_image_from_handle(copy_image_info->dstImage);
 
-   unsigned const bytes_per_surfel = dst_image->surface.aspects[0].bytes_per_block / 3;
+   struct terakan_image_surface_aspect const * const src_surface_aspect =
+      &src_image->surface.aspects[0];
+   struct terakan_image_surface_aspect const * const dst_surface_aspect =
+      &dst_image->surface.aspects[0];
+   if (unlikely(!terakan_format_is_expand_3x(src_surface_aspect->bytes_per_block) ||
+                !terakan_format_is_expand_3x(dst_surface_aspect->bytes_per_block))) {
+      /* #MemoryIntegrity. */
+      return;
+   }
+   uint8_t const src_bytes_per_surfel = src_surface_aspect->bytes_per_block / 3u;
 
-   uint32_t src_resource[8];
-   terakan_meta_transfer_expand_3x_resource(bytes_per_surfel, src_resource);
+   struct terakan_image_descriptor_subresource_range src_subresource_range = {.max_level_count = 1};
+   struct terakan_image_descriptor_subresource_range dst_subresource_range = {.max_level_count = 1};
 
-   struct terakan_color_descriptor dst_uav = terakan_meta_transfer_expand_3x_uav(
-      bytes_per_surfel, terakan_gfx_command_writer_physical_device(command_writer)
-                           ->tiling_info.pipe_interleave_bytes_log2);
-   /* For simplicity and not to explicitly handle UAV alignment as image slices are always aligned,
-    * adjusting only the destination offset in the push constants. Assuming that images are never
-    * 2^32 surfels or larger.
-    */
-   VkDeviceSize const dst_aspect_size_surfels_minus_one =
-      ((VkDeviceSize)dst_image->surface.aspects[0].size_bytes_shr8 << 8) / bytes_per_surfel - 1;
-   assert(dst_aspect_size_surfels_minus_one <= UINT32_MAX);
-   dst_uav.base =
-      (uint32_t)(dst_image->va >> 8) + dst_image->surface.aspects[0].offset_in_memory_bytes_shr8;
-   dst_uav.dim = (uint32_t)dst_aspect_size_surfels_minus_one;
-   terakan_hw_state_draw_set_cb_color(&command_writer->hw_state_draw, 0, dst_image->bo, &dst_uav,
-                                      NULL, true);
+   /* The source descriptor base is the rectangle origin. */
+   struct terakan_resource_descriptor src_descriptor =
+      terakan_meta_transfer_expand_3x_resource(src_bytes_per_surfel);
+   /* The destination descriptor base is the slice origin. */
+   struct terakan_color_descriptor dst_descriptor =
+      terakan_meta_transfer_expand_3x_uav(dst_surface_aspect->bytes_per_block / 3u);
+
+   uint32_t constants[TERAKAN_META_COPY_EXPAND_3X_CONSTS_COUNT] = {};
+   bool constants_set = false;
 
    for (uint32_t region_index = 0; region_index < copy_image_info->regionCount; ++region_index) {
       VkImageCopy2 const * const region = &copy_image_info->pRegions[region_index];
 
-      uint32_t src_base_layer, layer_count;
+      /* Sanitize and handle `VK_REMAINING_*`. */
+
+      src_subresource_range.base_mip_level = region->srcSubresource.mipLevel;
       if (src_image->vk.image_type == VK_IMAGE_TYPE_3D) {
-         src_base_layer = (uint32_t)region->srcOffset.z;
-         layer_count = region->extent.depth;
+         src_subresource_range.base_z_or_array_layer = (uint32_t)region->srcOffset.z;
+         src_subresource_range.max_depth_or_layer_count = region->extent.depth;
       } else {
-         src_base_layer = region->srcSubresource.baseArrayLayer;
-         layer_count = vk_image_subresource_layer_count(&src_image->vk, &region->srcSubresource);
+         src_subresource_range.base_z_or_array_layer = region->srcSubresource.baseArrayLayer;
+         src_subresource_range.max_depth_or_layer_count = region->srcSubresource.layerCount;
       }
-      uint32_t const dst_base_layer = dst_image->vk.image_type == VK_IMAGE_TYPE_3D
-                                         ? (uint32_t)region->dstOffset.z
-                                         : region->dstSubresource.baseArrayLayer;
+      if (unlikely(!terakan_image_descriptor_subresource_range_sanitize(
+             src_image, &src_subresource_range, false))) {
+         continue;
+      }
 
+      dst_subresource_range.base_mip_level = region->dstSubresource.mipLevel;
+      if (dst_image->vk.image_type == VK_IMAGE_TYPE_3D) {
+         dst_subresource_range.base_z_or_array_layer = (uint32_t)region->dstOffset.z;
+         dst_subresource_range.max_depth_or_layer_count = region->extent.depth;
+      } else {
+         dst_subresource_range.base_z_or_array_layer = region->dstSubresource.baseArrayLayer;
+         dst_subresource_range.max_depth_or_layer_count = region->dstSubresource.layerCount;
+      }
+      if (unlikely(!terakan_image_descriptor_subresource_range_sanitize(
+             dst_image, &dst_subresource_range, false))) {
+         continue;
+      }
+
+      /* Sanitize the rectangles for #MemoryIntegrity, in particular to avoid incorrect addressing
+       * calculations.
+       * According to the valid usage rules, the source and destination rectangles must be contained
+       * within the respective image subresources. It's trivial to clip an invalid rectangle on the
+       * right and bottom. However, clipping to 0 on the left and top would require addressing
+       * adjustment, so reject the region if its offset is negative (the conversion to `uint32_t`
+       * will make it always exceed the width or height).
+       */
+      uint32_t const src_subresource_width =
+         u_minify(src_image->vk.extent.width, src_subresource_range.base_mip_level);
+      uint32_t const src_subresource_height =
+         u_minify(src_image->vk.extent.height, src_subresource_range.base_mip_level);
+      uint32_t const dst_subresource_width =
+         u_minify(dst_image->vk.extent.width, dst_subresource_range.base_mip_level);
+      uint32_t const dst_subresource_height =
+         u_minify(dst_image->vk.extent.height, dst_subresource_range.base_mip_level);
+      if (unlikely((uint32_t)region->srcOffset.x >= src_subresource_width ||
+                   (uint32_t)region->srcOffset.y >= src_subresource_height ||
+                   (uint32_t)region->dstOffset.x >= dst_subresource_width ||
+                   (uint32_t)region->dstOffset.y >= dst_subresource_height)) {
+         continue;
+      }
+      struct terakan_screen_rect region_extent_rect = {
+         .bounds = {[1] = {
+                       (uint16_t)MIN3(region->extent.width,
+                                      src_subresource_width - (uint32_t)region->srcOffset.x,
+                                      dst_subresource_width - (uint32_t)region->dstOffset.x),
+                       (uint16_t)MIN3(region->extent.height,
+                                      src_subresource_height - (uint32_t)region->srcOffset.y,
+                                      dst_subresource_height - (uint32_t)region->dstOffset.y),
+                    }}};
+      if (unlikely(region_extent_rect.bounds[1][0] == 0 || region_extent_rect.bounds[1][1] == 0)) {
+         /* #MemoryIntegrity: Avoid incorrect addressing calculations. */
+         continue;
+      }
+
+      assert(region->srcSubresource.aspectMask == VK_IMAGE_ASPECT_COLOR_BIT);
       struct terakan_image_surface_level const * const src_surface_level =
-         &src_image->surface.aspects[0].levels[region->srcSubresource.mipLevel];
-      uint32_t const src_rect_extent_surfels =
-         src_surface_level->aligned_extent_surfels[0] * (region->extent.height - 1) +
-         3 * region->extent.width;
-      src_resource[1] = bytes_per_surfel * src_rect_extent_surfels - 1;
-      src_resource[4] = src_rect_extent_surfels;
-      VkDeviceSize const src_z_pitch_bytes = (VkDeviceSize)src_surface_level->slice_size_bytes_shr8
-                                             << 8;
-      uint64_t src_va =
-         src_image->va + ((VkDeviceSize)src_surface_level->offset_in_memory_bytes_shr8 << 8) +
-         src_z_pitch_bytes * src_base_layer +
-         bytes_per_surfel * (VkDeviceSize)(src_surface_level->aligned_extent_surfels[0] *
-                                              (uint32_t)region->srcOffset.y +
-                                           3 * (uint32_t)region->srcOffset.x);
-
+         &src_surface_aspect->levels[src_subresource_range.base_mip_level];
+      assert(region->dstSubresource.aspectMask == VK_IMAGE_ASPECT_COLOR_BIT);
       struct terakan_image_surface_level const * const dst_surface_level =
-         &dst_image->surface.aspects[0].levels[region->dstSubresource.mipLevel];
-      uint32_t const dst_z_pitch_surfels =
-         ((VkDeviceSize)dst_surface_level->slice_size_bytes_shr8 << 8) / bytes_per_surfel;
-      uint32_t dst_offset_surfels =
-         (uint32_t)(((VkDeviceSize)(dst_surface_level->offset_in_memory_bytes_shr8 -
-                                    dst_image->surface.aspects[0].offset_in_memory_bytes_shr8)
-                     << 8) /
-                    bytes_per_surfel) +
-         dst_z_pitch_surfels * dst_base_layer +
-         (dst_surface_level->aligned_extent_surfels[0] * (uint32_t)region->dstOffset.y +
-          3 * (uint32_t)region->dstOffset.x);
+         &dst_surface_aspect->levels[dst_subresource_range.base_mip_level];
 
-      for (uint32_t layer_index = 0; layer_index < layer_count; ++layer_index) {
-         /* Constants are always changed because the destination offset is. */
-         struct terakan_bo const * constants_bo;
-         uint32_t constants_va_lines;
-         uint32_t * const constants = terakan_push_buffer_allocate_kcache(
-            command_writer->base.command_buffer,
-            sizeof(uint32_t) * TERAKAN_META_COPY_EXPAND_3X_CONSTS_COUNT, &constants_bo,
-            &constants_va_lines);
-         if (unlikely(constants == NULL)) {
-            return;
-         }
+      uint32_t const src_y_pitch_bytes =
+         src_bytes_per_surfel * (uint32_t)src_surface_level->aligned_extent_surfels[0];
+      uint64_t src_descriptor_base =
+         src_image->va +
+         ((uint64_t)(src_surface_level->offset_in_memory_bytes_shr8 +
+                     src_surface_level->slice_size_bytes_shr8 *
+                        src_subresource_range.base_z_or_array_layer)
+          << 8) +
+         (src_y_pitch_bytes * (uint32_t)region->srcOffset.y +
+          src_surface_aspect->bytes_per_block * (uint32_t)region->srcOffset.x);
+      src_descriptor.resource[1] =
+         src_surface_aspect->bytes_per_block * (uint32_t)region_extent_rect.bounds[1][0] - 1u +
+         src_y_pitch_bytes * (region_extent_rect.bounds[1][1] - 1u);
+
+      dst_descriptor.base =
+         (dst_image->va >> 8) + dst_surface_level->offset_in_memory_bytes_shr8 +
+         dst_surface_level->slice_size_bytes_shr8 * dst_subresource_range.base_z_or_array_layer;
+      dst_descriptor.dim = ((uint32_t)dst_surface_level->aligned_extent_surfels[0] *
+                            dst_surface_level->aligned_extent_surfels[1]) -
+                           1u;
+
+      uint32_t const dst_texel_offset_surfels =
+         3u * (uint32_t)region->dstOffset.x +
+         dst_surface_level->aligned_extent_surfels[0] * (uint32_t)region->dstOffset.y;
+      if (constants[TERAKAN_META_COPY_EXPAND_3X_CONST_SRC_PITCH] !=
+             src_surface_level->aligned_extent_surfels[0] ||
+          constants[TERAKAN_META_COPY_EXPAND_3X_CONST_DST_PITCH] !=
+             dst_surface_level->aligned_extent_surfels[0] ||
+          constants[TERAKAN_META_COPY_EXPAND_3X_CONST_DST_OFFSET] != dst_texel_offset_surfels) {
+         constants_set = false;
          constants[TERAKAN_META_COPY_EXPAND_3X_CONST_SRC_PITCH] =
             src_surface_level->aligned_extent_surfels[0];
          constants[TERAKAN_META_COPY_EXPAND_3X_CONST_DST_PITCH] =
             dst_surface_level->aligned_extent_surfels[0];
-         constants[TERAKAN_META_COPY_EXPAND_3X_CONST_DST_OFFSET] = dst_offset_surfels;
-         terakan_hw_state_sqc_set_kcache_fs(
-            &command_writer->hw_state_sqc, TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS,
-            DIV_ROUND_UP(sizeof(uint32_t) * TERAKAN_META_COPY_EXPAND_3X_CONSTS_COUNT,
-                         TERAKAN_KCACHE_HW_LINE_BYTES),
-            constants_bo, constants_va_lines);
+         constants[TERAKAN_META_COPY_EXPAND_3X_CONST_DST_OFFSET] = dst_texel_offset_surfels;
+      }
+      if (!constants_set) {
+         terakan_meta_config_draw_set_kcache_push_constants(command_writer, sizeof(constants),
+                                                            constants, false, true);
+         constants_set = true;
+      }
 
-         src_resource[0] = (uint32_t)src_va;
-         src_resource[2] =
-            (src_resource[2] & C_030008_BASE_ADDRESS_HI) | S_030008_BASE_ADDRESS_HI(src_va >> 32);
-         terakan_hw_state_sqc_set_resource_fs(&command_writer->hw_state_sqc,
-                                              TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META,
-                                              src_image->bo, src_resource);
+      uint32_t const region_slice_count = MIN2(src_subresource_range.max_depth_or_layer_count,
+                                               dst_subresource_range.max_depth_or_layer_count);
+      for (uint32_t region_slice = 0; region_slice < region_slice_count; ++region_slice) {
+         src_descriptor.resource[0] = (uint32_t)src_descriptor_base;
+         src_descriptor.resource[2] = (src_descriptor.resource[2] & C_030008_BASE_ADDRESS_HI) |
+                                      S_030008_BASE_ADDRESS_HI(src_descriptor_base >> 32);
+         terakan_hw_config_sqk_set_resource_fs(
+            &command_writer->hw_config_sqk, TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META,
+            src_image->bo, &src_descriptor);
 
-         VkRect2D const rect = {
-            .extent =
-               {
-                  .width = region->extent.width,
-                  .height = region->extent.height,
-               },
-         };
-         terakan_meta_emit_rect_3_vertices_draw(command_writer, &rect, 1);
+         terakan_meta_config_draw_set_cb_uav(command_writer, 0, dst_image->bo, &dst_descriptor);
 
-         src_va += src_z_pitch_bytes;
-         dst_offset_surfels += dst_z_pitch_surfels;
+         terakan_meta_draw_rect(command_writer, region_extent_rect, 1);
+
+         src_descriptor_base += src_surface_level->slice_size_bytes_shr8 << 8;
+         dst_descriptor.base += dst_surface_level->slice_size_bytes_shr8;
       }
    }
 }

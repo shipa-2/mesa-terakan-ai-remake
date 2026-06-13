@@ -29,12 +29,13 @@
 
 #include "terakan_descriptor.h"
 #include "terakan_entrypoints.h"
-#include "terakan_hw_state.h"
+#include "terakan_hw_config_draw.h"
 #include "terakan_image.h"
 #include "terakan_instance.h"
 #include "terakan_limits.h"
 #include "terakan_push_constants.h"
 #include "terakan_vertex_input.h"
+#include "terakan_vk_state.h"
 #include "terakan_wsi.h"
 
 #include "compiler/shader_enums.h"
@@ -309,11 +310,29 @@ terakan_physical_device_chip_info_init(
       chip_info_out->wave_lanes_log2 = 6;
    }
 
+   /* For simplicity, don't track `NUM_PS_THREADS` changes - as of this writing, it's set to the
+    * same value regardless of which pre-rasterization shader stages are used, but use the largest
+    * out of the used options to avoid an implicit dependency on this.
+    * R9xx doesn't have `SQ_THREAD_RESOURCE_MGMT`, use the maximum possible thread block count.
+    * All R6xx+ TeraScale GPUs have at least 16-lane wavefronts, so it's safe to assume that the
+    * scratch ring buffer size is a multiple of 256 bytes if the wavefront count is a multiple of 8.
+    */
+   chip_info_out->sq_pstmp_ring_bytes_per_item_dword_shr8 =
+      (chip_info_out->is_r9xx
+          ? 256
+          : MAX4(
+               G_008C18_NUM_PS_THREADS(chip_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[0][0][0]),
+               G_008C18_NUM_PS_THREADS(chip_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[0][1][0]),
+               G_008C18_NUM_PS_THREADS(chip_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[1][0][0]),
+               G_008C18_NUM_PS_THREADS(chip_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[1][1][0])))
+         << (2 + chip_info_out->wave_lanes_log2) >>
+      8;
+
    /* A compute shader may occupy all the available threads. */
    /* TODO(Triang3l): See how MBCNT behaves on wave32 chips and possibly scale the wave ID by 32
     * there.
     */
-   chip_info_out->uav_immediate_size_texels =
+   chip_info_out->uav_immediate_size_elements =
       chip_info_out->sq_max_threads_shr3
       << (3 + 6 + (unsigned)chip_info_out->two_shader_engines_max);
 
@@ -366,7 +385,7 @@ terakan_physical_device_get_capabilities(
 
    /* Vulkan 1.0. */
 
-   /* Buffer resource bounds checking hardware behavior according to testing on Barts:
+   /* Buffer resource bounds checking behavior on pre-R9xx hardware according to testing on Barts:
     *
     * For element sizes within 4 bytes, the entire element size must be in bounds for the data to be
     * fetched. Otherwise, 0 is loaded into all channels.
@@ -408,6 +427,9 @@ terakan_physical_device_get_capabilities(
     * bytes that precede the base address. However, that doesn't permit reading from beyond the end
     * of the [unaligned base, unaligned base + size) range, as long as elements are up to 4 bytes
     * large.
+    *
+    * On R9xx, according to testing on Devastator, bounds checking is performed for the full element
+    * size, not just for up to the first 4 bytes.
     */
    features_out->robustBufferAccess = true;
 
@@ -533,7 +555,7 @@ terakan_physical_device_get_capabilities(
       TERAKAN_COLOR_HW_RTV_AND_UAV_COUNT - instance->max_per_stage_storage_buffers;
    properties_out->maxPerStageDescriptorInputAttachments =
       instance->max_per_stage_input_attachments;
-   properties_out->maxColorAttachments = TERAKAN_COLOR_HW_RTV_COUNT;
+   properties_out->maxColorAttachments = TERAKAN_VK_STATE_MAX_COLOR_ATTACHMENTS;
 
    properties_out->maxPerStageResources = properties_out->maxPerStageDescriptorUniformBuffers +
                                           properties_out->maxPerStageDescriptorStorageBuffers +
@@ -571,17 +593,14 @@ terakan_physical_device_get_capabilities(
                                             properties_out->maxDescriptorSetInputAttachments;
    properties_out->maxBoundDescriptorSets = max_per_set_descriptors;
 
-   properties_out->maxVertexInputAttributes = TERAKAN_VERTEX_INPUT_MAX_ATTRIBUTES;
-   properties_out->maxVertexInputBindings = TERAKAN_RESOURCE_HW_COUNT_FETCH;
+   properties_out->maxVertexInputAttributes = TERAKAN_VK_STATE_MAX_VERTEX_ATTRIBUTES;
+   properties_out->maxVertexInputBindings = TERAKAN_VK_STATE_MAX_VERTEX_BINDINGS;
    properties_out->maxVertexInputAttributeOffset = UINT16_MAX;
-   /* NON-CONFORMANT: R8xx has 11 bits for the stride in bytes, which can store values up to 2047.
-    * Vulkan requires at least 2048. R9xx has 12 bits.
+   /* R9xx expanded the buffer resource descriptor stride field from 11 to 12 bits, but prior to it,
+    * the mandatory 2048 stride value is implemented via the #2048StrideAs1024 fetch shader index
+    * fixup workaround.
     */
-   /* TODO(Triang3l): Expose 2048 on R8xx when the fetch shader workaround is fully implemented
-    * (when vertex shaders start loading the base instance to R0.Z when it's needed).
-    */
-   properties_out->maxVertexInputBindingStride =
-      ((uint32_t)1 << (chip_info->is_r9xx ? 12 : 11)) - 1;
+   properties_out->maxVertexInputBindingStride = chip_info->is_r9xx ? 0xFFF : 0x800;
 
    properties_out->maxVertexOutputComponents = 4 * TERAKAN_LIMITS_HW_PARAMETER_CACHE_VECTOR_COUNT;
 
@@ -591,7 +610,7 @@ terakan_physical_device_get_capabilities(
 
    properties_out->maxFragmentInputComponents = 4 * TERAKAN_LIMITS_HW_PARAMETER_CACHE_VECTOR_COUNT;
 
-   properties_out->maxFragmentOutputAttachments = TERAKAN_COLOR_HW_RTV_COUNT;
+   properties_out->maxFragmentOutputAttachments = TERAKAN_VK_STATE_MAX_COLOR_ATTACHMENTS;
    properties_out->maxFragmentDualSrcAttachments = 1;
    properties_out->maxFragmentCombinedOutputResources = TERAKAN_COLOR_UAV_COUNT_PIXEL;
 
@@ -617,11 +636,11 @@ terakan_physical_device_get_capabilities(
    properties_out->maxSamplerLodBias = 0x1.0p5f - 0x1.0p-8f;
    properties_out->maxSamplerAnisotropy = 0x1.0p4f;
 
-   properties_out->maxViewports = TERAKAN_HW_STATE_DRAW_MAX_VIEWPORTS;
+   properties_out->maxViewports = TERAKAN_HW_CONFIG_DRAW_PA_VPORT_COUNT;
    properties_out->maxViewportDimensions[0] = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT;
    properties_out->maxViewportDimensions[1] = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT;
-   properties_out->viewportBoundsRange[0] = (float)INT16_MIN;
-   properties_out->viewportBoundsRange[1] = (float)INT16_MAX;
+   properties_out->viewportBoundsRange[0] = TERAKAN_HW_CONFIG_DRAW_PA_CL_GB_MIN;
+   properties_out->viewportBoundsRange[1] = TERAKAN_HW_CONFIG_DRAW_PA_CL_GB_MAX;
    properties_out->viewportSubPixelBits = 8;
 
    properties_out->minMemoryMapAlignment = min_memory_map_alignment;
@@ -646,21 +665,30 @@ terakan_physical_device_get_capabilities(
    properties_out->maxFramebufferHeight = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT;
    properties_out->maxFramebufferLayers = TERAKAN_IMAGE_MAX_TARGET_SLICES;
 
-   VkSampleCountFlags const sample_counts =
+   VkSampleCountFlags const image_sample_counts =
       VK_SAMPLE_COUNT_1_BIT | VK_SAMPLE_COUNT_2_BIT | VK_SAMPLE_COUNT_4_BIT | VK_SAMPLE_COUNT_8_BIT;
-
-   properties_out->framebufferColorSampleCounts = sample_counts;
-   properties_out->framebufferDepthSampleCounts = sample_counts;
-   properties_out->framebufferStencilSampleCounts = sample_counts;
-   properties_out->framebufferNoAttachmentsSampleCounts = sample_counts;
+   VkSampleCountFlags rasterization_sample_counts = image_sample_counts;
    if (chip_info->is_r9xx) {
-      properties_out->framebufferNoAttachmentsSampleCounts |= VK_SAMPLE_COUNT_16_BIT;
+      /* TODO(Triang3l): Don't expose 16 samples on devices with only 1 render backend enabled in
+       * `GB_BACKEND_MAP` because it has been reported that Z pass queries are not counted
+       * correctly. On old versions of DRM Radeon 2.50.0, however, `GB_BACKEND_MAP` reported by the
+       * `ioctl` is not filled, and 0 is given to the application instead, and the fix didn't raise
+       * the version number. Don't bother submitting a command buffer with a Z pass query to get the
+       * actual enabled render backends in VkPhysicalDevice initialization on such old kernel
+       * versions, just don't expose 16 samples similar to how they aren't available on Scrapper.
+       */
+      rasterization_sample_counts |= VK_SAMPLE_COUNT_16_BIT;
    }
 
-   properties_out->sampledImageColorSampleCounts = sample_counts;
-   properties_out->sampledImageIntegerSampleCounts = sample_counts;
-   properties_out->sampledImageDepthSampleCounts = sample_counts;
-   properties_out->sampledImageStencilSampleCounts = sample_counts;
+   properties_out->framebufferColorSampleCounts = image_sample_counts;
+   properties_out->framebufferDepthSampleCounts = image_sample_counts;
+   properties_out->framebufferStencilSampleCounts = image_sample_counts;
+   properties_out->framebufferNoAttachmentsSampleCounts = rasterization_sample_counts;
+
+   properties_out->sampledImageColorSampleCounts = image_sample_counts;
+   properties_out->sampledImageIntegerSampleCounts = image_sample_counts;
+   properties_out->sampledImageDepthSampleCounts = image_sample_counts;
+   properties_out->sampledImageStencilSampleCounts = image_sample_counts;
 
    properties_out->storageImageSampleCounts = VK_SAMPLE_COUNT_1_BIT;
 
@@ -713,6 +741,15 @@ terakan_physical_device_get_capabilities(
 
    /* VK_KHR_dedicated_allocation (#128, Vulkan 1.1). */
    extensions_out->KHR_dedicated_allocation = true;
+
+   /* VK_EXT_sample_locations (#144). */
+   extensions_out->EXT_sample_locations = true;
+   properties_out->sampleLocationSampleCounts = rasterization_sample_counts;
+   properties_out->maxSampleLocationGridSize = (VkExtent2D){2, 2};
+   properties_out->sampleLocationCoordinateRange[0] = 0.0f;
+   properties_out->sampleLocationCoordinateRange[1] = 1.0f - 0x1.0p-4f;
+   properties_out->sampleLocationSubPixelBits = 4;
+   properties_out->variableSampleLocations = VK_TRUE;
 
    /* VK_KHR_bind_memory2 (#158, Vulkan 1.1). */
    extensions_out->KHR_bind_memory2 = true;
@@ -998,6 +1035,18 @@ terakan_GetPhysicalDeviceQueueFamilyProperties2(
    terakan_physical_device_get_queue_family_properties(device, pQueueFamilyPropertyCount,
                                                        properties);
    assert(*pQueueFamilyPropertyCount <= ARRAY_SIZE(properties));
+}
+
+VKAPI_ATTR void VKAPI_CALL
+terakan_GetPhysicalDeviceMultisamplePropertiesEXT(
+   VkPhysicalDevice const physicalDevice, VkSampleCountFlagBits const samples,
+   VkMultisamplePropertiesEXT * const pMultisampleProperties)
+{
+   pMultisampleProperties->maxSampleLocationGridSize =
+      samples & terakan_physical_device_from_handle(physicalDevice)
+                   ->vk.properties.sampleLocationSampleCounts
+         ? (VkExtent2D){2, 2}
+         : (VkExtent2D){};
 }
 
 void

@@ -27,6 +27,7 @@
 #include "terakan_bo.h"
 #include "terakan_descriptor.h"
 #include "terakan_format.h"
+#include "terakan_screen_rect.h"
 
 #include "gallium/drivers/r600/evergreend.h"
 #include "util/bitscan.h"
@@ -44,6 +45,9 @@
 extern "C" {
 #endif
 
+struct terakan_screen_rect terakan_vk_rect_to_screen_rect(VkRect2D rect,
+                                                          struct terakan_screen_rect clip_rect);
+
 #define TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_LOG2 14
 #define TERAKAN_IMAGE_MAX_WIDTH_HEIGHT      (1 << TERAKAN_IMAGE_MAX_WIDTH_HEIGHT_LOG2)
 /* Maximum depth or array layer count supported by TC. */
@@ -56,6 +60,22 @@ extern "C" {
  */
 #define TERAKAN_IMAGE_MAX_TARGET_SLICES_LOG2 11
 #define TERAKAN_IMAGE_MAX_TARGET_SLICES      (1 << TERAKAN_IMAGE_MAX_TARGET_SLICES_LOG2)
+
+/* Returns -1 for an invalid sample count. */
+static inline int
+terakan_image_vk_sample_count_to_hw_log2(VkSampleCountFlagBits const sample_count,
+                                         bool const allow_16_samples)
+{
+   int const sample_count_log2 = ffs((uint32_t)sample_count) - 1;
+   /* #MemoryIntegrity: Don't allow too large sample counts because they're used in hardware
+    * fixed-function state registers and in addressing in various places on both the GPU and the
+    * CPU.
+    */
+   if (unlikely(sample_count_log2 < 0 || sample_count_log2 > (allow_16_samples ? 4 : 3))) {
+      return -1;
+   }
+   return sample_count_log2;
+}
 
 struct terakan_image_surface_level {
    uint32_t offset_in_memory_bytes_shr8;
@@ -136,6 +156,16 @@ struct terakan_image {
 
 VK_DEFINE_NONDISP_HANDLE_CASTS(terakan_image, vk.base, VkImage, VK_OBJECT_TYPE_IMAGE)
 
+static inline uint32_t
+terakan_image_depth_or_array_layers(struct terakan_image const * const image,
+                                    uint32_t const mip_level)
+{
+   if (image->vk.image_type == VK_IMAGE_TYPE_3D) {
+      return u_minify(image->vk.extent.depth, mip_level);
+   }
+   return image->vk.array_layers;
+}
+
 static inline bool
 terakan_image_is_big_endian(UNUSED struct terakan_image const * const image)
 {
@@ -152,47 +182,112 @@ terakan_image_is_big_endian(UNUSED struct terakan_image const * const image)
 #endif
 }
 
-struct terakan_image_descriptor_create_info {
-   struct terakan_image const * image;
-   VkImageViewType view_type;
-   struct terascale_format_info view_format;
-   bool force_little_endian;
-   unsigned image_aspect_index;
+struct terakan_image_descriptor_subresource_range {
    uint32_t base_mip_level;
-   /* Can be VK_REMAINING_MIP_LEVELS. */
-   uint32_t level_count;
-   uint32_t base_array_layer;
-   /* Can be VK_REMAINING_ARRAY_LAYERS. */
-   uint32_t layer_count;
+   /* Before sanitization, the upper bound of the mip level range can exceed the mip level count
+    * (including being `UINT32_MAX`, which is `VK_REMAINING_MIP_LEVELS`), in which case it will be
+    * silently clamped by sanitization.
+    */
+   uint32_t max_level_count;
+   uint32_t base_z_or_array_layer;
+   /* Before sanitization, the upper bound of the layer range can exceed the mip level layer count
+    * (including being `UINT32_MAX`, which is `VK_REMAINING_ARRAY_LAYERS`), in which case it will be
+    * silently clamped by sanitization.
+    */
+   uint32_t max_depth_or_layer_count;
 };
 
-/* For transfer purposes, cross-aspect reinterpretation is allowed,
- * VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT and VK_IMAGE_CREATE_BLOCK_TEXEL_VIEW_COMPATIBLE_BIT are
- * assumed to be always enabled for all images they're applicable to, and 2D array views of multiple
- * layers of 3D images are supported.
+/* Normalizes the subresource range, so that the ranges are clamped (including handling
+ * `VK_REMAINING_*`, which is treated as `UINT32_MAX` maximum counts, by clamping), and returns
+ * whether the subresource range can be passed safely further to descriptor creation functions
+ * (including whether the subresource range isn't empty).
+ * This includes #MemoryIntegrity sanitization.
+ * If false is returned, the subresource range is unchanged.
+ */
+bool terakan_image_descriptor_subresource_range_sanitize(
+   struct terakan_image const * image,
+   struct terakan_image_descriptor_subresource_range * subresource_range, bool is_cube_view);
+
+/* Before creating descriptors, the subresource range in the create info must be sanitized and
+ * normalized using `terakan_image_descriptor_subresource_range_sanitize`.
+ */
+struct terakan_image_descriptor_create_info {
+   struct terakan_image const * image;
+   struct terascale_format_info view_format;
+   unsigned image_aspect_index;
+   struct terakan_image_descriptor_subresource_range subresource_range;
+};
+
+/* Returns whether the descriptor was created successfully (if false, the destination structure is
+ * not filled).
+ *
+ * Behaves as if `VK_IMAGE_CREATE_BLOCK_TEXEL_VIEW_COMPATIBLE_BIT` and
+ * `VK_IMAGE_CREATE_2D_VIEW_COMPATIBLE_BIT` are always enabled for all images they're applicable to.
+ *
+ * 1D views may be implicitly promoted to 2D if necessary (such as for images that can be used as
+ * depth / stencil attachments, which must be tiled for DB access, but 1D textures must be linear),
+ * so 1D textures must be sampled at V = 0.5 (with unnormalized coordinates, it's the center of the
+ * first row, and with normalized, it's also the center of the first row if the image is 1 texel
+ * tall).
+ *
+ * Dimensionality reinterpretation for single-sample images is allowed in many cases, see the
+ * implementation for more details. Specifically for transfer implementation purposes, a
+ * single-level `2D_ARRAY` resource descriptor can be created for any single-sample image (for 3D,
+ * this is similar to what `VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT` allows for color attachments).
+ * Also, for transfers, cross-aspect reinterpretation is allowed.
+ *
+ * If `component_mapping_opt` is NULL, an identity component mapping will be used.
+ *
+ * `terakan_image_descriptor_subresource_range_sanitize` must be done before calling.
+ */
+/* TODO(Triang3l): Decide how to implement `VK_EXT_image_sliced_view_of_3d`. The slice range must be
+ * ignored for sampled images, but respected for storage images. Take read-only no-UAV (like in
+ * vertex stages) storage image reads into account, as well as size queries, and if mutable
+ * descriptor type makes supporting it more complicated.
  */
 bool terakan_image_create_resource_descriptor(
    struct terakan_image_descriptor_create_info const * descriptor_create_info,
-   VkComponentMapping const * component_mapping, uint32_t descriptor_out[8]);
+   uint32_t desired_dimensionality, VkComponentMapping const * component_mapping_opt,
+   struct terakan_resource_descriptor * descriptor_out);
 
-/* Returns the number of array layers accessible through the descriptor as color descriptors support
- * fewer layers than texture resource descriptors.
+/* Returns the number of Z slices or array layers accessible through the descriptor as color
+ * descriptors support fewer layers than texture resource descriptors, or 0 if a valid color
+ * descriptor can't be created given the provided info (the destination structures are not filled in
+ * this case).
  *
- * Meta draws like copying can access all layers of the image by adding the result of this function
- * to baseArrayLayer, creating a new color descriptor, and performing the draw again for the next
- * subset of layers.
+ * Size-compatible uncompressed views of compressed images, and 2D and 2D array views of 3D images,
+ * are allowed regardless of whether that was requested in the client API. 1D images also can be
+ * viewed as 2D.
  *
- * For transfer purposes, cross-aspect reinterpretation is allowed, and
- * VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT and VK_IMAGE_CREATE_BLOCK_TEXEL_VIEW_COMPATIBLE_BIT are
- * assumed to be always enabled for all images they're applicable to.
+ * Meta draws like copying can access all `TERAKAN_IMAGE_MAX_SLICES` slices of the image even if its
+ * depth or layer count exceeds `TERAKAN_IMAGE_MAX_TARGET_SLICES` by adding the result of this
+ * function to `base_z_or_array_layer` of the subresource range, creating a new color descriptor,
+ * and performing the draw again for the next subset of slices.
+ *
+ * For transfer implementation purposes, cross-aspect reinterpretation is allowed.
+ *
+ * `terakan_image_descriptor_subresource_range_sanitize` must be done before calling.
  */
 uint32_t terakan_image_create_color_descriptor(
    struct terakan_image_descriptor_create_info const * descriptor_create_info,
-   struct terakan_color_descriptor * descriptor_out,
+   uint32_t desired_info_resource_type, struct terakan_color_descriptor * descriptor_out,
    struct terakan_color_meta_descriptor * meta_descriptor_out_opt);
 
+/* Returns whether the descriptor was created successfully (if false, the destination structure is
+ * not filled).
+ *
+ * 1D and 3D images can be viewed as 2D arrays.
+ *
+ * Subresource ranges containing slices beyond `TERAKAN_IMAGE_MAX_TARGET_SLICES` are not supported,
+ * it's expected that images compatible with DB access with more slices than can be indexed via
+ * `gl_Layer` are not exposed via the client API.
+ *
+ * `terakan_image_descriptor_subresource_range_sanitize` must be done before calling.
+ */
 bool terakan_image_create_depth_stencil_descriptor(
-   VkImageViewCreateInfo const * image_view_create_info,
+   struct terakan_image const * image, enum terascale_r8xx_depth_format view_depth_format,
+   bool view_may_have_stencil,
+   struct terakan_image_descriptor_subresource_range const * subresource_range,
    struct terakan_depth_stencil_descriptor * descriptor_out);
 
 struct terakan_image_view {
@@ -200,8 +295,9 @@ struct terakan_image_view {
 
    struct terakan_bo const * bo;
 
-   uint32_t resource[8];
+   struct terakan_resource_descriptor resource;
 
+   /* Used for both RTVs and UAVs, so `INFO.RAT` is not specifically defined. */
    struct terakan_color_descriptor color;
    struct terakan_color_meta_descriptor color_meta;
 

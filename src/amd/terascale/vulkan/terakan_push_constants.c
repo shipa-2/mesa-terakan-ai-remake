@@ -127,22 +127,24 @@ terakan_push_constants_apply(struct terakan_gfx_command_writer * const command_w
       (is_compute ? VK_SHADER_STAGE_COMPUTE_BIT : state->graphics_stages_using_push_constants) &
       ~state->up_to_date_push_constants_bound_to_stages;
    if (bind_to_stages) {
-      uint32_t resource[8];
-      terakan_descriptor_create_for_uniform_buffer(
+      struct terakan_resource_descriptor resource;
+      ASSERTED bool const resource_created = terakan_descriptor_create_for_uniform_buffer(
          state->allocation.bo,
          TERAKAN_KCACHE_HW_LINE_BYTES * (VkDeviceSize)state->allocation.va_kcache_lines,
-         TERAKAN_KCACHE_HW_LINE_BYTES * state->allocation.size_kcache_lines, resource);
+         TERAKAN_KCACHE_HW_LINE_BYTES * state->allocation.size_kcache_lines, &resource);
+      assert(resource_created);
       unsigned remaining_stages = (unsigned)bind_to_stages;
       while (remaining_stages) {
-         gl_shader_stage const stage_index = vk_to_mesa_shader_stage(
-            (VkShaderStageFlagBits)((VkShaderStageFlags)1 << u_bit_scan(&remaining_stages)));
-         terakan_hw_state_sqc_set_kcache_for_stage[stage_index](
-            &command_writer->hw_state_sqc, TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS,
-            state->allocation.size_kcache_lines, state->allocation.bo,
-            state->allocation.va_kcache_lines);
-         terakan_hw_state_sqc_set_resource_for_stage[stage_index](
-            &command_writer->hw_state_sqc, TERAKAN_RESOURCE_RANGE_PUSH_CONSTANTS,
-            state->allocation.bo, resource);
+         struct terakan_hw_config_sqk_set_functions const * const sqk_set_functions =
+            &terakan_hw_config_sqk_stage_set_functions[vk_to_mesa_shader_stage(
+               (VkShaderStageFlagBits)((VkShaderStageFlags)1 << u_bit_scan(&remaining_stages)))];
+         sqk_set_functions->kcache(&command_writer->hw_config_sqk,
+                                   TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS,
+                                   state->allocation.size_kcache_lines, state->allocation.bo,
+                                   state->allocation.va_kcache_lines);
+         sqk_set_functions->resource(&command_writer->hw_config_sqk,
+                                     TERAKAN_RESOURCE_RANGE_PUSH_CONSTANTS, state->allocation.bo,
+                                     &resource);
       }
       state->up_to_date_push_constants_bound_to_stages |= bind_to_stages;
    }

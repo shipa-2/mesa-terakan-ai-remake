@@ -24,11 +24,15 @@
 #ifndef TERAKAN_SAMPLER_H
 #define TERAKAN_SAMPLER_H
 
+#include "terakan_descriptor.h"
+
 #include "gallium/drivers/r600/evergreend.h"
+#include "util/macros.h"
 #include "util/u_math.h"
 #include "vk_sampler.h"
 
 #include <assert.h>
+#include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -79,19 +83,33 @@ terakan_sampler_translate_address_mode(VkSamplerAddressMode const address_mode)
 static inline int32_t
 terakan_sampler_translate_mip_lod_bias(float const mip_lod_bias)
 {
+   if (unlikely(isnan(mip_lod_bias))) {
+      return 0;
+   }
    return (int32_t)(CLAMP(mip_lod_bias, -0x1.0p5f, 0x1.0p5f - 0x1.0p-8f) * 0x1.0p8f);
 }
 
 static inline uint32_t
-terakan_sampler_translate_min_max_lod(float const lod)
+terakan_sampler_translate_min_max_lod(float lod)
 {
-   return (uint32_t)(CLAMP(lod, 0.0f, 0x1.0p4f - 0x1.0p-8f) * 0x1.0p8f);
+   lod = fmaxf(lod, 0.0f);
+   lod = MIN2(lod, 0x1.0p4f - 0x1.0p-8f);
+   /* Convert to fixed-point rounding down.
+    * This is particularly important for image view minimum LOD clamping, as
+    * `minLodInteger_imageView` is defined as `floor(minLodFloat_imageView)` in the
+    * `VkImageViewMinLodCreateInfoEXT` specification, and section 5.8.4 "Fractional Clamping" of the
+    * Direct3D 11.3 Functional Specification also defines the most detailed mip that needs to be
+    * resident as `floor(MinLOD)`.
+    */
+   return (uint32_t)(lod * 0x1.0p8f);
 }
 
 static inline uint32_t
-terakan_sampler_translate_max_anisotropy(float const max_anisotropy)
+terakan_sampler_translate_max_anisotropy(float max_anisotropy)
 {
-   return util_logbase2((unsigned)CLAMP(max_anisotropy, 1.0f, 0x1.0p4f));
+   max_anisotropy = fmaxf(max_anisotropy, 1.0f);
+   max_anisotropy = MIN2(max_anisotropy, 0x1.0p4f);
+   return util_logbase2((unsigned)max_anisotropy);
 }
 
 static inline uint32_t
@@ -119,7 +137,7 @@ terakan_sampler_translate_border_color(VkBorderColor const border_color)
 struct terakan_sampler {
    struct vk_sampler vk;
 
-   uint32_t sampler[3];
+   struct terakan_sampler_descriptor sampler;
 
    bool unnormalized_coordinates;
 };

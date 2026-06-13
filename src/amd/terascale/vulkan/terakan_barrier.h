@@ -48,6 +48,8 @@ enum terakan_barrier_action_flags {
    TERAKAN_BARRIER_ACTION_INDEX_INV_VC,
    TERAKAN_BARRIER_ACTION_INDEX_INV_SH,
 
+   TERAKAN_BARRIER_ACTION_INDEX_COUNT,
+
    /* Sufficient for CB MSAA resolves without flushing meta. */
    TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RTV_DATA =
       BITFIELD_BIT(TERAKAN_BARRIER_ACTION_INDEX_FLUSH_INV_CB_RTV_DATA),
@@ -72,11 +74,18 @@ enum terakan_barrier_action_flags {
    TERAKAN_BARRIER_ACTION_INV_TC = BITFIELD_BIT(TERAKAN_BARRIER_ACTION_INDEX_INV_TC),
    TERAKAN_BARRIER_ACTION_INV_VC = BITFIELD_BIT(TERAKAN_BARRIER_ACTION_INDEX_INV_VC),
    TERAKAN_BARRIER_ACTION_INV_SH = BITFIELD_BIT(TERAKAN_BARRIER_ACTION_INDEX_INV_SH),
+
+   TERAKAN_BARRIER_ACTIONS_ALL = BITFIELD_MASK(TERAKAN_BARRIER_ACTION_INDEX_COUNT),
 };
 
 struct terakan_gfx_command_writer;
 
-void terakan_barrier_emit_pending_actions(struct terakan_gfx_command_writer * command_writer);
+void terakan_barrier_emit_pending_actions(struct terakan_gfx_command_writer * command_writer,
+                                          uint32_t allowed_actions);
+
+void
+terakan_barrier_emit_actions_unconditionally(struct terakan_gfx_command_writer * command_writer,
+                                             uint32_t actions);
 
 #ifdef __cplusplus
 }

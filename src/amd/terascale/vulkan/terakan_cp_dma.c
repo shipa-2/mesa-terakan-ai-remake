@@ -61,7 +61,7 @@ terakan_cp_dma_sync_cp_me(struct terakan_gfx_command_writer * const command_writ
 static void
 terakan_cp_dma_prepare(struct terakan_gfx_command_writer * const command_writer)
 {
-   terakan_barrier_emit_pending_actions(command_writer);
+   terakan_barrier_emit_pending_actions(command_writer, TERAKAN_BARRIER_ACTIONS_ALL);
 }
 
 /* Important reminder: If the entire operation has to be split into multiple commands, BO references

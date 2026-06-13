@@ -33,6 +33,7 @@
 #include "util/macros.h"
 #include "vk_synchronization.h"
 
+#include <assert.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -273,9 +274,11 @@ terakan_barrier_emit_event_write(struct terakan_gfx_command_writer * const comma
 }
 
 void
-terakan_barrier_emit_pending_actions(struct terakan_gfx_command_writer * const command_writer)
+terakan_barrier_emit_pending_actions(struct terakan_gfx_command_writer * const command_writer,
+                                     uint32_t const allowed_actions)
 {
-   enum terakan_barrier_action_flags actions = command_writer->pending_barrier_actions;
+   enum terakan_barrier_action_flags actions =
+      command_writer->pending_barrier_actions & allowed_actions;
    /* Nonzero mostly outside render passes, skip lots of checks if there's nothing to do. */
    if (actions == 0) {
       return;
@@ -286,7 +289,7 @@ terakan_barrier_emit_pending_actions(struct terakan_gfx_command_writer * const c
        */
       actions |= TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_VS;
    }
-   command_writer->pending_barrier_actions = 0;
+   command_writer->pending_barrier_actions &= ~actions;
    command_writer->post_buffer_copy_write_barrier_actions &= ~actions;
    command_writer->post_color_image_copy_write_barrier_actions &= ~actions;
    command_writer->post_depth_stencil_image_copy_write_barrier_actions &= ~actions;
@@ -419,6 +422,15 @@ terakan_barrier_emit_pending_actions(struct terakan_gfx_command_writer * const c
       *pfp_sync_me_packet++ = 0;
       terakan_gfx_command_writer_emit_done(command_writer, pfp_sync_me_packet);
    }
+}
+
+void
+terakan_barrier_emit_actions_unconditionally(
+   struct terakan_gfx_command_writer * const command_writer, uint32_t const actions)
+{
+   assert(!(actions & ~(uint32_t)TERAKAN_BARRIER_ACTIONS_ALL));
+   command_writer->pending_barrier_actions |= actions;
+   terakan_barrier_emit_pending_actions(command_writer, actions);
 }
 
 VKAPI_ATTR void VKAPI_CALL

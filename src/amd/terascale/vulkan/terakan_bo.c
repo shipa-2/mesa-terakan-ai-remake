@@ -56,9 +56,12 @@ terakan_bo_free(struct terakan_bo * const bo, VkAllocationCallbacks const * cons
 }
 
 void
-terakan_bo_init(struct terakan_bo * const bo, struct terakan_device * const device)
+terakan_bo_init(struct terakan_bo * const bo, struct terakan_device * const device,
+                uint64_t const size)
 {
    bo->device = device;
+
+   bo->size = size;
 
    bo->va = 0;
 

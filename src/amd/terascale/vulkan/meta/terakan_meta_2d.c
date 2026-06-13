@@ -21,18 +21,7 @@
  * IN THE SOFTWARE.
  */
 
-#include "terakan_meta.h"
-
-#include "terakan_command_buffer.h"
-#include "terakan_draw.h"
-
-#include "amd/terascale/common/terascale_wddm.h"
-#include "gallium/drivers/r600/r600d_common.h"
-#include "util/macros.h"
-#include "util/u_math.h"
-
-#include <assert.h>
-#include <stddef.h>
+#include "terakan_meta_impl.h"
 
 static uint32_t const terakan_meta_position_from_index_vs_r8xx[] = {
    /* 0: Export the instance ID as the first parameter. */
@@ -65,9 +54,9 @@ static uint32_t const terakan_meta_position_from_index_vs_r8xx[] = {
     * PV.Y.
     * Cycle 0: X = R0.
     */
-   TERAKAN_SHADER_OP3_NW(false, 'X', BFE_INT, EG, 0, 'X', V_SQ_ALU_SRC_0, 0, V_SQ_ALU_SRC_LITERAL,
+   TERAKAN_SHADER_OP3_NW(false, 'X', BFE_UINT, EG, 0, 'X', V_SQ_ALU_SRC_0, 0, V_SQ_ALU_SRC_LITERAL,
                          'X', VEC_012),
-   TERAKAN_SHADER_OP3_NW(true, 'Y', BFE_INT, EG, 0, 'X', V_SQ_ALU_SRC_LITERAL, 'X',
+   TERAKAN_SHADER_OP3_NW(true, 'Y', BFE_UINT, EG, 0, 'X', V_SQ_ALU_SRC_LITERAL, 'X',
                          V_SQ_ALU_SRC_LITERAL, 'X', VEC_012),
    16,
    0,
@@ -122,9 +111,9 @@ static uint32_t const terakan_meta_position_and_layer_from_index_vs_r8xx[] = {
     * PV.Y.
     * Cycle 0: X = R0.
     */
-   TERAKAN_SHADER_OP3_NW(false, 'X', BFE_INT, EG, 0, 'X', V_SQ_ALU_SRC_0, 0, V_SQ_ALU_SRC_LITERAL,
+   TERAKAN_SHADER_OP3_NW(false, 'X', BFE_UINT, EG, 0, 'X', V_SQ_ALU_SRC_0, 0, V_SQ_ALU_SRC_LITERAL,
                          'X', VEC_012),
-   TERAKAN_SHADER_OP3_NW(true, 'Y', BFE_INT, EG, 0, 'X', V_SQ_ALU_SRC_LITERAL, 'X',
+   TERAKAN_SHADER_OP3_NW(true, 'Y', BFE_UINT, EG, 0, 'X', V_SQ_ALU_SRC_LITERAL, 'X',
                          V_SQ_ALU_SRC_LITERAL, 'X', VEC_012),
    16,
    0,
@@ -173,9 +162,9 @@ static uint32_t const terakan_meta_position_from_index_vs_r9xx[] = {
     * PV.Y.
     * Cycle 0: X = R0.
     */
-   TERAKAN_SHADER_OP3_NW(false, 'X', BFE_INT, EG, 0, 'X', V_SQ_ALU_SRC_0, 0, V_SQ_ALU_SRC_LITERAL,
+   TERAKAN_SHADER_OP3_NW(false, 'X', BFE_UINT, EG, 0, 'X', V_SQ_ALU_SRC_0, 0, V_SQ_ALU_SRC_LITERAL,
                          'X', VEC_012),
-   TERAKAN_SHADER_OP3_NW(true, 'Y', BFE_INT, EG, 0, 'X', V_SQ_ALU_SRC_LITERAL, 'X',
+   TERAKAN_SHADER_OP3_NW(true, 'Y', BFE_UINT, EG, 0, 'X', V_SQ_ALU_SRC_LITERAL, 'X',
                          V_SQ_ALU_SRC_LITERAL, 'X', VEC_012),
    16,
    0,
@@ -228,9 +217,9 @@ static uint32_t const terakan_meta_position_and_layer_from_index_vs_r9xx[] = {
     * PV.Y.
     * Cycle 0: X = R0.
     */
-   TERAKAN_SHADER_OP3_NW(false, 'X', BFE_INT, EG, 0, 'X', V_SQ_ALU_SRC_0, 0, V_SQ_ALU_SRC_LITERAL,
+   TERAKAN_SHADER_OP3_NW(false, 'X', BFE_UINT, EG, 0, 'X', V_SQ_ALU_SRC_0, 0, V_SQ_ALU_SRC_LITERAL,
                          'X', VEC_012),
-   TERAKAN_SHADER_OP3_NW(true, 'Y', BFE_INT, EG, 0, 'X', V_SQ_ALU_SRC_LITERAL, 'X',
+   TERAKAN_SHADER_OP3_NW(true, 'Y', BFE_UINT, EG, 0, 'X', V_SQ_ALU_SRC_LITERAL, 'X',
                          V_SQ_ALU_SRC_LITERAL, 'X', VEC_012),
    16,
    0,
@@ -313,132 +302,3 @@ struct terakan_meta_shader const terakan_meta_position_and_layer_from_index_vs =
             },
       },
 };
-
-void
-terakan_meta_begin_2d(struct terakan_gfx_command_writer * const command_writer,
-                      uint32_t const pa_cl_vte_cntl)
-{
-   terakan_meta_modify_state_draw_dword(command_writer, TERAKAN_STATE_DRAW_INDEX_PA_CL_CLIP_CNTL,
-                                        TERAKAN_HW_STATE_DRAW_INDEX_PA_CL_CLIP_CNTL,
-                                        &command_writer->hw_state_draw.pa_cl_clip_cntl,
-                                        S_028810_CLIP_DISABLE(1));
-
-   terakan_meta_modify_state_draw_dword(command_writer, TERAKAN_STATE_DRAW_INDEX_PA_SU_SC_MODE_CNTL,
-                                        TERAKAN_HW_STATE_DRAW_INDEX_PA_SU_SC_MODE_CNTL,
-                                        &command_writer->hw_state_draw.pa_su_sc_mode_cntl, 0);
-
-   terakan_meta_set_pa_cl_vte_cntl(command_writer, pa_cl_vte_cntl);
-
-   uint32_t const num_samples_log2 = 0;
-   /* TODO(Triang3l): Make what depends on the sample count pending in state_draw. */
-
-   terakan_meta_modify_state_draw_dword(command_writer, TERAKAN_STATE_DRAW_INDEX_PA_SC_MODE_CNTL_0,
-                                        TERAKAN_HW_STATE_DRAW_INDEX_PA_SC_MODE_CNTL_0,
-                                        &command_writer->hw_state_draw.pa_sc_mode_cntl_0,
-                                        S_028A48_MSAA_ENABLE(num_samples_log2 > 0));
-
-   bool const pa_sc_aa_samples_modified =
-      command_writer->hw_state_draw.pa_sc_aa_samples.num_samples_log2 != num_samples_log2;
-   command_writer->hw_state_draw.pa_sc_aa_samples.num_samples_log2 = num_samples_log2;
-   terakan_hw_state_draw_written(&command_writer->hw_state_draw,
-                                 TERAKAN_HW_STATE_DRAW_INDEX_PA_SC_AA_SAMPLES,
-                                 pa_sc_aa_samples_modified);
-
-   terakan_state_draw_set_pending(&command_writer->state_draw,
-                                  TERAKAN_STATE_DRAW_INDEX_PA_SC_AA_MASK);
-   uint16_t const pa_sc_aa_mask = ~(uint16_t)0;
-   bool const pa_sc_aa_mask_modified = command_writer->hw_state_draw.pa_sc_aa_mask != pa_sc_aa_mask;
-   command_writer->hw_state_draw.pa_sc_aa_mask = pa_sc_aa_mask;
-   terakan_hw_state_draw_written(&command_writer->hw_state_draw,
-                                 TERAKAN_HW_STATE_DRAW_INDEX_PA_SC_AA_MASK, pa_sc_aa_mask_modified);
-}
-
-void
-terakan_meta_begin_rects(struct terakan_gfx_command_writer * const command_writer)
-{
-   terakan_meta_modify_state_draw_dword(command_writer, TERAKAN_STATE_DRAW_INDEX_VGT_PRIMITIVE_TYPE,
-                                        TERAKAN_HW_STATE_DRAW_INDEX_VGT_PRIMITIVE_TYPE,
-                                        &command_writer->hw_state_draw.vgt_primitive_type,
-                                        S_008958_PRIM_TYPE(V_008958_DI_PT_RECTLIST));
-}
-
-void
-terakan_meta_begin_index_immediate_32(struct terakan_gfx_command_writer * const command_writer)
-{
-   terakan_meta_modify_state_draw_dword(command_writer, TERAKAN_STATE_DRAW_INDEX_VGT_INDEX_TYPE,
-                                        TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_TYPE,
-                                        &command_writer->hw_state_draw.vgt_index_type,
-                                        VGT_INDEX_32);
-
-   terakan_meta_modify_state_draw_dword(command_writer, TERAKAN_STATE_DRAW_INDEX_VGT_INDEX_OFFSET,
-                                        TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_OFFSET,
-                                        &command_writer->hw_state_draw.vgt_index_offset, 0);
-}
-
-void
-terakan_meta_emit_rect_3_vertices_draw(struct terakan_gfx_command_writer * const command_writer,
-                                       VkRect2D const * const rect, uint32_t const instance_count)
-{
-   terakan_hw_state_draw_set_vgt_num_instances(&command_writer->hw_state_draw, instance_count);
-
-   terakan_before_hw_draw(command_writer);
-
-   uint32_t * packet;
-
-   uint32_t const vertices[] = {
-      (uint16_t)rect->offset.x | ((uint32_t)rect->offset.y << 16),
-      (uint16_t)rect->offset.x | ((uint32_t)(rect->offset.y + rect->extent.height) << 16),
-      (uint16_t)(rect->offset.x + rect->extent.width) | ((uint32_t)rect->offset.y << 16)};
-
-   if (instance_count > 1) {
-      /* PKT3_DRAW_INDEX_IMMD with multiple instances causes a hang in this usage scenario (tested
-       * on Barts with the firmware used by DRM Radeon 2.50.0).
-       */
-      struct terakan_bo const * index_buffer_bo;
-      uint64_t index_buffer_va;
-      uint32_t * const index_buffer_mapping =
-         terakan_push_buffer_allocate(command_writer->base.command_buffer, sizeof(vertices),
-                                      sizeof(uint32_t), &index_buffer_bo, &index_buffer_va);
-      if (unlikely(index_buffer_mapping == NULL)) {
-         return;
-      }
-      /* terakan_meta_begin_index_immediate_32 sets VGT_INDEX_TYPE to non-endian-swapped. */
-      util_memcpy_cpu_to_le32(index_buffer_mapping, vertices, sizeof(vertices));
-
-      packet = terakan_gfx_command_writer_emit_with_bo(
-         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DRAW, 5, 1, 0, 1);
-      if (unlikely(packet == NULL)) {
-         return;
-      }
-      *packet++ = PKT3(PKT3_DRAW_INDEX, 5 - 2, 0);
-      uint32_t const * const packet_index_base = packet;
-      *packet++ = (uint32_t)index_buffer_va;
-      *packet++ = (index_buffer_va >> 32) & 0xFF;
-      *packet++ = ARRAY_SIZE(vertices);
-      *packet++ = S_0287F0_SOURCE_SELECT(V_0287F0_DI_SRC_SEL_DMA);
-      /* The exact WDDM patch location for PKT3_DRAW_INDEX isn't known, so reusing the one for
-       * PKT3_INDEX_BASE.
-       */
-      terakan_gfx_command_writer_add_relocation_for_40_bits(
-         command_writer, &packet, packet_index_base, packet_index_base + 1,
-         TERASCALE_WDDM_PATCH_IDS_INDEX_BASE_LO, TERASCALE_WDDM_PATCH_IDS_INDEX_BASE_HI,
-         terakan_bo_reference_writer_add_reference(&command_writer->base.bo_reference_writer,
-                                                   index_buffer_bo, true, false,
-                                                   TERAKAN_BO_PRIORITY_INDEX_BUFFER));
-      terakan_gfx_command_writer_emit_done(command_writer, packet);
-
-      return;
-   }
-
-   packet = terakan_gfx_command_writer_emit(
-      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DRAW, 3 + ARRAY_SIZE(vertices));
-   if (unlikely(packet == NULL)) {
-      return;
-   }
-   *packet++ = PKT3(PKT3_DRAW_INDEX_IMMD, 1 + ARRAY_SIZE(vertices), 0);
-   *packet++ = ARRAY_SIZE(vertices);
-   *packet++ = S_0287F0_SOURCE_SELECT(V_0287F0_DI_SRC_SEL_IMMEDIATE);
-   memcpy(packet, vertices, sizeof(vertices));
-   packet += ARRAY_SIZE(vertices);
-   terakan_gfx_command_writer_emit_done(command_writer, packet);
-}

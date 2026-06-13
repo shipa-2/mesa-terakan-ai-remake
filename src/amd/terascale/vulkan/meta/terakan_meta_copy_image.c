@@ -21,9 +21,8 @@
  * IN THE SOFTWARE.
  */
 
-#include "terakan_meta.h"
+#include "terakan_meta_impl.h"
 
-#include "terakan_command_buffer.h"
 #include "terakan_entrypoints.h"
 #include "terakan_image.h"
 
@@ -34,8 +33,8 @@
 
 enum {
    /* In blocks, signed. */
-   TERAKAN_META_COPY_IMAGE_CONST_TEXTURE_MINUS_SCREEN_POSITION_X,
-   TERAKAN_META_COPY_IMAGE_CONST_TEXTURE_MINUS_SCREEN_POSITION_Y,
+   TERAKAN_META_COPY_IMAGE_CONST_SRC_MINUS_DST_OFFSET_X,
+   TERAKAN_META_COPY_IMAGE_CONST_SRC_MINUS_DST_OFFSET_Y,
 
    TERAKAN_META_COPY_IMAGE_CONSTS_COUNT,
 };
@@ -45,7 +44,7 @@ static uint32_t const terakan_meta_copy_image_ps_r8xx[] = {
    S_SQ_CF_WORD0_ADDR(3) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS) |
       S_SQ_CF_ALU_WORD0_KCACHE_MODE0(V_SQ_CF_KCACHE_LOCK_1),
    S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(
-      TERAKAN_KCACHE_DWORD_LINE(TERAKAN_META_COPY_IMAGE_CONST_TEXTURE_MINUS_SCREEN_POSITION_X)) |
+      TERAKAN_KCACHE_DWORD_LINE(TERAKAN_META_COPY_IMAGE_CONST_SRC_MINUS_DST_OFFSET_X)) |
       S_SQ_CF_ALU_WORD1_COUNT(1) | EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
    /* 1: Fetch from the source texture. */
@@ -67,11 +66,9 @@ static uint32_t const terakan_meta_copy_image_ps_r8xx[] = {
    /* +0-1: Apply the address offset to R0.XY.
     * Cycle 0: X = R0, Y = R0.
     */
-   TERAKAN_KCACHE_DWORD_WORD0_SRC1(0,
-                                   TERAKAN_META_COPY_IMAGE_CONST_TEXTURE_MINUS_SCREEN_POSITION_X) |
+   TERAKAN_KCACHE_DWORD_WORD0_SRC1(0, TERAKAN_META_COPY_IMAGE_CONST_SRC_MINUS_DST_OFFSET_X) |
       TERAKAN_SHADER_OP2(false, 0, 'X', ADD_INT, EG, 0, 'X', 0, 0, VEC_012),
-   TERAKAN_KCACHE_DWORD_WORD0_SRC1(0,
-                                   TERAKAN_META_COPY_IMAGE_CONST_TEXTURE_MINUS_SCREEN_POSITION_Y) |
+   TERAKAN_KCACHE_DWORD_WORD0_SRC1(0, TERAKAN_META_COPY_IMAGE_CONST_SRC_MINUS_DST_OFFSET_Y) |
       TERAKAN_SHADER_OP2(true, 0, 'Y', ADD_INT, EG, 0, 'Y', 0, 0, VEC_012),
 
    /* 5 (alignment padding), 6-7: Fetch from the source texture to R0. */
@@ -93,7 +90,7 @@ static uint32_t const terakan_meta_copy_image_ps_r9xx[] = {
    S_SQ_CF_WORD0_ADDR(4) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS) |
       S_SQ_CF_ALU_WORD0_KCACHE_MODE0(V_SQ_CF_KCACHE_LOCK_1),
    S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(
-      TERAKAN_KCACHE_DWORD_LINE(TERAKAN_META_COPY_IMAGE_CONST_TEXTURE_MINUS_SCREEN_POSITION_X)) |
+      TERAKAN_KCACHE_DWORD_LINE(TERAKAN_META_COPY_IMAGE_CONST_SRC_MINUS_DST_OFFSET_X)) |
       S_SQ_CF_ALU_WORD1_COUNT(1) | EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
    /* 1: Fetch from the source texture. */
@@ -118,11 +115,9 @@ static uint32_t const terakan_meta_copy_image_ps_r9xx[] = {
    /* +0-1: Apply the address offset to R0.XY.
     * Cycle 0: X = R0, Y = R0.
     */
-   TERAKAN_KCACHE_DWORD_WORD0_SRC1(0,
-                                   TERAKAN_META_COPY_IMAGE_CONST_TEXTURE_MINUS_SCREEN_POSITION_X) |
+   TERAKAN_KCACHE_DWORD_WORD0_SRC1(0, TERAKAN_META_COPY_IMAGE_CONST_SRC_MINUS_DST_OFFSET_X) |
       TERAKAN_SHADER_OP2(false, 0, 'X', ADD_INT, EG, 0, 'X', 0, 0, VEC_012),
-   TERAKAN_KCACHE_DWORD_WORD0_SRC1(0,
-                                   TERAKAN_META_COPY_IMAGE_CONST_TEXTURE_MINUS_SCREEN_POSITION_Y) |
+   TERAKAN_KCACHE_DWORD_WORD0_SRC1(0, TERAKAN_META_COPY_IMAGE_CONST_SRC_MINUS_DST_OFFSET_Y) |
       TERAKAN_SHADER_OP2(true, 0, 'Y', ADD_INT, EG, 0, 'Y', 0, 0, VEC_012),
 
    /* 6-7: Fetch from the source texture to R0. */
@@ -194,19 +189,8 @@ struct terakan_meta_shader const terakan_meta_copy_image_ps = {
                   },
             },
       },
-   .kcache_needed = (uint16_t)1 << TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS,
-   .resources_needed =
-      {
-         [BITSET_BITWORD(TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META)] =
-            BITSET_BIT(TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META),
-      },
-   .stage =
-      {
-         .ps =
-            {
-               .db_shader_control = TERAKAN_META_DB_SHADER_CONTROL_DEFAULT,
-            },
-      },
+   .kcache_used = BITFIELD_BIT(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS),
+   .primary_meta_resource_used = true,
 };
 
 VKAPI_ATTR void VKAPI_CALL
@@ -216,58 +200,42 @@ terakan_CmdCopyImage2(VkCommandBuffer const commandBuffer,
    struct terakan_gfx_command_writer * const command_writer =
       terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx;
 
-   struct terakan_image const * const src_image =
-      terakan_image_from_handle(pCopyImageInfo->srcImage);
+   struct terakan_image const * const dst_image =
+      terakan_image_from_handle(pCopyImageInfo->dstImage);
 
-   if (terakan_format_is_expand_3x(src_image->surface.aspects[0].bytes_per_block)) {
+   if (terakan_format_is_expand_3x(dst_image->surface.aspects[0].bytes_per_block)) {
       terakan_meta_copy_expand_3x_image(command_writer, pCopyImageInfo);
       return;
    }
 
-   struct terakan_image const * const dst_image =
-      terakan_image_from_handle(pCopyImageInfo->dstImage);
+   struct terakan_image const * const src_image =
+      terakan_image_from_handle(pCopyImageInfo->srcImage);
 
    /* TODO(Triang3l): Multisampled image copying, possibly by copying fragments (directly, not via
     * coverage samples) with sample shading, and the FMask with pixel shading - and with some path
     * for depth/stencil.
     */
 
-   struct terakan_image_descriptor_create_info src_descriptor_create_info = {
-      .image = src_image,
-      .view_type = terakan_meta_transfer_image_view_type(src_image->vk.image_type),
-      .force_little_endian = true,
-      .level_count = 1,
-   };
-   struct terakan_image_descriptor_create_info dst_descriptor_create_info = {
-      .image = dst_image,
-      .view_type = terakan_meta_transfer_image_view_type(dst_image->vk.image_type),
-      .force_little_endian = true,
-      .level_count = 1,
-   };
-
-   unsigned const src_block_width = vk_format_get_blockwidth(src_image->vk.format);
-   unsigned const src_block_height = vk_format_get_blockheight(src_image->vk.format);
-   unsigned const dst_block_width = vk_format_get_blockwidth(dst_image->vk.format);
-   unsigned const dst_block_height = vk_format_get_blockheight(dst_image->vk.format);
+   struct terakan_image_descriptor_create_info dst_descriptor_create_info = {.image = dst_image};
+   struct terakan_image_descriptor_create_info src_descriptor_create_info = {.image = src_image};
 
    command_writer->post_color_image_copy_write_barrier_actions |=
       TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RTV_DATA |
       TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_PS;
 
-   terakan_meta_begin_2d_immediate_rects(command_writer, TERAKAN_META_PA_CL_VTE_CNTL_2D,
-                                         TERAKAN_META_DB_RENDER_OVERRIDE_DEFAULT, true);
+   struct terakan_meta_config_draw_begin_options const meta_begin_options = {
+      .vgt_primitive_type = V_008958_DI_PT_RECTLIST,
+      .cb_and_db_shader_control_mode =
+         TERAKAN_META_CONFIG_DRAW_BEGIN_CB_MODE_NORMAL_WITH_RTV_AND_DYNAMIC_DB_SHADER_CONTROL,
+      .rasterization = {.enable = true},
+   };
+   terakan_meta_config_draw_begin(command_writer, &meta_begin_options);
+   terakan_meta_config_draw_set_sq_pgm_vs(command_writer,
+                                          TERAKAN_META_SHADER_POSITION_AND_LAYER_FROM_INDEX_VS);
+   terakan_meta_config_draw_set_sq_pgm_ps(command_writer, TERAKAN_META_SHADER_COPY_IMAGE_PS);
 
-   terakan_meta_set_vs(command_writer, TERAKAN_META_SHADER_POSITION_AND_LAYER_FROM_INDEX_VS);
-   terakan_meta_set_ps(command_writer, TERAKAN_META_SHADER_COPY_IMAGE_PS, false);
-
-   terakan_meta_begin_cb(command_writer, 0xF, 0b1);
-
-   command_writer->push_constants_state.up_to_date_push_constants_bound_to_stages &=
-      ~VK_SHADER_STAGE_FRAGMENT_BIT;
-
-   uint32_t constants[TERAKAN_META_COPY_IMAGE_CONSTS_COUNT] = {};
-   struct terakan_bo const * constants_bo = NULL;
-   uint32_t constants_va_lines;
+   int32_t constants[TERAKAN_META_COPY_IMAGE_CONSTS_COUNT] = {};
+   bool constants_set = false;
 
    for (uint32_t region_index = 0; region_index < pCopyImageInfo->regionCount; ++region_index) {
       VkImageCopy2 const * const region = &pCopyImageInfo->pRegions[region_index];
@@ -282,112 +250,126 @@ terakan_CmdCopyImage2(VkCommandBuffer const commandBuffer,
        * The offset must be block-aligned, but offset + extent is limited to the extent of the
        * subresource, which is not block-aligned.
        */
-      VkRect2D const rect = {
-         .offset =
-            {
-               .x = region->dstOffset.x / dst_block_width,
-               .y = region->dstOffset.y / dst_block_height,
-            },
-         .extent =
-            {
-               .width = DIV_ROUND_UP(region->extent.width, src_block_width),
-               .height = DIV_ROUND_UP(region->extent.height, src_block_height),
-            },
-      };
-      int32_t const texture_minus_screen_position_x =
-         region->srcOffset.x / src_block_width - rect.offset.x;
-      int32_t const texture_minus_screen_position_y =
-         region->srcOffset.y / src_block_height - rect.offset.y;
-      if (constants[TERAKAN_META_COPY_IMAGE_CONST_TEXTURE_MINUS_SCREEN_POSITION_X] !=
-             (uint32_t)texture_minus_screen_position_x ||
-          constants[TERAKAN_META_COPY_IMAGE_CONST_TEXTURE_MINUS_SCREEN_POSITION_Y] !=
-             (uint32_t)texture_minus_screen_position_y) {
-         constants_bo = NULL;
-         constants[TERAKAN_META_COPY_IMAGE_CONST_TEXTURE_MINUS_SCREEN_POSITION_X] =
-            (uint32_t)texture_minus_screen_position_x;
-         constants[TERAKAN_META_COPY_IMAGE_CONST_TEXTURE_MINUS_SCREEN_POSITION_Y] =
-            (uint32_t)texture_minus_screen_position_y;
+      VkOffset3D const dst_offset_blocks =
+         vk_image_offset_to_elements(&dst_image->vk, region->dstOffset);
+      VkOffset3D const src_offset_blocks =
+         vk_image_offset_to_elements(&src_image->vk, region->srcOffset);
+      VkExtent3D const extent_blocks = vk_image_extent_to_elements(&src_image->vk, region->extent);
+      VkRect2D const dst_region_rect = {
+         .offset = {.x = dst_offset_blocks.x, .y = dst_offset_blocks.y},
+         .extent = {.width = extent_blocks.width, .height = extent_blocks.height}};
+
+      int32_t const src_minus_dst_offset_x = src_offset_blocks.x - dst_region_rect.offset.x;
+      int32_t const src_minus_dst_offset_y = src_offset_blocks.y - dst_region_rect.offset.y;
+      if (constants[TERAKAN_META_COPY_IMAGE_CONST_SRC_MINUS_DST_OFFSET_X] !=
+             src_minus_dst_offset_x ||
+          constants[TERAKAN_META_COPY_IMAGE_CONST_SRC_MINUS_DST_OFFSET_Y] !=
+             src_minus_dst_offset_y) {
+         constants_set = NULL;
+         constants[TERAKAN_META_COPY_IMAGE_CONST_SRC_MINUS_DST_OFFSET_X] = src_minus_dst_offset_x;
+         constants[TERAKAN_META_COPY_IMAGE_CONST_SRC_MINUS_DST_OFFSET_Y] = src_minus_dst_offset_y;
+      }
+      if (!constants_set) {
+         terakan_meta_config_draw_set_kcache_push_constants(command_writer, sizeof(constants),
+                                                            constants, false, true);
+         constants_set = true;
       }
 
-      if (constants_bo == NULL) {
-         void * const constants_mapping = terakan_push_buffer_allocate_kcache(
-            command_writer->base.command_buffer, sizeof(constants), &constants_bo,
-            &constants_va_lines);
-         if (unlikely(constants_mapping == NULL)) {
-            return;
-         }
-         memcpy(constants_mapping, constants, sizeof(constants));
-         terakan_hw_state_sqc_set_kcache_fs(
-            &command_writer->hw_state_sqc, TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS,
-            DIV_ROUND_UP(sizeof(constants), TERAKAN_KCACHE_HW_LINE_BYTES), constants_bo,
-            constants_va_lines);
-      }
-
-      src_descriptor_create_info.base_mip_level = region->srcSubresource.mipLevel;
-      if (src_image->vk.image_type == VK_IMAGE_TYPE_3D) {
-         src_descriptor_create_info.base_array_layer = (uint32_t)region->srcOffset.z;
-         src_descriptor_create_info.layer_count = region->extent.depth;
-      } else {
-         src_descriptor_create_info.base_array_layer = region->srcSubresource.baseArrayLayer;
-         src_descriptor_create_info.layer_count =
-            vk_image_subresource_layer_count(&src_image->vk, &region->srcSubresource);
-      }
-
-      dst_descriptor_create_info.base_mip_level = region->dstSubresource.mipLevel;
-      uint32_t const dst_base_layer = dst_image->vk.image_type == VK_IMAGE_TYPE_3D
-                                         ? (uint32_t)region->dstOffset.z
-                                         : region->dstSubresource.baseArrayLayer;
-
-      unsigned dst_aspect_mask_remaining = (unsigned)region->dstSubresource.aspectMask;
-      u_foreach_bit (src_aspect_index, region->srcSubresource.aspectMask) {
-         src_descriptor_create_info.image_aspect_index = terakan_format_aspect_index(
-            src_image->format_info.aspect_map, (VkImageAspectFlags)1 << src_aspect_index, 0);
+      unsigned src_vk_aspect_mask_remaining = (unsigned)region->srcSubresource.aspectMask;
+      u_foreach_bit (dst_vk_aspect_bit_index, region->dstSubresource.aspectMask) {
          dst_descriptor_create_info.image_aspect_index = terakan_format_aspect_index(
-            dst_image->format_info.aspect_map,
-            (VkImageAspectFlags)1 << u_bit_scan(&dst_aspect_mask_remaining), 0);
-
-         src_descriptor_create_info.view_format = terakan_meta_transfer_image_block_format_info(
-            src_image->surface.aspects[src_descriptor_create_info.image_aspect_index]
-               .bytes_per_block);
+            dst_image->format_info.aspect_map, (VkImageAspectFlags)1 << dst_vk_aspect_bit_index, 0);
          dst_descriptor_create_info.view_format = terakan_meta_transfer_image_block_format_info(
-            dst_image->surface.aspects[dst_descriptor_create_info.image_aspect_index]
-               .bytes_per_block);
+            terascale_format_bytes_per_block
+               [dst_image->format_info.aspect_formats[dst_descriptor_create_info.image_aspect_index]
+                   .format]);
+         src_descriptor_create_info.image_aspect_index = terakan_format_aspect_index(
+            src_image->format_info.aspect_map,
+            (VkImageAspectFlags)1 << u_bit_scan(&src_vk_aspect_mask_remaining), 0);
+         src_descriptor_create_info.view_format = terakan_meta_transfer_image_block_format_info(
+            terascale_format_bytes_per_block
+               [src_image->format_info.aspect_formats[src_descriptor_create_info.image_aspect_index]
+                   .format]);
 
-         dst_descriptor_create_info.base_array_layer = dst_base_layer;
-         dst_descriptor_create_info.layer_count = src_descriptor_create_info.layer_count;
+         dst_descriptor_create_info.subresource_range.base_mip_level =
+            region->dstSubresource.mipLevel;
+         dst_descriptor_create_info.subresource_range.max_level_count = 1;
+         src_descriptor_create_info.subresource_range.base_mip_level =
+            region->srcSubresource.mipLevel;
+         src_descriptor_create_info.subresource_range.max_level_count = 1;
 
-         uint32_t src_resource[8];
-         VkComponentMapping const identity_component_mapping = {};
-         if (unlikely(!terakan_image_create_resource_descriptor(
-                &src_descriptor_create_info, &identity_component_mapping, src_resource))) {
-            assert(!"Invalid source image view create info");
-            return;
+         if (src_image->vk.image_type == VK_IMAGE_TYPE_3D) {
+            src_descriptor_create_info.subresource_range.base_z_or_array_layer =
+               (uint32_t)region->srcOffset.z;
+            src_descriptor_create_info.subresource_range.max_depth_or_layer_count =
+               region->extent.depth;
+         } else {
+            src_descriptor_create_info.subresource_range.base_z_or_array_layer =
+               region->srcSubresource.baseArrayLayer;
+            src_descriptor_create_info.subresource_range.max_depth_or_layer_count =
+               region->srcSubresource.layerCount;
+         }
+         dst_descriptor_create_info.subresource_range.base_z_or_array_layer =
+            dst_image->vk.image_type == VK_IMAGE_TYPE_3D ? (uint32_t)region->dstOffset.z
+                                                         : region->dstSubresource.baseArrayLayer;
+         dst_descriptor_create_info.subresource_range.max_depth_or_layer_count =
+            src_descriptor_create_info.subresource_range.max_depth_or_layer_count;
+
+         if (unlikely(!terakan_image_descriptor_subresource_range_sanitize(
+                         dst_image, &dst_descriptor_create_info.subresource_range, false) ||
+                      !terakan_image_descriptor_subresource_range_sanitize(
+                         src_image, &src_descriptor_create_info.subresource_range, false))) {
+            continue;
+         }
+         /* To avoid sanitizing the subresource range at every slice subrange iteration for
+          * #MemoryIntegrity.
+          */
+         src_descriptor_create_info.subresource_range.max_depth_or_layer_count =
+            MIN2(src_descriptor_create_info.subresource_range.max_depth_or_layer_count,
+                 dst_descriptor_create_info.subresource_range.max_depth_or_layer_count);
+         dst_descriptor_create_info.subresource_range.max_depth_or_layer_count =
+            src_descriptor_create_info.subresource_range.max_depth_or_layer_count;
+
+         struct terakan_resource_descriptor src_descriptor;
+         if (unlikely(!terakan_image_create_resource_descriptor(&src_descriptor_create_info,
+                                                                V_030000_SQ_TEX_DIM_2D_ARRAY, NULL,
+                                                                &src_descriptor))) {
+            continue;
          }
 
-         while (dst_descriptor_create_info.layer_count > 0) {
-            terakan_hw_state_sqc_set_resource_fs(
-               &command_writer->hw_state_sqc, TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META,
-               src_image->bo, src_resource);
+         do {
+            struct terakan_color_descriptor dst_descriptor;
+            uint32_t const dst_descriptor_slices = terakan_image_create_color_descriptor(
+               &dst_descriptor_create_info, V_028C70_TEXTURE2DARRAY, &dst_descriptor, NULL);
+            if (unlikely(dst_descriptor_slices == 0)) {
+               break;
+            }
+            terakan_meta_config_draw_set_cb_rtvs_and_db_shader_control(
+               command_writer, 0xF, &dst_image->bo, &dst_descriptor, NULL,
+               TERAKAN_SHADER_DB_SHADER_CONTROL_IDENTITY);
 
-            struct terakan_color_descriptor dst_color;
-            struct terakan_color_meta_descriptor dst_color_meta;
-            uint32_t const dst_color_layer_count = terakan_image_create_color_descriptor(
-               &dst_descriptor_create_info, &dst_color, &dst_color_meta);
-            terakan_color_descriptor_image_view_to_color_attachment(&dst_color);
-            terakan_hw_state_draw_set_cb_color(&command_writer->hw_state_draw, 0, dst_image->bo,
-                                               &dst_color, &dst_color_meta, false);
-            terakan_meta_set_db_shader_control_with_rtv(
-               command_writer, terakan_meta_copy_image_ps.stage.ps.db_shader_control,
-               dst_color.info);
+            terakan_hw_config_sqk_set_resource_fs(
+               &command_writer->hw_config_sqk,
+               TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META, src_image->bo,
+               &src_descriptor);
 
-            terakan_meta_emit_rect_3_vertices_draw(command_writer, &rect, dst_color_layer_count);
+            terakan_meta_draw_rect(
+               command_writer,
+               terakan_vk_rect_to_screen_rect(
+                  dst_region_rect,
+                  (struct terakan_screen_rect){
+                     .bounds = {[1] = {G_028C78_WIDTH_MAX(dst_descriptor.dim) + 1,
+                                       G_028C78_HEIGHT_MAX(dst_descriptor.dim) + 1}}}),
+               dst_descriptor_slices);
 
-            src_resource[5] =
-               (src_resource[5] & C_030014_BASE_ARRAY) |
-               S_030014_BASE_ARRAY(G_030014_BASE_ARRAY(src_resource[5]) + dst_color_layer_count);
-            dst_descriptor_create_info.base_array_layer += dst_color_layer_count;
-            dst_descriptor_create_info.layer_count -= dst_color_layer_count;
-         }
+            dst_descriptor_create_info.subresource_range.base_z_or_array_layer +=
+               dst_descriptor_slices;
+            dst_descriptor_create_info.subresource_range.max_depth_or_layer_count -=
+               dst_descriptor_slices;
+            src_descriptor.resource[5] = (src_descriptor.resource[5] & C_030014_BASE_ARRAY) |
+                                         S_030014_BASE_ARRAY(G_030014_BASE_ARRAY(
+                                            src_descriptor.resource[5] + dst_descriptor_slices));
+         } while (dst_descriptor_create_info.subresource_range.max_depth_or_layer_count != 0);
       }
    }
 }

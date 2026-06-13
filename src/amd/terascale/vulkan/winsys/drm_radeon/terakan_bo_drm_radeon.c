@@ -108,7 +108,7 @@ terakan_bo_drm_radeon_map_impl(struct terakan_bo * const bo_base)
     */
    struct drm_radeon_gem_mmap gem_mmap_arguments = {
       .handle = bo->handle,
-      .size = bo->size,
+      .size = bo->base.size,
    };
    int const gem_mmap_result = drmCommandWriteRead(device->render_node_fd, DRM_RADEON_GEM_MMAP,
                                                    &gem_mmap_arguments, sizeof(gem_mmap_arguments));
@@ -119,7 +119,7 @@ terakan_bo_drm_radeon_map_impl(struct terakan_bo * const bo_base)
       return NULL;
    }
 
-   void * const mapping = os_mmap(NULL, (size_t)bo->size, PROT_READ | PROT_WRITE, MAP_SHARED,
+   void * const mapping = os_mmap(NULL, (size_t)bo->base.size, PROT_READ | PROT_WRITE, MAP_SHARED,
                                   device->render_node_fd, (off_t)gem_mmap_arguments.addr_ptr);
    if (mapping == MAP_FAILED) {
       vk_loge(VK_LOG_OBJS(terakan_device_log_obj(&device->base)),
@@ -133,10 +133,7 @@ terakan_bo_drm_radeon_map_impl(struct terakan_bo * const bo_base)
 static void
 terakan_bo_drm_radeon_unmap_impl(struct terakan_bo * const bo_base)
 {
-   struct terakan_bo_drm_radeon const * const bo =
-      container_of(bo_base, struct terakan_bo_drm_radeon const, base);
-
-   os_munmap(bo_base->mapping, (size_t)bo->size);
+   os_munmap(bo_base->mapping, (size_t)bo_base->size);
 }
 
 static void
@@ -234,16 +231,14 @@ terakan_bo_drm_radeon_allocate_device_memory(
    if (gem_create_result != 0) {
       vk_free2(&device->base.vk.alloc, allocator, bo);
       vk_loge(VK_LOG_OBJS(terakan_device_log_obj(&device->base)),
-              "Failed to allocate a buffer, size: %" PRIu64 " bytes, alignment: %" PRIu64 " bytes, "
-              "domains: 0x%" PRIX32 ", flags: 0x%" PRIX32 ", error number %d",
+              "Failed to allocate a buffer, size: 0x%" PRIX64 " bytes, alignment: 0x%" PRIX64
+              " bytes, domains: 0x%" PRIX32 ", flags: 0x%" PRIX32 ", error number %d",
               size, alignment, (uint32_t)initial_domains, (uint32_t)gem_create_arguments.flags,
               gem_create_result);
       return VK_ERROR_OUT_OF_DEVICE_MEMORY;
    }
 
-   terakan_bo_init(&bo->base, &device->base);
-
-   bo->size = size;
+   terakan_bo_init(&bo->base, &device->base, size);
 
    bo->domains = initial_domains;
 
@@ -344,8 +339,8 @@ terakan_bo_drm_radeon_import_fd(struct terakan_device * const device_base, int c
       mtx_unlock(&device->shared_bo_mutex);
       vk_free2(&device->base.vk.alloc, allocator, bo);
       vk_loge(VK_LOG_OBJS(terakan_device_log_obj(&device->base)),
-              "Failed to import a file descriptor as a buffer, size: %" PRIu64 " bytes, preferred "
-              "domain: %s, error number %d",
+              "Failed to import a file descriptor as a buffer, size: 0x%" PRIX64 " bytes, "
+              "preferred domain: %s, error number %d",
               size, prefer_vram ? "VRAM" : "GTT", prime_fd_to_handle_result);
       return VK_ERROR_INVALID_EXTERNAL_HANDLE;
    }
@@ -374,9 +369,7 @@ terakan_bo_drm_radeon_import_fd(struct terakan_device * const device_base, int c
 
    mtx_unlock(&device->shared_bo_mutex);
 
-   terakan_bo_init(&bo->base, &device->base);
-
-   bo->size = size;
+   terakan_bo_init(&bo->base, &device->base, size);
 
    bo->domains = prefer_vram ? RADEON_GEM_DOMAIN_VRAM : RADEON_GEM_DOMAIN_GTT;
 

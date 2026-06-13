@@ -194,7 +194,8 @@ terakan_queue_drm_radeon_submit(
          for (uint32_t indirect_buffer_dword_index = 0;
               indirect_buffer_dword_index < indirect_buffer_size_dwords;
               ++indirect_buffer_dword_index) {
-            fprintf(stderr, "0x%08" PRIX32 "\n", indirect_buffer[indirect_buffer_dword_index]);
+            fprintf(stderr, "[%" PRIu32 "] = 0x%08" PRIX32 ",\n", indirect_buffer_dword_index,
+                    indirect_buffer[indirect_buffer_dword_index]);
          }
       }
       return VK_ERROR_UNKNOWN;

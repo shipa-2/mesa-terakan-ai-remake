@@ -423,6 +423,10 @@ terakan_command_buffer_create(struct vk_command_pool * const command_pool,
       return result;
    }
 
+   command_buffer->vk.dynamic_graphics_state.vi = &command_buffer->dynamic_vertex_input_;
+   command_buffer->vk.dynamic_graphics_state.ms.sample_locations =
+      &command_buffer->dynamic_sample_locations_;
+
    list_inithead(&command_buffer->push_buffers);
    command_buffer->current_push_buffer_used_bytes = TERAKAN_PUSH_BUFFER_SIZE_BYTES;
 
@@ -445,18 +449,18 @@ struct vk_command_buffer_ops const terakan_command_buffer_ops = {
    .destroy = terakan_command_buffer_destroy,
 };
 
-#ifdef TERAKAN_DEVTEST
+#ifdef TERAKAN_REGRESSION_TEST
 static void
-terakan_gfx_command_writer_reset_devtest_indirect_buffer_splitting(
+terakan_gfx_command_writer_reset_regression_test_indirect_buffer_splitting(
    struct terakan_gfx_command_writer * const command_writer)
 {
-   command_writer->actions_before_next_devtest_indirect_buffer_split =
+   command_writer->actions_before_next_regression_test_indirect_buffer_split =
       container_of(terakan_gfx_command_writer_physical_device(command_writer)->vk.instance,
                    struct terakan_instance const, vk)
-         ->devtest_split_indirect_buffer_after_actions;
-   if (command_writer->actions_before_next_devtest_indirect_buffer_split <= 0) {
-      /* Don't enable indirect buffer splitting debugging. */
-      command_writer->actions_before_next_devtest_indirect_buffer_split = -1;
+         ->regression_test_split_indirect_buffer_after_actions;
+   if (command_writer->actions_before_next_regression_test_indirect_buffer_split <= 0) {
+      /* Don't enable indirect buffer splitting testing. */
+      command_writer->actions_before_next_regression_test_indirect_buffer_split = -1;
    }
 }
 #endif
@@ -530,30 +534,16 @@ terakan_gfx_command_writer_end_indirect_buffer(
 
    command_writer->indirect_buffer = NULL;
 
-#ifdef TERAKAN_DEVTEST
-   terakan_gfx_command_writer_reset_devtest_indirect_buffer_splitting(command_writer);
+#ifdef TERAKAN_REGRESSION_TEST
+   terakan_gfx_command_writer_reset_regression_test_indirect_buffer_splitting(command_writer);
 #endif
 }
 
 static void
-terakan_gfx_command_writer_emit_preamble_and_sq_resource_clear(
-   struct terakan_gfx_command_writer * const command_writer)
+terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * const command_writer)
 {
-   /* According the Gallium R600 driver, the order of register setting matters, and sometimes the
-    * wrong order may cause incorrect behavior or GPU hangs.
-    *
-    * Useful references:
-    * - Gallium R600 driver
-    * - xf86-video-ati
-    * - Radeon DRM kernel driver
-    * - fglrx indirect buffers
-    */
-
-   struct terakan_device const * const device = terakan_gfx_command_writer_device(command_writer);
    struct terakan_physical_device const * const physical_device =
-      terakan_device_physical_device(device);
-   struct terakan_physical_device_chip_info const * const chip_info = &physical_device->chip_info;
-   bool const is_r9xx = chip_info->is_r9xx;
+      terakan_gfx_command_writer_physical_device(command_writer);
    struct terakan_physical_device_submission_info_gfx const * const submission_info_gfx =
       &physical_device->submission_info_gfx;
 
@@ -561,7 +551,7 @@ terakan_gfx_command_writer_emit_preamble_and_sq_resource_clear(
 
    /* Disable register shadowing before setting any registers. */
    packet = terakan_gfx_command_writer_emit(command_writer,
-                                            TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 3);
+                                            TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG, 3);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -577,7 +567,7 @@ terakan_gfx_command_writer_emit_preamble_and_sq_resource_clear(
        * 15.301.1901 does it in submissions after CONTEXT_CONTROL.
        */
       packet = terakan_gfx_command_writer_emit(command_writer,
-                                               TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2);
+                                               TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG, 2);
       if (unlikely(packet == NULL)) {
          return;
       }
@@ -585,487 +575,29 @@ terakan_gfx_command_writer_emit_preamble_and_sq_resource_clear(
       *packet++ = 1;
       terakan_gfx_command_writer_emit_done(command_writer, packet);
    }
-
-   /*
-    * Setup graphics context registers outside terakan_hw_state_draw.
-    */
-
-   if (!is_r9xx) {
-      /* Workaround for hardware issues with dynamic GPRs - must set all limits to 240 (in units of
-       * 8 registers) instead of 0. */
-      packet = terakan_gfx_command_writer_emit(
-         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 1);
-      if (unlikely(packet == NULL)) {
-         return;
-      }
-      *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
-      *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028838_SQ_DYN_GPR_RESOURCE_LIMIT_1);
-      /* Workaround for hardware issues with dynamic GPRs - must set all limits to 240 (in units of
-       * 8 registers) instead of 0.
-       */
-      *packet++ = S_028838_PS_GPRS(0x1E) | S_028838_VS_GPRS(0x1E) | S_028838_GS_GPRS(0x1E) |
-                  S_028838_ES_GPRS(0x1E) | S_028838_HS_GPRS(0x1E) | S_028838_LS_GPRS(0x1E);
-      terakan_gfx_command_writer_emit_done(command_writer, packet);
-   }
-
-   uint32_t const draw_context_regs[] = {
-      /*
-       * Vertex grouper and tessellator.
-       */
-
-      PKT3(PKT3_SET_CONTEXT_REG,
-           (R_028404_VGT_MIN_VTX_INDX - R_028400_VGT_MAX_VTX_INDX) / sizeof(uint32_t) + 1, 0),
-      TERAKAN_CONTEXT_REG_OFFSET(R_028400_VGT_MAX_VTX_INDX),
-      /* R_028400_VGT_MAX_VTX_INDX */
-      UINT32_MAX,
-      /* R_028404_VGT_MIN_VTX_INDX */
-      0,
-
-      PKT3(PKT3_SET_CONTEXT_REG,
-           (R_028A3C_VGT_GROUP_VECT_1_FMT_CNTL - R_028A10_VGT_OUTPUT_PATH_CNTL) / sizeof(uint32_t) +
-              1,
-           0),
-      TERAKAN_CONTEXT_REG_OFFSET(R_028A10_VGT_OUTPUT_PATH_CNTL),
-      /* R_028A10_VGT_OUTPUT_PATH_CNTL */
-      0,
-      /* R_028A14_VGT_HOS_CNTL */
-      0,
-      /* R_028A18_VGT_HOS_MAX_TESS_LEVEL */
-      (uint32_t)(6 + 127) << 23, /* 64.0f */
-      /* R_028A1C_VGT_HOS_MIN_TESS_LEVEL */
-      0,
-      /* R_028A20_VGT_HOS_REUSE_DEPTH */
-      16,
-      /* R_028A24_VGT_GROUP_PRIM_TYPE */
-      0,
-      /* R_028A28_VGT_GROUP_FIRST_DECR */
-      0,
-      /* R_028A2C_VGT_GROUP_DECR */
-      0,
-      /* R_028A30_VGT_GROUP_VECT_0_CNTL */
-      0,
-      /* R_028A34_VGT_GROUP_VECT_1_CNTL */
-      0,
-      /* R_028A38_VGT_GROUP_VECT_0_FMT_CNTL */
-      0,
-      /* R_028A3C_VGT_GROUP_VECT_1_FMT_CNTL */
-      0,
-
-      /* TODO(Triang3l): Move to hw_state_draw. */
-      PKT3(PKT3_SET_CONTEXT_REG, 1, 0),
-      TERAKAN_CONTEXT_REG_OFFSET(R_028A40_VGT_GS_MODE),
-      0,
-
-      /* TODO(Triang3l): Move to hw_state_draw. */
-      PKT3(PKT3_SET_CONTEXT_REG, 1, 0),
-      TERAKAN_CONTEXT_REG_OFFSET(R_028A84_VGT_PRIMITIVEID_EN),
-      0,
-
-      /* TODO(Triang3l): Move to hw_state_draw. */
-      PKT3(PKT3_SET_CONTEXT_REG, 1, 0),
-      TERAKAN_CONTEXT_REG_OFFSET(R_028A94_VGT_MULTI_PRIM_IB_RESET_EN),
-      0,
-
-      /* TODO(Triang3l): Move to hw_state_draw. */
-      PKT3(PKT3_SET_CONTEXT_REG, 1, 0),
-      TERAKAN_CONTEXT_REG_OFFSET(R_028AB4_VGT_REUSE_OFF),
-      0,
-
-      /* TODO(Triang3l): Move to hw_state_draw. */
-      PKT3(PKT3_SET_CONTEXT_REG, 1, 0),
-      TERAKAN_CONTEXT_REG_OFFSET(R_028AB8_VGT_VTX_CNT_EN),
-      0,
-
-      /* TODO(Triang3l): Move to hw_state_draw. */
-      PKT3(PKT3_SET_CONTEXT_REG, 1, 0),
-      TERAKAN_CONTEXT_REG_OFFSET(R_028B54_VGT_SHADER_STAGES_EN),
-      0,
-
-      /* TODO(Triang3l): Move to hw_state_draw. */
-      PKT3(
-         PKT3_SET_CONTEXT_REG,
-         (R_028B98_VGT_STRMOUT_BUFFER_CONFIG - R_028B94_VGT_STRMOUT_CONFIG) / sizeof(uint32_t) + 1,
-         0),
-      TERAKAN_CONTEXT_REG_OFFSET(R_028B94_VGT_STRMOUT_CONFIG),
-      /* R_028B94_VGT_STRMOUT_CONFIG */
-      0,
-      /* R_028B98_VGT_STRMOUT_BUFFER_CONFIG */
-      0,
-
-      /*
-       * Sequencer.
-       */
-
-      PKT3(PKT3_SET_CONTEXT_REG,
-           (R_0288EC_SQ_LDS_ALLOC_PS - R_0288E8_SQ_LDS_ALLOC) / sizeof(uint32_t) + 1, 0),
-      TERAKAN_CONTEXT_REG_OFFSET(R_0288E8_SQ_LDS_ALLOC),
-      /* R_0288E8_SQ_LDS_ALLOC */
-      0,
-      /* R_0288EC_SQ_LDS_ALLOC_PS */
-      0,
-
-      /* TODO(Triang3l): Move to hw_state_draw. */
-      PKT3(PKT3_SET_CONTEXT_REG, 1, 0),
-      TERAKAN_CONTEXT_REG_OFFSET(R_0288F0_SQ_VTX_SEMANTIC_CLEAR),
-      UINT32_MAX,
-
-      /*
-       * Shader export.
-       */
-
-      PKT3(PKT3_SET_CONTEXT_REG, 1, 0),
-      TERAKAN_CONTEXT_REG_OFFSET(R_028350_SX_MISC),
-      0,
-
-      PKT3(PKT3_SET_CONTEXT_REG, 1, 0),
-      TERAKAN_CONTEXT_REG_OFFSET(R_028410_SX_ALPHA_TEST_CONTROL),
-      0,
-
-      /*
-       * Shader interpolator.
-       */
-
-      PKT3(PKT3_SET_CONTEXT_REG, 1, 0),
-      TERAKAN_CONTEXT_REG_OFFSET(R_0286C8_SPI_THREAD_GROUPING),
-      /* TODO(Triang3l): Gallium R600 has 0 for SPI_THREAD_GROUPING, but DRM Radeon 2.50.0 has 1 in
-       * cleanstate_evergreen/cayman.h. Research which is more correct.
-       */
-      0,
-
-      PKT3(PKT3_SET_CONTEXT_REG, 1, 0),
-      TERAKAN_CONTEXT_REG_OFFSET(R_0286D4_SPI_INTERP_CONTROL_0),
-      S_0286D4_FLAT_SHADE_ENA(1) | S_0286D4_PNT_SPRITE_ENA(1) |
-         S_0286D4_PNT_SPRITE_OVRD_X(V_0286D4_SPI_PNT_SPRITE_SEL_S) |
-         S_0286D4_PNT_SPRITE_OVRD_Y(V_0286D4_SPI_PNT_SPRITE_SEL_T) |
-         S_0286D4_PNT_SPRITE_OVRD_Z(V_0286D4_SPI_PNT_SPRITE_SEL_0) |
-         S_0286D4_PNT_SPRITE_OVRD_W(V_0286D4_SPI_PNT_SPRITE_SEL_1),
-
-      PKT3(PKT3_SET_CONTEXT_REG, 1, 0),
-      TERAKAN_CONTEXT_REG_OFFSET(R_0286DC_SPI_FOG_CNTL),
-      0,
-
-      PKT3(PKT3_SET_CONTEXT_REG, 1, 0),
-      TERAKAN_CONTEXT_REG_OFFSET(R_0286E4_SPI_PS_IN_CONTROL_2),
-      0,
-
-      /*
-       * Primitive assembly.
-       */
-
-      PKT3(PKT3_SET_CONTEXT_REG, 1, 0),
-      TERAKAN_CONTEXT_REG_OFFSET(R_028A00_PA_SU_POINT_SIZE),
-      S_028A00_HEIGHT((uint32_t)1 << 3) | S_028A00_WIDTH((uint32_t)1 << 3),
-
-      PKT3(PKT3_SET_CONTEXT_REG, 2, 0),
-      TERAKAN_CONTEXT_REG_OFFSET(R_028030_PA_SC_SCREEN_SCISSOR_TL),
-      /* R_028030_PA_SC_SCREEN_SCISSOR_TL */
-      0,
-      /* R_028034_PA_SC_SCREEN_SCISSOR_BR */
-      S_028034_BR_X(TERAKAN_IMAGE_MAX_WIDTH_HEIGHT) | S_028034_BR_Y(TERAKAN_IMAGE_MAX_WIDTH_HEIGHT),
-
-      /* TODO(Triang3l): Move to hw_state_draw. */
-      PKT3(PKT3_SET_CONTEXT_REG, 2, 0),
-      TERAKAN_CONTEXT_REG_OFFSET(R_028204_PA_SC_WINDOW_SCISSOR_TL),
-      /* R_028204_PA_SC_WINDOW_SCISSOR_TL */
-      0,
-      /* R_028208_PA_SC_WINDOW_SCISSOR_BR */
-      S_028208_BR_X(TERAKAN_IMAGE_MAX_WIDTH_HEIGHT) | S_028208_BR_Y(TERAKAN_IMAGE_MAX_WIDTH_HEIGHT),
-
-      /* TODO(Triang3l): Move to hw_state_draw. */
-      PKT3(PKT3_SET_CONTEXT_REG, 1, 0),
-      TERAKAN_CONTEXT_REG_OFFSET(R_02820C_PA_SC_CLIPRECT_RULE),
-      0xFFFF,
-
-      PKT3(PKT3_SET_CONTEXT_REG,
-           (R_028234_PA_SU_HARDWARE_SCREEN_OFFSET - R_028230_PA_SC_EDGERULE) / sizeof(uint32_t) + 1,
-           0),
-      TERAKAN_CONTEXT_REG_OFFSET(R_028230_PA_SC_EDGERULE),
-      /* R_028230_PA_SC_EDGERULE
-       * Direct3D top-left rule, also compatible with Direct3D line rasterization diamond test.
-       */
-      S_028230_ER_TRI(0b1010) | S_028230_ER_POINT(0b1010) | S_028230_ER_RECT(0b1010) |
-         S_028230_ER_LINE_LR(0b011010) | S_028230_ER_LINE_RL(0b100110) |
-         S_028230_ER_LINE_TB(0b1010) | S_028230_ER_LINE_BT(0b1010),
-      /* R_028234_PA_SU_HARDWARE_SCREEN_OFFSET */
-      0,
-
-      /* TODO(Triang3l): Move to hw_state_draw. */
-      PKT3(PKT3_SET_CONTEXT_REG, 2, 0),
-      TERAKAN_CONTEXT_REG_OFFSET(R_028240_PA_SC_GENERIC_SCISSOR_TL),
-      /* R_028240_PA_SC_GENERIC_SCISSOR_TL */
-      0,
-      /* R_028244_PA_SC_GENERIC_SCISSOR_BR */
-      S_028244_BR_X(TERAKAN_IMAGE_MAX_WIDTH_HEIGHT) | S_028244_BR_Y(TERAKAN_IMAGE_MAX_WIDTH_HEIGHT),
-
-      PKT3(PKT3_SET_CONTEXT_REG, 1, 0),
-      TERAKAN_CONTEXT_REG_OFFSET(R_028820_PA_CL_NANINF_CNTL),
-      0,
-
-      PKT3(PKT3_SET_CONTEXT_REG,
-           (R_028A08_PA_SU_LINE_CNTL - R_028A04_PA_SU_POINT_MINMAX) / sizeof(uint32_t) + 1, 0),
-      TERAKAN_CONTEXT_REG_OFFSET(R_028A04_PA_SU_POINT_MINMAX),
-      /* R_028A04_PA_SU_POINT_MINMAX */
-      S_028A04_MAX_SIZE(UINT16_MAX),
-      /* R_028A08_PA_SU_LINE_CNTL */
-      S_028A08_WIDTH((uint32_t)1 << 3),
-
-      /* TODO(Triang3l): Move to hw_state_draw. */
-      PKT3(PKT3_SET_CONTEXT_REG, 1, 0),
-      TERAKAN_CONTEXT_REG_OFFSET(R_028A4C_PA_SC_MODE_CNTL_1),
-      EG_S_028A4C_FORCE_EOV_CNTDWN_ENABLE(1) | EG_S_028A4C_FORCE_EOV_REZ_ENABLE(1),
-
-      /*
-       * Depth buffer.
-       */
-
-      /* TODO(Triang3l): Move to hw_state_draw. */
-      PKT3(PKT3_SET_CONTEXT_REG, 1, 0),
-      TERAKAN_CONTEXT_REG_OFFSET(R_028000_DB_RENDER_CONTROL),
-      0,
-
-      /* TODO(Triang3l): Move to hw_state_draw.
-       * DECOMPRESS_Z_ON_FLUSH on R9xx must be enabled for 4x+ AA.
-       */
-      PKT3(PKT3_SET_CONTEXT_REG, 1, 0),
-      TERAKAN_CONTEXT_REG_OFFSET(R_028010_DB_RENDER_OVERRIDE2),
-      0,
-
-      /* TODO(Triang3l): Move to hw_state_draw. */
-      PKT3(PKT3_SET_CONTEXT_REG, 1, 0),
-      TERAKAN_CONTEXT_REG_OFFSET(R_028B70_DB_ALPHA_TO_MASK),
-      0,
-   };
-
-   packet = terakan_gfx_command_writer_emit(command_writer,
-                                            TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE,
-                                            ARRAY_SIZE(draw_context_regs));
-   if (unlikely(packet == NULL)) {
-      return;
-   }
-   memcpy(packet, draw_context_regs, sizeof(draw_context_regs));
-   packet += ARRAY_SIZE(draw_context_regs);
-   terakan_gfx_command_writer_emit_done(command_writer, packet);
-
-   if (is_r9xx) {
-      /* TODO(Triang3l): Move to hw_state_draw. */
-      packet = terakan_gfx_command_writer_emit(
-         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 1);
-      if (unlikely(packet == NULL)) {
-         return;
-      }
-      *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
-      *packet++ = TERAKAN_CONTEXT_REG_OFFSET(CM_R_028AA8_IA_MULTI_VGT_PARAM);
-      *packet++ = S_028AA8_PRIMGROUP_SIZE(128 - 1);
-      terakan_gfx_command_writer_emit_done(command_writer, packet);
-
-      packet = terakan_gfx_command_writer_emit(
-         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 1);
-      if (unlikely(packet == NULL)) {
-         return;
-      }
-      *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
-      *packet++ = TERAKAN_CONTEXT_REG_OFFSET(CM_R_0286FC_SPI_LDS_MGMT);
-      *packet++ = 0;
-      terakan_gfx_command_writer_emit_done(command_writer, packet);
-
-      /* TODO(Triang3l): Move to hw_state_draw. */
-      packet = terakan_gfx_command_writer_emit(
-         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 1);
-      if (unlikely(packet == NULL)) {
-         return;
-      }
-      *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
-      *packet++ = TERAKAN_CONTEXT_REG_OFFSET(CM_R_028804_DB_EQAA);
-      *packet++ = S_028804_HIGH_QUALITY_INTERSECTIONS(1) | S_028804_INCOHERENT_EQAA_READS(1) |
-                  S_028804_STATIC_ANCHOR_ASSOCIATIONS(1);
-      terakan_gfx_command_writer_emit_done(command_writer, packet);
-   }
-
-   packet = terakan_gfx_command_writer_emit(command_writer,
-                                            TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 1);
-   if (unlikely(packet == NULL)) {
-      return;
-   }
-   *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
-   *packet++ =
-      TERAKAN_CONTEXT_REG_OFFSET(is_r9xx ? CM_R_028BE4_PA_SU_VTX_CNTL : R_028C08_PA_SU_VTX_CNTL);
-   *packet++ = S_028C08_PIX_CENTER_HALF(1) | S_028C08_ROUND_MODE(V_028C08_X_ROUND_TO_EVEN) |
-               S_028C08_QUANT_MODE(V_028C08_X_1_256TH);
-   terakan_gfx_command_writer_emit_done(command_writer, packet);
-
-   /*
-    * Setup configuration registers common between graphics and compute.
-    */
-
-   uint32_t sq_config = S_008C00_VC_ENABLE(chip_info->has_vertex_cache) | S_008C00_EXPORT_SRC_C(1);
-   /* Not raising CS2 priority in SQ_CONFIG on R9xx unlike in DRM Radeon 2.50.0 because it doesn't
-    * expose the compute rings at all.
-    */
-   if (!is_r9xx) {
-      sq_config |= S_008C00_LS_PRIO(3) | S_008C00_HS_PRIO(3) | S_008C00_ES_PRIO(3) |
-                   S_008C00_GS_PRIO(2) | S_008C00_VS_PRIO(1) | S_008C00_PS_PRIO(0) |
-                   S_008C00_CS_PRIO(0);
-   }
-   packet = terakan_gfx_command_writer_emit(
-      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 2 + 2 + 2 + 2);
-   if (unlikely(packet == NULL)) {
-      return;
-   }
-   /* PS_PARTIAL_FLUSH is necessary before setting SQ_CONFIG (as well as
-    * SQ_DYN_GPR_CNTL_PS_FLUSH_REQ later), otherwise on WDDM Radeon Software (tested on Barts on
-    * 15.301.1901), the GPU hangs randomly likely because other work is still being done by the SQ.
-    * In Direct3D 11 submissions on R8xx, WAIT_UNTIL for WAIT_3D_IDLE is done instead even, but
-    * PS_PARTIAL_FLUSH seems sufficient.
-    */
-   /* TODO(Triang3l): Is CS_PARTIAL_FLUSH needed too? */
-   *packet++ = PKT3(PKT3_EVENT_WRITE, 0, 0);
-   *packet++ = EVENT_TYPE(EVENT_TYPE_PS_PARTIAL_FLUSH) | EVENT_INDEX(4);
-   *packet++ = PKT3(PKT3_SET_CONFIG_REG, is_r9xx ? 2 : 6, 0);
-   *packet++ = TERAKAN_CONFIG_REG_OFFSET(R_008C00_SQ_CONFIG);
-   /* R_008C00_SQ_CONFIG */
-   *packet++ = sq_config;
-   /* R_008C04_SQ_GPR_RESOURCE_MGMT_1 */
-   *packet++ = S_008C04_NUM_CLAUSE_TEMP_GPRS(4);
-   if (is_r9xx) {
-      *packet++ = PKT3(PKT3_SET_CONFIG_REG, 2, 0);
-      *packet++ = TERAKAN_CONFIG_REG_OFFSET(R_008C10_SQ_GLOBAL_GPR_RESOURCE_MGMT_1);
-   } else {
-      /* R_008C08_SQ_GPR_RESOURCE_MGMT_2 */
-      *packet++ = 0;
-      /* R_008C0C_SQ_GPR_RESOURCE_MGMT_3 */
-      *packet++ = 0;
-   }
-   /* R_008C10_SQ_GLOBAL_GPR_RESOURCE_MGMT_1 */
-   *packet++ = 0;
-   /* R_008C14_SQ_GLOBAL_GPR_RESOURCE_MGMT_2 */
-   *packet++ = 0;
-   terakan_gfx_command_writer_emit_done(command_writer, packet);
-
-   /* TODO(Triang3l): Dynamic GPR usage on R8xx - see evergreen_emit_config_state, and also disable
-    * them for tessellation, see evergreen_adjust_gprs. Keep them always enabled for R9xx though.
-    */
-   packet = terakan_gfx_command_writer_emit(command_writer,
-                                            TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 1);
-   if (unlikely(packet == NULL)) {
-      return;
-   }
-   *packet++ = PKT3(PKT3_SET_CONFIG_REG, 1, 0);
-   /* PS_PARTIAL_FLUSH required for this was done earlier. */
-   *packet++ = TERAKAN_CONFIG_REG_OFFSET(R_008D8C_SQ_DYN_GPR_CNTL_PS_FLUSH_REQ);
-   *packet++ = S_008D8C_DYN_GPR_ENABLE(1);
-   terakan_gfx_command_writer_emit_done(command_writer, packet);
-
-   uint32_t const config_regs[] = {
-      /* Remove LS and HS from one SIMD for a hardware bug workaround according to the Gallium R600
-       * driver.
-       */
-      PKT3(PKT3_SET_CONFIG_REG, 3, 0),
-      TERAKAN_CONFIG_REG_OFFSET(R_008E20_SQ_STATIC_THREAD_MGMT1),
-      /* R_008E20_SQ_STATIC_THREAD_MGMT1 */
-      ~(uint32_t)0,
-      /* R_008E24_SQ_STATIC_THREAD_MGMT2 */
-      ~(uint32_t)0,
-      /* R_008E28_SQ_STATIC_THREAD_MGMT3 */
-      ~(uint32_t)1,
-
-      PKT3(PKT3_SET_CONFIG_REG, 1, 0),
-      TERAKAN_CONFIG_REG_OFFSET(R_009100_SPI_CONFIG_CNTL),
-      0,
-
-      PKT3(PKT3_SET_CONFIG_REG, 1, 0),
-      TERAKAN_CONFIG_REG_OFFSET(R_00913C_SPI_CONFIG_CNTL_1),
-      S_00913C_VTX_DONE_DELAY(1),
-
-      PKT3(PKT3_SET_CONFIG_REG, 1, 0),
-      TERAKAN_CONFIG_REG_OFFSET(R_008A14_PA_CL_ENHANCE),
-      S_008A14_CLIP_VTX_REORDER_ENA(1) | S_008A14_NUM_CLIP_SEQ(3),
-   };
-
-   packet = terakan_gfx_command_writer_emit(
-      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, ARRAY_SIZE(config_regs));
-   if (unlikely(packet == NULL)) {
-      return;
-   }
-   memcpy(packet, config_regs, sizeof(config_regs));
-   packet += ARRAY_SIZE(config_regs);
-   terakan_gfx_command_writer_emit_done(command_writer, packet);
-
-   /*
-    * Setup configuration registers for graphics.
-    */
-
-   /* TODO(Triang3l): Emit the values for graphics or compute when switching between the two. */
-
-   if (!is_r9xx) {
-      unsigned const sq_vertex_stage_count =
-         terakan_shader_hw_vertex_stage_count(device->vk.enabled_features.tessellationShader,
-                                              device->vk.enabled_features.geometryShader);
-
-      uint32_t const sq_stage_stack_entries =
-         chip_info->sq_max_stack_entries / (sq_vertex_stage_count + 1);
-
-      uint32_t const sq_thread_stack_register_count =
-         (R_008C28_SQ_STACK_RESOURCE_MGMT_3 - R_008C18_SQ_THREAD_RESOURCE_MGMT_1) /
-            sizeof(uint32_t) +
-         1;
-      packet = terakan_gfx_command_writer_emit(command_writer,
-                                               TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE,
-                                               2 + sq_thread_stack_register_count + 2 + 1);
-      if (unlikely(packet == NULL)) {
-         return;
-      }
-      *packet++ = PKT3(PKT3_SET_CONFIG_REG, sq_thread_stack_register_count, 0);
-      *packet++ = TERAKAN_CONFIG_REG_OFFSET(R_008C18_SQ_THREAD_RESOURCE_MGMT_1);
-      /* R_008C18_SQ_THREAD_RESOURCE_MGMT_1, R_008C1C_SQ_THREAD_RESOURCE_MGMT_2 */
-      /* TODO(Triang3l): Allocate based on the currently bound shaders, not the enabled features.
-       * Must be consistent with terakan_state_draw sq_tmp.sq_thread_resource_mgmt.
-       */
-      memcpy(packet,
-             chip_info->sq_thread_resource_mgmt_ts_gs_r8xx
-                [device->vk.enabled_features.tessellationShader ? 1 : 0]
-                [device->vk.enabled_features.geometryShader ? 1 : 0],
-             sizeof(uint32_t) * 2);
-      packet += 2;
-      /* R_008C20_SQ_STACK_RESOURCE_MGMT_1 */
-      *packet++ = S_008C20_NUM_PS_STACK_ENTRIES(sq_stage_stack_entries) |
-                  S_008C20_NUM_VS_STACK_ENTRIES(sq_stage_stack_entries);
-      /* R_008C24_SQ_STACK_RESOURCE_MGMT_2 */
-      *packet++ = device->vk.enabled_features.geometryShader
-                     ? S_008C24_NUM_GS_STACK_ENTRIES(sq_stage_stack_entries) |
-                          S_008C24_NUM_ES_STACK_ENTRIES(sq_stage_stack_entries)
-                     : 0;
-      /* R_008C28_SQ_STACK_RESOURCE_MGMT_3 */
-      *packet++ = device->vk.enabled_features.tessellationShader
-                     ? S_008C28_NUM_HS_STACK_ENTRIES(sq_stage_stack_entries) |
-                          S_008C28_NUM_LS_STACK_ENTRIES(sq_stage_stack_entries)
-                     : 0;
-      *packet++ = PKT3(PKT3_SET_CONFIG_REG, 1, 0);
-      *packet++ = TERAKAN_CONFIG_REG_OFFSET(R_008E2C_SQ_LDS_RESOURCE_MGMT);
-      *packet++ = S_008E2C_NUM_PS_LDS(TERAKAN_LIMITS_HW_LDS_SIMD_DWORD_COUNT / 2) |
-                  S_008E2C_NUM_LS_LDS(TERAKAN_LIMITS_HW_LDS_SIMD_DWORD_COUNT / 2);
-      terakan_gfx_command_writer_emit_done(command_writer, packet);
-   }
-
-   /* Clear all sequencer resource constants in the hardware. */
-   packet = terakan_gfx_command_writer_emit(command_writer,
-                                            TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE, 2 + 1);
-   if (unlikely(packet == NULL)) {
-      return;
-   }
-   *packet++ = PKT3(PKT3_SET_CTL_CONST, 1, 0);
-   *packet++ = TERAKAN_CTL_CONST_OFFSET(R_03FF04_SQ_TEX_RESOURCE_CLEAR);
-   *packet++ = UINT32_MAX;
-   terakan_gfx_command_writer_emit_done(command_writer, packet);
 }
 
 static void
-terakan_gfx_command_writer_emit_hw_state(
+terakan_gfx_command_writer_emit_hw_config(
    struct terakan_gfx_command_writer * const command_writer,
    enum terakan_gfx_command_writer_emit_contents const contents)
 {
    if (contents == TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DRAW) {
-      terakan_hw_state_draw_emit_modified(command_writer);
-      terakan_hw_state_sqc_emit_modified(command_writer);
+      terakan_hw_config_shared_draw_emit_modified(command_writer);
+
+      if (!command_writer->hw_config_draw_initialized_in_indirect_buffer) {
+         command_writer->hw_config_draw_initialized_in_indirect_buffer = true;
+         terakan_hw_config_draw_set_all_modified(&command_writer->hw_config_draw);
+         terakan_hw_config_draw_emit_constant(command_writer);
+      }
+      terakan_hw_config_draw_emit_modified(command_writer);
+
+      if (!command_writer->hw_config_sqk_initialized_in_indirect_buffer) {
+         command_writer->hw_config_sqk_initialized_in_indirect_buffer = true;
+         terakan_hw_config_sqk_begin_emitting_first_draw_dispatch_in_indirect_buffer(
+            command_writer);
+      }
+      terakan_hw_config_sqk_emit_modified_for_draw(command_writer);
    }
 }
 
@@ -1089,15 +621,15 @@ terakan_gfx_command_writer_emit_with_bo(struct terakan_gfx_command_writer * cons
    assert(contents != TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_INVALID);
    bool const is_inner = command_writer->is_in_outer_emit_call;
    if (is_inner) {
-      assert((contents == TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_STATE ||
+      assert((contents == TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG ||
               contents == TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_OTHER) &&
              "Draws and dispatches must be outer emissions, they must not be emitted by indirect "
              "buffer setup or by hardware state applying");
    } else {
       assert((contents == TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DRAW ||
               contents == TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_OTHER) &&
-             "hw_state emissions must be done only from within hw_state applying functions invoked "
-             "from outer emissions");
+             "`hw_config` emissions must be done only from within `hw_config` applying functions "
+             "invoked from outer emissions");
       command_writer->is_in_outer_emit_call = true;
    }
 
@@ -1124,20 +656,20 @@ terakan_gfx_command_writer_emit_with_bo(struct terakan_gfx_command_writer * cons
       relocation_count = 0;
    }
 
-#ifdef TERAKAN_DEVTEST
+#ifdef TERAKAN_REGRESSION_TEST
    if (contents == TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DRAW &&
-       command_writer->actions_before_next_devtest_indirect_buffer_split >= 0) {
-      if (command_writer->actions_before_next_devtest_indirect_buffer_split == 0) {
+       command_writer->actions_before_next_regression_test_indirect_buffer_split >= 0) {
+      if (command_writer->actions_before_next_regression_test_indirect_buffer_split == 0) {
          terakan_gfx_command_writer_end_indirect_buffer(command_writer);
       }
-      --command_writer->actions_before_next_devtest_indirect_buffer_split;
+      --command_writer->actions_before_next_regression_test_indirect_buffer_split;
    }
 #endif
 
    if (command_writer->indirect_buffer != NULL) {
       if (!is_inner) {
-         /* Apply the modified tracked state in the existing indirect buffer. */
-         terakan_gfx_command_writer_emit_hw_state(command_writer, contents);
+         /* Apply the modified tracked configuration in the existing indirect buffer. */
+         terakan_gfx_command_writer_emit_hw_config(command_writer, contents);
       }
 
       if (command_writer->indirect_buffer != NULL &&
@@ -1158,7 +690,10 @@ terakan_gfx_command_writer_emit_with_bo(struct terakan_gfx_command_writer * cons
 
    if (command_writer->indirect_buffer == NULL) {
       if (is_inner) {
-         /* The outer emission that invoked this inner emission will handle the overflow. */
+         /* The outer emission that invoked this inner emission will handle the overflow, to avoid
+          * making the configuration emission functions reentrant, simplifying clearing modified
+          * configuration flags in them.
+          */
          return NULL;
       }
 
@@ -1198,18 +733,19 @@ terakan_gfx_command_writer_emit_with_bo(struct terakan_gfx_command_writer * cons
       memset(&command_writer->indirect_buffer->query_begin_end_samples, 0,
              sizeof(command_writer->indirect_buffer->query_begin_end_samples));
 
-      terakan_gfx_command_writer_emit_preamble_and_sq_resource_clear(command_writer);
+      terakan_gfx_command_writer_emit_preamble(command_writer);
 
-      terakan_hw_state_draw_indirect_buffer_begun(&command_writer->hw_state_draw);
-      terakan_hw_state_sqc_indirect_buffer_begun_and_resources_cleared(
-         &command_writer->hw_state_sqc);
+      command_writer->hw_config_draw_initialized_in_indirect_buffer = false;
+      command_writer->hw_config_sqk_initialized_in_indirect_buffer = false;
+
+      terakan_hw_config_shared_indirect_buffer_begun(command_writer);
 
       terakan_query_sample_in_new_indirect_buffer(command_writer);
 
-      /* Apply the tracked state in the new (either the first, or after an overflow) indirect
-       * buffer.
+      /* Apply the tracked configuration in the new (either the first, or after an overflow)
+       * indirect buffer.
        */
-      terakan_gfx_command_writer_emit_hw_state(command_writer, contents);
+      terakan_gfx_command_writer_emit_hw_config(command_writer, contents);
 
       if (unlikely((command_writer->indirect_buffer_finalizer_prepend_ptr -
                     command_writer->indirect_buffer_append_ptr) < total_packet_dwords ||
@@ -1387,7 +923,7 @@ terakan_EndCommandBuffer(VkCommandBuffer const commandBuffer)
 
    /* As barriers are deferred rather than emitted immediately in vkCmdPipelineBarrier, flush them.
     */
-   terakan_barrier_emit_pending_actions(gfx_command_writer);
+   terakan_barrier_emit_pending_actions(gfx_command_writer, TERAKAN_BARRIER_ACTIONS_ALL);
 
    terakan_gfx_command_writer_end_indirect_buffer(gfx_command_writer);
 
@@ -1435,8 +971,8 @@ terakan_BeginCommandBuffer(VkCommandBuffer const commandBuffer,
 
    gfx_command_writer->indirect_buffer_finalizer_relocation_list = UINT32_MAX;
 
-#ifdef TERAKAN_DEVTEST
-   terakan_gfx_command_writer_reset_devtest_indirect_buffer_splitting(gfx_command_writer);
+#ifdef TERAKAN_REGRESSION_TEST
+   terakan_gfx_command_writer_reset_regression_test_indirect_buffer_splitting(gfx_command_writer);
 #endif
 
    gfx_command_writer->is_in_outer_emit_call = false;
@@ -1456,15 +992,41 @@ terakan_BeginCommandBuffer(VkCommandBuffer const commandBuffer,
 
    memset(&gfx_command_writer->active_query_counts, 0,
           sizeof(gfx_command_writer->active_query_counts));
+   gfx_command_writer->active_pipelinestat_streamoutstats_query_count = 0;
 
-   terakan_hw_state_draw_reset(&gfx_command_writer->hw_state_draw);
-   terakan_hw_state_sqc_reset(&gfx_command_writer->hw_state_sqc);
+   gfx_command_writer->hw_config_draw_initialized_in_indirect_buffer = false;
+   gfx_command_writer->hw_config_sqk_initialized_in_indirect_buffer = false;
+
+   struct terakan_physical_device const * const physical_device =
+      terakan_command_buffer_physical_device(command_buffer);
+   terakan_hw_config_shared_reset(&gfx_command_writer->hw_config_shared,
+                                  &physical_device->chip_info);
+   terakan_hw_config_draw_reset(&gfx_command_writer->hw_config_draw);
+   /* TODO(Triang3l): R9xx `USE_LS_CONSTS` (perform thorough testing, and provide a regression
+    * testing flag for disabling).
+    */
+   terakan_hw_config_sqk_reset(&gfx_command_writer->hw_config_sqk, false);
 
    terakan_push_constants_state_reset(&gfx_command_writer->push_constants_state);
 
    struct terakan_device const * const device = terakan_command_buffer_device(command_buffer);
 
-   terakan_state_draw_reset(&gfx_command_writer->state_draw, device);
+   terakan_app_config_draw_reset(&gfx_command_writer->app_config_draw);
+   terakan_app_config_draw_set_pa_vport_z_range_unrestricted(
+      &gfx_command_writer->app_config_draw,
+      device->vk.enabled_extensions.EXT_depth_range_unrestricted);
+   terakan_app_config_draw_set_db_alpha_to_mask(
+      &gfx_command_writer->app_config_draw,
+      TERAKAN_HW_CONFIG_DRAW_DB_ALPHA_TO_MASK_OFFSETS_CLEAR_MASK,
+      container_of(physical_device->vk.base.instance, struct terakan_instance const, vk)->test_flags &
+            BITFIELD64_BIT(TERAKAN_TEST_SHIFT_NO_ALPHA_TO_COVERAGE_DITHERING)
+         ? TERAKAN_HW_CONFIG_DRAW_DB_ALPHA_TO_MASK_OFFSETS_REGULAR
+         : TERAKAN_HW_CONFIG_DRAW_DB_ALPHA_TO_MASK_OFFSETS_DITHERED);
+
+   /* Make the graphics state fully dynamic initially, as expected when drawing with shader objects,
+    * because a pipeline object hasn't been bound yet.
+    */
+   BITSET_ONES(command_buffer->graphics_state_is_dynamic);
 
    /* Section Appendix B: Memory Model "Availability, Visibility, and Domain Operations" of the
     * Vulkan 1.3.277 specification says:
@@ -1501,8 +1063,7 @@ terakan_BeginCommandBuffer(VkCommandBuffer const commandBuffer,
          S_0085F0_CB8_DEST_BASE_ENA(1) | S_0085F0_CB9_DEST_BASE_ENA(1) |
          S_0085F0_CB10_DEST_BASE_ENA(1) | S_0085F0_CB11_DEST_BASE_ENA(1) |
          S_0085F0_DB_DEST_BASE_ENA(1) | S_0085F0_TC_ACTION_ENA(1) |
-         S_0085F0_VC_ACTION_ENA(
-            terakan_device_physical_device(device)->chip_info.has_vertex_cache) |
+         S_0085F0_VC_ACTION_ENA(physical_device->chip_info.has_vertex_cache) |
          S_0085F0_CB_ACTION_ENA(1) | S_0085F0_DB_ACTION_ENA(1) | S_0085F0_SH_ACTION_ENA(1) |
          S_0085F0_SMX_ACTION_ENA(1) | TERAKAN_BARRIER_SURFACE_SYNC_ENGINE_ME,
       UINT32_MAX,

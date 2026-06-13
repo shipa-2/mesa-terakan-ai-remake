@@ -258,7 +258,8 @@ terakan_GetPhysicalDeviceFormatProperties2(UNUSED VkPhysicalDevice const physica
        * Vulkan specification.
        */
 
-      if (util_bitcount(terakan_format_aspect_map_aspect_masks[format_info.aspect_map]) &&
+      if (util_is_power_of_two_nonzero(
+             terakan_format_aspect_map_aspect_masks[format_info.aspect_map]) &&
           !vk_format_is_depth_or_stencil(format) && !vk_format_is_block_compressed(format)) {
          /* If there's only one aspect, its format inherently must match the whole format.
           * Assuming that makes it possible to skip terakan_format_info for buffers and just use the

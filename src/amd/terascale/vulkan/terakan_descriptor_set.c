@@ -38,6 +38,7 @@
 #include "vk_log.h"
 
 #include <assert.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -88,8 +89,8 @@ terakan_UpdateDescriptorSets(UNUSED VkDevice const device, uint32_t const descri
             if (image_view != NULL &&
                 G_028C70_FORMAT(image_view->color.info) != TERASCALE_FORMAT_INDEX_INVALID) {
                dst_uav->bo = image_view->bo;
-               memcpy(&dst_uav->color, &image_view->color, sizeof(struct terakan_color_descriptor));
-               terakan_color_descriptor_image_view_to_storage_image(&dst_uav->color);
+               dst_uav->color = image_view->color;
+               dst_uav->color.info |= S_028C70_RAT(true);
             } else {
                dst_uav->bo = NULL;
             }
@@ -118,10 +119,10 @@ terakan_UpdateDescriptorSets(UNUSED VkDevice const device, uint32_t const descri
                   &dst_resources[descriptor_index];
                struct terakan_image_view const * const image_view = terakan_image_view_from_handle(
                   descriptor_write->pImageInfo[descriptor_index].imageView);
-               if (image_view != NULL &&
-                   G_03001C_TYPE(image_view->resource[7]) == V_03001C_SQ_TEX_VTX_VALID_TEXTURE) {
+               if (image_view != NULL && G_03001C_TYPE(image_view->resource.resource[7]) ==
+                                            V_03001C_SQ_TEX_VTX_VALID_TEXTURE) {
                   dst_resource->bo = image_view->bo;
-                  memcpy(dst_resource->resource, image_view->resource, sizeof(uint32_t) * 8);
+                  dst_resource->resource = image_view->resource;
                } else {
                   dst_resource->bo = NULL;
                }
@@ -153,16 +154,10 @@ terakan_UpdateDescriptorSets(UNUSED VkDevice const device, uint32_t const descri
                &dst_resources[descriptor_index];
             struct terakan_buffer_view const * const buffer_view = terakan_buffer_view_from_handle(
                descriptor_write->pTexelBufferView[descriptor_index]);
-            if (buffer_view != NULL &&
-                G_03001C_TYPE(buffer_view->resource[7]) == V_03001C_SQ_TEX_VTX_VALID_BUFFER) {
+            if (buffer_view != NULL && G_03001C_TYPE(buffer_view->resource.resource[7]) ==
+                                          V_03001C_SQ_TEX_VTX_VALID_BUFFER) {
                dst_resource->bo = buffer_view->bo;
-               memcpy(dst_resource->resource, buffer_view->resource, sizeof(uint32_t) * 8);
-               if (descriptor_write->descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER) {
-                  /* TODO(Triang3l): Set UNCACHED based on whether the shader will actually be
-                   * writing to this buffer.
-                   */
-                  dst_resource->resource[3] |= S_03000C_UNCACHED(1);
-               }
+               dst_resource->resource = buffer_view->resource;
             } else {
                dst_resource->bo = NULL;
             }
@@ -176,7 +171,7 @@ terakan_UpdateDescriptorSets(UNUSED VkDevice const device, uint32_t const descri
             struct terakan_descriptor_set_resource * const dst_resource =
                &dst_resources[descriptor_index];
             dst_resource->bo = terakan_buffer_create_uniform_buffer_descriptor(
-               &descriptor_write->pBufferInfo[descriptor_index], dst_resource->resource);
+               &descriptor_write->pBufferInfo[descriptor_index], &dst_resource->resource);
          }
       } break;
 
@@ -188,7 +183,7 @@ terakan_UpdateDescriptorSets(UNUSED VkDevice const device, uint32_t const descri
                &dst_resources[descriptor_index];
             struct terakan_descriptor_set_uav * const dst_uav = &dst_uavs[descriptor_index];
             struct terakan_bo const * const bo = terakan_buffer_create_storage_buffer_descriptor(
-               &descriptor_write->pBufferInfo[descriptor_index], dst_resource->resource,
+               &descriptor_write->pBufferInfo[descriptor_index], &dst_resource->resource,
                &dst_uav->color);
             dst_resource->bo = bo;
             dst_uav->bo = bo;

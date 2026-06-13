@@ -26,6 +26,7 @@
 
 #include "terakan_bo.h"
 
+#include "amd/terascale/common/terascale_format.h"
 #include "gallium/drivers/r600/eg_sq.h"
 #include "gallium/drivers/r600/evergreend.h"
 
@@ -38,6 +39,16 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/* Stage indices for hardware boolean, loop and sampler constant addresses. */
+enum terakan_descriptor_hw_stage {
+   TERAKAN_DESCRIPTOR_HW_STAGE_PS = 0,
+   TERAKAN_DESCRIPTOR_HW_STAGE_VSES = 1,
+   TERAKAN_DESCRIPTOR_HW_STAGE_GS = 2,
+   TERAKAN_DESCRIPTOR_HW_STAGE_HS = 3,
+   TERAKAN_DESCRIPTOR_HW_STAGE_LS = 4,
+   TERAKAN_DESCRIPTOR_HW_STAGE_CS = 5,
+};
 
 /* MRTs [0, TERAKAN_COLOR_HW_RTV_COUNT) support both color attachments and storage buffers/images.
  * MRTs [TERAKAN_COLOR_HW_RTV_COUNT, TERAKAN_COLOR_HW_RTV_AND_UAV_COUNT) support only storage
@@ -125,14 +136,9 @@ extern "C" {
    (TERAKAN_RESOURCE_HW_OFFSET_CS + TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE)
 #define TERAKAN_RESOURCE_HW_COUNT (TERAKAN_RESOURCE_HW_OFFSET_FS + TERAKAN_RESOURCE_HW_COUNT_FETCH)
 
-#define TERAKAN_SAMPLER_HW_COUNT_PER_STAGE 18
-
-#define TERAKAN_SAMPLER_HW_OFFSET_PS   (TERAKAN_SAMPLER_HW_COUNT_PER_STAGE * 0)
-#define TERAKAN_SAMPLER_HW_OFFSET_VSES (TERAKAN_SAMPLER_HW_COUNT_PER_STAGE * 1)
-#define TERAKAN_SAMPLER_HW_OFFSET_GS   (TERAKAN_SAMPLER_HW_COUNT_PER_STAGE * 2)
-#define TERAKAN_SAMPLER_HW_OFFSET_HS   (TERAKAN_SAMPLER_HW_COUNT_PER_STAGE * 3)
-#define TERAKAN_SAMPLER_HW_OFFSET_LS   (TERAKAN_SAMPLER_HW_COUNT_PER_STAGE * 4)
-#define TERAKAN_SAMPLER_HW_OFFSET_CS   (TERAKAN_SAMPLER_HW_COUNT_PER_STAGE * 5)
+struct terakan_resource_descriptor {
+   uint32_t resource[8];
+};
 
 /* Dynamically indexable immediate constant arrays in application shader code.
  * Also used for a single resource binding for meta draws or dispatches as it can be quickly
@@ -195,43 +201,64 @@ static_assert(
 /* SQ_VTX_CONSTANT doesn't have words 5 and 6, so using word 5 for the BO priority. */
 #define TERAKAN_RESOURCE_BUFFER_PRIORITY_WORD 5
 
-/* Hardware CB_COLOR[0-11] registers.
- * Note that image views don't store RTV or UAV descriptors directly, instead they contain data for
- * both, but RTVs and UAVs each have fields they don't use, or require specific values for each
- * field.
- * Before setting CB_COLOR[0-11] to these descriptors, pass them through
- * terakan_color_descriptor_image_view_to_color_attachment or
- * terakan_color_descriptor_image_view_to_storage_image depending on the needed binding type.
+#define TERAKAN_SAMPLER_HW_COUNT_PER_STAGE 18
+
+struct terakan_sampler_descriptor {
+   uint32_t sampler[3];
+   /* May be uninitialized if not used by the sampler. */
+   uint32_t register_border_color[4];
+};
+
+/* `CB_COLOR[0-11]` register intermediate representation used for both RTVs and UAVs.
+ * Throughout the driver, descriptors containing as detailed information as possible are passed, and
+ * only in `terakan_hw_config`, the descriptors are normalized specifically for RTV or UAV usage.
+ * Specifically, in the intermediate representation:
+ * - For buffer UAVs (which, according to Radeon Evergreen / Northern Islands Acceleration, must use
+ *   the `LINEAR_ALIGNED` array mode, not `LINEAR_GENERAL`), `VIEW` (as a 32-bit integer) contains
+ *   the offset (in elements for Vulkan storage texel buffers, in bytes for Vulkan storage buffers)
+ *   that needs to be added to the address when accessing the UAV in shaders, so that the base
+ *   address in the client API can have a granularity smaller than the `LINEAR_ALIGNED` alignment
+ *   requirement (pipe interleave - 256 or 512 bytes), which may be greater than the alignment
+ *   expected by the API (16 bytes - `D3D11_RAW_UAV_SRV_BYTE_ALIGNMENT` - for byte address buffers
+ *   in Direct3D 11, for example), or be technically allowed (like 256 bytes for storage buffers in
+ *   Vulkan), yet severely limit application compatibility.
+ * - `INFO.BLEND_BYPASS` and `INFO.SOURCE_FORMAT` are always configured according to the format,
+ *   even for UAVs.
+ *   - `INFO.SOURCE_FORMAT` in the intermediate representation must be selected specifically for the
+ *     actual device architecture generation, since it's more important for it to reflect the
+ *     hardware behavior (`DUAL_EXPORT_ENABLE` configuration also depends on it) rather than to
+ *     provide more detailed abstract info about the format.
+ * - `INFO.RAT` in most cases must be set depending on whether the color descriptor will be used as
+ *   an RTV or as a UAV (most importantly when passing it to `terakan_hw_config_draw`), unless
+ *   stated otherwise (like in a common descriptor stored in an image view).
+ * - `INFO.RESOURCE_TYPE` and `DIM` are always configured, even for RTVs - there are cases where
+ *   subresource pixel sizes (with mip level and size-compatible views of block-compressed images
+ *   handled), rather than merely micro tile granularity pitches, may be useful when working with
+ *   RTVs, such as for clamping and bounds checking purposes, and for determining whether the last
+ *   micro tile column or row can be cleared in tile metadata fully if the size of the subresource
+ *   is not a multiple of the micro tile size.
+ * - `ATTRIB.NUM_SAMPLES` and `ATTRIB.NUM_FRAGMENTS` are always configured on all architecture
+ *   generations, primarily for ensuring that the desired multisampling configuration is allowed.
+ */
+/* TODO(Triang3l): Revisit `buffer_uav_validated_as_image`. If it's not needed (UAVs are not tracked
+ * by DRM Radeon because they're not in `CB_TARGET_MASK`), remove it completely from the driver.
+ * Otherwise expand the comment about `VIEW` for buffers.
  */
 struct terakan_color_descriptor {
    uint32_t base;
    uint32_t pitch;
    uint32_t slice;
-   /* Because according to Radeon Evergreen / Northern Islands Acceleration, buffer UAVs must use
-    * the LINEAR_ALIGNED array mode (not LINEAR_GENERAL), for smaller alignments required by
-    * Direct3D 11 (and even if disregarding Direct3D 11, by Vulkan itself as well - at most 256,
-    * while the pipe interleave can potentially be 512 bytes), an offset needs to be added to
-    * element indices in shaders. In buffer views within the driver, the `view` field is repurposed
-    * for storing that offset in elements (since SLICE_START and SLICE_MAX must always be 0 for
-    * LINEAR_ALIGNED buffers, and taking inspiration from how the hardware accepts the base address
-    * for LINEAR_GENERAL), and `view` must be zeroed before being passed to the actual CB_COLOR
-    * registers. This offset also handles the device memory BO size padding granularity used to
-    * handle `buffer_uav_validated_as_image`, in which case it may be nonzero even if the
-    * application-provided base address is aligned to the pipe interleave.
-    */
    uint32_t view;
-   /* In image views, the INFO register is for a color attachment. */
    uint32_t info;
    uint32_t attrib;
-   /* In image views, the DIM register is for a storage image. */
    uint32_t dim;
 };
 
 #define TERAKAN_COLOR_DESCRIPTOR_BUFFER_UAV_INFO_CONST_FIELDS                                      \
-   (S_028C70_ARRAY_MODE(V_028C70_ARRAY_LINEAR_ALIGNED) | S_028C70_BLEND_BYPASS(1) |                \
-    S_028C70_SOURCE_FORMAT(V_028C70_EXPORT_4C_32BPC) | S_028C70_RAT(1) |                           \
+   (S_028C70_ARRAY_MODE(V_028C70_ARRAY_LINEAR_ALIGNED) | S_028C70_BLEND_BYPASS(true) |             \
+    S_028C70_SOURCE_FORMAT(V_028C70_EXPORT_4C_32BPC) | S_028C70_RAT(true) |                        \
     S_028C70_RESOURCE_TYPE(V_028C70_BUFFER))
-#define TERAKAN_COLOR_DESCRIPTOR_BUFFER_UAV_ATTRIB (S_028C74_NON_DISP_TILING_ORDER(1))
+#define TERAKAN_COLOR_DESCRIPTOR_BUFFER_UAV_ATTRIB (S_028C74_NON_DISP_TILING_ORDER(true))
 
 struct terakan_physical_device;
 
@@ -265,34 +292,51 @@ terakan_color_descriptor_calculate_buffer_base_pitch_slice_view_dim(
    descriptor->view = base_granularity_offset;
 }
 
-static inline void
-terakan_color_descriptor_image_view_to_color_attachment(
-   struct terakan_color_descriptor * const descriptor)
+/* If `bo` is NULL, `descriptor` is ignored. */
+static inline bool
+terakan_color_descriptor_is_bound(struct terakan_bo const * const bo,
+                                  struct terakan_color_descriptor const * const descriptor)
 {
-   descriptor->info &= C_028C70_RESOURCE_TYPE;
-   /* The meaning of DIM depends on RESOURCE_TYPE, but it's used only for UAVs.
-    * DIM is ignored for color attachments, scissor must be used to prevent out-of-bounds access.
+   /* Many callers expect these checks, including the NULL pointer checks, to be done by this
+    * function, and make assumptions based on their presence, so they must not be removed without
+    * updating the callers.
+    * `FORMAT == INVALID` exactly is used by DRM Radeon as of 2.50.0 and 2.51.0 to determine if a
+    * color target enabled in `CB_TARGET_MASK` is unbound.
+    */
+   return bo != NULL && descriptor != NULL &&
+          G_028C70_FORMAT(descriptor->info) != TERASCALE_FORMAT_INDEX_INVALID;
+}
+
+static inline void
+terakan_color_descriptor_to_hw_rtv(struct terakan_color_descriptor * const descriptor)
+{
+   descriptor->info &= C_028C70_RAT & C_028C70_RESOURCE_TYPE;
+   /* The meaning of `DIM` depends on `RESOURCE_TYPE`, but it's used only for UAVs by the hardware.
+    * For RTVs, scissor must be used to prevent out-of-bounds access.
     */
    descriptor->dim = 0;
 }
 
 static inline void
-terakan_color_descriptor_image_view_to_storage_image(
-   struct terakan_color_descriptor * const descriptor)
+terakan_color_descriptor_to_hw_uav(struct terakan_color_descriptor * const descriptor)
 {
+   if (G_028C70_RESOURCE_TYPE(descriptor->info) == V_028C70_BUFFER) {
+      /* Remove the buffer UAV base offset stored for internal use in the driver. */
+      descriptor->view = 0;
+   }
    descriptor->info &= C_028C70_FAST_CLEAR & C_028C70_COMPRESSION & C_028C70_BLEND_CLAMP &
                        C_028C70_SIMPLE_FLOAT & C_028C70_SOURCE_FORMAT;
-   descriptor->info |=
-      S_028C70_BLEND_BYPASS(1) | S_028C70_SOURCE_FORMAT(V_028C70_EXPORT_4C_32BPC) | S_028C70_RAT(1);
+   descriptor->info |= S_028C70_BLEND_BYPASS(true) |
+                       S_028C70_SOURCE_FORMAT(V_028C70_EXPORT_4C_32BPC) | S_028C70_RAT(true);
    descriptor->attrib &= C_028C74_FORCE_DST_ALPHA_1;
 }
 
 struct terakan_device;
 
 /* The BO is `device->uav_immediate_bo`. */
-void terakan_color_descriptor_info_to_uav_immediate_resource(struct terakan_device const * device,
-                                                             uint32_t color_info,
-                                                             uint32_t resource_out[8]);
+struct terakan_resource_descriptor
+terakan_color_descriptor_info_to_uav_immediate_resource(struct terakan_device const * device,
+                                                        uint32_t color_info);
 
 /* Additional hardware CB_COLOR[0-7] registers. */
 struct terakan_color_meta_descriptor {
@@ -306,18 +350,21 @@ struct terakan_color_meta_descriptor {
 static inline struct terakan_color_meta_descriptor
 terakan_color_meta_descriptor_create_disabled(struct terakan_color_descriptor const * const color)
 {
-   struct terakan_color_meta_descriptor descriptor;
-   descriptor.cmask = color->base;
-   descriptor.cmask_slice = S_028C80_TILE_MAX(0);
-   descriptor.fmask = color->base;
-   descriptor.fmask_slice = S_028C88_TILE_MAX(G_028C68_SLICE_TILE_MAX(color->slice));
-   return descriptor;
+   return (struct terakan_color_meta_descriptor){
+      .cmask = color->base,
+      .cmask_slice = S_028C80_TILE_MAX(0),
+      .fmask = color->base,
+      .fmask_slice = S_028C88_TILE_MAX(G_028C68_SLICE_TILE_MAX(color->slice)),
+   };
 }
 
 struct terakan_depth_stencil_descriptor {
    uint32_t view;
-   /* DB_Z_INFO contains some configuration shared between depth and stencil, even if the image
+   /* `DB_Z_INFO` contains some configuration shared between depth and stencil, even if the image
     * contains only stencil.
+    * `NUM_SAMPLES` is used throughout the driver regardless of the architecture generation for
+    * purposes like ensuring that no framebuffer attachments with incompatible sample counts are
+    * bound for #MemoryIntegrity.
     */
    uint32_t z_info;
    uint32_t stencil_info;
@@ -326,6 +373,36 @@ struct terakan_depth_stencil_descriptor {
    uint32_t size;
    uint32_t slice;
 };
+
+/* If `bo` is NULL, `descriptor` is ignored. */
+static inline void
+terakan_depth_stencil_descriptor_is_bound(
+   struct terakan_bo const * const bo,
+   struct terakan_depth_stencil_descriptor const * const descriptor, bool * const depth_bound_out,
+   bool * const stencil_bound_out)
+{
+   /* Many callers expect these checks, including the NULL pointer checks, to be done by this
+    * function, and make assumptions based on their presence, so they must not be removed without
+    * updating the callers.
+    * `FORMAT == INVALID` exactly is used by DRM Radeon as of 2.50.0 and 2.51.0 to determine if an
+    * aspect of the image enabled in `DB_DEPTH_CONTROL` is unbound.
+    */
+   if (bo == NULL || descriptor == NULL) {
+      if (depth_bound_out != NULL) {
+         *depth_bound_out = false;
+      }
+      if (stencil_bound_out != NULL) {
+         *stencil_bound_out = false;
+      }
+      return;
+   }
+   if (depth_bound_out != NULL) {
+      *depth_bound_out = G_028040_FORMAT(descriptor->z_info) != V_028040_Z_INVALID;
+   }
+   if (stencil_bound_out != NULL) {
+      *stencil_bound_out = G_028044_FORMAT(descriptor->stencil_info) != V_028044_STENCIL_INVALID;
+   }
+}
 
 static inline bool
 terakan_descriptor_type_has_resource(VkDescriptorType const descriptor_type)
@@ -356,13 +433,15 @@ terakan_descriptor_type_has_uav(VkDescriptorType const descriptor_type)
    return true;
 }
 
-bool terakan_descriptor_create_for_uniform_buffer(struct terakan_bo const * bo, uint64_t va,
-                                                  VkDeviceSize range, uint32_t resource_out[8]);
+bool
+terakan_descriptor_create_for_uniform_buffer(struct terakan_bo const * bo, uint64_t va,
+                                             VkDeviceSize range,
+                                             struct terakan_resource_descriptor * resource_out);
 
 bool terakan_descriptor_create_for_storage_buffer(
    struct terakan_bo const * bo, uint64_t va, VkDeviceSize range,
-   struct terakan_physical_device const * physical_device, uint32_t resource_out[8],
-   struct terakan_color_descriptor * color_out);
+   struct terakan_physical_device const * physical_device,
+   struct terakan_resource_descriptor * resource_out, struct terakan_color_descriptor * color_out);
 
 #ifdef __cplusplus
 }

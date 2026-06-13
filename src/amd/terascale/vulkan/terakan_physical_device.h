@@ -80,8 +80,12 @@ struct terakan_physical_device_chip_info {
     * table.
     */
    unsigned wave_lanes_log2;
+   /* `SQ_PSTMP_RING_SIZE` increment per `SQ_PSTMP_RING_ITEMSIZE` preferred for the
+    * `SQ_THREAD_RESOURCE_MGMT` configuration from this structure.
+    */
+   uint32_t sq_pstmp_ring_bytes_per_item_dword_shr8;
    /* Lanes * waves * shader engines. */
-   uint32_t uav_immediate_size_texels;
+   uint32_t uav_immediate_size_elements;
 
    unsigned max_render_backends_log2;
 };

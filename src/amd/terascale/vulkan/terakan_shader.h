@@ -28,9 +28,9 @@
 #include "terakan_descriptor.h"
 #include "terakan_pipeline_layout.h"
 #include "terakan_push_constants.h"
-#include "terakan_vertex_input.h"
 
 #include "gallium/drivers/r600/eg_sq.h"
+#include "gallium/drivers/r600/evergreend.h"
 #include "gallium/drivers/r600/r600_opcodes.h"
 #include "gallium/drivers/r600/r600_shader_common.h"
 #include "util/bitset.h"
@@ -54,14 +54,25 @@ extern "C" {
  *
  * To set other fields, use OR on the left for the first word, or OR on the right for the second
  * word.
+ *
+ * `VALID_PIXEL_MODE` may be enabled only in pixel shaders.
  */
 
 #define TERAKAN_SHADER_CF_END_R9XX                                                                 \
    0, (S_SQ_CF_WORD1_BARRIER(true) | CM_V_SQ_CF_WORD1_SQ_CF_INST_END)
 
-#define TERAKAN_SHADER_CF_VS_DUMMY_EXPORT_DONE_AND_END_R8XX                                        \
+/* All vertex shaders export at least one parameter. */
+
+#define TERAKAN_SHADER_CF_VS_DUMMY_EXPORT_POS_PARAM_DONE_AND_END_R8XX_2_QWORDS                     \
    (S_SQ_CF_ALLOC_EXPORT_WORD0_TYPE(V_SQ_CF_ALLOC_EXPORT_WORD0_SQ_EXPORT_POS) |                    \
     S_SQ_CF_ALLOC_EXPORT_WORD0_ARRAY_BASE(60)),                                                    \
+      (S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_X(TERASCALE_SWIZZLE_0) |                                \
+       S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Y(TERASCALE_SWIZZLE_0) |                                \
+       S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Z(TERASCALE_SWIZZLE_0) |                                \
+       S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_W(TERASCALE_SWIZZLE_0) |                                \
+       EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_EXPORT_DONE),                                      \
+      (S_SQ_CF_ALLOC_EXPORT_WORD0_TYPE(V_SQ_CF_ALLOC_EXPORT_WORD0_SQ_EXPORT_PARAM) |               \
+       S_SQ_CF_ALLOC_EXPORT_WORD0_ARRAY_BASE(0)),                                                  \
       (S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_X(TERASCALE_SWIZZLE_0) |                                \
        S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Y(TERASCALE_SWIZZLE_0) |                                \
        S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Z(TERASCALE_SWIZZLE_0) |                                \
@@ -70,10 +81,17 @@ extern "C" {
        S_SQ_CF_ALLOC_EXPORT_WORD1_END_OF_PROGRAM(true) |                                           \
        EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_EXPORT_DONE)
 
-/* No barrier, expecting no other exports. */
-#define TERAKAN_SHADER_CF_VS_DUMMY_EXPORT_DONE_R9XX                                                \
+/* No barriers, expecting no other parameter exports. */
+#define TERAKAN_SHADER_CF_VS_DUMMY_EXPORT_POS_PARAM_DONE_R9XX_2_QWORDS                             \
    (S_SQ_CF_ALLOC_EXPORT_WORD0_TYPE(V_SQ_CF_ALLOC_EXPORT_WORD0_SQ_EXPORT_POS) |                    \
     S_SQ_CF_ALLOC_EXPORT_WORD0_ARRAY_BASE(60)),                                                    \
+      (S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_X(TERASCALE_SWIZZLE_0) |                                \
+       S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Y(TERASCALE_SWIZZLE_0) |                                \
+       S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Z(TERASCALE_SWIZZLE_0) |                                \
+       S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_W(TERASCALE_SWIZZLE_0) |                                \
+       EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_EXPORT_DONE),                                      \
+      (S_SQ_CF_ALLOC_EXPORT_WORD0_TYPE(V_SQ_CF_ALLOC_EXPORT_WORD0_SQ_EXPORT_PARAM) |               \
+       S_SQ_CF_ALLOC_EXPORT_WORD0_ARRAY_BASE(0)),                                                  \
       (S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_X(TERASCALE_SWIZZLE_0) |                                \
        S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Y(TERASCALE_SWIZZLE_0) |                                \
        S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Z(TERASCALE_SWIZZLE_0) |                                \
@@ -111,24 +129,27 @@ extern "C" {
  */
 
 #define TERAKAN_SHADER_CF_UAV(cacheless, uav_inst, uav_id, index_gpr, data_gpr, comp_mask,         \
-                              barrier)                                                             \
+                              valid_pixel_mode, barrier)                                           \
    (S_SQ_CF_ALLOC_EXPORT_WORD0_RAT_RAT_ID(uav_id) |                                                \
     S_SQ_CF_ALLOC_EXPORT_WORD0_RAT_RAT_INST(V_RAT_INST_##uav_inst) |                               \
     S_SQ_CF_ALLOC_EXPORT_WORD0_TYPE(V_SQ_CF_ALLOC_EXPORT_WORD0_SQ_EXPORT_WRITE_IND) |              \
     S_SQ_CF_ALLOC_EXPORT_WORD0_RW_GPR(data_gpr) |                                                  \
     S_SQ_CF_ALLOC_EXPORT_WORD0_INDEX_GPR(index_gpr)),                                              \
       (S_SQ_CF_ALLOC_EXPORT_WORD1_BUF_COMP_MASK(comp_mask) |                                       \
+       S_SQ_CF_ALLOC_EXPORT_WORD1_VALID_PIXEL_MODE(valid_pixel_mode) |                             \
        S_SQ_CF_ALLOC_EXPORT_WORD1_BARRIER(barrier) |                                               \
        ((cacheless) ? EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_MEM_RAT_CACHELESS                   \
                     : EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_MEM_RAT))
 
-#define TERAKAN_SHADER_CF_UAV_COMBINED_STORE(is_r9xx, uav_id, data_gpr, two_component, barrier)    \
+#define TERAKAN_SHADER_CF_UAV_COMBINED_STORE(is_r9xx, uav_id, data_gpr, two_component,             \
+                                             valid_pixel_mode, barrier)                            \
    (S_SQ_CF_ALLOC_EXPORT_WORD0_RAT_RAT_ID(uav_id) |                                                \
     S_SQ_CF_ALLOC_EXPORT_WORD0_RAT_RAT_INST((is_r9xx) ? V_RAT_INST_STORE_DWORD                     \
                                                       : V_RAT_INST_STORE_RAW) |                    \
     S_SQ_CF_ALLOC_EXPORT_WORD0_TYPE(V_SQ_CF_ALLOC_EXPORT_WORD0_SQ_EXPORT_WRITE) |                  \
     S_SQ_CF_ALLOC_EXPORT_WORD0_RW_GPR(data_gpr)),                                                  \
       (S_SQ_CF_ALLOC_EXPORT_WORD1_BUF_COMP_MASK((two_component) ? 0b1011 : 0b1001) |               \
+       S_SQ_CF_ALLOC_EXPORT_WORD1_VALID_PIXEL_MODE(valid_pixel_mode) |                             \
        S_SQ_CF_ALLOC_EXPORT_WORD1_BARRIER(barrier) |                                               \
        EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_MEM_RAT_COMBINED_CACHELESS)
 
@@ -204,13 +225,6 @@ static_assert(('x' & 3) == 0 && ('y' & 3) == 1 && ('z' & 3) == 2 && ('w' & 3) ==
        S_SQ_ALU_WORD1_OP3_SRC2_SEL(src2_sel) | S_SQ_ALU_WORD1_OP3_SRC2_CHAN((src2_chan) & 3) |     \
        S_SQ_ALU_WORD1_BANK_SWIZZLE(SQ_ALU_##bank_swizzle))
 
-inline unsigned
-terakan_shader_hw_vertex_stage_count(bool const tessellation_shader, bool const geometry_shader)
-{
-   return (tessellation_shader ? 2 /* LS, HS */ : 0) +
-          (geometry_shader ? 3 /* ES, GS, VS */ : 1 /* VS */);
-}
-
 #define TERAKAN_SHADER_PROGRAM_ALIGNMENT_LOG2 8
 #define TERAKAN_SHADER_PROGRAM_ALIGNMENT      (1 << TERAKAN_SHADER_PROGRAM_ALIGNMENT_LOG2)
 
@@ -226,7 +240,7 @@ enum terakan_shader_ring_index {
 };
 
 static_assert(TERAKAN_SHADER_RING_INDEX_COUNT <= 32,
-              "Using shader ring buffer indices in a 32-bit bitfield.");
+              "Using shader ring buffer indices in 32-bit bitfields.");
 
 #define TERAKAN_SHADER_RINGS_PER_SHADER_ENGINE                                                     \
    (BITFIELD_BIT(TERAKAN_SHADER_RING_INDEX_LSTMP) |                                                \
@@ -247,9 +261,19 @@ struct terakan_shader_ring {
 
 extern struct terakan_shader_ring const terakan_shader_rings[TERAKAN_SHADER_RING_INDEX_COUNT];
 
+/* `DB_SHADER_CONTROL` value when the pixel shader doesn't override the depth and stencil values,
+ * coverage, and interaction with other DB functionality, and doesn't have memory side effects.
+ * One of the use cases of this is drawing without an application-provided pixel shader.
+ * Dual export is enabled because it's possible for the specified DB export format, though CB may
+ * require it to be disabled (if any written RTV uses a 128bpp export format).
+ */
+#define TERAKAN_SHADER_DB_SHADER_CONTROL_IDENTITY                                                  \
+   (S_02880C_Z_ORDER(V_02880C_EARLY_Z_THEN_LATE_Z) | S_02880C_DUAL_EXPORT_ENABLE(1) |              \
+    S_02880C_DB_SOURCE_FORMAT(V_02880C_EXPORT_DB_TWO))
+
 /* Fields that don't depend on any other state. */
 struct terakan_shader_static {
-   struct terakan_bo * program_bo;
+   struct terakan_bo const * program_bo;
    uint32_t program_va_shr8;
 
    uint32_t sq_pgm_resources[2];
@@ -277,38 +301,53 @@ struct terakan_shader_static {
    } stage;
 };
 
+struct terakan_shader_sqk_usage {
+   uint16_t kcache;
+
+   uint32_t samplers;
+
+   BITSET_DECLARE(resources, TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE);
+   /* If a buffer is bound at an index included in `resources_uncached`, it needs to be bound with
+    * `UNCACHED = 1`. This is needed primarily for coherence between UAV writes and resource reads
+    * within an invocation, and for reading the UAV operation return value.
+    */
+   BITSET_DECLARE(resources_uncached, TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE);
+};
+
 /* Shader implementation common for both pipelines (to be used in a pipeline-cached wrapper) and
  * shader objects (for an uncached wrapper implementing VkShaderEXT).
  */
 struct terakan_shader_impl {
-   /* This object owns the BO in `static_state`. */
-   /* TODO(Triang3l): Shader suballocation. */
+   /* The BO isn't owned by this object. */
    struct terakan_shader_static static_state;
 
-   uint32_t scratch_item_size_dwords;
+   uint16_t scratch_item_size_dwords;
 
    struct terakan_push_constants_usage push_constants_usage;
 
-   BITSET_DECLARE(resources_needed, TERAKAN_RESOURCE_HW_COUNT_PIXEL_COMPUTE);
-   uint32_t samplers_needed;
+   struct terakan_shader_sqk_usage sqk_usage;
 
-   /* TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL bits are valid in fragment shaders,
-    * TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_NON_PIXEL bits are valid in compute shaders.
-    * Padded to BITSET_WORD with zero bits, can be used in memcmp.
+   /* The actual `CB_COLOR` indices of UAVs are the counts of set bits prior to the bit for the
+    * given index of the resource corresponding to the UAV in the mutable resource range, and for
+    * fragment shaders, the number of set bits in `rtv_dsb_uncompacted_exports` is added (but not
+    * for the `IMMED` buffer read resource index) to them.
+    * `TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL` bits are valid in fragment shaders,
+    * `TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_NON_PIXEL` bits are valid in compute shaders.
+    * Padded to `BITSET_WORD` with zero bits, can be used in `memcmp`.
     */
    BITSET_DECLARE(uavs_for_mutable_resources_needed,
                   MAX2(TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL,
                        TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_NON_PIXEL));
 
    struct {
-      BITSET_DECLARE(vertex_attributes_needed, TERAKAN_VERTEX_INPUT_MAX_ATTRIBUTES);
+      uint32_t vertex_attributes_needed;
    } vs;
 
    struct {
       /* DUAL_EXPORT_ENABLE specifies only whether it can potentially be enabled for the shader. */
       uint32_t db_shader_control;
 
-      uint8_t fragment_data_uncompacted_locations;
+      uint8_t rtv_dsb_uncompacted_exports;
    } fs;
 
    struct r600_shader shader;
@@ -324,14 +363,14 @@ nir_shader * terakan_shader_spirv_to_nir(struct terakan_device * device, size_t 
 
 void terakan_shader_lower_and_optimize_post_link(
    nir_shader * nir, struct terakan_pipeline_layout const * pipeline_layout,
-   BITSET_WORD * resources_needed, uint32_t * samplers_needed,
-   BITSET_WORD * uavs_for_mutable_resources_needed, uint32_t * driver_push_constants_used,
-   uint8_t * fragment_data_uncompacted_locations_out);
+   struct terakan_shader_sqk_usage * sqk_usage, BITSET_WORD * uavs_for_mutable_resources_needed,
+   uint32_t * driver_push_constants_used, uint8_t * rtv_dsb_uncompacted_exports_out);
 
-void terakan_shader_impl_finish(struct terakan_shader_impl * shader,
-                                VkAllocationCallbacks const * allocator);
+void terakan_shader_impl_finish(struct terakan_shader_impl * shader);
 
-/* Compiles the shader into the microcode written to a BO, and fills the info from the backend
+/* Compiles the shader into its `shader.bc` (additionally possibly allocating `shader.arrays`,
+ * which, if the function returns `VK_SUCCESS`, must be `free`d by the caller, such as via
+ * `terakan_shader_impl_finish`, when it's not needed anymore), and fills the info from the backend
  * compiler. Assumes that everything in the shader not intended to be filled directly from the NIR
  * has been zeroed prior to the call.
  */

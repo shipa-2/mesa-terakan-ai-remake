@@ -264,11 +264,16 @@ terakan_nir_should_vectorize_load_store(unsigned const align_mul, unsigned const
       }
    }
 
-   /* According to testing on Barts, for elements larger than 4 bytes, bounds checking only
-    * considers the first 4 bytes, and if they are within the buffer size, the entire element is
-    * fetched. This may result in data outside the memory range bound to the buffer being loaded,
-    * which is not allowed with robustBufferAccess, so vectorize beyond 4 bytes only if it can be
-    * assumed that out-of-bounds access must not happen.
+   /* Prior to R9xx, according to testing on Barts, for elements larger than 4 bytes, bounds
+    * checking only considers the first 4 bytes, and if they are within the buffer size, the entire
+    * element is fetched. This may result in data outside the memory range bound to the buffer being
+    * loaded, which is not allowed with robustBufferAccess, so vectorize beyond 4 bytes only if it
+    * can be assumed that out-of-bounds access must not happen. On R9xx, according to testing on
+    * Devastator, bounds checking is performed for the full element size, not just for up to the
+    * first 4 bytes.
+    */
+   /* TODO(Triang3l): Vectorize resource loads on R9xx (use different callback functions depending
+    * on the architecture generation).
     */
    if (vector_bytes > 4) {
       nir_variable_mode const robust_modes = *(nir_variable_mode const *)data;
@@ -294,10 +299,9 @@ terakan_nir_should_vectorize_load_store(unsigned const align_mul, unsigned const
 void
 terakan_shader_lower_and_optimize_post_link(
    nir_shader * const nir, struct terakan_pipeline_layout const * const pipeline_layout,
-   BITSET_WORD * const resources_needed, uint32_t * const samplers_needed,
+   struct terakan_shader_sqk_usage * const sqk_usage,
    BITSET_WORD * const uavs_for_mutable_resources_needed,
-   uint32_t * const driver_push_constants_used,
-   uint8_t * const fragment_data_uncompacted_locations_out)
+   uint32_t * const driver_push_constants_used, uint8_t * const rtv_dsb_uncompacted_exports_out)
 {
    bool progress;
 
@@ -327,15 +331,14 @@ terakan_shader_lower_and_optimize_post_link(
       NIR_PASS(_, nir, nir_remove_dead_variables, nir_var_shader_in, NULL);
    }
 
-   /* Compact fragment shader output locations.
-    * See the description of terakan_nir_compact_fragment_data_locations.
+   /* Compact fragment data output locations.
+    * See the description of `terakan_nir_compact_rtv_dsb_exports`.
     */
 
-   uint8_t fragment_data_uncompacted_locations = 0b0;
-   NIR_PASS(_, nir, terakan_nir_compact_fragment_data_locations,
-            &fragment_data_uncompacted_locations);
-   if (fragment_data_uncompacted_locations_out != NULL) {
-      *fragment_data_uncompacted_locations_out = fragment_data_uncompacted_locations;
+   uint8_t rtv_dsb_uncompacted_exports = 0b0;
+   NIR_PASS(_, nir, terakan_nir_compact_rtv_dsb_exports, &rtv_dsb_uncompacted_exports);
+   if (rtv_dsb_uncompacted_exports_out != NULL) {
+      *rtv_dsb_uncompacted_exports_out = rtv_dsb_uncompacted_exports;
    }
 
    /* Assign gl_frag_result values to variables after the fragment data location compaction has
@@ -369,15 +372,14 @@ terakan_shader_lower_and_optimize_post_link(
    NIR_PASS(_, nir, nir_opt_load_store_vectorize, &load_store_vectorize_options);
 
    /* Lower bindings according to the pipeline layout.
-    * In fragment shaders, this is done after compacting the fragment data output locations as UAVs
-    * must be placed above color attachments.
+    * In fragment shaders, this is done after compacting the RTV and DSB exports as UAVs must be
+    * placed above color attachments.
     */
 
-   NIR_PASS(_, nir, terakan_nir_lower_bindings, pipeline_layout, resources_needed, samplers_needed,
-            nir->info.stage == MESA_SHADER_FRAGMENT
-               ? util_bitcount(fragment_data_uncompacted_locations)
-               : 0,
-            uavs_for_mutable_resources_needed, driver_push_constants_used);
+   NIR_PASS(
+      _, nir, terakan_nir_lower_bindings, pipeline_layout, sqk_usage,
+      nir->info.stage == MESA_SHADER_FRAGMENT ? util_bitcount(rtv_dsb_uncompacted_exports) : 0,
+      uavs_for_mutable_resources_needed, driver_push_constants_used);
 
    /* Perform lowerings on the level of basic building blocks after the interface has been set up.
     */
@@ -413,12 +415,9 @@ terakan_shader_lower_and_optimize_post_link(
 }
 
 void
-terakan_shader_impl_finish(struct terakan_shader_impl * const shader,
-                           VkAllocationCallbacks const * const allocator)
+terakan_shader_impl_finish(struct terakan_shader_impl * const shader)
 {
    if (shader->shader.arrays != NULL) {
       free(shader->shader.arrays);
    }
-
-   terakan_bo_free(shader->static_state.program_bo, allocator);
 }

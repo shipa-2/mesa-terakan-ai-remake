@@ -21,12 +21,10 @@
  * IN THE SOFTWARE.
  */
 
-#include "terakan_meta.h"
+#include "terakan_meta_impl.h"
 
-#include "terakan_bo.h"
+#include "terakan_barrier.h"
 #include "terakan_buffer.h"
-#include "terakan_command_buffer.h"
-#include "terakan_draw.h"
 #include "terakan_entrypoints.h"
 #include "terakan_physical_device.h"
 #include "terakan_query.h"
@@ -72,14 +70,9 @@
                      },                                                                            \
                },                                                                                  \
          },                                                                                        \
-      .kcache_needed = BITFIELD_BIT(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS),                         \
-      .resources_needed =                                                                          \
-         {                                                                                         \
-            [BITSET_BITWORD(TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META)] =              \
-               BITSET_BIT(TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META),                  \
-            [BITSET_BITWORD(TERAKAN_RESOURCE_RANGE_NON_PIXEL_STAGE_SPECIFIC)] =                    \
-               BITSET_BIT(TERAKAN_RESOURCE_RANGE_NON_PIXEL_STAGE_SPECIFIC),                        \
-         },                                                                                        \
+      .kcache_used = BITFIELD_BIT(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS),                           \
+      .primary_meta_resource_used = true,                                                          \
+      .non_pixel_stage_specific_resource_used = true,                                              \
    };
 
 enum {
@@ -265,7 +258,7 @@ enum {
    S_SQ_CF_WORD1_COND(V_SQ_CF_COND_BOOL) |                                                         \
       S_SQ_CF_WORD1_CF_CONST(TERAKAN_META_QUERY_COPY_BOOL_INDEX_WITH_AVAILABILITY) |               \
       EG_V_SQ_CF_WORD1_SQ_CF_INST_JUMP,                                                            \
-   TERAKAN_SHADER_CF_UAV_COMBINED_STORE(is_r9xx, 0, 0, is_64_bit, true),                           \
+   TERAKAN_SHADER_CF_UAV_COMBINED_STORE(is_r9xx, 0, 0, is_64_bit, false, true),                    \
    S_SQ_CF_WORD0_ADDR(                                                                             \
       ALIGN_POT((availability_fetch_and_alu_cf_address) + ((is_r9xx) ? 10 : 7), 2)),               \
    S_SQ_CF_WORD1_COUNT((sample_fetch_count) - 1) |                                                 \
@@ -279,20 +272,20 @@ enum {
       S_SQ_CF_ALU_WORD1_BARRIER(true) | EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU_PUSH_BEFORE
 
 /* +0: Restore the active mask without partial result writing disabling for the ending export.
- * +1: End.
- */
-#define TERAKAN_META_QUERY_COPY_CF_AFTER_STORE_R8XX_2_QWORDS(this_cf_address)                      \
-   S_SQ_CF_WORD0_ADDR((this_cf_address) + 1),                                                      \
-   S_SQ_CF_WORD1_POP_COUNT(1) | S_SQ_CF_WORD1_BARRIER(1) | EG_V_SQ_CF_WORD1_SQ_CF_INST_POP,        \
-   TERAKAN_SHADER_CF_VS_DUMMY_EXPORT_DONE_AND_END_R8XX
-
-/* +0: Restore the active mask without partial result writing disabling for the ending export.
  * +1-2: End.
  */
-#define TERAKAN_META_QUERY_COPY_CF_AFTER_STORE_R9XX_3_QWORDS(this_cf_address)                      \
+#define TERAKAN_META_QUERY_COPY_CF_AFTER_STORE_R8XX_3_QWORDS(this_cf_address)                      \
    S_SQ_CF_WORD0_ADDR((this_cf_address) + 1),                                                      \
    S_SQ_CF_WORD1_POP_COUNT(1) | S_SQ_CF_WORD1_BARRIER(1) | EG_V_SQ_CF_WORD1_SQ_CF_INST_POP,        \
-   TERAKAN_SHADER_CF_VS_DUMMY_EXPORT_DONE_R9XX,                                                    \
+   TERAKAN_SHADER_CF_VS_DUMMY_EXPORT_POS_PARAM_DONE_AND_END_R8XX_2_QWORDS
+
+/* +0: Restore the active mask without partial result writing disabling for the ending export.
+ * +1-3: End.
+ */
+#define TERAKAN_META_QUERY_COPY_CF_AFTER_STORE_R9XX_4_QWORDS(this_cf_address)                      \
+   S_SQ_CF_WORD0_ADDR((this_cf_address) + 1),                                                      \
+   S_SQ_CF_WORD1_POP_COUNT(1) | S_SQ_CF_WORD1_BARRIER(1) | EG_V_SQ_CF_WORD1_SQ_CF_INST_POP,        \
+   TERAKAN_SHADER_CF_VS_DUMMY_EXPORT_POS_PARAM_DONE_R9XX_2_QWORDS,                                 \
    TERAKAN_SHADER_CF_END_R9XX
 
 /* The maximum mega fetch counter count is 8.
@@ -429,8 +422,8 @@ enum {
 
 /* 0-5: Control flow prolog.
  * 6: Store the result.
- * 7-8: Control flow epilog.
- * 9 (alignment padding), 10-16: Fetch and process the availability.
+ * 7-9: Control flow epilog.
+ * 10-16: Fetch and process the availability.
  * 17: Alignment padding for sample fetching.
  * The samples must be fetched at the address R0 for 32-bit, R[rb_count] for 64-bit.
  */
@@ -438,26 +431,26 @@ enum {
    TERAKAN_META_QUERY_COPY_CF_BEFORE_STORE_6_QWORDS(                                               \
       false, true, 10, rb_count,                                                                   \
       ((is_64_bit) ? 4 : 1) * ((rb_count) + ((rb_count) - 1)) + ((is_64_bit) ? 3 : 2)),            \
-   TERAKAN_SHADER_CF_UAV_COMBINED_STORE(false, 0, 1, is_64_bit, true),                             \
-   TERAKAN_META_QUERY_COPY_CF_AFTER_STORE_R8XX_2_QWORDS(7),                                        \
-   0,                                                                                              \
-   0,                                                                                              \
+   TERAKAN_SHADER_CF_UAV_COMBINED_STORE(false, 0, 1, is_64_bit, false, true),                      \
+   TERAKAN_META_QUERY_COPY_CF_AFTER_STORE_R8XX_3_QWORDS(7),                                        \
    TERAKAN_META_QUERY_COPY_AVAILABILITY_FETCH_AND_ALU_R8XX_7_QWORDS((is_64_bit) ? (rb_count) : 0), \
    0,                                                                                              \
    0
 
 /* 0-5: Control flow prolog.
  * 6: Store the result.
- * 7-9: Control flow epilog.
- * 10-19: Fetch and process the availability.
+ * 7-10: Control flow epilog.
+ * 11 (alignment padding), 12-21: Fetch and process the availability.
  * The samples must be fetched at the address R0 for 32-bit, R[rb_count] for 64-bit.
  */
 #define TERAKAN_META_QUERY_COPY_ZPASS_PROLOG_R9XX(is_64_bit, rb_count)                             \
    TERAKAN_META_QUERY_COPY_CF_BEFORE_STORE_6_QWORDS(                                               \
-      true, true, 10, rb_count,                                                                    \
+      true, true, 12, rb_count,                                                                    \
       ((is_64_bit) ? 4 : 1) * ((rb_count) + ((rb_count) - 1)) + ((is_64_bit) ? 3 : 2)),            \
-   TERAKAN_SHADER_CF_UAV_COMBINED_STORE(true, 0, 1, is_64_bit, true),                              \
-   TERAKAN_META_QUERY_COPY_CF_AFTER_STORE_R9XX_3_QWORDS(7),                                        \
+   TERAKAN_SHADER_CF_UAV_COMBINED_STORE(true, 0, 1, is_64_bit, false, true),                       \
+   TERAKAN_META_QUERY_COPY_CF_AFTER_STORE_R9XX_4_QWORDS(7),                                        \
+   0,                                                                                              \
+   0,                                                                                              \
    TERAKAN_META_QUERY_COPY_AVAILABILITY_FETCH_AND_ALU_R9XX_10_QWORDS((is_64_bit) ? (rb_count) : 0)
 
 /* Complete the sum reduction from PV.Z and PV.W, and set the result write predicate and address.
@@ -1034,13 +1027,13 @@ TERAKAN_META_QUERY_COPY_SHADER(zpass_64_bit_8_rb, 1 + 8)
    S_SQ_CF_WORD1_COND(V_SQ_CF_COND_BOOL) |                                                         \
       S_SQ_CF_WORD1_CF_CONST(TERAKAN_META_QUERY_COPY_BOOL_INDEX_PIPELINESTAT_0 + (counter)) |      \
       S_SQ_CF_WORD1_BARRIER(barrier) | EG_V_SQ_CF_WORD1_SQ_CF_INST_JUMP,                           \
-   TERAKAN_SHADER_CF_UAV_COMBINED_STORE(is_r9xx, 0, 1 + (counter), two_component, true)
+   TERAKAN_SHADER_CF_UAV_COMBINED_STORE(is_r9xx, 0, 1 + (counter), two_component, false, true)
 
 /* clang-format on */
 
 static uint32_t const terakan_meta_query_copy_pipelinestat_32_bit_vs_r8xx[] = {
    /* 0-5: Control flow prolog. */
-   TERAKAN_META_QUERY_COPY_CF_BEFORE_STORE_6_QWORDS(false, false, 30, 11, 2 * 11 + 1),
+   TERAKAN_META_QUERY_COPY_CF_BEFORE_STORE_6_QWORDS(false, false, 32, 11, 2 * 11 + 1),
 
    /* 6-27: Store the result. */
    TERAKAN_META_QUERY_COPY_PIPELINESTAT_STORE_COUNTER_CONDITIONALLY(false, 8, 0, false, true),
@@ -1055,13 +1048,15 @@ static uint32_t const terakan_meta_query_copy_pipelinestat_32_bit_vs_r8xx[] = {
    TERAKAN_META_QUERY_COPY_PIPELINESTAT_STORE_COUNTER_CONDITIONALLY(false, 26, 9, false, false),
    TERAKAN_META_QUERY_COPY_PIPELINESTAT_STORE_COUNTER_CONDITIONALLY(false, 28, 10, false, false),
 
-   /* 28-29: Control flow epilog. */
-   TERAKAN_META_QUERY_COPY_CF_AFTER_STORE_R8XX_2_QWORDS(28),
+   /* 28-30: Control flow epilog. */
+   TERAKAN_META_QUERY_COPY_CF_AFTER_STORE_R8XX_3_QWORDS(28),
 
-   /* 30-36: Fetch and process the availability. */
+   /* 31 (alignment padding), 32-38: Fetch and process the availability. */
+   0,
+   0,
    TERAKAN_META_QUERY_COPY_AVAILABILITY_FETCH_AND_ALU_R8XX_7_QWORDS(0),
 
-   /* 37 (alignment padding), 38-59: Fetch the samples. */
+   /* 39 (alignment padding), 40-61: Fetch the samples. */
    0,
    0,
    TERAKAN_META_QUERY_COPY_FETCH_SAMPLES_R8XX(_32_32_32, 1, MASK, X, Z, MASK, 0, 0, 15, true),
@@ -1076,7 +1071,7 @@ static uint32_t const terakan_meta_query_copy_pipelinestat_32_bit_vs_r8xx[] = {
    TERAKAN_META_QUERY_COPY_FETCH_SAMPLES_R8XX(_32_32_32, 8, MASK, X, Z, MASK, 0, 9, 7, false),
    TERAKAN_META_QUERY_COPY_FETCH_SAMPLES_R8XX(_32_32_32, 10, MASK, X, Z, MASK, 0, 10, 3, false),
 
-   /* 60: Sample processing ALU clause. */
+   /* 62: Sample processing ALU clause. */
 
    /* Counter 0, counter 2 subtraction. */
    TERAKAN_META_QUERY_COPY_PIPELINESTAT_32_BIT_X_SUB_W_ADDRESS(false, 0),
@@ -1121,12 +1116,10 @@ static uint32_t const terakan_meta_query_copy_pipelinestat_32_bit_vs_r9xx[] = {
    TERAKAN_META_QUERY_COPY_PIPELINESTAT_STORE_COUNTER_CONDITIONALLY(true, 26, 9, false, false),
    TERAKAN_META_QUERY_COPY_PIPELINESTAT_STORE_COUNTER_CONDITIONALLY(true, 28, 10, false, false),
 
-   /* 28-30: Control flow epilog. */
-   TERAKAN_META_QUERY_COPY_CF_AFTER_STORE_R9XX_3_QWORDS(28),
+   /* 28-31: Control flow epilog. */
+   TERAKAN_META_QUERY_COPY_CF_AFTER_STORE_R9XX_4_QWORDS(28),
 
-   /* 31 (alignment padding), 32-41: Fetch and process the availability. */
-   0,
-   0,
+   /* 32-41: Fetch and process the availability. */
    TERAKAN_META_QUERY_COPY_AVAILABILITY_FETCH_AND_ALU_R9XX_10_QWORDS(0),
 
    /* 42-63: Fetch the samples. */
@@ -1165,7 +1158,7 @@ TERAKAN_META_QUERY_COPY_SHADER(pipelinestat_32_bit, 12)
 
 static uint32_t const terakan_meta_query_copy_pipelinestat_64_bit_vs_r8xx[] = {
    /* 0-5: Control flow prolog. */
-   TERAKAN_META_QUERY_COPY_CF_BEFORE_STORE_6_QWORDS(false, true, 30, 11, 5 * 11 + 1),
+   TERAKAN_META_QUERY_COPY_CF_BEFORE_STORE_6_QWORDS(false, true, 32, 11, 5 * 11 + 1),
 
    /* 6-27: Store the result. */
    TERAKAN_META_QUERY_COPY_PIPELINESTAT_STORE_COUNTER_CONDITIONALLY(false, 8, 0, true, true),
@@ -1180,13 +1173,15 @@ static uint32_t const terakan_meta_query_copy_pipelinestat_64_bit_vs_r8xx[] = {
    TERAKAN_META_QUERY_COPY_PIPELINESTAT_STORE_COUNTER_CONDITIONALLY(false, 26, 9, true, false),
    TERAKAN_META_QUERY_COPY_PIPELINESTAT_STORE_COUNTER_CONDITIONALLY(false, 28, 10, true, false),
 
-   /* 28-29: Control flow epilog. */
-   TERAKAN_META_QUERY_COPY_CF_AFTER_STORE_R8XX_2_QWORDS(28),
+   /* 28-30: Control flow epilog. */
+   TERAKAN_META_QUERY_COPY_CF_AFTER_STORE_R8XX_3_QWORDS(28),
 
-   /* 30-36: Fetch and process the availability. */
+   /* 31 (alignment padding), 32-38: Fetch and process the availability. */
+   0,
+   0,
    TERAKAN_META_QUERY_COPY_AVAILABILITY_FETCH_AND_ALU_R8XX_7_QWORDS(10),
 
-   /* 37 (alignment padding), 38-59: Fetch the samples. */
+   /* 39 (alignment padding), 40-61: Fetch the samples. */
    0,
    0,
    TERAKAN_META_QUERY_COPY_FETCH_SAMPLES_R8XX(_32_32_32_32, 1, X, Y, Z, W, 10, 0, 16, true),
@@ -1201,7 +1196,7 @@ static uint32_t const terakan_meta_query_copy_pipelinestat_64_bit_vs_r8xx[] = {
    TERAKAN_META_QUERY_COPY_FETCH_SAMPLES_R8XX(_32_32_32_32, 8, Y, X, W, Z, 10, 9, 8, false),
    TERAKAN_META_QUERY_COPY_FETCH_SAMPLES_R8XX(_32_32_32_32, 10, X, Y, Z, W, 10, 10, 4, false),
 
-   /* 60: Sample processing ALU clause. */
+   /* 62: Sample processing ALU clause. */
 
    /* 0 lower, borrow, upper without borrow, 10 address (overwriting 0 end). */
    TERAKAN_META_QUERY_COPY_64_BIT_LO_Z_BC_W_HI32(
@@ -1249,12 +1244,10 @@ static uint32_t const terakan_meta_query_copy_pipelinestat_64_bit_vs_r9xx[] = {
    TERAKAN_META_QUERY_COPY_PIPELINESTAT_STORE_COUNTER_CONDITIONALLY(true, 26, 9, true, false),
    TERAKAN_META_QUERY_COPY_PIPELINESTAT_STORE_COUNTER_CONDITIONALLY(true, 28, 10, true, false),
 
-   /* 28-30: Control flow epilog. */
-   TERAKAN_META_QUERY_COPY_CF_AFTER_STORE_R9XX_3_QWORDS(28),
+   /* 28-31: Control flow epilog. */
+   TERAKAN_META_QUERY_COPY_CF_AFTER_STORE_R9XX_4_QWORDS(28),
 
-   /* 31 (alignment padding), 32-41: Fetch and process the availability. */
-   0,
-   0,
+   /* 32-41: Fetch and process the availability. */
    TERAKAN_META_QUERY_COPY_AVAILABILITY_FETCH_AND_ALU_R9XX_10_QWORDS(10),
 
    /* 42-63: Fetch the samples. */
@@ -1379,13 +1372,13 @@ TERAKAN_META_QUERY_COPY_SHADER(pipelinestat_64_bit, 12)
 
 static uint32_t const terakan_meta_query_copy_timestamp_32_bit_vs_r8xx[] = {
    /* 0: Calculate the availability address in the UAV. */
-   S_SQ_CF_WORD0_ADDR(8) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS) |
+   S_SQ_CF_WORD0_ADDR(9) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS) |
       S_SQ_CF_ALU_WORD0_KCACHE_MODE0(V_SQ_CF_KCACHE_LOCK_1),
    S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(0) | S_SQ_CF_ALU_WORD1_COUNT(1) |
       EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
    /* 1: Fetch the availability and timestamp. */
-   S_SQ_CF_WORD0_ADDR(10),
+   S_SQ_CF_WORD0_ADDR(12),
    S_SQ_CF_WORD1_COUNT(2 - 1) | EG_V_SQ_CF_WORD1_SQ_CF_INST_VTX,
 
    /* 2: Skip writing the availability if not requested by jumping over the write. */
@@ -1395,26 +1388,26 @@ static uint32_t const terakan_meta_query_copy_timestamp_32_bit_vs_r8xx[] = {
       EG_V_SQ_CF_WORD1_SQ_CF_INST_JUMP,
 
    /* 3: Write the availability. */
-   TERAKAN_SHADER_CF_UAV_COMBINED_STORE(false, 0, 1, false, true),
+   TERAKAN_SHADER_CF_UAV_COMBINED_STORE(false, 0, 1, false, false, true),
 
    /* 4: Disable the result write if not available, and calculate the result destination addresses.
     */
-   S_SQ_CF_WORD0_ADDR(14),
+   S_SQ_CF_WORD0_ADDR(16),
    S_SQ_CF_ALU_WORD1_COUNT(1) | S_SQ_CF_ALU_WORD1_BARRIER(true) |
       EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU_PUSH_BEFORE,
 
    /* 5: Write the result. */
-   TERAKAN_SHADER_CF_UAV_COMBINED_STORE(false, 0, 0, false, true),
+   TERAKAN_SHADER_CF_UAV_COMBINED_STORE(false, 0, 0, false, false, true),
 
    /* 6: Restore the active mask without unavailable result writing disabling for the ending export.
     */
    S_SQ_CF_WORD0_ADDR(7),
    S_SQ_CF_WORD1_POP_COUNT(1) | S_SQ_CF_WORD1_BARRIER(1) | EG_V_SQ_CF_WORD1_SQ_CF_INST_POP,
 
-   /* 7: End. */
-   TERAKAN_SHADER_CF_VS_DUMMY_EXPORT_DONE_AND_END_R8XX,
+   /* 7-8: End. */
+   TERAKAN_SHADER_CF_VS_DUMMY_EXPORT_POS_PARAM_DONE_AND_END_R8XX_2_QWORDS,
 
-   /* 8: ALU clause. */
+   /* 9: ALU clause. */
 
    /* +0: Apply the UAV destination address stride, writing to PS. MULLO_UINT is scalar-only. */
    TERAKAN_KCACHE_DWORD_WORD0_SRC1(0, TERAKAN_META_QUERY_COPY_CONST_DST_STRIDE) |
@@ -1425,7 +1418,9 @@ static uint32_t const terakan_meta_query_copy_timestamp_32_bit_vs_r8xx[] = {
    TERAKAN_KCACHE_DWORD_WORD0_SRC1(0, TERAKAN_META_QUERY_COPY_CONST_DST_RESULT_END_OFFSET) |
       TERAKAN_SHADER_OP2(true, 1, 'W', ADD_INT, EG, V_SQ_ALU_SRC_PS, 0, 0, 0, VEC_012),
 
-   /* 10-11: Fetch the availability to R1.X. */
+   /* 11 (alignment padding), 12-13: Fetch the availability to R1.X. */
+   0,
+   0,
    S_SQ_VTX_WORD0_FETCH_TYPE(SQ_VTX_FETCH_NO_INDEX_OFFSET) |
       S_SQ_VTX_WORD0_BUFFER_ID(TERAKAN_RESOURCE_RANGE_NON_PIXEL_STAGE_SPECIFIC) |
       S_SQ_VTX_WORD0_SRC_GPR(0) | S_SQ_VTX_WORD0_SRC_SEL_X(TERASCALE_SWIZZLE_X) |
@@ -1442,7 +1437,7 @@ static uint32_t const terakan_meta_query_copy_timestamp_32_bit_vs_r8xx[] = {
       S_SQ_VTX_WORD2_MEGA_FETCH(true),
    0,
 
-   /* 12-13: Fetch the timestamp to R0.X. */
+   /* 14-15: Fetch the timestamp to R0.X. */
    S_SQ_VTX_WORD0_FETCH_TYPE(SQ_VTX_FETCH_NO_INDEX_OFFSET) |
       S_SQ_VTX_WORD0_BUFFER_ID(TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META) |
       S_SQ_VTX_WORD0_SRC_GPR(0) | S_SQ_VTX_WORD0_SRC_SEL_X(TERASCALE_SWIZZLE_X) |
@@ -1459,7 +1454,7 @@ static uint32_t const terakan_meta_query_copy_timestamp_32_bit_vs_r8xx[] = {
       S_SQ_VTX_WORD2_MEGA_FETCH(true),
    0,
 
-   /* 14: ALU clause. */
+   /* 16: ALU clause. */
 
    /* +0: Set the result write predicate.
     * +1: Calculate the result write address to R0.W.
@@ -1471,13 +1466,13 @@ static uint32_t const terakan_meta_query_copy_timestamp_32_bit_vs_r8xx[] = {
 
 static uint32_t const terakan_meta_query_copy_timestamp_32_bit_vs_r9xx[] = {
    /* 0: Calculate the availability address in the UAV. */
-   S_SQ_CF_WORD0_ADDR(9) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS) |
+   S_SQ_CF_WORD0_ADDR(10) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS) |
       S_SQ_CF_ALU_WORD0_KCACHE_MODE0(V_SQ_CF_KCACHE_LOCK_1),
    S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(0) | S_SQ_CF_ALU_WORD1_COUNT(4) |
       EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
    /* 1: Fetch the availability and timestamp. */
-   S_SQ_CF_WORD0_ADDR(14),
+   S_SQ_CF_WORD0_ADDR(16),
    S_SQ_CF_WORD1_COUNT(2 - 1) | EG_V_SQ_CF_WORD1_SQ_CF_INST_TEX,
 
    /* 2: Skip writing the availability if not requested by jumping over the write. */
@@ -1487,27 +1482,27 @@ static uint32_t const terakan_meta_query_copy_timestamp_32_bit_vs_r9xx[] = {
       EG_V_SQ_CF_WORD1_SQ_CF_INST_JUMP,
 
    /* 3: Write the availability. */
-   TERAKAN_SHADER_CF_UAV_COMBINED_STORE(true, 0, 1, false, true),
+   TERAKAN_SHADER_CF_UAV_COMBINED_STORE(true, 0, 1, false, false, true),
 
    /* 4: Disable the result write if not available, and calculate the result destination addresses.
     */
-   S_SQ_CF_WORD0_ADDR(14),
+   S_SQ_CF_WORD0_ADDR(20),
    S_SQ_CF_ALU_WORD1_COUNT(1) | S_SQ_CF_ALU_WORD1_BARRIER(true) |
       EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU_PUSH_BEFORE,
 
    /* 5: Write the result. */
-   TERAKAN_SHADER_CF_UAV_COMBINED_STORE(true, 0, 0, false, true),
+   TERAKAN_SHADER_CF_UAV_COMBINED_STORE(true, 0, 0, false, false, true),
 
    /* 6: Restore the active mask without unavailable result writing disabling for the ending export.
     */
    S_SQ_CF_WORD0_ADDR(7),
    S_SQ_CF_WORD1_POP_COUNT(1) | S_SQ_CF_WORD1_BARRIER(1) | EG_V_SQ_CF_WORD1_SQ_CF_INST_POP,
 
-   /* 7-8: End. */
-   TERAKAN_SHADER_CF_VS_DUMMY_EXPORT_DONE_R9XX,
+   /* 7-9: End. */
+   TERAKAN_SHADER_CF_VS_DUMMY_EXPORT_POS_PARAM_DONE_R9XX_2_QWORDS,
    TERAKAN_SHADER_CF_END_R9XX,
 
-   /* 9: ALU clause. */
+   /* 10: ALU clause. */
 
    /* +0-3: Apply the UAV destination address stride, writing to PV. MULLO_UINT is 4-slot. */
    TERAKAN_KCACHE_DWORD_WORD0_SRC1(0, TERAKAN_META_QUERY_COPY_CONST_DST_STRIDE) |
@@ -1524,7 +1519,9 @@ static uint32_t const terakan_meta_query_copy_timestamp_32_bit_vs_r9xx[] = {
    TERAKAN_KCACHE_DWORD_WORD0_SRC1(0, TERAKAN_META_QUERY_COPY_CONST_DST_RESULT_END_OFFSET) |
       TERAKAN_SHADER_OP2(true, 1, 'W', ADD_INT, EG, V_SQ_ALU_SRC_PV, 0, 0, 0, VEC_012),
 
-   /* 14-15: Fetch the availability to R1.X. */
+   /* 15 (alignment padding), 16-17: Fetch the availability to R1.X. */
+   0,
+   0,
    S_SQ_VTX_WORD0_FETCH_TYPE(SQ_VTX_FETCH_NO_INDEX_OFFSET) |
       S_SQ_VTX_WORD0_BUFFER_ID(TERAKAN_RESOURCE_RANGE_NON_PIXEL_STAGE_SPECIFIC) |
       S_SQ_VTX_WORD0_SRC_GPR(0) | S_SQ_VTX_WORD0_SRC_SEL_X(TERASCALE_SWIZZLE_X),
@@ -1539,7 +1536,7 @@ static uint32_t const terakan_meta_query_copy_timestamp_32_bit_vs_r9xx[] = {
                                                    : TERASCALE_ENDIAN_SWAP_NONE),
    0,
 
-   /* 16-17: Fetch the timestamp to R0.X. */
+   /* 18-19: Fetch the timestamp to R0.X. */
    S_SQ_VTX_WORD0_FETCH_TYPE(SQ_VTX_FETCH_NO_INDEX_OFFSET) |
       S_SQ_VTX_WORD0_BUFFER_ID(TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META) |
       S_SQ_VTX_WORD0_SRC_GPR(0) | S_SQ_VTX_WORD0_SRC_SEL_X(TERASCALE_SWIZZLE_X),
@@ -1554,7 +1551,7 @@ static uint32_t const terakan_meta_query_copy_timestamp_32_bit_vs_r9xx[] = {
                                                    : TERASCALE_ENDIAN_SWAP_NONE),
    0,
 
-   /* 18: ALU clause. */
+   /* 20: ALU clause. */
 
    /* +0: Set the result write predicate.
     * +1: Calculate the result write address to R0.W.
@@ -1568,13 +1565,13 @@ TERAKAN_META_QUERY_COPY_SHADER(timestamp_32_bit, 2)
 
 static uint32_t const terakan_meta_query_copy_timestamp_64_bit_vs_r8xx[] = {
    /* 0: Calculate the availability address in the UAV. */
-   S_SQ_CF_WORD0_ADDR(8) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS) |
+   S_SQ_CF_WORD0_ADDR(9) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS) |
       S_SQ_CF_ALU_WORD0_KCACHE_MODE0(V_SQ_CF_KCACHE_LOCK_1),
    S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(0) | S_SQ_CF_ALU_WORD1_COUNT(1) |
       EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
    /* 1: Fetch the availability and timestamp. */
-   S_SQ_CF_WORD0_ADDR(10),
+   S_SQ_CF_WORD0_ADDR(12),
    S_SQ_CF_WORD1_COUNT(2 - 1) | EG_V_SQ_CF_WORD1_SQ_CF_INST_VTX,
 
    /* 2: Skip writing the availability if not requested by jumping over the write. */
@@ -1584,26 +1581,26 @@ static uint32_t const terakan_meta_query_copy_timestamp_64_bit_vs_r8xx[] = {
       EG_V_SQ_CF_WORD1_SQ_CF_INST_JUMP,
 
    /* 3: Write the availability. */
-   TERAKAN_SHADER_CF_UAV_COMBINED_STORE(false, 0, 1, true, true),
+   TERAKAN_SHADER_CF_UAV_COMBINED_STORE(false, 0, 1, true, false, true),
 
    /* 4: Disable the result write if not available, and calculate the result destination addresses.
     */
-   S_SQ_CF_WORD0_ADDR(14),
+   S_SQ_CF_WORD0_ADDR(16),
    S_SQ_CF_ALU_WORD1_COUNT(2) | S_SQ_CF_ALU_WORD1_BARRIER(true) |
       EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU_PUSH_BEFORE,
 
    /* 5: Write the result. */
-   TERAKAN_SHADER_CF_UAV_COMBINED_STORE(false, 0, 0, true, true),
+   TERAKAN_SHADER_CF_UAV_COMBINED_STORE(false, 0, 0, true, false, true),
 
    /* 6: Restore the active mask without unavailable result writing disabling for the ending export.
     */
    S_SQ_CF_WORD0_ADDR(7),
    S_SQ_CF_WORD1_POP_COUNT(1) | S_SQ_CF_WORD1_BARRIER(1) | EG_V_SQ_CF_WORD1_SQ_CF_INST_POP,
 
-   /* 7: End. */
-   TERAKAN_SHADER_CF_VS_DUMMY_EXPORT_DONE_AND_END_R8XX,
+   /* 7-8: End. */
+   TERAKAN_SHADER_CF_VS_DUMMY_EXPORT_POS_PARAM_DONE_AND_END_R8XX_2_QWORDS,
 
-   /* 8: ALU clause. */
+   /* 9: ALU clause. */
 
    /* +0: Apply the UAV destination address stride, writing to PS. MULLO_UINT is scalar-only. */
    TERAKAN_KCACHE_DWORD_WORD0_SRC1(0, TERAKAN_META_QUERY_COPY_CONST_DST_STRIDE) |
@@ -1614,7 +1611,9 @@ static uint32_t const terakan_meta_query_copy_timestamp_64_bit_vs_r8xx[] = {
    TERAKAN_KCACHE_DWORD_WORD0_SRC1(0, TERAKAN_META_QUERY_COPY_CONST_DST_RESULT_END_OFFSET) |
       TERAKAN_SHADER_OP2(true, 1, 'W', ADD_INT, EG, V_SQ_ALU_SRC_PS, 0, 0, 0, VEC_012),
 
-   /* 10-11: Fetch the availability to R1.X. */
+   /* 11 (alignment padding), 12-13: Fetch the availability to R1.X. */
+   0,
+   0,
    S_SQ_VTX_WORD0_FETCH_TYPE(SQ_VTX_FETCH_NO_INDEX_OFFSET) |
       S_SQ_VTX_WORD0_BUFFER_ID(TERAKAN_RESOURCE_RANGE_NON_PIXEL_STAGE_SPECIFIC) |
       S_SQ_VTX_WORD0_SRC_GPR(0) | S_SQ_VTX_WORD0_SRC_SEL_X(TERASCALE_SWIZZLE_X) |
@@ -1630,7 +1629,7 @@ static uint32_t const terakan_meta_query_copy_timestamp_64_bit_vs_r8xx[] = {
       S_SQ_VTX_WORD2_MEGA_FETCH(true),
    0,
 
-   /* 12-13: Fetch the timestamp to R0.X. */
+   /* 14-15: Fetch the timestamp to R0.X. */
    S_SQ_VTX_WORD0_FETCH_TYPE(SQ_VTX_FETCH_NO_INDEX_OFFSET) |
       S_SQ_VTX_WORD0_BUFFER_ID(TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META) |
       S_SQ_VTX_WORD0_SRC_GPR(0) | S_SQ_VTX_WORD0_SRC_SEL_X(TERASCALE_SWIZZLE_X) |
@@ -1647,7 +1646,7 @@ static uint32_t const terakan_meta_query_copy_timestamp_64_bit_vs_r8xx[] = {
       S_SQ_VTX_WORD2_MEGA_FETCH(true),
    0,
 
-   /* 14: ALU clause. */
+   /* 16: ALU clause. */
 
    /* +0: Set the result write predicate.
     * +1: Calculate the result write address to R0.W.
@@ -1662,13 +1661,13 @@ static uint32_t const terakan_meta_query_copy_timestamp_64_bit_vs_r8xx[] = {
 
 static uint32_t const terakan_meta_query_copy_timestamp_64_bit_vs_r9xx[] = {
    /* 0: Calculate the availability address in the UAV. */
-   S_SQ_CF_WORD0_ADDR(9) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS) |
+   S_SQ_CF_WORD0_ADDR(10) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS) |
       S_SQ_CF_ALU_WORD0_KCACHE_MODE0(V_SQ_CF_KCACHE_LOCK_1),
    S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(0) | S_SQ_CF_ALU_WORD1_COUNT(4) |
       EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
    /* 1: Fetch the availability and timestamp. */
-   S_SQ_CF_WORD0_ADDR(14),
+   S_SQ_CF_WORD0_ADDR(16),
    S_SQ_CF_WORD1_COUNT(2 - 1) | EG_V_SQ_CF_WORD1_SQ_CF_INST_TEX,
 
    /* 2: Skip writing the availability if not requested by jumping over the write. */
@@ -1678,27 +1677,27 @@ static uint32_t const terakan_meta_query_copy_timestamp_64_bit_vs_r9xx[] = {
       EG_V_SQ_CF_WORD1_SQ_CF_INST_JUMP,
 
    /* 3: Write the availability. */
-   TERAKAN_SHADER_CF_UAV_COMBINED_STORE(true, 0, 1, true, true),
+   TERAKAN_SHADER_CF_UAV_COMBINED_STORE(true, 0, 1, true, false, true),
 
    /* 4: Disable the result write if not available, and calculate the result destination addresses.
     */
-   S_SQ_CF_WORD0_ADDR(14),
+   S_SQ_CF_WORD0_ADDR(20),
    S_SQ_CF_ALU_WORD1_COUNT(2) | S_SQ_CF_ALU_WORD1_BARRIER(true) |
       EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU_PUSH_BEFORE,
 
    /* 5: Write the result. */
-   TERAKAN_SHADER_CF_UAV_COMBINED_STORE(true, 0, 0, true, true),
+   TERAKAN_SHADER_CF_UAV_COMBINED_STORE(true, 0, 0, true, false, true),
 
    /* 6: Restore the active mask without unavailable result writing disabling for the ending export.
     */
    S_SQ_CF_WORD0_ADDR(7),
    S_SQ_CF_WORD1_POP_COUNT(1) | S_SQ_CF_WORD1_BARRIER(1) | EG_V_SQ_CF_WORD1_SQ_CF_INST_POP,
 
-   /* 7-8: End. */
-   TERAKAN_SHADER_CF_VS_DUMMY_EXPORT_DONE_R9XX,
+   /* 7-9: End. */
+   TERAKAN_SHADER_CF_VS_DUMMY_EXPORT_POS_PARAM_DONE_R9XX_2_QWORDS,
    TERAKAN_SHADER_CF_END_R9XX,
 
-   /* 9: ALU clause. */
+   /* 10: ALU clause. */
 
    /* +0-3: Apply the UAV destination address stride, writing to PV. MULLO_UINT is 4-slot. */
    TERAKAN_KCACHE_DWORD_WORD0_SRC1(0, TERAKAN_META_QUERY_COPY_CONST_DST_STRIDE) |
@@ -1715,7 +1714,9 @@ static uint32_t const terakan_meta_query_copy_timestamp_64_bit_vs_r9xx[] = {
    TERAKAN_KCACHE_DWORD_WORD0_SRC1(0, TERAKAN_META_QUERY_COPY_CONST_DST_RESULT_END_OFFSET) |
       TERAKAN_SHADER_OP2(true, 1, 'W', ADD_INT, EG, V_SQ_ALU_SRC_PV, 0, 0, 0, VEC_012),
 
-   /* 14-15: Fetch the availability to R1.X. */
+   /* 15 (alignment padding), 16-17: Fetch the availability to R1.X. */
+   0,
+   0,
    S_SQ_VTX_WORD0_FETCH_TYPE(SQ_VTX_FETCH_NO_INDEX_OFFSET) |
       S_SQ_VTX_WORD0_BUFFER_ID(TERAKAN_RESOURCE_RANGE_NON_PIXEL_STAGE_SPECIFIC) |
       S_SQ_VTX_WORD0_SRC_GPR(0) | S_SQ_VTX_WORD0_SRC_SEL_X(TERASCALE_SWIZZLE_X),
@@ -1729,7 +1730,7 @@ static uint32_t const terakan_meta_query_copy_timestamp_64_bit_vs_r9xx[] = {
                                                    : TERASCALE_ENDIAN_SWAP_NONE),
    0,
 
-   /* 16-17: Fetch the timestamp to R0.X. */
+   /* 18-19: Fetch the timestamp to R0.X. */
    S_SQ_VTX_WORD0_FETCH_TYPE(SQ_VTX_FETCH_NO_INDEX_OFFSET) |
       S_SQ_VTX_WORD0_BUFFER_ID(TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META) |
       S_SQ_VTX_WORD0_SRC_GPR(0) | S_SQ_VTX_WORD0_SRC_SEL_X(TERASCALE_SWIZZLE_X),
@@ -1744,7 +1745,7 @@ static uint32_t const terakan_meta_query_copy_timestamp_64_bit_vs_r9xx[] = {
                                                    : TERASCALE_ENDIAN_SWAP_NONE),
    0,
 
-   /* 18: ALU clause. */
+   /* 20: ALU clause. */
 
    /* +0: Set the result write predicate.
     * +1: Calculate the result write address to R0.W.
@@ -1766,14 +1767,12 @@ static uint32_t const terakan_meta_query_copy_streamoutstats_32_bit_vs_r8xx[] = 
    TERAKAN_META_QUERY_COPY_CF_BEFORE_STORE_6_QWORDS(false, false, 10, 2, 2 + 3),
 
    /* 6: Store the result. */
-   TERAKAN_SHADER_CF_UAV_COMBINED_STORE(false, 0, 1, true, true),
+   TERAKAN_SHADER_CF_UAV_COMBINED_STORE(false, 0, 1, true, false, true),
 
-   /* 7-8: Control flow epilog. */
-   TERAKAN_META_QUERY_COPY_CF_AFTER_STORE_R8XX_2_QWORDS(7),
+   /* 7-9: Control flow epilog. */
+   TERAKAN_META_QUERY_COPY_CF_AFTER_STORE_R8XX_3_QWORDS(7),
 
-   /* 9 (alignment padding), 10-16: Fetch and process the availability. */
-   0,
-   0,
+   /* 10-16: Fetch and process the availability. */
    TERAKAN_META_QUERY_COPY_AVAILABILITY_FETCH_AND_ALU_R8XX_7_QWORDS(0),
 
    /* 17 (alignment padding), 18-21: Fetch the samples. */
@@ -1795,22 +1794,24 @@ static uint32_t const terakan_meta_query_copy_streamoutstats_32_bit_vs_r8xx[] = 
 
 static uint32_t const terakan_meta_query_copy_streamoutstats_32_bit_vs_r9xx[] = {
    /* 0-5: Control flow prolog. */
-   TERAKAN_META_QUERY_COPY_CF_BEFORE_STORE_6_QWORDS(true, false, 10, 2, 2 + 3),
+   TERAKAN_META_QUERY_COPY_CF_BEFORE_STORE_6_QWORDS(true, false, 12, 2, 2 + 3),
 
    /* 6: Store the result. */
-   TERAKAN_SHADER_CF_UAV_COMBINED_STORE(true, 0, 1, true, true),
+   TERAKAN_SHADER_CF_UAV_COMBINED_STORE(true, 0, 1, true, false, true),
 
-   /* 7-9: Control flow epilog. */
-   TERAKAN_META_QUERY_COPY_CF_AFTER_STORE_R9XX_3_QWORDS(7),
+   /* 7-10: Control flow epilog. */
+   TERAKAN_META_QUERY_COPY_CF_AFTER_STORE_R9XX_4_QWORDS(7),
 
-   /* 10-19: Fetch and process the availability. */
+   /* 11 (alignment padding), 12-21: Fetch and process the availability. */
+   0,
+   0,
    TERAKAN_META_QUERY_COPY_AVAILABILITY_FETCH_AND_ALU_R9XX_10_QWORDS(0),
 
-   /* 20-23: Fetch the samples. */
+   /* 22-25: Fetch the samples. */
    TERAKAN_META_QUERY_COPY_FETCH_SAMPLES_R9XX(_32_32_32, 1, X, Z, MASK, MASK, 0, 0),
    TERAKAN_META_QUERY_COPY_FETCH_SAMPLES_R9XX(_32_32_32, 1, MASK, MASK, X, Z, 0, 1),
 
-   /* 24: Sample processing ALU clause. */
+   /* 26: Sample processing ALU clause. */
 
    /* Result, result write predicate, address. */
    TERAKAN_SHADER_OP2(false, 1, 'X', SUB_INT, EG, 1, 'X', 1, 'Z', VEC_012),
@@ -1828,14 +1829,12 @@ static uint32_t const terakan_meta_query_copy_streamoutstats_64_bit_vs_r8xx[] = 
    TERAKAN_META_QUERY_COPY_CF_BEFORE_STORE_6_QWORDS(false, true, 10, 2, 4 * 2 + 3),
 
    /* 6: Store the result. */
-   TERAKAN_SHADER_CF_UAV(false, STORE_DWORD, 0, 0, 1, 0b1111, true),
+   TERAKAN_SHADER_CF_UAV(false, STORE_DWORD, 0, 0, 1, 0b1111, false, true),
 
-   /* 7-8: Control flow epilog. */
-   TERAKAN_META_QUERY_COPY_CF_AFTER_STORE_R8XX_2_QWORDS(7),
+   /* 7-9: Control flow epilog. */
+   TERAKAN_META_QUERY_COPY_CF_AFTER_STORE_R8XX_3_QWORDS(7),
 
-   /* 9 (alignment padding), 10-16: Fetch and process the availability. */
-   0,
-   0,
+   /* 10-16: Fetch and process the availability. */
    TERAKAN_META_QUERY_COPY_AVAILABILITY_FETCH_AND_ALU_R8XX_7_QWORDS(2),
 
    /* 17 (alignment padding), 18-21: Fetch the samples. */
@@ -1876,22 +1875,24 @@ static uint32_t const terakan_meta_query_copy_streamoutstats_64_bit_vs_r8xx[] = 
 
 static uint32_t const terakan_meta_query_copy_streamoutstats_64_bit_vs_r9xx[] = {
    /* 0-5: Control flow prolog. */
-   TERAKAN_META_QUERY_COPY_CF_BEFORE_STORE_6_QWORDS(true, true, 10, 2, 4 * 2 + 3),
+   TERAKAN_META_QUERY_COPY_CF_BEFORE_STORE_6_QWORDS(true, true, 12, 2, 4 * 2 + 3),
 
    /* 6: Store the result. */
-   TERAKAN_SHADER_CF_UAV(true, STORE_DWORD, 0, 0, 1, 0b1111, true),
+   TERAKAN_SHADER_CF_UAV(true, STORE_DWORD, 0, 0, 1, 0b1111, false, true),
 
-   /* 7-9: Control flow epilog. */
-   TERAKAN_META_QUERY_COPY_CF_AFTER_STORE_R9XX_3_QWORDS(7),
+   /* 7-10: Control flow epilog. */
+   TERAKAN_META_QUERY_COPY_CF_AFTER_STORE_R9XX_4_QWORDS(7),
 
-   /* 10-19: Fetch and process the availability. */
+   /* 11 (alignment padding), 12-21: Fetch and process the availability. */
+   0,
+   0,
    TERAKAN_META_QUERY_COPY_AVAILABILITY_FETCH_AND_ALU_R9XX_10_QWORDS(2),
 
-   /* 20-23: Fetch the samples. */
+   /* 22-25: Fetch the samples. */
    TERAKAN_META_QUERY_COPY_FETCH_SAMPLES_R9XX(_32_32_32_32, 1, X, Y, Z, W, 2, 0),
    TERAKAN_META_QUERY_COPY_FETCH_SAMPLES_R9XX(_32_32_32_32, 2, X, Y, Z, W, 2, 1),
 
-   /* 24: Sample processing ALU clause. */
+   /* 26: Sample processing ALU clause. */
 
    /* Borrows, upper halves without borrow. */
    TERAKAN_SHADER_OP2_NW(0, 'X', SUBB_UINT, EG, 2, 'X', 1, 'X', VEC_012),
@@ -1926,7 +1927,7 @@ terakan_meta_query_copy_init_offsets(VkQueryPipelineStatisticFlags const flags,
                                      int8_t * const offsets_32_bit_out,
                                      int8_t * const offsets_64_bit_out)
 {
-   /* Initialize 32_BIT_DST_#_TO_RESULT_END, which are subtracted from the end (availability)
+   /* Initialize `32_BIT_DST_#_TO_RESULT_END`, which are subtracted from the end (availability)
     * address.
     */
    unsigned end_to_next_vk_counter = util_bitcount((uint32_t)flags);
@@ -2060,27 +2061,19 @@ terakan_CmdCopyQueryPoolResults(VkCommandBuffer const commandBuffer, VkQueryPool
    }
    terakan_query_pool_clamp_range(query_pool, &firstQuery, &queryCount);
 
-   /* queryCount == 0 is valid usage, so don't invalidate anything in the hardware state
+   /* `queryCount == 0` is valid usage, so don't invalidate anything in the hardware state
     * configuration if there's nothing to do.
     */
    if (unlikely(queryCount == 0)) {
       return;
    }
 
-   terakan_meta_begin(command_writer, true);
-
-   terakan_meta_modify_state_draw_dword(command_writer, TERAKAN_STATE_DRAW_INDEX_VGT_PRIMITIVE_TYPE,
-                                        TERAKAN_HW_STATE_DRAW_INDEX_VGT_PRIMITIVE_TYPE,
-                                        &command_writer->hw_state_draw.vgt_primitive_type,
-                                        S_008958_PRIM_TYPE(V_008958_DI_PT_POINTLIST));
-
-   terakan_meta_modify_state_draw_dword(command_writer, TERAKAN_STATE_DRAW_INDEX_VGT_INDEX_OFFSET,
-                                        TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_OFFSET,
-                                        &command_writer->hw_state_draw.vgt_index_offset, 0);
-
-   terakan_hw_state_draw_set_vgt_num_instances(&command_writer->hw_state_draw, 1);
-
-   terakan_meta_set_vs(command_writer, vs_index);
+   struct terakan_meta_config_draw_begin_options const meta_begin_options = {
+      .vgt_primitive_type = V_008958_DI_PT_POINTLIST,
+      .cb_and_db_shader_control_mode = TERAKAN_META_CONFIG_DRAW_BEGIN_CB_MODE_NORMAL_UAV_ONLY,
+   };
+   terakan_meta_config_draw_begin(command_writer, &meta_begin_options);
+   terakan_meta_config_draw_set_sq_pgm_vs(command_writer, vs_index);
 
    uint32_t bool_const = 0b0;
    if (with_availability) {
@@ -2091,45 +2084,20 @@ terakan_CmdCopyQueryPoolResults(VkCommandBuffer const commandBuffer, VkQueryPool
                     << TERAKAN_META_QUERY_COPY_BOOL_INDEX_PIPELINESTAT_0;
    }
    /* Bool constants are used only by meta shaders. */
-   bool const sq_bool_const_vses_modified =
-      command_writer->hw_state_draw.sq_bool_const_vses != bool_const;
-   command_writer->hw_state_draw.sq_bool_const_vses = bool_const;
-   terakan_hw_state_draw_written(&command_writer->hw_state_draw,
-                                 TERAKAN_HW_STATE_DRAW_INDEX_SQ_BOOL_CONST_VSES,
-                                 sq_bool_const_vses_modified);
-
-   terakan_meta_modify_state_draw_dword(
-      command_writer, TERAKAN_STATE_DRAW_INDEX_PA_CL_CLIP_CNTL,
-      TERAKAN_HW_STATE_DRAW_INDEX_PA_CL_CLIP_CNTL, &command_writer->hw_state_draw.pa_cl_clip_cntl,
-      S_028810_CLIP_DISABLE(1) | S_028810_DX_RASTERIZATION_KILL(1));
-
-   terakan_meta_begin_cb(command_writer, 0xF, 0b0);
+   /* TODO(Triang3l): `USE_LS_CONSTS`. */
+   terakan_hw_config_draw_set_sq_bool_const_vses(&command_writer->hw_config_draw, bool_const);
 
    uint32_t * packet;
 
-   /* Always assuming VK_QUERY_RESULT_WAIT_BIT because there's no concept of a partial EVENT_WRITE,
-    * and the buffer resource fetch cache needs to be flushed for the latest value to be visible to
-    * the copy shader.
+   /* Always assuming `VK_QUERY_RESULT_WAIT_BIT` because there's no concept of a partial
+    * `EVENT_WRITE`, and the buffer resource fetch cache needs to be flushed for the latest value to
+    * be visible to the copy shader.
     */
    /* TODO(Triang3l): Only insert the barrier if a query was reset or ended in the indirect buffer
     * without a barrier so far.
     */
    /* TODO(Triang3l): Integrate into the barrier infrastructure. */
-   {
-      packet = terakan_gfx_command_writer_emit(command_writer,
-                                               TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_OTHER, 5);
-      if (unlikely(packet == NULL)) {
-         return;
-      }
-      *packet++ = PKT3(PKT3_SURFACE_SYNC, 4 - 1, 0);
-      *packet++ = (physical_device->chip_info.has_vertex_cache ? S_0085F0_VC_ACTION_ENA(1)
-                                                               : S_0085F0_TC_ACTION_ENA(1)) |
-                  TERAKAN_BARRIER_SURFACE_SYNC_ENGINE_ME;
-      *packet++ = UINT32_MAX;
-      *packet++ = 0;
-      *packet++ = TERAKAN_BARRIER_SURFACE_SYNC_POLL_INTERVAL;
-      terakan_gfx_command_writer_emit_done(command_writer, packet);
-   }
+   terakan_barrier_emit_actions_unconditionally(command_writer, TERAKAN_BARRIER_ACTION_INV_VC);
 
    uint32_t const src_samples_size_bytes = sizeof(uint64_t) * query_pool->samples_size_counters;
 
@@ -2140,23 +2108,25 @@ terakan_CmdCopyQueryPoolResults(VkCommandBuffer const commandBuffer, VkQueryPool
 
    uint64_t src_samples_va =
       query_pool->bo->va + terakan_query_pool_samples_offset_bytes(query_pool, firstQuery);
-   uint32_t src_samples_resource[8] = {
-      [2] = S_030008_STRIDE(src_samples_size_bytes),
-      [3] = S_03000C_DST_SEL_X(TERASCALE_SWIZZLE_X) | S_03000C_DST_SEL_Y(TERASCALE_SWIZZLE_Y) |
-            S_03000C_DST_SEL_Z(TERASCALE_SWIZZLE_Z) | S_03000C_DST_SEL_W(TERASCALE_SWIZZLE_W),
-      [7] = S_03001C_TYPE(V_03001C_SQ_TEX_VTX_VALID_BUFFER),
-      [TERAKAN_RESOURCE_BUFFER_PRIORITY_WORD] = TERAKAN_BO_PRIORITY_QUERY,
-   };
+   struct terakan_resource_descriptor src_samples_resource = {
+      .resource = {
+         [2] = S_030008_STRIDE(src_samples_size_bytes),
+         [3] = S_03000C_DST_SEL_X(TERASCALE_SWIZZLE_X) | S_03000C_DST_SEL_Y(TERASCALE_SWIZZLE_Y) |
+               S_03000C_DST_SEL_Z(TERASCALE_SWIZZLE_Z) | S_03000C_DST_SEL_W(TERASCALE_SWIZZLE_W),
+         [7] = S_03001C_TYPE(V_03001C_SQ_TEX_VTX_VALID_BUFFER),
+         [TERAKAN_RESOURCE_BUFFER_PRIORITY_WORD] = TERAKAN_BO_PRIORITY_QUERY,
+      }};
 
    uint64_t src_availability_va =
       query_pool->bo->va + terakan_query_pool_availability_offset_bytes(query_pool, firstQuery);
-   uint32_t src_availability_resource[8] = {
-      [2] = S_030008_STRIDE(sizeof(uint32_t)),
-      [3] = S_03000C_DST_SEL_X(TERASCALE_SWIZZLE_X) | S_03000C_DST_SEL_Y(TERASCALE_SWIZZLE_Y) |
-            S_03000C_DST_SEL_Z(TERASCALE_SWIZZLE_Z) | S_03000C_DST_SEL_W(TERASCALE_SWIZZLE_W),
-      [7] = S_03001C_TYPE(V_03001C_SQ_TEX_VTX_VALID_BUFFER),
-      [TERAKAN_RESOURCE_BUFFER_PRIORITY_WORD] = TERAKAN_BO_PRIORITY_QUERY,
-   };
+   struct terakan_resource_descriptor src_availability_resource = {
+      .resource = {
+         [2] = S_030008_STRIDE(sizeof(uint32_t)),
+         [3] = S_03000C_DST_SEL_X(TERASCALE_SWIZZLE_X) | S_03000C_DST_SEL_Y(TERASCALE_SWIZZLE_Y) |
+               S_03000C_DST_SEL_Z(TERASCALE_SWIZZLE_Z) | S_03000C_DST_SEL_W(TERASCALE_SWIZZLE_W),
+         [7] = S_03001C_TYPE(V_03001C_SQ_TEX_VTX_VALID_BUFFER),
+         [TERAKAN_RESOURCE_BUFFER_PRIORITY_WORD] = TERAKAN_BO_PRIORITY_QUERY,
+      }};
 
    uint64_t dst_va = dst_buffer->va + dstOffset;
    struct terakan_color_descriptor dst_uav = {
@@ -2167,10 +2137,6 @@ terakan_CmdCopyQueryPoolResults(VkCommandBuffer const commandBuffer, VkQueryPool
               TERAKAN_COLOR_DESCRIPTOR_BUFFER_UAV_INFO_CONST_FIELDS,
       .attrib = TERAKAN_COLOR_DESCRIPTOR_BUFFER_UAV_ATTRIB,
    };
-   unsigned const dst_uav_base_granularity_log2 =
-      terakan_color_descriptor_buffer_uav_base_granularity_log2(sizeof(uint32_t), physical_device);
-   terakan_color_descriptor_calculate_buffer_pitch_slice(&dst_uav, sizeof(uint32_t),
-                                                         physical_device);
 
    uint32_t const constants_size_bytes =
       sizeof(uint32_t) * (query_pool->vk.query_type == VK_QUERY_TYPE_PIPELINE_STATISTICS
@@ -2179,7 +2145,7 @@ terakan_CmdCopyQueryPoolResults(VkCommandBuffer const commandBuffer, VkQueryPool
 
    struct terakan_bo const * constants_bo = NULL;
 
-   uint32_t constants_uav_base_granularity_offset_dwords = 0;
+   uint32_t constants_uav_alignment_offset_dwords = 0;
 
    int8_t const * const constants_dst_counter_offsets =
       is_64_bit ? query_pool->pipelinestat_copy_offsets_64_bit
@@ -2198,60 +2164,62 @@ terakan_CmdCopyQueryPoolResults(VkCommandBuffer const commandBuffer, VkQueryPool
 
       uint32_t batch_query_count = MIN2(queryCount - query_index, src_resource_max_queries);
 
-      uint64_t const dst_va_aligned = dst_va >> dst_uav_base_granularity_log2
-                                                   << dst_uav_base_granularity_log2;
-      uint32_t const dst_uav_base_granularity_offset_dwords =
+      uint64_t const dst_va_aligned =
+         dst_va >> physical_device->tiling_info.pipe_interleave_bytes_log2
+                      << physical_device->tiling_info.pipe_interleave_bytes_log2;
+      uint32_t const dst_uav_alignment_offset_dwords =
          (uint32_t)(dst_va - dst_va_aligned) / sizeof(uint32_t);
       if (batch_query_count > 1) {
          /* Buffer UAV size limit is 2^32 elements (32-bit in this case).
           * In the batch, include the last query that may be written within the UAV boundaries, plus
           * all the queries preceding it that can fit in the destination UAV given the stride.
-          * VkDeviceSize, not uint32_t, because this limit may end up being 2^32 if the result is a
-          * single dword (32-bit timestamp or one pipeline statistic counter).
+          * `VkDeviceSize`, not `uint32_t`, because this limit may end up being 2^32 if the result
+          * is a single dword (32-bit timestamp or one pipeline statistic counter).
           */
          VkDeviceSize const dst_uav_max_queries =
             (VkDeviceSize)1 +
-            (uint32_t)(((uint64_t)1 << 32) - (dst_uav_base_granularity_offset_dwords +
-                                              dst_result_and_availability_dwords)) /
+            (uint32_t)(((uint64_t)1 << 32) -
+                       (dst_uav_alignment_offset_dwords + dst_result_and_availability_dwords)) /
                dst_stride_dwords;
          batch_query_count = (uint32_t)MIN2((VkDeviceSize)batch_query_count, dst_uav_max_queries);
       }
 
       /* Source samples resource. */
-      src_samples_resource[0] = (uint32_t)src_samples_va;
-      src_samples_resource[2] = (src_samples_resource[2] & C_030008_BASE_ADDRESS_HI) |
-                                S_030008_BASE_ADDRESS_HI(src_samples_va >> 32);
-      src_samples_resource[1] =
+      src_samples_resource.resource[0] = (uint32_t)src_samples_va;
+      src_samples_resource.resource[2] =
+         (src_samples_resource.resource[2] & C_030008_BASE_ADDRESS_HI) |
+         S_030008_BASE_ADDRESS_HI(src_samples_va >> 32);
+      src_samples_resource.resource[1] =
          (uint32_t)((uint64_t)src_samples_size_bytes * batch_query_count - 1);
-      terakan_hw_state_sqc_set_resource_vs(&command_writer->hw_state_sqc,
-                                           TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META,
-                                           query_pool->bo, src_samples_resource);
+      terakan_hw_config_sqk_set_resource_vs(&command_writer->hw_config_sqk,
+                                            TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META,
+                                            query_pool->bo, &src_samples_resource);
 
       /* Source availability resource. */
-      src_availability_resource[0] = (uint32_t)src_availability_va;
-      src_availability_resource[2] = (src_availability_resource[2] & C_030008_BASE_ADDRESS_HI) |
-                                     S_030008_BASE_ADDRESS_HI(src_availability_va >> 32);
+      src_availability_resource.resource[0] = (uint32_t)src_availability_va;
+      src_availability_resource.resource[2] =
+         (src_availability_resource.resource[2] & C_030008_BASE_ADDRESS_HI) |
+         S_030008_BASE_ADDRESS_HI(src_availability_va >> 32);
       /* 32-bit multiplication by 4 is sufficient due to `batch_query_count` limiting to no more
        * than 2^(32-3).
        */
-      src_availability_resource[1] = (uint32_t)sizeof(uint32_t) * batch_query_count - 1;
-      terakan_hw_state_sqc_set_resource_vs(&command_writer->hw_state_sqc,
-                                           TERAKAN_RESOURCE_RANGE_NON_PIXEL_STAGE_SPECIFIC,
-                                           query_pool->bo, src_availability_resource);
+      src_availability_resource.resource[1] = (uint32_t)sizeof(uint32_t) * batch_query_count - 1;
+      terakan_hw_config_sqk_set_resource_vs(&command_writer->hw_config_sqk,
+                                            TERAKAN_RESOURCE_RANGE_NON_PIXEL_STAGE_SPECIFIC,
+                                            query_pool->bo, &src_availability_resource);
 
       /* Destination UAV. */
       dst_uav.base = (uint32_t)(dst_va_aligned >> 8);
-      /* DIM is element count minus 1. */
+      /* `DIM` is element count minus 1. */
       dst_uav.dim =
-         (uint32_t)(dst_uav_base_granularity_offset_dwords + dst_result_and_availability_dwords -
-                    1 + dst_stride_dwords * (batch_query_count - 1));
-      terakan_hw_state_draw_set_cb_color(&command_writer->hw_state_draw, 0, dst_buffer->bo,
-                                         &dst_uav, NULL, true);
+         (uint32_t)(dst_uav_alignment_offset_dwords + dst_result_and_availability_dwords - 1 +
+                    dst_stride_dwords * (batch_query_count - 1));
+      terakan_meta_config_draw_set_cb_uav(command_writer, 0, dst_buffer->bo, &dst_uav);
 
       /* Push constants. */
-      if (constants_uav_base_granularity_offset_dwords != dst_uav_base_granularity_offset_dwords) {
+      if (constants_uav_alignment_offset_dwords != dst_uav_alignment_offset_dwords) {
          constants_bo = NULL;
-         constants_uav_base_granularity_offset_dwords = dst_uav_base_granularity_offset_dwords;
+         constants_uav_alignment_offset_dwords = dst_uav_alignment_offset_dwords;
       }
       if (constants_bo == NULL) {
          uint32_t constants_va_lines;
@@ -2265,7 +2233,7 @@ terakan_CmdCopyQueryPoolResults(VkCommandBuffer const commandBuffer, VkQueryPool
             (flags & VK_QUERY_RESULT_PARTIAL_BIT) ? UINT32_MAX : 0;
          constants[TERAKAN_META_QUERY_COPY_CONST_DST_STRIDE] = dst_stride_dwords;
          constants[TERAKAN_META_QUERY_COPY_CONST_DST_RESULT_END_OFFSET] =
-            constants_uav_base_granularity_offset_dwords +
+            constants_uav_alignment_offset_dwords +
             (query_pool->copy_dst_result_size_counters << (unsigned)is_64_bit);
          if (query_pool->vk.query_type == VK_QUERY_TYPE_PIPELINE_STATISTICS) {
             for (unsigned counter_index = 0;
@@ -2275,34 +2243,23 @@ terakan_CmdCopyQueryPoolResults(VkCommandBuffer const commandBuffer, VkQueryPool
                   (uint32_t)(int32_t)constants_dst_counter_offsets[counter_index];
             }
          }
-         terakan_hw_state_sqc_set_kcache_vs(
-            &command_writer->hw_state_sqc, TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS,
-            DIV_ROUND_UP(constants_size_bytes, TERAKAN_KCACHE_HW_LINE_BYTES), constants_bo,
-            constants_va_lines);
+         terakan_meta_config_draw_set_kcache_push_constant_buffer_vs(
+            command_writer, DIV_ROUND_UP(constants_size_bytes, TERAKAN_KCACHE_HW_LINE_BYTES),
+            constants_bo, constants_va_lines);
       }
 
-      terakan_before_hw_draw(command_writer);
-
-      packet = terakan_gfx_command_writer_emit(command_writer,
-                                               TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DRAW, 3);
-      if (unlikely(packet == NULL)) {
-         return;
-      }
-      *packet++ = PKT3(PKT3_DRAW_INDEX_AUTO, 3 - 2, 0);
-      *packet++ = 1;
-      *packet++ = S_0287F0_SOURCE_SELECT(V_0287F0_DI_SRC_SEL_AUTO_INDEX);
-      terakan_gfx_command_writer_emit_done(command_writer, packet);
+      terakan_meta_draw_auto(command_writer, batch_query_count, 1);
 
       query_index += batch_query_count;
-      src_samples_va += (uint64_t)src_samples_resource[1] + 1;
-      src_availability_va += src_availability_resource[1] + 1;
+      src_samples_va += (uint64_t)src_samples_resource.resource[1] + 1;
+      src_availability_va += src_availability_resource.resource[1] + 1;
       dst_va = dst_va_aligned + sizeof(uint32_t) * ((VkDeviceSize)dst_uav.dim + 1);
    }
 
    /* TODO(Triang3l): Integrate into the barrier infrastructure (the application should insert the
     * barrier, since it's just a transfer to a buffer). In addition, make sure that
-    * vkCmdResetQueryPool for the queries being copied doesn't start being executed before the last
-    * vkCmdCopyQueryPoolResults for it has finished reading the availability.
+    * `vkCmdResetQueryPool` for the queries being copied doesn't start being executed before the
+    * last `vkCmdCopyQueryPoolResults` for it has finished reading the availability.
     */
    {
       packet = terakan_gfx_command_writer_emit(command_writer,

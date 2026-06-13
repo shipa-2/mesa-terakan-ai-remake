@@ -89,6 +89,11 @@ struct terakan_bo_tiling {
 struct terakan_bo {
    struct terakan_device * device;
 
+   /* BO size, primarily for bounds checking, so may be smaller than the actual kernel allocation,
+    * but not smaller than the requested size (unless it's imported).
+    */
+   uint64_t size;
+
    /* 0 if virtual memory is not supported, in which case addresses in packets are relative to the
     * start of the BO.
     */
@@ -109,7 +114,7 @@ void terakan_bo_unmap(struct terakan_bo * bo);
 /* If the buffer is currently mapped, freeing it implicitly unmaps it. */
 void terakan_bo_free(struct terakan_bo * bo, VkAllocationCallbacks const * allocator);
 
-void terakan_bo_init(struct terakan_bo * bo, struct terakan_device * device);
+void terakan_bo_init(struct terakan_bo * bo, struct terakan_device * device, uint64_t size);
 
 /* Non-`impl` functions are public. */
 struct terakan_bo_winsys_fn {

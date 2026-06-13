@@ -61,38 +61,41 @@ terakan_CreateSampler(VkDevice const deviceHandle, VkSamplerCreateInfo const * c
       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
    }
 
-   sampler->sampler[0] =
-      S_03C000_CLAMP_X(terakan_sampler_translate_address_mode(pCreateInfo->addressModeU)) |
-      S_03C000_CLAMP_Y(terakan_sampler_translate_address_mode(pCreateInfo->addressModeV)) |
-      S_03C000_CLAMP_Z(terakan_sampler_translate_address_mode(pCreateInfo->addressModeW)) |
-      S_03C000_XY_MAG_FILTER(
-         terakan_sampler_translate_filter(pCreateInfo->magFilter, pCreateInfo->anisotropyEnable)) |
-      S_03C000_XY_MIN_FILTER(
-         terakan_sampler_translate_filter(pCreateInfo->minFilter, pCreateInfo->anisotropyEnable)) |
-      S_03C000_MIP_FILTER(terakan_sampler_translate_mipmap_mode(pCreateInfo->mipmapMode)) |
-      S_03C000_BORDER_COLOR_TYPE(terakan_sampler_translate_border_color(pCreateInfo->borderColor)) |
-      S_03C000_DEPTH_COMPARE_FUNCTION(pCreateInfo->compareEnable ? (uint32_t)pCreateInfo->compareOp
-                                                                 : 0) |
-      S_03C000_FORCE_UNNORMALIZED(pCreateInfo->unnormalizedCoordinates &&
-                                  terakan_device_physical_device(device)->chip_info.is_r9xx);
-   sampler->sampler[1] =
-      S_03C004_MIN_LOD(terakan_sampler_translate_min_max_lod(pCreateInfo->minLod)) |
-      S_03C004_MAX_LOD(terakan_sampler_translate_min_max_lod(pCreateInfo->maxLod));
-   sampler->sampler[2] =
-      S_03C008_LOD_BIAS(terakan_sampler_translate_mip_lod_bias(pCreateInfo->mipLodBias)) |
-      S_03C008_TRUNCATE_COORD(pCreateInfo->magFilter == VK_FILTER_NEAREST &&
-                              pCreateInfo->minFilter == VK_FILTER_NEAREST) |
-      S_03C008_DISABLE_CUBE_WRAP(
-         (pCreateInfo->flags & VK_SAMPLER_CREATE_NON_SEAMLESS_CUBE_MAP_BIT_EXT) != 0) |
-      S_03C008_TYPE(1);
+   sampler->sampler = (struct terakan_sampler_descriptor){
+      .sampler = {
+         S_03C000_CLAMP_X(terakan_sampler_translate_address_mode(pCreateInfo->addressModeU)) |
+            S_03C000_CLAMP_Y(terakan_sampler_translate_address_mode(pCreateInfo->addressModeV)) |
+            S_03C000_CLAMP_Z(terakan_sampler_translate_address_mode(pCreateInfo->addressModeW)) |
+            S_03C000_XY_MAG_FILTER(terakan_sampler_translate_filter(
+               pCreateInfo->magFilter, pCreateInfo->anisotropyEnable)) |
+            S_03C000_XY_MIN_FILTER(terakan_sampler_translate_filter(
+               pCreateInfo->minFilter, pCreateInfo->anisotropyEnable)) |
+            S_03C000_MIP_FILTER(terakan_sampler_translate_mipmap_mode(pCreateInfo->mipmapMode)) |
+            S_03C000_BORDER_COLOR_TYPE(
+               terakan_sampler_translate_border_color(pCreateInfo->borderColor)) |
+            S_03C000_DEPTH_COMPARE_FUNCTION(
+               pCreateInfo->compareEnable ? (uint32_t)pCreateInfo->compareOp : 0) |
+            S_03C000_FORCE_UNNORMALIZED(pCreateInfo->unnormalizedCoordinates &&
+                                        terakan_device_physical_device(device)->chip_info.is_r9xx),
+         S_03C004_MIN_LOD(terakan_sampler_translate_min_max_lod(pCreateInfo->minLod)) |
+            S_03C004_MAX_LOD(terakan_sampler_translate_min_max_lod(pCreateInfo->maxLod)),
+         S_03C008_LOD_BIAS(terakan_sampler_translate_mip_lod_bias(pCreateInfo->mipLodBias)) |
+            S_03C008_TRUNCATE_COORD(pCreateInfo->magFilter == VK_FILTER_NEAREST &&
+                                    pCreateInfo->minFilter == VK_FILTER_NEAREST) |
+            S_03C008_DISABLE_CUBE_WRAP(
+               (pCreateInfo->flags & VK_SAMPLER_CREATE_NON_SEAMLESS_CUBE_MAP_BIT_EXT) != 0) |
+            S_03C008_TYPE(1),
+      }};
 
    if (pCreateInfo->anisotropyEnable) {
       uint32_t const max_aniso_ratio =
          terakan_sampler_translate_max_anisotropy(pCreateInfo->maxAnisotropy);
-      sampler->sampler[0] |= S_03C000_MAX_ANISO_RATIO(max_aniso_ratio);
-      sampler->sampler[1] |= S_03C004_PERF_MIP(max_aniso_ratio + 6);
-      sampler->sampler[2] |= S_03C008_ANISO_BIAS(max_aniso_ratio);
+      sampler->sampler.sampler[0] |= S_03C000_MAX_ANISO_RATIO(max_aniso_ratio);
+      sampler->sampler.sampler[1] |= S_03C004_PERF_MIP(max_aniso_ratio + 6);
+      sampler->sampler.sampler[2] |= S_03C008_ANISO_BIAS(max_aniso_ratio);
    }
+
+   /* TODO(Triang3l): Border color. */
 
    sampler->unnormalized_coordinates = pCreateInfo->unnormalizedCoordinates;
 

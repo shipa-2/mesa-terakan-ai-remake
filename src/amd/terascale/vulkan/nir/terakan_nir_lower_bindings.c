@@ -303,9 +303,7 @@ terakan_nir_get_binding(nir_src const src, VkDescriptorType const expected_type,
 struct terakan_nir_lower_bindings_state {
    struct terakan_pipeline_layout const * layout;
 
-   /* 0-based. */
-   BITSET_WORD * resources_needed;
-   uint32_t * samplers_needed;
+   struct terakan_shader_sqk_usage * sqk_usage;
 
    unsigned uav_base;
    /* TERAKAN_RESOURCE_RANGE_MUTABLE_BASE-based, NULL if the stage doesn't support UAVs. */
@@ -526,10 +524,15 @@ terakan_nir_get_binding_uav(struct terakan_nir_binding const * const binding,
                                         : TERAKAN_RESOURCE_RANGE_UAV_IMMEDIATE_BASE_COMPUTE) +
          uav_index;
       if (apply_array_index) {
-         BITSET_SET_RANGE(state->resources_needed, immed_resource_index_base,
-                          immed_resource_index_base + binding->array_index_range_last);
+         uint8_t const immed_resource_index_last =
+            immed_resource_index_base + binding->array_index_range_last;
+         BITSET_SET_RANGE(state->sqk_usage->resources, immed_resource_index_base,
+                          immed_resource_index_last);
+         BITSET_SET_RANGE(state->sqk_usage->resources_uncached, immed_resource_index_base,
+                          immed_resource_index_last);
       } else {
-         BITSET_SET(state->resources_needed, immed_resource_index_base);
+         BITSET_SET(state->sqk_usage->resources, immed_resource_index_base);
+         BITSET_SET(state->sqk_usage->resources_uncached, immed_resource_index_base);
       }
    }
 
@@ -669,7 +672,7 @@ terakan_nir_buffer_uav_coord(nir_builder * const b, nir_def * coord,
    *state->driver_push_constants_used |=
       BITFIELD_BIT(TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_BUFFER_UAV_BASE_GRANULARITY_OFFSET);
    /* TODO(Triang3l): If the array index is constant, load via kcache rather than vertex fetch. */
-   BITSET_SET(state->resources_needed, TERAKAN_RESOURCE_RANGE_PUSH_CONSTANTS);
+   BITSET_SET(state->sqk_usage->resources, TERAKAN_RESOURCE_RANGE_PUSH_CONSTANTS);
    nir_def * const base_granularity_offset = nir_load_buffer_resource_r600(
       b, 1, 32, nir_imm_zero(b, 1, 32), nir_ishl_imm(b, uav_array_index, 2),
       .access = ACCESS_CAN_REORDER | (include_helpers ? ACCESS_INCLUDE_HELPERS : 0),
@@ -720,7 +723,7 @@ terakan_nir_lower_bindings_instr_tex(nir_builder * const b, nir_tex_instr * cons
       }
       uint8_t const resource_index_base = binding.set->first_shader_resources[stage] +
                                           binding.set_binding->first_shader_resources[stage];
-      BITSET_SET_RANGE(state->resources_needed,
+      BITSET_SET_RANGE(state->sqk_usage->resources,
                        resource_index_base + binding.array_index_range_first,
                        resource_index_base + binding.array_index_range_last);
       shader_nir_progress = true;
@@ -749,7 +752,7 @@ terakan_nir_lower_bindings_instr_tex(nir_builder * const b, nir_tex_instr * cons
       }
       uint8_t const sampler_index_base = binding.set->first_shader_samplers[stage] +
                                          binding.set_binding->first_shader_samplers[stage];
-      *state->samplers_needed |=
+      state->sqk_usage->samplers |=
          BITFIELD_RANGE(sampler_index_base + binding.array_index_range_first,
                         binding.array_index_range_last - binding.array_index_range_first + 1);
       shader_nir_progress = true;
@@ -795,7 +798,8 @@ terakan_nir_lower_bindings_instr_load_ubo(nir_builder * const b, nir_intrinsic_i
 
    uint8_t const resource_index_base = binding.set->first_shader_resources[stage] +
                                        binding.set_binding->first_shader_resources[stage];
-   BITSET_SET_RANGE(state->resources_needed, resource_index_base + binding.array_index_range_first,
+   BITSET_SET_RANGE(state->sqk_usage->resources,
+                    resource_index_base + binding.array_index_range_first,
                     resource_index_base + binding.array_index_range_last);
    nir_def_rewrite_uses(&intrin->def,
                         terakan_nir_load_raw_resource_buffer(
@@ -820,7 +824,7 @@ terakan_nir_lower_bindings_instr_load_push_constant(
 
    /* TODO(Triang3l): Load from the constant cache. */
 
-   BITSET_SET(state->resources_needed, TERAKAN_RESOURCE_RANGE_PUSH_CONSTANTS);
+   BITSET_SET(state->sqk_usage->resources, TERAKAN_RESOURCE_RANGE_PUSH_CONSTANTS);
    nir_def_rewrite_uses(
       &intrin->def,
       terakan_nir_load_raw_resource_buffer(
@@ -853,8 +857,18 @@ terakan_nir_lower_bindings_instr_load_ssbo(nir_builder * const b,
    uint8_t const resource_index_base =
       binding.set->first_shader_resources[b->shader->info.stage] +
       binding.set_binding->first_shader_resources[b->shader->info.stage];
-   BITSET_SET_RANGE(state->resources_needed, resource_index_base + binding.array_index_range_first,
+   BITSET_SET_RANGE(state->sqk_usage->resources,
+                    resource_index_base + binding.array_index_range_first,
                     resource_index_base + binding.array_index_range_last);
+   /* TODO(Triang3l): Don't make uncached if there are no UAV writes to this buffer or a buffer
+    * potentially aliasing it.
+    */
+   if (b->shader->info.stage == MESA_SHADER_FRAGMENT ||
+       b->shader->info.stage == MESA_SHADER_COMPUTE) {
+      BITSET_SET_RANGE(state->sqk_usage->resources_uncached,
+                       resource_index_base + binding.array_index_range_first,
+                       resource_index_base + binding.array_index_range_last);
+   }
    nir_def_rewrite_uses(&intrin->def, terakan_nir_load_raw_resource_buffer(
                                          b, intrin->num_components, intrin->def.bit_size,
                                          nir_intrinsic_access(intrin), resource_index_base,
@@ -1045,9 +1059,18 @@ terakan_nir_lower_bindings_instr_image_deref_load(
 
    if (image_dim == GLSL_SAMPLER_DIM_BUF) {
       /* Vertex fetches are coherent with UAVs, do a vertex fetch unconditionally. */
-      BITSET_SET_RANGE(state->resources_needed,
+      BITSET_SET_RANGE(state->sqk_usage->resources,
                        resource_index_base + binding.array_index_range_first,
                        resource_index_base + binding.array_index_range_last);
+      /* TODO(Triang3l): Don't make uncached if there are no UAV writes to this buffer or a buffer
+       * potentially aliasing it.
+       */
+      if (b->shader->info.stage == MESA_SHADER_FRAGMENT ||
+          b->shader->info.stage == MESA_SHADER_COMPUTE) {
+         BITSET_SET_RANGE(state->sqk_usage->resources_uncached,
+                          resource_index_base + binding.array_index_range_first,
+                          resource_index_base + binding.array_index_range_last);
+      }
       nir_def_rewrite_uses(
          &intrin->def,
          nir_u2uN(b,
@@ -1073,7 +1096,7 @@ terakan_nir_lower_bindings_instr_image_deref_load(
 
    if (uav_index_zero_based == UINT_MAX) {
       /* UAV not needed or not available at this stage, load via the texture cache. */
-      BITSET_SET_RANGE(state->resources_needed,
+      BITSET_SET_RANGE(state->sqk_usage->resources,
                        resource_index_base + binding.array_index_range_first,
                        resource_index_base + binding.array_index_range_last);
       nir_def_rewrite_uses(
@@ -1318,8 +1341,8 @@ terakan_nir_lower_bindings_instr(nir_builder * const b, nir_instr * const instr,
 bool
 terakan_nir_lower_bindings(nir_shader * const shader,
                            struct terakan_pipeline_layout const * const layout,
-                           BITSET_WORD * const resources_needed_accum,
-                           uint32_t * const samplers_needed_accum, unsigned const uav_base,
+                           struct terakan_shader_sqk_usage * const sqk_usage_accum,
+                           unsigned const uav_base,
                            BITSET_WORD * const uavs_for_mutable_resources_needed_out_opt,
                            uint32_t * const driver_push_constants_used_accum)
 {
@@ -1359,8 +1382,7 @@ terakan_nir_lower_bindings(nir_shader * const shader,
 
    struct terakan_nir_lower_bindings_state state = {
       .layout = layout,
-      .resources_needed = resources_needed_accum,
-      .samplers_needed = samplers_needed_accum,
+      .sqk_usage = sqk_usage_accum,
       .uav_base = uav_base,
       .driver_push_constants_used = driver_push_constants_used_accum,
    };

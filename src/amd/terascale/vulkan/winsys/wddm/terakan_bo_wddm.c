@@ -117,6 +117,14 @@ terakan_bo_wddm_allocate_device_memory(
    VkAllocationCallbacks const * const allocator, VkSystemAllocationScope const scope,
    struct terakan_bo ** const bo_out)
 {
+   if (unlikely(size > UINT32_MAX)) {
+      vk_loge(VK_LOG_OBJS(terakan_device_log_obj(&device->base)),
+              "Memory allocation size (0x%" PRIX64 " bytes) is too large to be specified as a "
+              "32-bit value in the D3DKMT allocation function parameters",
+              size);
+      return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+   }
+
    struct terakan_device_wddm * const device =
       container_of(device_base, struct terakan_device_wddm, base);
 
@@ -207,13 +215,14 @@ terakan_bo_wddm_allocate_device_memory(
    if (!NT_SUCCESS(create_allocation_status)) {
       vk_free2(&device->base.vk.alloc, allocator, bo);
       vk_loge(VK_LOG_OBJS(terakan_device_log_obj(&device->base)),
-              "Failed to create a D3DKMT memory allocation, size: %" PRIu64 " bytes, "
-              "alignment: %" PRIu64 " bytes, memory property flags: 0x%" PRIX32 ", status 0x%08lX",
+              "Failed to create a D3DKMT memory allocation, size: 0x%" PRIX64 " bytes, "
+              "alignment: 0x%" PRIX64 " bytes, memory property flags: 0x%" PRIX32 ", status "
+              "0x%08lX",
               size, alignment, flags, create_allocation_status);
       return VK_ERROR_OUT_OF_DEVICE_MEMORY;
    }
 
-   terakan_bo_init(&bo->base, &device->base);
+   terakan_bo_init(&bo->base, &device->base, size);
 
    bo->allocation = allocation_info.hAllocation;
 

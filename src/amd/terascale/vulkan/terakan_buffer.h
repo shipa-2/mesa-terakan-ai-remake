@@ -49,11 +49,11 @@ VK_DEFINE_NONDISP_HANDLE_CASTS(terakan_buffer, vk.base, VkBuffer, VK_OBJECT_TYPE
 
 struct terakan_bo const *
 terakan_buffer_create_uniform_buffer_descriptor(VkDescriptorBufferInfo const * buffer_info,
-                                                uint32_t resource_out[8]);
+                                                struct terakan_resource_descriptor * resource_out);
 
 struct terakan_bo const *
 terakan_buffer_create_storage_buffer_descriptor(VkDescriptorBufferInfo const * buffer_info,
-                                                uint32_t resource_out[8],
+                                                struct terakan_resource_descriptor * resource_out,
                                                 struct terakan_color_descriptor * color_out);
 
 struct terakan_buffer_view {
@@ -61,7 +61,7 @@ struct terakan_buffer_view {
 
    struct terakan_bo const * bo;
 
-   uint32_t resource[8];
+   struct terakan_resource_descriptor resource;
 
    struct terakan_color_descriptor color;
 };

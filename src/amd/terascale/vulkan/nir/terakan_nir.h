@@ -25,6 +25,7 @@
 #define TERAKAN_NIR_H
 
 #include "terakan_pipeline_layout.h"
+#include "terakan_shader.h"
 
 #include "util/bitset.h"
 #include "nir.h"
@@ -48,15 +49,16 @@ nir_def * terakan_nir_load_raw_resource_buffer(nir_builder * b, unsigned num_com
                                                nir_def * resource_index, unsigned byte_address_base,
                                                nir_def * byte_address);
 
-/* Compact fragment shader data output locations, so all RTVs precede all UAVs as required and to be
- * able to allocate arrays of UAVs without fragmentation, and so there are no holes in
- * CB_SHADER_MASK, which, according to RadeonSI (but apparently applicable to earlier generations),
- * may cause hangs.
- * The mask of which pre-compaction fragment data outputs are used is written to
- * uncompacted_locations_out.
+/* Compact fragment data output locations, so all RTVs and the dual-source blend factor precede all
+ * UAVs as required and to be able to allocate arrays of UAVs without fragmentation, and so there
+ * are no holes in `CB_SHADER_MASK`, which, according to RadeonSI (but likely applicable to earlier
+ * generations), may cause hangs.
+ * The mask of which pre-compaction fragment data output locations (where bit 1 indicates either the
+ * color attachment 1 or the second source in dual-source blending for color attachment 0) are used
+ * is written to `rtv_dsb_uncompacted_exports_out`.
  */
-bool terakan_nir_compact_fragment_data_locations(nir_shader * shader,
-                                                 uint8_t * uncompacted_locations_out);
+bool terakan_nir_compact_rtv_dsb_exports(nir_shader * shader,
+                                         uint8_t * rtv_dsb_uncompacted_exports_out);
 
 /* Translate Vulkan set and binding indices and push constant loads into hardware constant indices,
  * and lower various instructions involving bindings into TeraScale-specific intrinsics and logic.
@@ -66,8 +68,7 @@ bool terakan_nir_compact_fragment_data_locations(nir_shader * shader,
  * It's recommended to run nir_opt_load_store_vectorize before the pass, as this transforms certain
  * loads and stores into hardware-specific intrinsics.
  *
- * The function adds new bits to `resources_needed_accum` and `samplers_needed_accum`, but keeps
- * already set ones.
+ * The function adds new bits to `sqk_usage_accum`, but keeps the already set ones.
  *
  * `uavs_for_mutable_resources_needed_out_opt`, however, is overwritten completely (more precisely,
  * bitset words for the maximum count of mutable resources at the stage are touched), as UAV indices
@@ -75,8 +76,8 @@ bool terakan_nir_compact_fragment_data_locations(nir_shader * shader,
  * by the caller if UAVs are not needed (such as if the stage doesn't support UAVs).
  */
 bool terakan_nir_lower_bindings(nir_shader * shader, struct terakan_pipeline_layout const * layout,
-                                BITSET_WORD * resources_needed_accum,
-                                uint32_t * samplers_needed_accum, unsigned uav_base,
+                                struct terakan_shader_sqk_usage * sqk_usage_accum,
+                                unsigned uav_base,
                                 BITSET_WORD * uavs_for_mutable_resources_needed_out_opt,
                                 uint32_t * driver_push_constants_used_accum);
 

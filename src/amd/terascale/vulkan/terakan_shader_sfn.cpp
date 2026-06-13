@@ -24,10 +24,9 @@
 #include "terakan_shader.h"
 
 #include "nir/terakan_nir.h"
-#include "terakan_bo.h"
+#include "terakan_descriptor.h"
 #include "terakan_device.h"
 #include "terakan_physical_device.h"
-#include "terakan_vertex_input.h"
 
 #include "compiler/shader_enums.h"
 #include "gallium/drivers/r600/evergreend.h"
@@ -38,7 +37,7 @@
 #include "gallium/drivers/r600/sfn/sfn_nir.h"
 #include "gallium/include/pipe/p_shader_tokens.h"
 #include "gallium/include/pipe/p_state.h"
-#include "util/u_math.h"
+#include "util/macros.h"
 #include "amd_family.h"
 #include "nir.h"
 #include "vk_log.h"
@@ -54,8 +53,6 @@ terakan_shader_impl_compile(terakan_shader_impl * const shader, terakan_device *
                             r600_shader_key const * const key, nir_shader * const nir,
                             VkAllocationCallbacks const * const allocator)
 {
-   VkResult result;
-
    terakan_physical_device const & physical_device = *terakan_device_physical_device(device);
    terakan_physical_device_chip_info const & chip_info = physical_device.chip_info;
    amd_gfx_level const gfx_level = chip_info.is_r9xx ? CAYMAN : EVERGREEN;
@@ -96,6 +93,7 @@ terakan_shader_impl_compile(terakan_shader_impl * const shader, terakan_device *
    }
 
    /* With the current size calculation, nir->scratch_size is in vec4 units. */
+   /* TODO(Triang3l): Reject shaders with an overflowing scratch size. */
    shader->scratch_item_size_dwords = 4 * nir->scratch_size;
 
    sfn_shader->get_shader_info(&shader->shader);
@@ -338,44 +336,12 @@ terakan_shader_impl_compile(terakan_shader_impl * const shader, terakan_device *
       for (unsigned input_index = 0; input_index < shader->shader.ninput; ++input_index) {
          struct r600_shader_io const * const input = &shader->shader.input[input_index];
          assert(input->gpr > 0);
-         assert(input->gpr - 1 < TERAKAN_VERTEX_INPUT_MAX_ATTRIBUTES);
-         if (input->gpr > 0 && input->gpr - 1 < TERAKAN_VERTEX_INPUT_MAX_ATTRIBUTES) {
-            BITSET_SET(shader->vs.vertex_attributes_needed, input->gpr - 1);
+         assert(input->gpr - 1 < TERAKAN_RESOURCE_HW_COUNT_FETCH);
+         if (input->gpr > 0 && input->gpr - 1 < TERAKAN_RESOURCE_HW_COUNT_FETCH) {
+            shader->vs.vertex_attributes_needed |= BITFIELD_BIT(input->gpr - 1);
          }
       }
    }
-
-   /* Write the program to the BO. */
-   size_t const program_size_bytes = sizeof(uint32_t) * shader->shader.bc.ndw;
-   result = device->winsys_fn->bo->allocate_device_memory(
-      device, program_size_bytes, TERAKAN_SHADER_PROGRAM_ALIGNMENT,
-      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-      0, allocator, VK_SYSTEM_ALLOCATION_SCOPE_OBJECT, &shader->static_state.program_bo);
-   if (result != VK_SUCCESS) {
-      r600_bytecode_clear(&shader->shader.bc);
-      if (shader->shader.arrays != nullptr) {
-         std::free(shader->shader.arrays);
-      }
-      return vk_error(device, result);
-   }
-   shader->static_state.program_va_shr8 = 0;
-   {
-      void * const program_bo_mapping = terakan_bo_map(shader->static_state.program_bo);
-      if (program_bo_mapping == nullptr) {
-         terakan_bo_free(shader->static_state.program_bo, allocator);
-         r600_bytecode_clear(&shader->shader.bc);
-         if (shader->shader.arrays != nullptr) {
-            std::free(shader->shader.arrays);
-         }
-         return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
-      }
-      util_memcpy_cpu_to_le32(program_bo_mapping, shader->shader.bc.bytecode, program_size_bytes);
-      terakan_bo_unmap(device->meta_shaders_bo);
-   }
-
-   /* Don't need the bytecode structure after writing the binary. */
-   r600_bytecode_clear(&shader->shader.bc);
 
    return VK_SUCCESS;
 }

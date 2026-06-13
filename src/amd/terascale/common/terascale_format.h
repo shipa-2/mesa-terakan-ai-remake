@@ -163,7 +163,7 @@ enum terascale_format_index {
 
 /* APCn formats are skipped in the arrays for simplicity of handling their index reuse on R8xx. */
 extern const uint8_t terascale_format_block_texels_log2[1 << 6][2];
-/* * For 3x-expanded formats, the bytes per block array includes all three channels. */
+/* For 3x-expanded formats, the bytes per block array includes all three channels. */
 extern const uint8_t terascale_format_bytes_per_block[1 << 6];
 /* Endian swaps for big-endian hosts, up to 8IN32. For array formats, channels aren't reordered. */
 extern const uint8_t terascale_format_big_endian_swap[1 << 6];

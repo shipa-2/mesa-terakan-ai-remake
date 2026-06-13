@@ -21,20 +21,15 @@
  * IN THE SOFTWARE.
  */
 
-#include "terakan_meta.h"
-
-#include "terakan_bo.h"
-#include "terakan_command_buffer.h"
-#include "terakan_device.h"
-#include "terakan_draw.h"
+#include "terakan_meta_impl.h"
 
 #include "util/macros.h"
 #include "util/u_endian.h"
 
 #include <assert.h>
 
-/* For testing, see `TERAKAN_DEVTEST_SPLIT_INDIRECT_BUFFER_AT_QUERY_BEGIN_END` and
- * `devtest_split_indirect_buffer_after_actions`.
+/* For testing, see `TERAKAN_REGRESSION_TEST_SHIFT_SPLIT_INDIRECT_BUFFER_AT_QUERY_BEGIN_END` and
+ * `regression_test_split_indirect_buffer_after_actions`.
  */
 
 #define TERAKAN_META_QUERY_ACCUM_KCACHE_BUFFER_ACCUMULATOR (TERAKAN_KCACHE_HW_BUFFERS_PER_STAGE - 1)
@@ -402,12 +397,12 @@
       S_SQ_CF_ALU_WORD1_COUNT((qword_count) - 1) | EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU
 
 #define TERAKAN_META_QUERY_ACCUM_CF_STORE_R8XX(component_mask, vec4_count)                         \
-   TERAKAN_SHADER_CF_UAV(true, STORE_RAW, 0, 0, 1, component_mask, true) |                         \
+   TERAKAN_SHADER_CF_UAV(true, STORE_RAW, 0, 0, 1, component_mask, false, true) |                  \
       S_SQ_CF_ALLOC_EXPORT_WORD1_BUF_ARRAY_SIZE(sizeof(uint32_t) * 4) |                            \
       S_SQ_CF_ALLOC_EXPORT_WORD1_BURST_COUNT((vec4_count) - 1)
 
 #define TERAKAN_META_QUERY_ACCUM_CF_STORE_R9XX(component_mask, vec4_count)                         \
-   TERAKAN_SHADER_CF_UAV(true, STORE_DWORD, 0, 0, 1, component_mask, true) |                       \
+   TERAKAN_SHADER_CF_UAV(true, STORE_DWORD, 0, 0, 1, component_mask, false, true) |                \
       S_SQ_CF_ALLOC_EXPORT_WORD1_BUF_ARRAY_SIZE(4) |                                               \
       S_SQ_CF_ALLOC_EXPORT_WORD1_BURST_COUNT((vec4_count) - 1)
 
@@ -445,22 +440,22 @@
                      },                                                                            \
                },                                                                                  \
          },                                                                                        \
-      .kcache_needed = BITFIELD_BIT(TERAKAN_META_QUERY_ACCUM_KCACHE_BUFFER_IB_END) |               \
-                       BITFIELD_BIT(TERAKAN_META_QUERY_ACCUM_KCACHE_BUFFER_IB_BEGIN) |             \
-                       BITFIELD_BIT(TERAKAN_META_QUERY_ACCUM_KCACHE_BUFFER_ACCUMULATOR),           \
+      .kcache_used = BITFIELD_BIT(TERAKAN_META_QUERY_ACCUM_KCACHE_BUFFER_IB_END) |                 \
+                     BITFIELD_BIT(TERAKAN_META_QUERY_ACCUM_KCACHE_BUFFER_IB_BEGIN) |               \
+                     BITFIELD_BIT(TERAKAN_META_QUERY_ACCUM_KCACHE_BUFFER_ACCUMULATOR),             \
    };
 
 static uint32_t const terakan_meta_query_accum_zpass_1_rb_vs_r8xx[] = {
    /* 0-1: Accumulate. */
-   TERAKAN_META_QUERY_ACCUM_CF_ALU_EXTENDED(4, 10),
+   TERAKAN_META_QUERY_ACCUM_CF_ALU_EXTENDED(5, 10),
 
    /* 2: Store. */
    TERAKAN_META_QUERY_ACCUM_CF_STORE_R8XX(0b11, 1),
 
-   /* 3: End. */
-   TERAKAN_SHADER_CF_VS_DUMMY_EXPORT_DONE_AND_END_R8XX,
+   /* 3-4: End. */
+   TERAKAN_SHADER_CF_VS_DUMMY_EXPORT_POS_PARAM_DONE_AND_END_R8XX_2_QWORDS,
 
-   /* 4: ALU clause. */
+   /* 5: ALU clause. */
 
    /* Subtraction. */
    TERAKAN_META_QUERY_ACCUM_X_SUBLO_Y_SUBHI32_Z_SUBB(true, RB, 0),
@@ -474,16 +469,16 @@ static uint32_t const terakan_meta_query_accum_zpass_1_rb_vs_r8xx[] = {
 
 static uint32_t const terakan_meta_query_accum_zpass_1_rb_vs_r9xx[] = {
    /* 0-1: Accumulate. */
-   TERAKAN_META_QUERY_ACCUM_CF_ALU_EXTENDED(5, 10),
+   TERAKAN_META_QUERY_ACCUM_CF_ALU_EXTENDED(6, 10),
 
    /* 2: Store. */
    TERAKAN_META_QUERY_ACCUM_CF_STORE_R9XX(0b11, 1),
 
-   /* 3-4: End. */
-   TERAKAN_SHADER_CF_VS_DUMMY_EXPORT_DONE_R9XX,
+   /* 3-5: End. */
+   TERAKAN_SHADER_CF_VS_DUMMY_EXPORT_POS_PARAM_DONE_R9XX_2_QWORDS,
    TERAKAN_SHADER_CF_END_R9XX,
 
-   /* 5: ALU clause. */
+   /* 6: ALU clause. */
 
    /* Subtraction. */
    TERAKAN_META_QUERY_ACCUM_X_SUBLO_Y_SUBHI32_Z_SUBB(true, RB, 0),
@@ -499,15 +494,15 @@ TERAKAN_META_QUERY_ACCUM_SHADER(zpass_1_rb, RB, 1)
 
 static uint32_t const terakan_meta_query_accum_zpass_2_rb_vs_r8xx[] = {
    /* 0-1: Accumulate. */
-   TERAKAN_META_QUERY_ACCUM_CF_ALU_EXTENDED(4, 10 * 2),
+   TERAKAN_META_QUERY_ACCUM_CF_ALU_EXTENDED(5, 10 * 2),
 
    /* 2: Store. */
    TERAKAN_META_QUERY_ACCUM_CF_STORE_R8XX(0b11, 2),
 
-   /* 3: End. */
-   TERAKAN_SHADER_CF_VS_DUMMY_EXPORT_DONE_AND_END_R8XX,
+   /* 3-4: End. */
+   TERAKAN_SHADER_CF_VS_DUMMY_EXPORT_POS_PARAM_DONE_AND_END_R8XX_2_QWORDS,
 
-   /* 4: ALU clause. */
+   /* 5: ALU clause. */
 
    /* 0...1 subtractions. */
    TERAKAN_META_QUERY_ACCUM_X_SUBLO_Y_SUBHI32_Z_SUBB(true, RB, 0),
@@ -522,16 +517,16 @@ static uint32_t const terakan_meta_query_accum_zpass_2_rb_vs_r8xx[] = {
 
 static uint32_t const terakan_meta_query_accum_zpass_2_rb_vs_r9xx[] = {
    /* 0-1: Accumulate. */
-   TERAKAN_META_QUERY_ACCUM_CF_ALU_EXTENDED(5, 10 * 2),
+   TERAKAN_META_QUERY_ACCUM_CF_ALU_EXTENDED(6, 10 * 2),
 
    /* 2: Store. */
    TERAKAN_META_QUERY_ACCUM_CF_STORE_R9XX(0b11, 2),
 
-   /* 3-4: End. */
-   TERAKAN_SHADER_CF_VS_DUMMY_EXPORT_DONE_R9XX,
+   /* 3-5: End. */
+   TERAKAN_SHADER_CF_VS_DUMMY_EXPORT_POS_PARAM_DONE_R9XX_2_QWORDS,
    TERAKAN_SHADER_CF_END_R9XX,
 
-   /* 5: ALU clause. */
+   /* 6: ALU clause. */
 
    /* 0...1 subtractions. */
    TERAKAN_META_QUERY_ACCUM_X_SUBLO_Y_SUBHI32_Z_SUBB(true, RB, 0),
@@ -548,15 +543,15 @@ TERAKAN_META_QUERY_ACCUM_SHADER(zpass_2_rb, RB, 2)
 
 static uint32_t const terakan_meta_query_accum_zpass_4_rb_vs_r8xx[] = {
    /* 0-1: Accumulate. */
-   TERAKAN_META_QUERY_ACCUM_CF_ALU_EXTENDED(4, 10 * 4),
+   TERAKAN_META_QUERY_ACCUM_CF_ALU_EXTENDED(5, 10 * 4),
 
    /* 2: Store. */
    TERAKAN_META_QUERY_ACCUM_CF_STORE_R8XX(0b11, 4),
 
-   /* 3: End. */
-   TERAKAN_SHADER_CF_VS_DUMMY_EXPORT_DONE_AND_END_R8XX,
+   /* 3-4: End. */
+   TERAKAN_SHADER_CF_VS_DUMMY_EXPORT_POS_PARAM_DONE_AND_END_R8XX_2_QWORDS,
 
-   /* 4: ALU clause. */
+   /* 5: ALU clause. */
 
    /* 0...1 subtractions. */
    TERAKAN_META_QUERY_ACCUM_X_SUBLO_Y_SUBHI32_Z_SUBB(true, RB, 0),
@@ -582,15 +577,15 @@ TERAKAN_META_QUERY_ACCUM_SHADER(zpass_4_rb, RB, 4)
 
 static uint32_t const terakan_meta_query_accum_zpass_8_rb_vs_r8xx[] = {
    /* 0-1: Accumulate. */
-   TERAKAN_META_QUERY_ACCUM_CF_ALU_EXTENDED(4, 10 * 8),
+   TERAKAN_META_QUERY_ACCUM_CF_ALU_EXTENDED(5, 10 * 8),
 
    /* 2: Store. */
    TERAKAN_META_QUERY_ACCUM_CF_STORE_R8XX(0b11, 8),
 
-   /* 3: End. */
-   TERAKAN_SHADER_CF_VS_DUMMY_EXPORT_DONE_AND_END_R8XX,
+   /* 3-4: End. */
+   TERAKAN_SHADER_CF_VS_DUMMY_EXPORT_POS_PARAM_DONE_AND_END_R8XX_2_QWORDS,
 
-   /* 4: ALU clause. */
+   /* 5: ALU clause. */
 
    /* 0...1 subtractions. */
    TERAKAN_META_QUERY_ACCUM_X_SUBLO_Y_SUBHI32_Z_SUBB(true, RB, 0),
@@ -623,16 +618,16 @@ static uint32_t const terakan_meta_query_accum_zpass_8_rb_vs_r8xx[] = {
 
 static uint32_t const terakan_meta_query_accum_zpass_8_rb_vs_r9xx[] = {
    /* 0-1: Accumulate. */
-   TERAKAN_META_QUERY_ACCUM_CF_ALU_EXTENDED(5, 10 * 8),
+   TERAKAN_META_QUERY_ACCUM_CF_ALU_EXTENDED(6, 10 * 8),
 
    /* 2: Store. */
    TERAKAN_META_QUERY_ACCUM_CF_STORE_R9XX(0b11, 8),
 
-   /* 3-4: End. */
-   TERAKAN_SHADER_CF_VS_DUMMY_EXPORT_DONE_R9XX,
+   /* 3-5: End. */
+   TERAKAN_SHADER_CF_VS_DUMMY_EXPORT_POS_PARAM_DONE_R9XX_2_QWORDS,
    TERAKAN_SHADER_CF_END_R9XX,
 
-   /* 5: ALU clause. */
+   /* 6: ALU clause. */
 
    /* 0...1 subtractions. */
    TERAKAN_META_QUERY_ACCUM_X_SUBLO_Y_SUBHI32_Z_SUBB(true, RB, 0),
@@ -676,17 +671,17 @@ TERAKAN_META_QUERY_ACCUM_SHADER(zpass_8_rb, RB, 8)
 
 static uint32_t const terakan_meta_query_accum_pipelinestat_vs_r8xx[] = {
    /* 0-1: Accumulate. */
-   TERAKAN_META_QUERY_ACCUM_CF_ALU_EXTENDED(5, 8 * 11 + 2),
+   TERAKAN_META_QUERY_ACCUM_CF_ALU_EXTENDED(6, 8 * 11 + 2),
 
    /* 2-3: Store. */
    TERAKAN_META_QUERY_ACCUM_CF_STORE_R8XX(0b1111, 10 / 2),
    TERAKAN_SHADER_CF_UAV_COMBINED_STORE(false, 0, 1 + TERAKAN_META_QUERY_ACCUM_COUNTER_VEC_STAT(10),
-                                        true, false),
+                                        true, false, false),
 
-   /* 4: End. */
-   TERAKAN_SHADER_CF_VS_DUMMY_EXPORT_DONE_AND_END_R8XX,
+   /* 4-5: End. */
+   TERAKAN_SHADER_CF_VS_DUMMY_EXPORT_POS_PARAM_DONE_AND_END_R8XX_2_QWORDS,
 
-   /* 5: ALU clause. */
+   /* 6: ALU clause. */
 
    /* 0...3 subtractions. */
 
@@ -759,18 +754,18 @@ static uint32_t const terakan_meta_query_accum_pipelinestat_vs_r8xx[] = {
 
 static uint32_t const terakan_meta_query_accum_pipelinestat_vs_r9xx[] = {
    /* 0-1: Accumulate. */
-   TERAKAN_META_QUERY_ACCUM_CF_ALU_EXTENDED(6, 8 * 11 + 2),
+   TERAKAN_META_QUERY_ACCUM_CF_ALU_EXTENDED(7, 8 * 11 + 2),
 
    /* 2-3: Store. */
    TERAKAN_META_QUERY_ACCUM_CF_STORE_R9XX(0b1111, 10 / 2),
    TERAKAN_SHADER_CF_UAV_COMBINED_STORE(true, 0, 1 + TERAKAN_META_QUERY_ACCUM_COUNTER_VEC_STAT(10),
-                                        true, false),
+                                        true, false, false),
 
-   /* 4-5: End. */
-   TERAKAN_SHADER_CF_VS_DUMMY_EXPORT_DONE_R9XX,
+   /* 4-6: End. */
+   TERAKAN_SHADER_CF_VS_DUMMY_EXPORT_POS_PARAM_DONE_R9XX_2_QWORDS,
    TERAKAN_SHADER_CF_END_R9XX,
 
-   /* 6: ALU clause. */
+   /* 7: ALU clause. */
 
    /* 0...1 subtractions. */
 
@@ -847,15 +842,15 @@ TERAKAN_META_QUERY_ACCUM_SHADER(pipelinestat, STAT, 11)
 
 static uint32_t const terakan_meta_query_accum_streamoutstats_vs_r8xx[] = {
    /* 0-1: Accumulate. */
-   TERAKAN_META_QUERY_ACCUM_CF_ALU_EXTENDED(4, 8 * 2),
+   TERAKAN_META_QUERY_ACCUM_CF_ALU_EXTENDED(5, 8 * 2),
 
    /* 2: Store. */
    TERAKAN_META_QUERY_ACCUM_CF_STORE_R8XX(0b1111, 2 / 2),
 
-   /* 3: End. */
-   TERAKAN_SHADER_CF_VS_DUMMY_EXPORT_DONE_AND_END_R8XX,
+   /* 3-4: End. */
+   TERAKAN_SHADER_CF_VS_DUMMY_EXPORT_POS_PARAM_DONE_AND_END_R8XX_2_QWORDS,
 
-   /* 4: ALU clause. */
+   /* 5: ALU clause. */
 
    /* 0...1 subtractions. */
 
@@ -874,16 +869,16 @@ static uint32_t const terakan_meta_query_accum_streamoutstats_vs_r8xx[] = {
 
 static uint32_t const terakan_meta_query_accum_streamoutstats_vs_r9xx[] = {
    /* 0-1: Accumulate. */
-   TERAKAN_META_QUERY_ACCUM_CF_ALU_EXTENDED(5, 8 * 2),
+   TERAKAN_META_QUERY_ACCUM_CF_ALU_EXTENDED(6, 8 * 2),
 
    /* 2: Store. */
    TERAKAN_META_QUERY_ACCUM_CF_STORE_R9XX(0b1111, 2 / 2),
 
-   /* 3-4: End. */
-   TERAKAN_SHADER_CF_VS_DUMMY_EXPORT_DONE_R9XX,
+   /* 3-5: End. */
+   TERAKAN_SHADER_CF_VS_DUMMY_EXPORT_POS_PARAM_DONE_R9XX_2_QWORDS,
    TERAKAN_SHADER_CF_END_R9XX,
 
-   /* 5: ALU clause. */
+   /* 6: ALU clause. */
 
    /* 0...1 subtractions. */
 
@@ -929,27 +924,22 @@ terakan_meta_query_accum_begin(struct terakan_gfx_command_writer * const command
       return 0;
    }
 
-   terakan_meta_begin(command_writer, false);
-   terakan_meta_modify_state_draw_dword(command_writer, TERAKAN_STATE_DRAW_INDEX_VGT_PRIMITIVE_TYPE,
-                                        TERAKAN_HW_STATE_DRAW_INDEX_VGT_PRIMITIVE_TYPE,
-                                        &command_writer->hw_state_draw.vgt_primitive_type,
-                                        S_008958_PRIM_TYPE(V_008958_DI_PT_POINTLIST));
-   terakan_hw_state_draw_set_vgt_num_instances(&command_writer->hw_state_draw, 1);
-   terakan_meta_set_vs(command_writer, vs_index);
-   terakan_meta_modify_state_draw_dword(
-      command_writer, TERAKAN_STATE_DRAW_INDEX_PA_CL_CLIP_CNTL,
-      TERAKAN_HW_STATE_DRAW_INDEX_PA_CL_CLIP_CNTL, &command_writer->hw_state_draw.pa_cl_clip_cntl,
-      S_028810_CLIP_DISABLE(1) | S_028810_DX_RASTERIZATION_KILL(1));
-   terakan_meta_begin_cb(command_writer, 0xF, 0b0);
-
-   command_writer->push_constants_state.up_to_date_push_constants_bound_to_stages &=
-      ~VK_SHADER_STAGE_VERTEX_BIT;
+   struct terakan_meta_config_draw_begin_options const meta_begin_options = {
+      .vgt_primitive_type = V_008958_DI_PT_POINTLIST,
+      .vgt_index_offset_explicit = true,
+      .cb_and_db_shader_control_mode = TERAKAN_META_CONFIG_DRAW_BEGIN_CB_MODE_NORMAL_UAV_ONLY,
+   };
+   terakan_meta_config_draw_begin(command_writer, &meta_begin_options);
+   terakan_meta_config_draw_set_sq_pgm_vs(command_writer, vs_index);
 
    struct terakan_bo const * const accumulator =
       terakan_gfx_command_writer_device(command_writer)->query_accumulator_bo;
-   terakan_hw_state_sqc_set_kcache_vs(
-      &command_writer->hw_state_sqc, TERAKAN_META_QUERY_ACCUM_KCACHE_BUFFER_ACCUMULATOR, 1,
-      accumulator, (uint32_t)(accumulator->va >> TERAKAN_KCACHE_HW_LINE_BYTES_LOG2));
+   static_assert(
+      TERAKAN_META_QUERY_ACCUM_KCACHE_BUFFER_ACCUMULATOR == TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS,
+      "Using the push constants setter for the accumulator.");
+   terakan_meta_config_draw_set_kcache_push_constant_buffer_vs(
+      command_writer, 1, accumulator,
+      (uint32_t)(accumulator->va >> TERAKAN_KCACHE_HW_LINE_BYTES_LOG2));
 
    return dst_uav_dwords;
 }
@@ -962,12 +952,12 @@ terakan_meta_query_accum(
    struct terakan_bo const * const dst_uav_bo, uint64_t const dst_uav_va,
    unsigned const dst_uav_dwords)
 {
-   terakan_hw_state_sqc_set_kcache_vs(&command_writer->hw_state_sqc,
-                                      TERAKAN_META_QUERY_ACCUM_KCACHE_BUFFER_IB_END, 1,
-                                      ib_end_sample->bo, ib_end_sample->va_kcache_lines);
-   terakan_hw_state_sqc_set_kcache_vs(&command_writer->hw_state_sqc,
-                                      TERAKAN_META_QUERY_ACCUM_KCACHE_BUFFER_IB_BEGIN, 1,
-                                      ib_begin_sample->bo, ib_begin_sample->va_kcache_lines);
+   terakan_hw_config_sqk_set_kcache_vs(&command_writer->hw_config_sqk,
+                                       TERAKAN_META_QUERY_ACCUM_KCACHE_BUFFER_IB_END, 1,
+                                       ib_end_sample->bo, ib_end_sample->va_kcache_lines);
+   terakan_hw_config_sqk_set_kcache_vs(&command_writer->hw_config_sqk,
+                                       TERAKAN_META_QUERY_ACCUM_KCACHE_BUFFER_IB_BEGIN, 1,
+                                       ib_begin_sample->bo, ib_begin_sample->va_kcache_lines);
 
    struct terakan_color_descriptor dst_uav = {
       .info = S_028C70_ENDIAN(UTIL_ARCH_BIG_ENDIAN ? TERASCALE_ENDIAN_SWAP_8IN32
@@ -982,24 +972,11 @@ terakan_meta_query_accum(
       &dst_uav, dst_uav_va, dst_uav_dwords, sizeof(uint32_t),
       terakan_gfx_command_writer_physical_device(command_writer),
       &dst_uav_base_granularity_offset_bytes);
-   terakan_hw_state_draw_set_cb_color(&command_writer->hw_state_draw, 0, dst_uav_bo, &dst_uav, NULL,
-                                      true);
+   terakan_meta_config_draw_set_cb_uav(command_writer, 0, dst_uav_bo, &dst_uav);
 
    /* Make R0.X the index of the first counter within the aligned UAV. */
-   terakan_meta_modify_state_draw_dword(command_writer, TERAKAN_STATE_DRAW_INDEX_VGT_INDEX_OFFSET,
-                                        TERAKAN_HW_STATE_DRAW_INDEX_VGT_INDEX_OFFSET,
-                                        &command_writer->hw_state_draw.vgt_index_offset,
-                                        dst_uav_base_granularity_offset_bytes / sizeof(uint32_t));
+   terakan_meta_config_draw_set_vgt_index_offset(
+      command_writer, dst_uav_base_granularity_offset_bytes / sizeof(uint32_t));
 
-   terakan_before_hw_draw(command_writer);
-
-   uint32_t * packet = terakan_gfx_command_writer_emit(
-      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DRAW, 3);
-   if (unlikely(packet == NULL)) {
-      return;
-   }
-   *packet++ = PKT3(PKT3_DRAW_INDEX_AUTO, 3 - 2, 0);
-   *packet++ = 1;
-   *packet++ = S_0287F0_SOURCE_SELECT(V_0287F0_DI_SRC_SEL_AUTO_INDEX);
-   terakan_gfx_command_writer_emit_done(command_writer, packet);
+   terakan_meta_draw_auto(command_writer, 1, 1);
 }

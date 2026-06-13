@@ -29,7 +29,6 @@
 #include "terakan_descriptor_set_layout.h"
 #include "terakan_device.h"
 #include "terakan_entrypoints.h"
-#include "terakan_hw_state.h"
 
 #include "amd/terascale/common/terascale_format.h"
 #include "compiler/shader_enums.h"
@@ -65,16 +64,8 @@ terakan_CmdBindDescriptorSets(VkCommandBuffer const commandBuffer,
    gl_shader_stage const shader_stage_first = is_compute ? MESA_SHADER_COMPUTE : MESA_SHADER_VERTEX;
    gl_shader_stage const shader_stage_last =
       is_compute ? MESA_SHADER_COMPUTE : MESA_SHADER_FRAGMENT;
-   /* TODO(Triang3l): Apply bindings to the compute stage. */
 
    gl_shader_stage const uav_shader_stage = is_compute ? MESA_SHADER_COMPUTE : MESA_SHADER_FRAGMENT;
-   /* TODO(Triang3l): Apply UAV bindings to the compute stage. */
-   BITSET_WORD const * const state_uavs_used =
-      command_writer->state_draw.cb_color_uav.from_apply_sq_pgm_ps.fs_uavs_used;
-   BITSET_WORD * const state_uavs_not_null =
-      command_writer->state_draw.cb_color_uav.fs_uavs_not_null;
-   struct terakan_state_draw_cb_color_uav * const state_uavs =
-      command_writer->state_draw.cb_color_uav.fs_uavs;
 
    uint32_t const * set_dynamic_offsets = pDynamicOffsets;
 
@@ -101,11 +92,11 @@ terakan_CmdBindDescriptorSets(VkCommandBuffer const commandBuffer,
            ++shader_stage) {
          struct terakan_descriptor_set_layout_shader const * const set_layout_shader =
             &set_layout->shaders[shader_stage];
+         struct terakan_hw_config_sqk_set_functions const * const sqk_set_functions =
+            &terakan_hw_config_sqk_stage_set_functions[shader_stage];
 
          /* Resources. */
 
-         terakan_hw_state_sqc_set_resource_function const graphics_resource_setter =
-            terakan_hw_state_sqc_set_resource_for_stage[shader_stage];
          uint8_t const shader_resource_set_base = layout_set->first_shader_resources[shader_stage];
          struct terakan_descriptor_set_layout_shader_range const * const resource_ranges =
             set_layout->shader_ranges + set_layout_shader->first_resource_range;
@@ -122,13 +113,15 @@ terakan_CmdBindDescriptorSets(VkCommandBuffer const commandBuffer,
                   set_dynamic_offsets + range->first_dynamic_offset;
                for (uint8_t resource_index = 0; resource_index < range->descriptor_count;
                     ++resource_index) {
-                  struct terakan_descriptor_set_resource resource =
-                     range_set_resources[resource_index];
+                  struct terakan_descriptor_set_resource const * const set_resource =
+                     &range_set_resources[resource_index];
+                  struct terakan_resource_descriptor resource = set_resource->resource;
                   /* Because descriptors for bindings not statically referenced by the pipeline can
                    * be undefined, the BO pointer must not be dereferenced here as it may be
                    * outdated.
                    */
-                  if (resource.bo != NULL) {
+                  /* TODO(Triang3l): #MemoryIntegrity with an additional remaining size variable. */
+                  if (set_resource->bo != NULL) {
                      assert(G_03001C_TYPE(resource.resource[7]) ==
                             V_03001C_SQ_TEX_VTX_VALID_BUFFER);
                      uint64_t const resource_address =
@@ -139,26 +132,24 @@ terakan_CmdBindDescriptorSets(VkCommandBuffer const commandBuffer,
                      resource.resource[2] = (resource.resource[2] & C_030008_BASE_ADDRESS_HI) |
                                             S_030008_BASE_ADDRESS_HI(resource_address >> 32);
                   }
-                  graphics_resource_setter(&command_writer->hw_state_sqc,
-                                           range_shader_base + resource_index, resource.bo,
-                                           resource.resource);
+                  sqk_set_functions->resource(&command_writer->hw_config_sqk,
+                                              range_shader_base + resource_index, set_resource->bo,
+                                              &resource);
                }
             } else {
                for (uint8_t resource_index = 0; resource_index < range->descriptor_count;
                     ++resource_index) {
                   struct terakan_descriptor_set_resource const * const resource =
                      &range_set_resources[resource_index];
-                  graphics_resource_setter(&command_writer->hw_state_sqc,
-                                           range_shader_base + resource_index, resource->bo,
-                                           resource->resource);
+                  sqk_set_functions->resource(&command_writer->hw_config_sqk,
+                                              range_shader_base + resource_index, resource->bo,
+                                              &resource->resource);
                }
             }
          }
 
          /* Samplers. */
 
-         terakan_hw_state_sqc_set_sampler_function const graphics_sampler_setter =
-            terakan_hw_state_sqc_set_sampler_for_stage[shader_stage];
          uint8_t const shader_sampler_set_base = layout_set->first_shader_samplers[shader_stage];
          struct terakan_descriptor_set_layout_shader_range const * const sampler_ranges =
             set_layout->shader_ranges + set_layout_shader->first_sampler_range;
@@ -177,10 +168,9 @@ terakan_CmdBindDescriptorSets(VkCommandBuffer const commandBuffer,
                /* Skip uninitialized (zeroed in descriptor set allocation) samplers, as descriptors
                 * may be left uninitialized if they're not statically referenced by the pipeline.
                 */
-               if (likely(G_03C008_TYPE(sampler->sampler[2]))) {
-                  graphics_sampler_setter(&command_writer->hw_state_sqc,
-                                          range_shader_base + sampler_index, sampler->sampler,
-                                          sampler->border_color);
+               if (likely(G_03C008_TYPE(sampler->sampler.sampler[2]))) {
+                  sqk_set_functions->sampler(&command_writer->hw_config_sqk,
+                                             range_shader_base + sampler_index, &sampler->sampler);
                }
                /* TODO(Triang3l): Unnormalized coordinates on R8xx. */
             }
@@ -213,12 +203,12 @@ terakan_CmdBindDescriptorSets(VkCommandBuffer const commandBuffer,
                assert(shader_uav_index < (is_compute
                                              ? TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_NON_PIXEL
                                              : TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL));
-               bool const state_uav_used = BITSET_TEST(state_uavs_used, shader_uav_index);
                struct terakan_descriptor_set_uav const * const set_uav = &range_set_uavs[uav_index];
                /* Because descriptors for bindings not statically referenced by the pipeline can be
                 * undefined, the BO pointer must not be dereferenced here as it may be outdated.
                 */
                if (set_uav->bo != NULL) {
+                  /* TODO(Triang3l): #MemoryIntegrity with an additional remaining size variable. */
                   struct terakan_color_descriptor const * new_uav_color = &set_uav->color;
                   struct terakan_color_descriptor new_uav_color_with_dynamic_offset;
                   if (range->first_dynamic_offset != UINT16_MAX) {
@@ -241,33 +231,14 @@ terakan_CmdBindDescriptorSets(VkCommandBuffer const commandBuffer,
                         (uint32_t)(new_uav_va - new_uav_va_aligned) * uav_bytes_per_texel;
                      new_uav_color = &new_uav_color_with_dynamic_offset;
                   }
-                  struct terakan_state_draw_cb_color_uav * const state_uav =
-                     &state_uavs[shader_uav_index];
-                  if (state_uav_used) {
-                     /* If used, check if different to avoid making
-                      * TERAKAN_STATE_DRAW_INDEX_CB_COLOR_UAV pending unless needed.
-                      */
-                     if (!BITSET_TEST(state_uavs_not_null, shader_uav_index) ||
-                         state_uav->bo != set_uav->bo ||
-                         memcmp(&state_uav->color, new_uav_color,
-                                sizeof(struct terakan_color_descriptor)) != 0) {
-                        state_uav->bo = set_uav->bo;
-                        state_uav->color = *new_uav_color;
-                        terakan_state_draw_set_pending(&command_writer->state_draw,
-                                                       TERAKAN_STATE_DRAW_INDEX_CB_COLOR_UAV);
-                     }
-                  } else {
-                     state_uav->bo = set_uav->bo;
-                     state_uav->color = *new_uav_color;
-                  }
-                  BITSET_SET(state_uavs_not_null, shader_uav_index);
+                  terakan_app_config_draw_set_cb_color_uav(&command_writer->app_config_draw,
+                                                           shader_uav_index, set_uav->bo,
+                                                           new_uav_color);
                } else {
-                  if (state_uav_used && BITSET_TEST(state_uavs_not_null, shader_uav_index)) {
-                     terakan_state_draw_set_pending(&command_writer->state_draw,
-                                                    TERAKAN_STATE_DRAW_INDEX_CB_COLOR_UAV);
-                  }
-                  BITSET_CLEAR(state_uavs_not_null, shader_uav_index);
+                  terakan_app_config_draw_set_cb_color_uav(&command_writer->app_config_draw,
+                                                           shader_uav_index, NULL, NULL);
                }
+               /* TODO(Triang3l): Apply UAV bindings to the compute stage. */
             }
          }
       }

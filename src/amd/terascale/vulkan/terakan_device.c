@@ -27,6 +27,7 @@
 #include "terakan_cp_dma.h"
 #include "terakan_descriptor.h"
 #include "terakan_entrypoints.h"
+#include "terakan_format.h"
 #include "terakan_physical_device.h"
 #include "terakan_queue.h"
 
@@ -166,10 +167,10 @@ terakan_device_init(struct terakan_device * const device,
    }
 
    uint32_t uav_immediate_bo_bytes_shr8 = 0;
-   for (unsigned texel_bytes_log2 = 0; texel_bytes_log2 <= 4; ++texel_bytes_log2) {
-      device->uav_immediate_va_shr8[texel_bytes_log2] = uav_immediate_bo_bytes_shr8;
+   for (unsigned element_bytes_log2 = 0; element_bytes_log2 <= 4; ++element_bytes_log2) {
+      device->uav_immediate_va_shr8[element_bytes_log2] = uav_immediate_bo_bytes_shr8;
       uav_immediate_bo_bytes_shr8 +=
-         DIV_ROUND_UP(physical_device->chip_info.uav_immediate_size_texels << texel_bytes_log2,
+         DIV_ROUND_UP(physical_device->chip_info.uav_immediate_size_elements << element_bytes_log2,
                       (uint32_t)1 << 8);
    }
    result = device->winsys_fn->bo->allocate_device_memory(
@@ -183,8 +184,8 @@ terakan_device_init(struct terakan_device * const device,
       goto fail_gfx_discard_bo;
    }
    uint32_t const uav_immediate_bo_va_shr8 = device->uav_immediate_bo->va >> 8;
-   for (unsigned texel_bytes_log2 = 0; texel_bytes_log2 <= 4; ++texel_bytes_log2) {
-      device->uav_immediate_va_shr8[texel_bytes_log2] += uav_immediate_bo_va_shr8;
+   for (unsigned element_bytes_log2 = 0; element_bytes_log2 <= 4; ++element_bytes_log2) {
+      device->uav_immediate_va_shr8[element_bytes_log2] += uav_immediate_bo_va_shr8;
    }
 
    /* Accessed via query sampling (never larger than a kcache line), kcache, and a UAV with 4 bytes
@@ -253,28 +254,41 @@ terakan_device_init(struct terakan_device * const device,
       }
       /* Empty fetch shader. */
       {
+         device->meta_shaders_empty_fetch_va_shr8 = meta_shaders_va_shr8;
          uint32_t * empty_fetch_shader_mapping_next = (uint32_t *)meta_shaders_bo_mapping;
          *(empty_fetch_shader_mapping_next++) = 0;
          *(empty_fetch_shader_mapping_next++) =
-            util_cpu_to_le32(S_SQ_CF_WORD1_BARRIER(1) | EG_V_SQ_CF_WORD1_SQ_CF_INST_RETURN);
-         memset(&device->empty_vertex_input, 0, sizeof(device->empty_vertex_input));
-         device->empty_vertex_input.program_bo = device->meta_shaders_bo;
+            util_cpu_to_le32(EG_V_SQ_CF_WORD1_SQ_CF_INST_RETURN);
       }
       /* Meta shaders. */
+      memset(device->meta_shader_sqk_usage, 0, sizeof(device->meta_shader_sqk_usage));
       for (size_t meta_shader_index = 0; meta_shader_index < TERAKAN_META_SHADER_COUNT;
            ++meta_shader_index) {
-         struct terakan_shader_static * const device_meta_shader =
-            &device->meta_shaders[meta_shader_index];
-         device_meta_shader->program_bo = device->meta_shaders_bo;
          struct terakan_meta_shader const * const meta_shader =
             terakan_meta_shaders[meta_shader_index];
          struct terakan_meta_shader_description const * const meta_shader_description =
             is_r9xx ? &meta_shader->r9xx : &meta_shader->r8xx;
+         /* Program memory. */
+         struct terakan_shader_static * const device_meta_shader =
+            &device->meta_shaders[meta_shader_index];
+         device_meta_shader->program_bo = device->meta_shaders_bo;
          util_memcpy_cpu_to_le32(
             meta_shaders_bo_mapping + ((VkDeviceSize)device_meta_shader->program_va_shr8
                                        << TERAKAN_SHADER_PROGRAM_ALIGNMENT_LOG2),
             meta_shader_description->program, meta_shader_description->program_size_bytes);
          device_meta_shader->program_va_shr8 += meta_shaders_va_shr8;
+         /* Constant usage. */
+         struct terakan_shader_sqk_usage * const meta_shader_sqk_usage =
+            &device->meta_shader_sqk_usage[meta_shader_index];
+         meta_shader_sqk_usage->kcache = meta_shader->kcache_used;
+         if (meta_shader->primary_meta_resource_used) {
+            BITSET_SET(meta_shader_sqk_usage->resources,
+                       TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META);
+         }
+         if (meta_shader->non_pixel_stage_specific_resource_used) {
+            BITSET_SET(meta_shader_sqk_usage->resources,
+                       TERAKAN_RESOURCE_RANGE_NON_PIXEL_STAGE_SPECIFIC);
+         }
       }
       terakan_bo_unmap(device->meta_shaders_bo);
    }

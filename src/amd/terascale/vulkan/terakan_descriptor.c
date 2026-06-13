@@ -33,6 +33,7 @@
 #include "util/u_math.h"
 
 #include <assert.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -94,20 +95,19 @@ terakan_color_descriptor_calculate_buffer_base_pitch_slice_dim_offset(
    descriptor->dim = (uint32_t)(base_granularity_offset_bytes / bytes_per_element + elements - 1);
 }
 
-void
+struct terakan_resource_descriptor
 terakan_color_descriptor_info_to_uav_immediate_resource(struct terakan_device const * const device,
-                                                        uint32_t const color_info,
-                                                        uint32_t resource_out[8])
+                                                        uint32_t const color_info)
 {
    enum terascale_format_index const format =
       (enum terascale_format_index)G_028C70_FORMAT(color_info);
 
-   unsigned const bytes_per_texel = terascale_format_bytes_per_block[format];
+   unsigned const bytes_per_element = terascale_format_bytes_per_block[format];
 
-   uint32_t const va_shr8 = device->uav_immediate_va_shr8[util_logbase2(bytes_per_texel)];
+   uint32_t const va_shr8 = device->uav_immediate_va_shr8[util_logbase2(bytes_per_element)];
 
-   uint32_t const uav_immediate_size_texels =
-      terakan_device_physical_device(device)->chip_info.uav_immediate_size_texels;
+   uint32_t const uav_immediate_size_elements =
+      terakan_device_physical_device(device)->chip_info.uav_immediate_size_elements;
 
    enum terascale_format_number_type const number_type =
       (enum terascale_format_number_type)G_028C70_NUMBER_TYPE(color_info);
@@ -116,38 +116,40 @@ terakan_color_descriptor_info_to_uav_immediate_resource(struct terakan_device co
       terascale_format_cb_color_read_swizzle[terascale_format_channel_count[format]]
                                             [G_028C70_COMP_SWAP(color_info)];
 
-   resource_out[0] = (uint32_t)(va_shr8 << 8);
-   resource_out[1] = (uav_immediate_size_texels * bytes_per_texel) - 1;
-   resource_out[2] = S_030008_BASE_ADDRESS_HI(va_shr8 >> (32 - 8)) |
-                     S_030008_STRIDE(bytes_per_texel) | S_030008_DATA_FORMAT(format) |
-                     S_030008_NUM_FORMAT_ALL(terascale_format_get_sq_num_format(number_type)) |
-                     S_030008_FORMAT_COMP_ALL(number_type == TERASCALE_FORMAT_NUMBER_TYPE_SNORM ||
-                                              number_type == TERASCALE_FORMAT_NUMBER_TYPE_SINT) |
-                     S_030008_ENDIAN_SWAP(G_028C70_ENDIAN(color_info));
-   /* In Vulkan, storage descriptors can be created only for one aspect, and TeraScale's combined
-    * depth / stencil SQ / CB formats correspond only to depth / stencil formats that exist in
-    * Vulkan - more specifically, on R8xx / R9xx, depth and stencil are stored separately, with
-    * stencil always being TERASCALE_FORMAT_INDEX_8, and 8_24 being used only for the depth aspect
-    * (of X8_D24_UNORM_PACK32 and D24_UNORM_S8_UINT). Therefore, for reads from the hardware
-    * combined depth / stencil formats, which are two-channel from the perspective of SQ and CB, and
-    * thus the CB swap is treated as two-channel, the stencil channel needs to be replaced with 0.
-    */
-   resource_out[3] =
-      S_03000C_UNCACHED(1) | S_03000C_DST_SEL_X(swizzle[0]) |
-      S_03000C_DST_SEL_Y(TERASCALE_FORMATS_COMBINED_DEPTH_STENCIL & BITFIELD64_BIT(format)
-                            ? TERASCALE_SWIZZLE_0
-                            : swizzle[1]) |
-      S_03000C_DST_SEL_Z(swizzle[2]) | S_03000C_DST_SEL_W(swizzle[3]);
-   resource_out[4] = uav_immediate_size_texels;
-   resource_out[5] = 0;
-   resource_out[6] = 0;
-   resource_out[7] = S_03001C_TYPE(V_03001C_SQ_TEX_VTX_VALID_BUFFER);
-   resource_out[TERAKAN_RESOURCE_BUFFER_PRIORITY_WORD] = TERAKAN_BO_PRIORITY_SHADER_RW_BUFFER;
+   return (struct terakan_resource_descriptor){
+      .resource = {
+         [0] = (uint32_t)(va_shr8 << 8),
+         [1] = (uav_immediate_size_elements * bytes_per_element) - 1,
+         [2] = S_030008_BASE_ADDRESS_HI(va_shr8 >> (32 - 8)) | S_030008_STRIDE(bytes_per_element) |
+               S_030008_DATA_FORMAT(format) |
+               S_030008_NUM_FORMAT_ALL(terascale_format_get_sq_num_format(number_type)) |
+               S_030008_FORMAT_COMP_ALL(number_type == TERASCALE_FORMAT_NUMBER_TYPE_SNORM ||
+                                        number_type == TERASCALE_FORMAT_NUMBER_TYPE_SINT) |
+               S_030008_ENDIAN_SWAP(G_028C70_ENDIAN(color_info)),
+         /* In Vulkan, storage descriptors can be created only for one aspect, and TeraScale's
+          * combined depth / stencil SQ / CB formats correspond only to depth / stencil formats that
+          * exist in Vulkan - more specifically, on R8xx / R9xx, depth and stencil are stored
+          * separately, with stencil always being `TERASCALE_FORMAT_INDEX_8`, and `8_24` being used
+          * only for the depth aspect (of `X8_D24_UNORM_PACK32` and `D24_UNORM_S8_UINT`). Therefore,
+          * for reads from the hardware combined depth / stencil formats, which are two-channel from
+          * the perspective of SQ and CB, and thus the CB swap is treated as two-channel, the
+          * stencil channel needs to be replaced with 0.
+          */
+         [3] = S_03000C_UNCACHED(true) | S_03000C_DST_SEL_X(swizzle[0]) |
+               S_03000C_DST_SEL_Y(TERASCALE_FORMATS_COMBINED_DEPTH_STENCIL & BITFIELD64_BIT(format)
+                                     ? TERASCALE_SWIZZLE_0
+                                     : swizzle[1]) |
+               S_03000C_DST_SEL_Z(swizzle[2]) | S_03000C_DST_SEL_W(swizzle[3]),
+         [4] = uav_immediate_size_elements,
+         [7] = S_03001C_TYPE(V_03001C_SQ_TEX_VTX_VALID_BUFFER),
+         [TERAKAN_RESOURCE_BUFFER_PRIORITY_WORD] = TERAKAN_BO_PRIORITY_SHADER_RW_BUFFER,
+      }};
 }
 
 bool
 terakan_descriptor_create_for_uniform_buffer(struct terakan_bo const * const bo, uint64_t const va,
-                                             VkDeviceSize const range, uint32_t resource_out[8])
+                                             VkDeviceSize const range,
+                                             struct terakan_resource_descriptor * const resource_out)
 {
    assert((va & (TERAKAN_KCACHE_HW_LINE_BYTES - 1)) == 0);
    assert(range != VK_WHOLE_SIZE);
@@ -160,17 +162,17 @@ terakan_descriptor_create_for_uniform_buffer(struct terakan_bo const * const bo,
     */
    VkDeviceSize const range_aligned = ALIGN_POT(range, (VkDeviceSize)TERAKAN_KCACHE_HW_LINE_BYTES);
 
-   resource_out[0] = (uint32_t)va;
-   resource_out[1] = (uint32_t)(range_aligned - 1);
-   resource_out[2] = S_030008_BASE_ADDRESS_HI(va >> 32) | S_030008_STRIDE(1);
-   resource_out[3] =
-      S_03000C_DST_SEL_X(TERASCALE_SWIZZLE_X) | S_03000C_DST_SEL_Y(TERASCALE_SWIZZLE_Y) |
-      S_03000C_DST_SEL_Z(TERASCALE_SWIZZLE_Z) | S_03000C_DST_SEL_W(TERASCALE_SWIZZLE_W);
-   resource_out[4] = (uint32_t)range_aligned;
-   resource_out[5] = 0;
-   resource_out[6] = 0;
-   resource_out[7] = S_03001C_TYPE(V_03001C_SQ_TEX_VTX_VALID_BUFFER);
-   resource_out[TERAKAN_RESOURCE_BUFFER_PRIORITY_WORD] = TERAKAN_BO_PRIORITY_UNIFORM_BUFFER;
+   *resource_out = (struct terakan_resource_descriptor){
+      .resource = {
+         [0] = (uint32_t)va,
+         [1] = (uint32_t)(range_aligned - 1),
+         [2] = S_030008_BASE_ADDRESS_HI(va >> 32) | S_030008_STRIDE(1),
+         [3] = S_03000C_DST_SEL_X(TERASCALE_SWIZZLE_X) | S_03000C_DST_SEL_Y(TERASCALE_SWIZZLE_Y) |
+               S_03000C_DST_SEL_Z(TERASCALE_SWIZZLE_Z) | S_03000C_DST_SEL_W(TERASCALE_SWIZZLE_W),
+         [4] = (uint32_t)range_aligned,
+         [7] = S_03001C_TYPE(V_03001C_SQ_TEX_VTX_VALID_BUFFER),
+         [TERAKAN_RESOURCE_BUFFER_PRIORITY_WORD] = TERAKAN_BO_PRIORITY_UNIFORM_BUFFER,
+      }};
 
    return true;
 }
@@ -178,7 +180,8 @@ terakan_descriptor_create_for_uniform_buffer(struct terakan_bo const * const bo,
 bool
 terakan_descriptor_create_for_storage_buffer(
    struct terakan_bo const * const bo, uint64_t const va, VkDeviceSize const range,
-   struct terakan_physical_device const * const physical_device, uint32_t resource_out[8],
+   struct terakan_physical_device const * const physical_device,
+   struct terakan_resource_descriptor * const resource_out,
    struct terakan_color_descriptor * const color_out)
 {
    assert((va & (sizeof(uint32_t) - 1)) == 0);
@@ -190,21 +193,17 @@ terakan_descriptor_create_for_storage_buffer(
    /* VK_EXT_robustness2 behavior: rounding up. */
    VkDeviceSize const range_aligned = ALIGN_POT(range, (VkDeviceSize)sizeof(uint32_t));
 
-   resource_out[0] = (uint32_t)va;
-   resource_out[1] = (uint32_t)(range_aligned - 1);
-   resource_out[2] = S_030008_BASE_ADDRESS_HI(va >> 32) | S_030008_STRIDE(1);
-   /* TODO(Triang3l): Set UNCACHED based on whether the shader will actually be writing to this
-    * buffer.
-    */
-   resource_out[3] = S_03000C_DST_SEL_X(TERASCALE_SWIZZLE_X) |
-                     S_03000C_DST_SEL_Y(TERASCALE_SWIZZLE_Y) |
-                     S_03000C_DST_SEL_Z(TERASCALE_SWIZZLE_Z) |
-                     S_03000C_DST_SEL_W(TERASCALE_SWIZZLE_W) | S_03000C_UNCACHED(1);
-   resource_out[4] = (uint32_t)range_aligned;
-   resource_out[5] = 0;
-   resource_out[6] = 0;
-   resource_out[7] = S_03001C_TYPE(V_03001C_SQ_TEX_VTX_VALID_BUFFER);
-   resource_out[TERAKAN_RESOURCE_BUFFER_PRIORITY_WORD] = TERAKAN_BO_PRIORITY_SHADER_READ_BUFFER;
+   *resource_out = (struct terakan_resource_descriptor){
+      .resource = {
+         [0] = (uint32_t)va,
+         [1] = (uint32_t)(range_aligned - 1),
+         [2] = S_030008_BASE_ADDRESS_HI(va >> 32) | S_030008_STRIDE(1),
+         [3] = S_03000C_DST_SEL_X(TERASCALE_SWIZZLE_X) | S_03000C_DST_SEL_Y(TERASCALE_SWIZZLE_Y) |
+               S_03000C_DST_SEL_Z(TERASCALE_SWIZZLE_Z) | S_03000C_DST_SEL_W(TERASCALE_SWIZZLE_W),
+         [4] = (uint32_t)range_aligned,
+         [7] = S_03001C_TYPE(V_03001C_SQ_TEX_VTX_VALID_BUFFER),
+         [TERAKAN_RESOURCE_BUFFER_PRIORITY_WORD] = TERAKAN_BO_PRIORITY_SHADER_READ_BUFFER,
+      }};
 
    terakan_color_descriptor_calculate_buffer_base_pitch_slice_view_dim(
       color_out, va, range_aligned / sizeof(uint32_t), sizeof(uint32_t), physical_device, false);

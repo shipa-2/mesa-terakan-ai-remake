@@ -44,7 +44,7 @@ extern "C" {
 
 struct terakan_descriptor_set_resource {
    struct terakan_bo const * bo;
-   uint32_t resource[8];
+   struct terakan_resource_descriptor resource;
 };
 
 struct terakan_descriptor_set_sampler {
@@ -53,8 +53,7 @@ struct terakan_descriptor_set_sampler {
     * "Allocation of Descriptor Sets" section of the Vulkan specification, and thus descriptors of
     * unused samplers may point to samplers that have already been destroyed.
     */
-   uint32_t sampler[3];
-   float border_color[4];
+   struct terakan_sampler_descriptor sampler;
    bool unnormalized_coordinates;
 };
 
@@ -62,9 +61,7 @@ static inline void
 terakan_descriptor_set_sampler_init(struct terakan_descriptor_set_sampler * const sampler_descriptor,
                                     struct terakan_sampler const * const sampler)
 {
-   memcpy(sampler_descriptor->sampler, sampler->sampler, sizeof(uint32_t) * 3);
-   memcpy(sampler_descriptor->border_color, sampler->vk.border_color_value.float32,
-          sizeof(float) * 4);
+   sampler_descriptor->sampler = sampler->sampler;
    sampler_descriptor->unnormalized_coordinates = sampler->unnormalized_coordinates;
 }
 

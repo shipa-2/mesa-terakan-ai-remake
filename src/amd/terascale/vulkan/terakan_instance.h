@@ -26,6 +26,7 @@
 
 #include "vk_instance.h"
 
+#include <assert.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -39,35 +40,36 @@ extern "C" {
 
 #define TERAKAN_API_VERSION VK_MAKE_API_VERSION(0, 1, 0, VK_HEADER_VERSION)
 
-/* "Debug" options are intended to be potentially useful to both driver developers and users, mainly
- * for pinpointing the causes of issues (especially those observable in real applications), as well
- * as for performance analysis.
- * They are available in release builds.
- */
-
 enum {
-   TERAKAN_DEBUG_STARTUP = (uint64_t)1 << 0,
+   TERAKAN_TEST_SHIFT_NO_ALPHA_TO_COVERAGE_DITHERING,
+
+   TERAKAN_TEST_FLAG_COUNT,
 };
 
-/* "Development test" options are provided primarily for unit or regression testing of very specific
- * scenarios inside the driver, and generally offer nothing valuable to users.
- * They are eliminated from release builds, and not intended to be documented outside the code
- * itself, as their usage may result in significant performance costs or things done very wrong
- * ways, and they may be checked in frequently called functions, while providing no advantages to
- * driver users.
- */
+static_assert(TERAKAN_TEST_FLAG_COUNT <= 64,
+              "Using testing option flag indices in a 64-bit bitfield.");
 
+/* Regression testing options are intended to be used only for testing parts within the driver, not
+ * for running applications as part of normal usage. Activating some of them may result in work
+ * inside the driver being done in very suboptimal ways, and they may be checked on frequently
+ * executed paths, so they're excluded from release builds.
+ */
 #ifndef NDEBUG
-#define TERAKAN_DEVTEST
+#define TERAKAN_REGRESSION_TEST
 #endif
 
-#ifdef TERAKAN_DEVTEST
+#ifdef TERAKAN_REGRESSION_TEST
 enum {
+   /* Implement 2048 vertex binding stride via a smaller stride and index fixup (#2048StrideAs1024)
+    * even on R9xx where 2048 stride is supported by the hardware.
+    */
+   TERAKAN_REGRESSION_TEST_SHIFT_2048_VERTEX_STRIDE_WORKAROUND_ON_R9XX,
+
    /* Switch to a new indirect buffer when beginning or ending a query.
     *
     * This causes query sample accumulation operations to be performed for all queries with both a
-    * beginning and an end, allowing for debugging of whether accumulation is performed correctly,
-    * and that query results are not affected by other work potentially executed by the GPU between
+    * beginning and an end, allowing for testing whether accumulation is performed correctly, and
+    * that query results are not affected by other work potentially executed by the GPU between
     * indirect buffer submissions if a command buffer ends up being split into multiple indirect
     * buffers when a query is active in it.
     *
@@ -75,11 +77,16 @@ enum {
     * between indirect buffer submissions may affect the stability of timestamp queries, especially
     * when performing multiple measurements of the time it takes to perform the same amount of work.
     *
-    * Also see `devtest_split_indirect_buffer_after_actions`, which can be used to introduce more
-    * split points within a query.
+    * Also see `regression_test_split_indirect_buffer_after_actions`, which can be used to introduce
+    * more split points within a query.
     */
-   TERAKAN_DEVTEST_SPLIT_INDIRECT_BUFFER_AT_QUERY_BEGIN_END = (uint64_t)1 << 0,
+   TERAKAN_REGRESSION_TEST_SHIFT_SPLIT_INDIRECT_BUFFER_AT_QUERY_BEGIN_END,
+
+   TERAKAN_REGRESSION_TEST_FLAG_COUNT,
 };
+
+static_assert(TERAKAN_REGRESSION_TEST_FLAG_COUNT <= 64,
+              "Using regression testing option flag indices in a 64-bit bitfield.");
 #endif
 
 struct terakan_instance;
@@ -92,10 +99,10 @@ struct terakan_instance {
 
    terakan_instance_destroy_fn destroy_fn;
 
-   uint64_t debug_flags;
+   uint64_t test_flags;
 
-#ifdef TERAKAN_DEVTEST
-   uint64_t devtest_flags;
+#ifdef TERAKAN_REGRESSION_TEST
+   uint64_t regression_test_flags;
 
    /* For testing multiple indirect buffer submissions for one Vulkan command buffer.
     *
@@ -104,14 +111,15 @@ struct terakan_instance {
     * state configuration to be reapplied in the new indirect buffer, and samples for queries active
     * during the split to be accumulated from multiple indirect buffer submissions.
     *
-    * For query debugging, also see `TERAKAN_DEVTEST_SPLIT_INDIRECT_BUFFER_AT_QUERY_BEGIN_END`.
+    * For query testing, also see:
+    * `TERAKAN_REGRESSION_TEST_SHIFT_SPLIT_INDIRECT_BUFFER_AT_QUERY_BEGIN_END`.
     * This may be useful for splitting the command buffer even further.
     * Specifically for pipeline statistics query sample accumulation, a good test case is Sascha
     * Willems's pipeline statistics example, which, as of the commit
     * bb2f03ad5059c3f92ffaed4e2a38980c42efb07d, draws each object on the grid using a separate draw
     * command.
     */
-   int64_t devtest_split_indirect_buffer_after_actions;
+   int64_t regression_test_split_indirect_buffer_after_actions;
 #endif
 
    /* Binding allocation in the physical device limits. */

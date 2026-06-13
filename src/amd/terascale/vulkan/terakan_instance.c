@@ -37,7 +37,6 @@
 
 #include <stdbool.h>
 #include <stddef.h>
-#include <stdio.h>
 #include <stdlib.h>
 
 #if defined(_WIN32)
@@ -52,14 +51,18 @@
 #include "winsys/wddm/terakan_instance_wddm.h"
 #endif
 
-static struct debug_control const terakan_debug_flags[] = {{"startup", TERAKAN_DEBUG_STARTUP},
-                                                           {NULL, 0}};
+static struct debug_control const terakan_test_flags[] = {
+   {"no_alpha_to_coverage_dithering",
+    BITFIELD64_BIT(TERAKAN_TEST_SHIFT_NO_ALPHA_TO_COVERAGE_DITHERING)},
+   {}};
 
-#ifdef TERAKAN_DEVTEST
-static struct debug_control const terakan_devtest_flags[] = {
+#ifdef TERAKAN_REGRESSION_TEST
+static struct debug_control const terakan_regression_test_flags[] = {
+   {"2048_vertex_stride_workaround_on_r9xx",
+    BITFIELD64_BIT(TERAKAN_REGRESSION_TEST_SHIFT_2048_VERTEX_STRIDE_WORKAROUND_ON_R9XX)},
    {"split_indirect_buffer_at_query_begin_end",
-    TERAKAN_DEVTEST_SPLIT_INDIRECT_BUFFER_AT_QUERY_BEGIN_END},
-   {NULL, 0}};
+    BITFIELD64_BIT(TERAKAN_REGRESSION_TEST_SHIFT_SPLIT_INDIRECT_BUFFER_AT_QUERY_BEGIN_END)},
+   {}};
 #endif
 
 static struct vk_instance_extension_table const terakan_instance_extensions_supported = {
@@ -167,17 +170,19 @@ terakan_instance_init(struct terakan_instance * instance,
 
    instance->destroy_fn = destroy_fn;
 
-   instance->debug_flags = parse_debug_string(getenv("TERAKAN_DEBUG"), terakan_debug_flags);
+   instance->test_flags = parse_debug_string(getenv("TERAKAN_TEST"), terakan_test_flags);
 
-#ifdef TERAKAN_DEVTEST
-   instance->devtest_flags = parse_debug_string(getenv("TERAKAN_DEVTEST"), terakan_devtest_flags);
-   instance->devtest_split_indirect_buffer_after_actions =
-      debug_get_num_option("TERAKAN_DEVTEST_SPLIT_INDIRECT_BUFFER_AFTER_ACTIONS", 0);
-   if (instance->devtest_flags || instance->devtest_split_indirect_buffer_after_actions > 0) {
-      /* Report that development testing options have been activated successfully, and therefore the
+#ifdef TERAKAN_REGRESSION_TEST
+   instance->regression_test_flags =
+      parse_debug_string(getenv("TERAKAN_REGRESSION_TEST"), terakan_regression_test_flags);
+   instance->regression_test_split_indirect_buffer_after_actions =
+      debug_get_num_option("TERAKAN_REGRESSION_TEST_SPLIT_INDIRECT_BUFFER_AFTER_ACTIONS", 0);
+   if (instance->regression_test_flags ||
+       instance->regression_test_split_indirect_buffer_after_actions > 0) {
+      /* Report that regression testing options have been activated successfully, and therefore the
        * driver was in fact compiled with them enabled.
        */
-      mesa_logi("terakan: Development testing options are active.\n");
+      mesa_logi("terakan: Regression testing options are active.\n");
    }
 #endif
 
@@ -247,10 +252,6 @@ terakan_CreateInstance(VkInstanceCreateInfo const * const pCreateInfo,
 #endif
    if (result != VK_SUCCESS) {
       return result;
-   }
-
-   if (instance->debug_flags & TERAKAN_DEBUG_STARTUP) {
-      fputs("terakan: info: Created an instance.\n", stderr);
    }
 
    *pInstance = terakan_instance_to_handle(instance);

@@ -42,8 +42,6 @@ extern "C" {
 struct terakan_bo_drm_radeon {
    struct terakan_bo base;
 
-   VkDeviceSize size;
-
    __u32 domains;
 
    __u32 handle;

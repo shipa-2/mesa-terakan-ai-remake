@@ -309,25 +309,36 @@ terakan_queue_submit(struct vk_queue * const queue_base, struct vk_queue_submit 
 
    uint64_t await_internal_bo_timeline_value = 0;
 
-   uint32_t shader_ring_bytes_needed_for_se_shr8[TERAKAN_SHADER_RING_INDEX_COUNT] = {};
+   uint32_t shader_rings_bytes_needed_for_se_shr8[TERAKAN_SHADER_RING_INDEX_COUNT] = {};
    for (uint32_t command_buffer_index = 0; command_buffer_index < submit->command_buffer_count;
         ++command_buffer_index) {
       struct terakan_command_buffer const * const command_buffer = container_of(
          submit->command_buffers[command_buffer_index], struct terakan_command_buffer const, vk);
       for (size_t shader_ring_index = 0; shader_ring_index < TERAKAN_SHADER_RING_INDEX_COUNT;
            ++shader_ring_index) {
-         shader_ring_bytes_needed_for_se_shr8[shader_ring_index] =
+         shader_rings_bytes_needed_for_se_shr8[shader_ring_index] =
             MAX2(command_buffer->shader_ring_bytes_needed_for_se_shr8[shader_ring_index],
-                 shader_ring_bytes_needed_for_se_shr8[shader_ring_index]);
+                 shader_rings_bytes_needed_for_se_shr8[shader_ring_index]);
       }
    }
    uint32_t shader_ring_bytes_needed_total_shr8 = 0;
-   uint32_t shader_ring_offsets_shr8[TERAKAN_SHADER_RING_INDEX_COUNT] = {};
+   uint32_t shader_ring_offsets_shr8[TERAKAN_SHADER_RING_INDEX_COUNT];
    for (size_t shader_ring_index = 0; shader_ring_index < TERAKAN_SHADER_RING_INDEX_COUNT;
         ++shader_ring_index) {
+      uint32_t const shader_ring_bytes_needed_for_se_shr8 =
+         shader_rings_bytes_needed_for_se_shr8[shader_ring_index];
+      if (shader_ring_bytes_needed_for_se_shr8 == 0) {
+         /* Point rings for which the base setting packets were emitted preemptively, but without
+          * the rings actually being used in the command buffers, to the beginning of the ring BO
+          * rather than possibly to the end of it to avoid a potential edge case in kernel driver
+          * submission validation.
+          */
+         shader_ring_offsets_shr8[shader_ring_index] = 0;
+         continue;
+      }
       shader_ring_offsets_shr8[shader_ring_index] = shader_ring_bytes_needed_total_shr8;
       shader_ring_bytes_needed_total_shr8 +=
-         shader_ring_bytes_needed_for_se_shr8[shader_ring_index]
+         shader_ring_bytes_needed_for_se_shr8
          << (unsigned)(physical_device->chip_info.two_shader_engines_max &&
                        (TERAKAN_SHADER_RINGS_PER_SHADER_ENGINE & BITFIELD_BIT(shader_ring_index)));
    }
@@ -387,6 +398,11 @@ terakan_queue_submit(struct vk_queue * const queue_base, struct vk_queue_submit 
     * or creating copies of them even if they are in the pending state.
     */
 
+   /* Note that if `shader_ring_bytes_needed_total_shr8` ended up being 0, but base and size setting
+    * packets happened to have been emitted in the command buffers anyway, it's expected that those
+    * packets would properly bind the actual placeholder BO, which currently is a valid BO with a
+    * size of at least 0x100 bytes, as the ring memory.
+    */
    if (shader_ring_bytes_needed_total_shr8 != 0) {
       uint32_t const shader_rings_va_shr8 = (uint32_t)(queue->shader_rings->va >> 8);
       for (uint32_t command_buffer_index = 0; command_buffer_index < submit->command_buffer_count;
@@ -414,8 +430,8 @@ terakan_queue_submit(struct vk_queue * const queue_base, struct vk_queue_submit 
                   }
                   uint32_t const shader_ring_va_shr8 =
                      shader_rings_va_shr8 + shader_ring_offsets_shr8[shader_ring_index];
-                  uint32_t const shader_ring_bytes_shr8 =
-                     shader_ring_bytes_needed_for_se_shr8[shader_ring_index];
+                  uint32_t const shader_ring_bytes_for_se_shr8 =
+                     shader_rings_bytes_needed_for_se_shr8[shader_ring_index];
                   command_buffer_indirect_buffer->indirect_buffer
                      [indirect_buffer_shader_ring->set_base_argument_offsets_dwords[0]] =
                      shader_ring_va_shr8;
@@ -428,16 +444,16 @@ terakan_queue_submit(struct vk_queue * const queue_base, struct vk_queue_submit 
                       (TERAKAN_SHADER_RINGS_PER_SHADER_ENGINE & BITFIELD_BIT(shader_ring_index))) {
                      command_buffer_indirect_buffer->indirect_buffer
                         [indirect_buffer_shader_ring->set_base_argument_offsets_dwords[1]] =
-                        shader_ring_va_shr8 + shader_ring_bytes_shr8;
+                        shader_ring_va_shr8 + shader_ring_bytes_for_se_shr8;
                      terakan_queue_replace_relocation_offset_for_32_bits(
                         physical_device->submission_info_gfx.base.relocation_type,
                         command_buffer_indirect_buffer->relocations,
                         indirect_buffer_shader_ring->set_base_relocation_handles[1],
-                        shader_ring_va_shr8 + shader_ring_bytes_shr8);
+                        shader_ring_va_shr8 + shader_ring_bytes_for_se_shr8);
                   }
                   command_buffer_indirect_buffer
                      ->indirect_buffer[indirect_buffer_shader_ring->set_size_argument_offset_dwords] =
-                     shader_ring_bytes_shr8;
+                     shader_ring_bytes_for_se_shr8;
                }
             }
          }
@@ -609,7 +625,7 @@ terakan_queue_submit(struct vk_queue * const queue_base, struct vk_queue_submit 
    if (shader_ring_bytes_needed_total_shr8 != 0) {
       for (size_t shader_ring_index = 0; shader_ring_index < TERAKAN_SHADER_RING_INDEX_COUNT;
            ++shader_ring_index) {
-         if (shader_ring_bytes_needed_for_se_shr8[shader_ring_index] == 0) {
+         if (shader_rings_bytes_needed_for_se_shr8[shader_ring_index] == 0) {
             continue;
          }
          struct terakan_shader_ring const * const shader_ring_info =

@@ -37,7 +37,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <radeon_drm.h>
@@ -174,10 +173,6 @@ terakan_physical_device_drm_radeon_try_create(struct vk_instance * const instanc
          goto fail_render_node_fd;
       }
       drmFreeVersion(drm_version);
-   }
-
-   if (instance->debug_flags & TERAKAN_DEBUG_STARTUP) {
-      fprintf(stderr, "terakan: info: Found a compatible DRM device '%s'.\n", render_node_path);
    }
 
    /* Get the GPU and DRM info from the DRM device. */

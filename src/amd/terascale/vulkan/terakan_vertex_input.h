@@ -1,5 +1,5 @@
 /*
- * Copyright © 2024 Vitaliy Triang3l Kuzmin
+ * Copyright © 2026 Vitaliy Triang3l Kuzmin
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -27,165 +27,222 @@
 #include "terakan_bo.h"
 #include "terakan_descriptor.h"
 
-#include "util/bitset.h"
+#include "amd/terascale/common/terascale_format.h"
+#include "util/bitscan.h"
 #include "util/macros.h"
-#include "util/u_math.h"
-#include "vk_limits.h"
 
-#include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <vulkan/vulkan_core.h>
+#include <string.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-static_assert(
-   MESA_VK_MAX_VERTEX_BINDINGS >= TERAKAN_RESOURCE_HW_COUNT_FETCH,
-   "Expecting that the Mesa Vulkan runtime can expose all hardware vertex buffer bindings.");
-
-/* Arbitrary limit, but roughly half the number of GPR vectors available in shaders, because GPRs
- * are used as the destinations in fetch shaders.
+/* Returns the format bits of the fetch instruction word 1 for the given format, or bits with
+ * `DATA_FORMAT` set to `INVALID` if the provided format doesn't support vertex fetch.
  */
-#define TERAKAN_VERTEX_INPUT_MAX_ATTRIBUTES MIN2(MESA_VK_MAX_VERTEX_ATTRIBUTES, 64)
+uint32_t terakan_vertex_input_format_fetch_word1(struct terascale_format_info const * format_info);
 
-/* Compact representation of a vertex attribute. */
-struct terakan_vertex_input_attribute {
-   /* DST_GPR, DST_SEL_X/Y/Z/W, DATA_FORMAT, NUM_FORMAT_ALL, FORMAT_COMP_ALL.
-    * DATA_FORMAT may be INVALID if the format is unsupported, in which case the binding at
-    * buffer_id can be skipped where that may be relevant unless other attributes with a valid
-    * format need it.
+/* Per-vertex attribute fetching is currently only implemented for the base vertex being pre-applied
+ * to R0.X (using `VGT_INDX_OFFSET` and `SQ_VTX_FETCH_NO_INDEX_OFFSET`, not `SQ_VTX_BASE_VTX_LOC`
+ * and `SQ_VTX_FETCH_VERTEX_DATA`), like in Vulkan and OpenGL, but not in Direct3D.
+ *
+ * Attributes are fetches to R[1 + attribute index].
+ *
+ * Supporting only the Direct3D 10+ element alignment, `min(element size, 4 bytes)`, expected by the
+ * hardware.
+ * https://microsoft.github.io/DirectX-Specs/d3d/archive/D3D11_3_FunctionalSpec.htm#4.4.6%20Element%20Alignment
+ * While unaligned fetching, like in OpenGL and in Vulkan `VK_EXT_legacy_vertex_attributes`, is
+ * theoretically implementable as vertex fetch is fully programmable, it's currently not supported
+ * due to the massive complexity increase it would require, especially for elements larger than
+ * 4 bytes, which, for loading of individual bytes, would use additional GPRs and thus make the GPR
+ * count for the software vertex shader stage dynamic, and it also would need to handle swizzling.
+ * The primary use case of unaligned attributes is OpenGL, but the OpenGL implementation may align
+ * the attributes instead.
+ *
+ * Using the same limit for the number of attributes as for bindings in the hardware, because
+ * different attributes may need multiple hardware resource bindings even if they use the same
+ * application-side binding.
+ */
+
+struct terakan_vertex_input_fs_layout {
+   /* Attributes used by the vertex shader. */
+   uint32_t attributes_used;
+
+   /* If an attribute is used, but its `DATA_FORMAT` is `INVALID`, the actual buffer fetch is
+    * explictly not generated, but the destination GPR is still filled, excluding components where
+    * `DSL_SEL` is `MASK`, with 1 for the specified `NUM_FORMAT_ALL` if `DST_SEL` is a constant 1,
+    * or with 0 (similarly to XYZW data channels for a fetch from a null resource) otherwise. Other
+    * parameters of the attribute specified in this structure not mentioned earlier in this comment
+    * are ignored by fetch shader generation.
+    *
+    * If `attribute_format_fetch_word1` is zero, particularly, (0, 0, 0, 0) will be written to the
+    * destination GPR, because it means `DATA_FORMAT = INVALID, DST_SEL = XXXX`, and the X data
+    * channel is replaced with 0 in this case.
+    *
+    * For formats that don't support vertex fetch for any reason, unless `DATA_FORMAT` is set to
+    * `INVALID` explicitly, the destination GPR value, and whether a fetch instruction is actually
+    * emitted, is undefined.
     */
-   uint32_t word1_dst_gpr_and_format;
-   uint16_t offset;
-   /* Needs 5 bits. */
-   uint8_t buffer_id;
+   uint32_t attribute_format_fetch_word1[TERAKAN_RESOURCE_HW_COUNT_FETCH];
+   uint8_t attribute_bindings[TERAKAN_RESOURCE_HW_COUNT_FETCH];
+   uint16_t attribute_offsets[TERAKAN_RESOURCE_HW_COUNT_FETCH];
+
+   uint32_t instance_rate_attributes;
+   /* Ignored if the attribute is per-vertex. For per-instance attributes, a divisor of 0 means that
+    * the value is the same for all instances (like in `VK_EXT_vertex_attribute_divisor`).
+    */
+   uint32_t attribute_instance_divisors[TERAKAN_RESOURCE_HW_COUNT_FETCH];
+
+   /* #2048StrideAs1024 #hashtag: Which bindings (see `attribute_bindings`) need the index to be
+    * adjusted in the fetch shader so they can be fetched with a stride of 2048, which is the
+    * minimum required by Direct3D 10+ era graphics APIs, via a fetch constant with a stride of
+    * 1024, because before R9xx, strides only up to 2047 could be specified in fetch constants.
+    *
+    * If any instanced attribute uses this workaround, the vertex shader must load the base instance
+    * index to R0.Z before calling the fetch shader.
+    *
+    * For per-vertex attributes, only pre-offset vertex index in R0.X (like in Vulkan and OpenGL) is
+    * currently supported by this workaround. However, if later this is used with a 0-based vertex
+    * index in R0.X, the same method as for the instance index would need to be implemented
+    * (possibly expecting the base vertex index to be loaded to R0.Y before calling the fetch
+    * shader, although it'd collide with `VGT_VTX_CNT_EN`).
+    *
+    * Note that the current implementation of the workaround doubles the index, so it should work
+    * not only for exactly 2048, but also for even strides in [2048, 4094], however, support for
+    * strides beyond 2048 isn't required by Vulkan or Direct3D, so it must not be advertised on
+    * architecture generations prior to R9xx, and because the workaround may be enabled on R9xx for
+    * regression testing as well, it should be used only when the stride is exactly 2048, not just
+    * greater than or equal to it, because otherwise odd strides above 2048 will not work on R9xx.
+    */
+   uint32_t bindings_with_2048_stride_as_1024;
 };
 
-bool
-terakan_vertex_input_attribute_translate(uint32_t location, uint32_t binding, VkFormat format,
-                                         uint32_t offset,
-                                         struct terakan_vertex_input_attribute * attribute_out);
-
-/* Possible code sizes per binding, assuming the worst case with all bindings requiring different
- * indices:
- * - R8xx:
- *   - Vertex-indexed:
- *     - 0 qw - sub-2048 stride.
- *     - 1 qw - 2048 stride (LSHL_INT by inline 1 to multiply the vertex index by 2).
- *   - Instance-indexed:
- *     - Sub-2048 stride:
- *       - 1 qw - divisor is 0 (MOV of 0).
- *       - 0 qw - divisor is 1.
- *       - Up to 9 qw - divisor is 2+. Worst case:
- *         + 2 qw - LSHR_INT (pre-shift) by a literal.
- *         + 2 qw - MIN_UINT 0xFFFFFFFE of the saturated increment.
- *         + 1 qw - ADD_INT 1 of the saturated increment.
- *         + 2 qw - MULHI_UINT by a literal.
- *         + 2 qw - LSHR_INT (post-shift) by a literal.
- *     - 2048 stride:
- *       - 1 qw - divisor is 0 (LSHL_INT by inline 1 to multiply the base index by 2).
- *       - 2 qw - divisor is 1 (LSHL_INT by inline 1 to multiply by 2, ADD_INT of the base index).
- *       - Up to 11 qw - divisor is 2+. Worst case:
- *         + All the same as for sub-2048 stride.
- *         + 1 qw - LSHL_INT by inline 1 to multiply by 2.
- *         + 1 qw - ADD_INT of the base index.
- * - R9xx:
- *   - 0 qw - vertex-indexed.
- *   - Instance-indexed:
- *     - 1 qw - divisor is 0 (MOV of 0).
- *     - 0 qw - divisor is 1.
- *       - Up to 12 qw - divisor is 2+. Worst case:
- *         + 2 qw - LSHR_INT (pre-shift) by a literal.
- *         + 2 qw - MIN_UINT 0xFFFFFFFE of the saturated increment.
- *         + 1 qw - ADD_INT 1 of the saturated increment.
- *         + 5 qw - MULHI_UINT (4-slot) by a literal.
- *         + 2 qw - LSHR_INT (post-shift) by a literal.
+/* Whether the layouts will surely have identically behaving fetch shaders built for them, and with
+ * the same resource descriptor usage.
  */
-#define TERAKAN_VERTEX_INPUT_FS_MAX_ALU_QWORDS (12 * TERAKAN_RESOURCE_HW_COUNT_FETCH)
+bool terakan_vertex_input_fs_layout_identical(struct terakan_vertex_input_fs_layout const * a,
+                                              struct terakan_vertex_input_fs_layout const * b);
 
+struct terakan_vertex_input_fs_resource_usage {
+   /* Mask of which resource registers are used. */
+   uint32_t resources_used;
+
+   /* Pre-R9xx hardware performs bounds checking only for up to the first 32 bits of an element, so
+    * the buffer size in the fetch constant needs to be shrunk depending on the attribute format for
+    * precise robust access. On R9xx, bounds checking is done for the whole element.
+    *
+    * Bits [4:0] - application binding index.
+    * Bits [:5] - number of dwords to subtract from the buffer size in the fetch constant.
+    *
+    * Only resources included in `resources_used` have their values in this array initialized.
+    */
+   uint8_t resource_bindings_and_truncation[TERAKAN_RESOURCE_HW_COUNT_FETCH];
+};
+
+static inline bool
+terakan_vertex_input_fs_resource_usage_equal(
+   struct terakan_vertex_input_fs_resource_usage const * const a,
+   struct terakan_vertex_input_fs_resource_usage const * const b)
+{
+   if (a->resources_used != b->resources_used) {
+      return false;
+   }
+   unsigned resources_remaining = a->resources_used;
+   while (resources_remaining) {
+      int range_start, range_length;
+      u_bit_scan_consecutive_range(&resources_remaining, &range_start, &range_length);
+      if (memcmp(&a->resource_bindings_and_truncation[range_start],
+                 &b->resource_bindings_and_truncation[range_start],
+                 sizeof(a->resource_bindings_and_truncation[0]) * range_length) != 0) {
+         return false;
+      }
+   }
+   return true;
+}
+
+/* Longest possible sequence for an attribute, also assuming parallelization with other attributes,
+ * and thus treating each immediate as 1 qword, for simplicity of the upper bound calculation, and
+ * supporting 2048 stride as 1024 on R9xx too even though it's not needed there for the possibility
+ * of regression testing of the workaround on all architecture generations:
+ * - 0: LSHR_INT index, fast_udiv_info.pre_shift (+2)
+ * - 2: ADD_INT index, 1 (+1, adding the increment, using an inline constant)
+ * - 3: 4-slot MULHI_INT index, fast_udiv_info.multiplier (+5)
+ * - 8: LSHR_INT index, fast_udiv_info.post_shift (+2)
+ * - 10: LSHL_INT index, 1 (+1, multiplying by 2 for the 2048 stride workaround, using an inline
+ *       constant)
+ * - 11: ADD_INT index, R0.Z (+1, adding the base for the 2048 stride workaround)
+ *
+ * For attributes that are used, but not bound, up to 4 instructions are emitted to write 0 or 1.
+ */
+#define TERAKAN_VERTEX_INPUT_FS_MAX_PRE_FETCH_ALU_QWORDS_PER_ATTRIBUTE 12
+#define TERAKAN_VERTEX_INPUT_FS_MAX_PRE_FETCH_ALU_QWORDS                                           \
+   (TERAKAN_VERTEX_INPUT_FS_MAX_PRE_FETCH_ALU_QWORDS_PER_ATTRIBUTE *                               \
+    TERAKAN_RESOURCE_HW_COUNT_FETCH)
 /* An ALU clause can contain up to 0x80 qwords, but the last instruction group may overflow to the
- * next clause if there's less space available than needed for it (up to 7 qwords).
+ * next clause if there's less space available than needed for it (up to 5 instruction qwords and 2
+ * literal constant qwords).
  */
-#define TERAKAN_VERTEX_INPUT_FS_MAX_ALU_CLAUSES                                                    \
-   DIV_ROUND_UP(TERAKAN_VERTEX_INPUT_FS_MAX_ALU_QWORDS, 0x80 - (7 - 1))
+#define TERAKAN_VERTEX_INPUT_FS_MAX_PRE_FETCH_ALU_CLAUSES                                          \
+   DIV_ROUND_UP(TERAKAN_VERTEX_INPUT_FS_MAX_PRE_FETCH_ALU_QWORDS, 0x80 - (7 - 1))
 
-#define TERAKAN_VERTEX_INPUT_FS_MAX_FETCH_CLAUSES                                                  \
-   DIV_ROUND_UP(TERAKAN_VERTEX_INPUT_MAX_ATTRIBUTES, 0x40)
+/* Pre-fetch ALU clauses, one fetch clause (up to 64 fetches per clause, but currently always doing
+ * one fetch per attribute), return.
+ */
+#define TERAKAN_VERTEX_INPUT_FS_MAX_CONTROL_FLOW_QWORDS                                            \
+   (TERAKAN_VERTEX_INPUT_FS_MAX_PRE_FETCH_ALU_CLAUSES + 2)
 
-#define TERAKAN_VERTEX_INPUT_FS_MAX_CF_QWORDS                                                      \
-   (TERAKAN_VERTEX_INPUT_FS_MAX_ALU_CLAUSES + TERAKAN_VERTEX_INPUT_FS_MAX_FETCH_CLAUSES + 1)
-
+/* Control flow, pre-fetch ALU instruction, 2-qwords-aligned fetches. */
 #define TERAKAN_VERTEX_INPUT_FS_MAX_QWORDS                                                         \
-   (ALIGN_POT(TERAKAN_VERTEX_INPUT_FS_MAX_CF_QWORDS + TERAKAN_VERTEX_INPUT_FS_MAX_ALU_QWORDS, 2) + \
-    2 * TERAKAN_VERTEX_INPUT_MAX_ATTRIBUTES)
+   (DIV_ROUND_UP(TERAKAN_VERTEX_INPUT_FS_MAX_CONTROL_FLOW_QWORDS +                                 \
+                    TERAKAN_VERTEX_INPUT_FS_MAX_PRE_FETCH_ALU_QWORDS,                              \
+                 2) +                                                                              \
+    2 * TERAKAN_RESOURCE_HW_COUNT_FETCH)
 
-/* alu_out must have at least TERAKAN_VERTEX_INPUT_FS_MAX_ALU_QWORDS qwords.
- * alu_clause_qwords_out must have at least TERAKAN_VERTEX_INPUT_FS_MAX_ALU_CLAUSES elements.
- * fetch_out must have at least as many pairs of qwords as there are used attributes.
- * alu_out and fetch_out shouldn't point to uncached memory, as reads may be done internally.
- *
- * It is important that attributes_needed_by_vs must not contain any attribute locations beyond the
- * available number of GPRs, as index calculations may be deduplicated by the function.
- *
- * For bindings in `bindings_with_2048_stride_workaround`, different index calculation will be
- * generated so those bindings can be fetched from with a stride of 1024 instead, as it's not
- * possible to specify a stride of 2048 in R8xx fetch constants (although R9xx expands the stride
- * field to 12 bits), but 2048 is the minimum requirement on Vulkan. The vertex shader must load the
- * first instance to R0.Z before calling the fetch shader if any per-instance input binding with
- * 2048 stride is used.
- * `bindings_with_2048_stride_workaround` can have bits undefined for unused bindings.
- */
-void terakan_vertex_input_create_fs_alu_and_fetches(
-   bool is_r9xx, BITSET_WORD const * attributes_needed_and_valid,
-   struct terakan_vertex_input_attribute const * attributes, uint32_t instance_bindings,
-   uint32_t const * instance_binding_divisors, uint32_t bindings_with_2048_stride_workaround,
-   uint32_t * alu_qword_count_out, uint32_t * alu_out, uint32_t * alu_clause_count_out,
-   uint8_t * alu_clause_qwords_out, uint32_t * fetch_count_out, uint32_t * fetch_out);
+struct terakan_vertex_input_fs_code {
+   uint32_t control_flow_qwords;
+   uint32_t pre_fetch_alu_qwords;
+   uint32_t fetch_count;
+
+   /* The 32-bit instruction words have the host endianness, must be copied to the device shader
+    * program as little-endian.
+    */
+   uint32_t control_flow[2 * TERAKAN_VERTEX_INPUT_FS_MAX_CONTROL_FLOW_QWORDS];
+   uint32_t pre_fetch_alu[2 * TERAKAN_VERTEX_INPUT_FS_MAX_PRE_FETCH_ALU_QWORDS];
+   uint32_t fetch[4 * TERAKAN_RESOURCE_HW_COUNT_FETCH];
+};
+
+void terakan_vertex_input_create_fs_code(
+   struct terakan_vertex_input_fs_layout const * layout, bool is_r9xx,
+   struct terakan_vertex_input_fs_resource_usage * resource_usage_out,
+   struct terakan_vertex_input_fs_code * code_out);
 
 static inline uint32_t
-terakan_vertex_input_fs_byte_count(uint32_t const alu_qword_count, uint32_t const alu_clause_count,
-                                   uint32_t const fetch_count)
+terakan_vertex_input_fs_code_qwords(struct terakan_vertex_input_fs_code const * const code)
 {
-   return sizeof(uint32_t) * 2 *
-          (ALIGN_POT(alu_clause_count + DIV_ROUND_UP(fetch_count, 0x40) + 1 + alu_qword_count, 2) +
-           2 * fetch_count);
+   uint32_t fs_code_qwords = code->control_flow_qwords + code->pre_fetch_alu_qwords;
+   if (code->fetch_count != 0) {
+      /* Fetch instructions must be aligned to 2 qwords. */
+      fs_code_qwords += (fs_code_qwords & 1) + 2 * code->fetch_count;
+   }
+   return fs_code_qwords;
 }
 
-/* Combines the result of terakan_vertex_input_create_fs_alu_and_fetches into a fetch shader
- * program.
- * The size of the program can be computed using terakan_vertex_input_fs_byte_count.
- * program_out can point to write-combined memory.
- */
-void terakan_vertex_input_create_fs_program(bool is_r9xx, uint32_t alu_qword_count,
-                                            void const * alu, uint32_t alu_clause_count,
-                                            uint8_t const * alu_clause_qwords, uint32_t fetch_count,
-                                            void const * fetch, void * program_out);
+static inline bool
+terakan_vertex_input_fs_code_is_no_operation(struct terakan_vertex_input_fs_code const * const code)
+{
+   /* Does nothing if the only instruction is `RETURN`. */
+   return code->control_flow_qwords <= 1;
+}
 
-struct terakan_vertex_input_static_state {
-   struct terakan_bo * program_bo;
-   uint32_t program_va_shr8;
+/* `terakan_vertex_input_fs_code_qwords` will be written to `program_out` as little-endian. */
+void terakan_vertex_input_combine_fs(struct terakan_vertex_input_fs_code const * code,
+                                     uint32_t * program_out);
 
-   BITSET_DECLARE(attributes_needed_and_provided, TERAKAN_VERTEX_INPUT_MAX_ATTRIBUTES);
-   /* The values are undefined for attributes not in attributes_needed_and_provided. */
-   struct terakan_vertex_input_attribute attributes[TERAKAN_VERTEX_INPUT_MAX_ATTRIBUTES];
+struct terakan_vertex_input_fs {
+   struct terakan_bo const * bo;
+   uint32_t va_shr8;
 
-   uint32_t bindings_needed_by_attributes_and_provided;
-   /* The bits are 0 for bindings not in bindings_needed_by_attributes_and_provided. */
-   uint32_t instance_bindings;
-   /* The values are undefined for bindings not in instance_bindings. */
-   uint32_t instance_binding_divisors[TERAKAN_RESOURCE_HW_COUNT_FETCH];
+   struct terakan_vertex_input_fs_resource_usage resource_usage;
 
-   /* If the stride is dynamic, in the static vertex input fetch shader, all bindings are assumed
-    * not to need the 2048 stride workaround (this is 0).
-    * The bits are 0 for bindings not in bindings_needed_by_attributes_and_provided.
-    */
-   uint32_t bindings_with_2048_stride_workaround;
+   struct terakan_vertex_input_fs_layout layout;
 };
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* TERAKAN_VERTEX_INPUT_H */

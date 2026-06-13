@@ -29,7 +29,6 @@
 #include "terakan_physical_device.h"
 #include "terakan_queue.h"
 #include "terakan_shader.h"
-#include "terakan_vertex_input.h"
 
 #include "c11/threads.h"
 #include "util/macros.h"
@@ -65,7 +64,11 @@ struct terakan_device {
 
    uint32_t last_bo_creation_number;
 
-   /* TODO(Triang3l): Don't actually allocate BOs for placeholders. */
+   /* TODO(Triang3l): Don't actually allocate BOs for placeholders. Currently, however, the actual
+    * ring placeholder BO will be used if there are ring base setting packets in the submission's
+    * command buffers, but the command buffers don't specify that they actually need a nonzero
+    * amount of ring buffer memory.
+    */
    struct terakan_bo * reference_placeholder_bos[TERAKAN_QUEUE_BO_REFERENCE_PLACEHOLDER_INDEX_COUNT];
 
    /* BO for data that needs to be discarded on the graphics queue:
@@ -74,11 +77,12 @@ struct terakan_device {
     */
    struct terakan_bo * gfx_discard_bo;
 
-   /* CB_IMMED buffers of chip family info `uav_immediate_size_texels` texels each for all possible
-    * UAV texel sizes, because CB multiplies the invocation index by the texel size, so using the
-    * same buffer with different texel sizes would cause collisions.
-    * `uav_immediate_va_shr8` index is log2 of the texel size in bytes.
-    * Because the same buffer is used for all UAVs (of a given texel size), one invocation must
+   /* `CB_IMMED` buffers of `terakan_physical_device_chip_info::uav_immediate_size_elements`
+    * elements each for all possible UAV element sizes, because CB multiplies the invocation index
+    * by the element size, so using the same buffer with different element sizes would cause
+    * collisions.
+    * `uav_immediate_va_shr8` index is log2 of the element size in bytes.
+    * Because the same buffer is used for all UAVs (of a given element size), one invocation must
     * never have multiple UAV operations returning a value in flight.
     */
    struct terakan_bo * uav_immediate_bo;
@@ -90,10 +94,9 @@ struct terakan_device {
    struct terakan_bo * query_accumulator_bo;
 
    struct terakan_bo * meta_shaders_bo;
+   uint32_t meta_shaders_empty_fetch_va_shr8;
    struct terakan_shader_static meta_shaders[TERAKAN_META_SHADER_COUNT];
-
-   /* Uses a program from meta_shaders_bo. */
-   struct terakan_vertex_input_static_state empty_vertex_input;
+   struct terakan_shader_sqk_usage meta_shader_sqk_usage[TERAKAN_META_SHADER_COUNT];
 
    /* Mutex and condition variable for terakan_sync_completion timeline semaphore value updates and
     * controlling submission completion waits.

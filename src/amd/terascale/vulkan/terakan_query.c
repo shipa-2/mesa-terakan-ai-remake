@@ -31,9 +31,9 @@
 #include "terakan_descriptor.h"
 #include "terakan_device.h"
 #include "terakan_entrypoints.h"
+#include "terakan_format.h"
 #include "terakan_instance.h"
 #include "terakan_physical_device.h"
-#include "terakan_state.h"
 
 #include "amd/terascale/common/terascale_wddm.h"
 #include "c11/threads.h"
@@ -319,27 +319,22 @@ terakan_CmdBeginQueryIndexedEXT(VkCommandBuffer const commandBuffer, VkQueryPool
    /* Set up counting. */
    switch (query_type) {
    case VK_QUERY_TYPE_OCCLUSION:
-      if (++command_writer->state_draw.db_count_control.zpass_count_active_count == 1) {
-         terakan_state_draw_set_pending(&command_writer->state_draw,
-                                        TERAKAN_STATE_DRAW_INDEX_DB_COUNT_CONTROL);
-      }
+      terakan_app_config_draw_push_db_count_control_zpass_query_active(
+         &command_writer->app_config_draw);
       break;
    case VK_QUERY_TYPE_PIPELINE_STATISTICS:
    case VK_QUERY_TYPE_TRANSFORM_FEEDBACK_STREAM_EXT:
-      if (++command_writer->state_draw.pipelinestat_active_count == 1) {
-         terakan_state_draw_set_pending(&command_writer->state_draw,
-                                        TERAKAN_STATE_DRAW_INDEX_PIPELINESTAT);
-      }
+      ++command_writer->active_pipelinestat_streamoutstats_query_count;
       break;
    default:
       break;
    }
 
-#ifdef TERAKAN_DEVTEST
+#ifdef TERAKAN_REGRESSION_TEST
    if (container_of(terakan_gfx_command_writer_physical_device(command_writer)->vk.instance,
                     struct terakan_instance const, vk)
-          ->devtest_flags &
-       TERAKAN_DEVTEST_SPLIT_INDIRECT_BUFFER_AT_QUERY_BEGIN_END) {
+          ->regression_test_flags &
+       BITFIELD64_BIT(TERAKAN_REGRESSION_TEST_SHIFT_SPLIT_INDIRECT_BUFFER_AT_QUERY_BEGIN_END)) {
       /* Take the beginning sample and do the actions in the query in separate indirect buffers to
        * perform accumulation for testing it.
        */
@@ -388,17 +383,12 @@ terakan_CmdEndQueryIndexedEXT(VkCommandBuffer const commandBuffer, VkQueryPool c
 
    switch (query_type) {
    case VK_QUERY_TYPE_OCCLUSION:
-      if (--command_writer->state_draw.db_count_control.zpass_count_active_count == 0) {
-         terakan_state_draw_set_pending(&command_writer->state_draw,
-                                        TERAKAN_STATE_DRAW_INDEX_DB_COUNT_CONTROL);
-      }
+      terakan_app_config_draw_pop_db_count_control_zpass_query_active(
+         &command_writer->app_config_draw);
       break;
    case VK_QUERY_TYPE_PIPELINE_STATISTICS:
    case VK_QUERY_TYPE_TRANSFORM_FEEDBACK_STREAM_EXT:
-      if (--command_writer->state_draw.pipelinestat_active_count == 0) {
-         terakan_state_draw_set_pending(&command_writer->state_draw,
-                                        TERAKAN_STATE_DRAW_INDEX_PIPELINESTAT);
-      }
+      --command_writer->active_pipelinestat_streamoutstats_query_count;
       break;
    default:
       break;
@@ -408,11 +398,11 @@ terakan_CmdEndQueryIndexedEXT(VkCommandBuffer const commandBuffer, VkQueryPool c
 
    struct terakan_device const * const device = terakan_gfx_command_writer_device(command_writer);
 
-#ifdef TERAKAN_DEVTEST
+#ifdef TERAKAN_REGRESSION_TEST
    if (container_of(terakan_device_physical_device(device)->vk.instance,
                     struct terakan_instance const, vk)
-          ->devtest_flags &
-       TERAKAN_DEVTEST_SPLIT_INDIRECT_BUFFER_AT_QUERY_BEGIN_END) {
+          ->regression_test_flags &
+       BITFIELD64_BIT(TERAKAN_REGRESSION_TEST_SHIFT_SPLIT_INDIRECT_BUFFER_AT_QUERY_BEGIN_END)) {
       /* Do the actions in the query and take the ending sample in separate indirect buffers to
        * perform accumulation for testing it.
        */
@@ -527,7 +517,7 @@ terakan_CmdEndQueryIndexedEXT(VkCommandBuffer const commandBuffer, VkQueryPool c
             return;
          }
          *packet++ = PKT3(PKT3_SURFACE_SYNC, 4 - 1, 0);
-         *packet++ = S_0085F0_SH_ACTION_ENA(1) | TERAKAN_BARRIER_SURFACE_SYNC_ENGINE_ME;
+         *packet++ = S_0085F0_SH_ACTION_ENA(true) | TERAKAN_BARRIER_SURFACE_SYNC_ENGINE_ME;
          *packet++ = UINT32_MAX;
          *packet++ = 0;
          *packet++ = TERAKAN_BARRIER_SURFACE_SYNC_POLL_INTERVAL;
@@ -950,11 +940,11 @@ terakan_CreateQueryPool(VkDevice const deviceHandle,
     */
    unsigned const uav_bytes_per_element = sizeof(uint32_t);
    if (physical_device->submission_info_gfx.buffer_uav_validated_as_image) {
-      bo_size = ALIGN_POT(
-         bo_size, (VkDeviceSize)(uav_bytes_per_element *
-                                 terakan_format_pitch_alignment_linear_surfels(
-                                    uav_bytes_per_element,
-                                    physical_device->tiling_info.pipe_interleave_bytes_log2)));
+      uint32_t const uav_size_granularity =
+         uav_bytes_per_element *
+         terakan_format_pitch_alignment_linear_surfels(
+            uav_bytes_per_element, physical_device->tiling_info.pipe_interleave_bytes_log2);
+      bo_size = ALIGN_POT(bo_size, (VkDeviceSize)uav_size_granularity);
    }
    result = device->winsys_fn->bo->allocate_device_memory(
       device, bo_size,

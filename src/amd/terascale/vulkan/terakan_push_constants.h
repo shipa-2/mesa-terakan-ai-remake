@@ -62,7 +62,9 @@ struct terakan_push_constants_driver {
 };
 
 /* Aligned to vec4 to avoid placing vectors in different kcache lines more likely to be accessed in
- * separate ALU clauses if they end up at the boundary.
+ * separate ALU clauses if they end up at the boundary, and so a pair of dwords at an even dword
+ * address in application push constants is accessed via one read port on R8xx+ just like in uniform
+ * buffers.
  */
 #define TERAKAN_PUSH_CONSTANTS_APP_BASE_BYTES                                                      \
    ALIGN_POT(sizeof(struct terakan_push_constants_driver), sizeof(float) * 4)
