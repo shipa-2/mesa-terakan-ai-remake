@@ -583,6 +583,26 @@ terakan_gfx_command_writer_emit_hw_config(
    enum terakan_gfx_command_writer_emit_contents const contents)
 {
    if (contents == TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DRAW) {
+      if (command_writer->app_config_compute.shader != NULL) {
+         terakan_hw_config_shared_compute_emit_modified(command_writer);
+
+         if (!command_writer->hw_config_compute_initialized_in_indirect_buffer) {
+            command_writer->hw_config_compute_initialized_in_indirect_buffer = true;
+            terakan_hw_config_compute_set_all_modified(&command_writer->hw_config_compute);
+         }
+         terakan_hw_config_compute_emit_modified(command_writer);
+
+         if (!command_writer->hw_config_sqk_initialized_in_indirect_buffer) {
+            command_writer->hw_config_sqk_initialized_in_indirect_buffer = true;
+            terakan_hw_config_sqk_begin_emitting_first_draw_dispatch_in_indirect_buffer(
+               command_writer);
+         }
+         terakan_hw_config_sqk_emit_modified_for_compute(command_writer);
+
+         terakan_hw_config_draw_emit_modified(command_writer);
+         return;
+      }
+
       terakan_hw_config_shared_draw_emit_modified(command_writer);
 
       if (!command_writer->hw_config_draw_initialized_in_indirect_buffer) {
@@ -995,13 +1015,16 @@ terakan_BeginCommandBuffer(VkCommandBuffer const commandBuffer,
    gfx_command_writer->active_pipelinestat_streamoutstats_query_count = 0;
 
    gfx_command_writer->hw_config_draw_initialized_in_indirect_buffer = false;
+   gfx_command_writer->hw_config_compute_initialized_in_indirect_buffer = false;
    gfx_command_writer->hw_config_sqk_initialized_in_indirect_buffer = false;
+   gfx_command_writer->meta_blit_draw_session_active = false;
 
    struct terakan_physical_device const * const physical_device =
       terakan_command_buffer_physical_device(command_buffer);
    terakan_hw_config_shared_reset(&gfx_command_writer->hw_config_shared,
                                   &physical_device->chip_info);
    terakan_hw_config_draw_reset(&gfx_command_writer->hw_config_draw);
+   terakan_hw_config_compute_reset(&gfx_command_writer->hw_config_compute);
    /* TODO(Triang3l): R9xx `USE_LS_CONSTS` (perform thorough testing, and provide a regression
     * testing flag for disabling).
     */
@@ -1012,6 +1035,7 @@ terakan_BeginCommandBuffer(VkCommandBuffer const commandBuffer,
    struct terakan_device const * const device = terakan_command_buffer_device(command_buffer);
 
    terakan_app_config_draw_reset(&gfx_command_writer->app_config_draw);
+   terakan_app_config_compute_reset(&gfx_command_writer->app_config_compute);
    terakan_app_config_draw_set_pa_vport_z_range_unrestricted(
       &gfx_command_writer->app_config_draw,
       device->vk.enabled_extensions.EXT_depth_range_unrestricted);

@@ -1151,22 +1151,28 @@ terakan_app_config_draw_apply_sq_pgm_fragment(
 
    TERAKAN_APP_CONFIG_DRAW_ASSERT_MAY_DEPEND_ON(CB_COLOR_UAV_AND_UNUSED_MRT, SQ_PGM_FRAGMENT);
    uint8_t const rtv_dsb_export_count = util_bitcount(rtv_dsb_uncompacted_exports);
-   static BITSET_WORD const
-      uav_empty_bitset[BITSET_WORDS(TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL)];
-   BITSET_WORD const * const uav_used =
-      fs != NULL ? fs->uavs_for_mutable_resources_needed : uav_empty_bitset;
-   size_t const uav_bitset_size =
-      sizeof(BITSET_WORD) * BITSET_WORDS(TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL);
-   if (config->cb_color_uav_and_unused_mrt_.from_apply_sq_pgm_fragment.rtv_dsb_export_count !=
-          rtv_dsb_export_count ||
-       memcmp(config->cb_color_uav_and_unused_mrt_.from_apply_sq_pgm_fragment.uav_used, uav_used,
-              uav_bitset_size) != 0) {
-      config->cb_color_uav_and_unused_mrt_.from_apply_sq_pgm_fragment.rtv_dsb_export_count =
-         rtv_dsb_export_count;
-      memcpy(config->cb_color_uav_and_unused_mrt_.from_apply_sq_pgm_fragment.uav_used, uav_used,
-             uav_bitset_size);
-      terakan_app_config_draw_set_pending(
-         config, TERAKAN_APP_CONFIG_DRAW_ENTRY_CB_COLOR_UAV_AND_UNUSED_MRT);
+
+   /* Don't overwrite uav_used when compute is active — it was already set from the compute
+    * shader in terakan_app_config_compute_bind_shader.
+    */
+   if (command_writer->app_config_compute.shader == NULL) {
+      static BITSET_WORD const
+         uav_empty_bitset[BITSET_WORDS(TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL)];
+      BITSET_WORD const * const uav_used =
+         fs != NULL ? fs->uavs_for_mutable_resources_needed : uav_empty_bitset;
+      size_t const uav_bitset_size =
+         sizeof(BITSET_WORD) * BITSET_WORDS(TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL);
+      if (config->cb_color_uav_and_unused_mrt_.from_apply_sq_pgm_fragment.rtv_dsb_export_count !=
+             rtv_dsb_export_count ||
+          memcmp(config->cb_color_uav_and_unused_mrt_.from_apply_sq_pgm_fragment.uav_used, uav_used,
+                 uav_bitset_size) != 0) {
+         config->cb_color_uav_and_unused_mrt_.from_apply_sq_pgm_fragment.rtv_dsb_export_count =
+            rtv_dsb_export_count;
+         memcpy(config->cb_color_uav_and_unused_mrt_.from_apply_sq_pgm_fragment.uav_used, uav_used,
+                uav_bitset_size);
+         terakan_app_config_draw_set_pending(
+            config, TERAKAN_APP_CONFIG_DRAW_ENTRY_CB_COLOR_UAV_AND_UNUSED_MRT);
+      }
    }
 
    TERAKAN_APP_CONFIG_DRAW_ASSERT_MAY_DEPEND_ON(DB_SHADER_CONTROL, SQ_PGM_FRAGMENT);
@@ -1884,6 +1890,7 @@ terakan_app_config_draw_apply_cb_color_uav_and_unused_mrt(
    struct terakan_app_config_draw * const app_config = &command_writer->app_config_draw;
    struct terakan_hw_config_draw * const hw_config = &command_writer->hw_config_draw;
    struct terakan_device const * const device = terakan_gfx_command_writer_device(command_writer);
+   bool const is_compute = command_writer->app_config_compute.shader != NULL;
 
    unsigned const uav_color_index_base =
       app_config->cb_color_uav_and_unused_mrt_.from_apply_sq_pgm_fragment.rtv_dsb_export_count;
@@ -1901,7 +1908,9 @@ terakan_app_config_draw_apply_cb_color_uav_and_unused_mrt(
        * in the driver's shader ABI.
        */
       unsigned const uav_immediate_resource_index =
-         TERAKAN_RESOURCE_RANGE_UAV_IMMEDIATE_BASE_PIXEL + uav_count;
+         (is_compute ? TERAKAN_RESOURCE_RANGE_UAV_IMMEDIATE_BASE_COMPUTE
+                     : TERAKAN_RESOURCE_RANGE_UAV_IMMEDIATE_BASE_PIXEL) +
+         uav_count;
 
       if (BITSET_SET(app_config->cb_color_uav_and_unused_mrt_.uav_bound, uav_uncompacted_index)) {
          struct terakan_app_config_draw_cb_color_uav const * const uav =
@@ -1927,16 +1936,27 @@ terakan_app_config_draw_apply_cb_color_uav_and_unused_mrt(
             util_logbase2(terascale_format_bytes_per_block[G_028C70_FORMAT(uav->color.info)]));
          struct terakan_resource_descriptor const uav_immediate_resource =
             terakan_color_descriptor_info_to_uav_immediate_resource(device, uav->color.info);
-         terakan_hw_config_sqk_set_resource_fs(&command_writer->hw_config_sqk,
-                                               uav_immediate_resource_index,
-                                               device->uav_immediate_bo, &uav_immediate_resource);
+         if (is_compute) {
+            terakan_hw_config_sqk_set_resource_cs(&command_writer->hw_config_sqk,
+                                                  uav_immediate_resource_index,
+                                                  device->uav_immediate_bo, &uav_immediate_resource);
+         } else {
+            terakan_hw_config_sqk_set_resource_fs(&command_writer->hw_config_sqk,
+                                                  uav_immediate_resource_index,
+                                                  device->uav_immediate_bo, &uav_immediate_resource);
+         }
       } else {
          terakan_hw_config_draw_set_cb_color_unbound(hw_config, color_index,
                                                      V_028C70_EXPORT_4C_16BPC);
 
          /* Make 0 the return value of all operations using the unbound UAV. */
-         terakan_hw_config_sqk_set_resource_fs(&command_writer->hw_config_sqk,
-                                               uav_immediate_resource_index, NULL, NULL);
+         if (is_compute) {
+            terakan_hw_config_sqk_set_resource_cs(&command_writer->hw_config_sqk,
+                                                  uav_immediate_resource_index, NULL, NULL);
+         } else {
+            terakan_hw_config_sqk_set_resource_fs(&command_writer->hw_config_sqk,
+                                                  uav_immediate_resource_index, NULL, NULL);
+         }
       }
 
       ++uav_count;

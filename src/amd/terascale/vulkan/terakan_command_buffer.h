@@ -25,11 +25,13 @@
 #define TERAKAN_COMMAND_BUFFER_H
 
 #include "terakan_app_config_draw.h"
+#include "terakan_app_config_compute.h"
 #include "terakan_barrier.h"
 #include "terakan_bo.h"
 #include "terakan_descriptor.h"
 #include "terakan_device.h"
 #include "terakan_hw_config_draw.h"
+#include "terakan_hw_config_compute.h"
 #include "terakan_hw_config_shared.h"
 #include "terakan_hw_config_sqk.h"
 #include "terakan_instance.h"
@@ -359,10 +361,15 @@ struct terakan_gfx_command_writer {
    size_t active_pipelinestat_streamoutstats_query_count;
 
    bool hw_config_draw_initialized_in_indirect_buffer;
+   bool hw_config_compute_initialized_in_indirect_buffer;
    bool hw_config_sqk_initialized_in_indirect_buffer;
+
+   /* Scaled blit reuses one meta draw session per command buffer (STK: one vkCmdBlitImage per mip). */
+   bool meta_blit_draw_session_active;
 
    struct terakan_hw_config_shared hw_config_shared;
    struct terakan_hw_config_draw hw_config_draw;
+   struct terakan_hw_config_compute hw_config_compute;
    struct terakan_hw_config_sqk hw_config_sqk;
 
    /* Modifies `hw_config_sqk`. */
@@ -370,6 +377,8 @@ struct terakan_gfx_command_writer {
 
    /* Modifies `hw_config` and `push_constants_state`. */
    struct terakan_app_config_draw app_config_draw;
+
+   struct terakan_app_config_compute app_config_compute;
 };
 
 TERAKAN_DEVICE_DEFINE_OBJECT_SHORTCUTS(gfx_command_writer,
@@ -642,6 +651,26 @@ terakan_gfx_command_writer_before_app_draw(struct terakan_gfx_command_writer * c
 
    /* May be modified by `app_config_draw`. */
    terakan_push_constants_apply(command_writer, false);
+
+   terakan_gfx_command_writer_before_hw_draw(command_writer);
+}
+
+static inline void
+terakan_gfx_command_writer_before_app_dispatch(
+   struct terakan_gfx_command_writer * const command_writer)
+{
+   terakan_app_config_compute_apply_pending(command_writer);
+
+   /* Storage buffer UAVs for compute reuse CB/RAT state tracked in `app_config_draw`. */
+   if (command_writer->app_config_compute.cb_target_mask_ != 0) {
+      terakan_app_config_draw_apply_pending(command_writer);
+   }
+
+   terakan_hw_config_shared_set_pipelinestat_streamoutstats_enable(
+      &command_writer->hw_config_shared,
+      command_writer->active_pipelinestat_streamoutstats_query_count != 0);
+
+   terakan_push_constants_apply(command_writer, true);
 
    terakan_gfx_command_writer_before_hw_draw(command_writer);
 }

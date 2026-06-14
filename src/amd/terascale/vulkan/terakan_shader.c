@@ -196,7 +196,13 @@ terakan_shader_spirv_to_nir(struct terakan_device * const device, size_t const s
    /* Lower interface and binding derefs. */
 
    NIR_PASS(_, nir, nir_lower_system_values);
-   /* TODO(Triang3l): Lower compute system values with the correct options. */
+
+   if (nir->info.stage == MESA_SHADER_COMPUTE) {
+      nir_lower_compute_system_values_options csv_options = {
+         .global_id_is_32bit = true,
+      };
+      NIR_PASS(_, nir, nir_lower_compute_system_values, &csv_options);
+   }
 
    if (nir->info.stage == MESA_SHADER_COMPUTE) {
       NIR_PASS(_, nir, nir_lower_vars_to_explicit_types, nir_var_mem_shared,
