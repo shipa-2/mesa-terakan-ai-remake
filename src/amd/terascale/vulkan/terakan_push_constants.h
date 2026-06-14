@@ -43,6 +43,8 @@ enum terakan_push_constants_driver_index {
    TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_BUFFER_UAV_BASE_GRANULARITY_OFFSET,
 
    TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_DRAW_ID,
+   TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_BASE_VERTEX,
+   TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_BASE_INSTANCE,
 
    TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_COUNT,
 };
@@ -59,6 +61,8 @@ struct terakan_push_constants_driver {
    uint32_t buffer_uav_base_granularity_offset[TERAKAN_COLOR_HW_RTV_AND_UAV_COUNT];
 
    uint32_t draw_id;
+   uint32_t base_vertex;
+   uint32_t base_instance;
 };
 
 /* Aligned to vec4 to avoid placing vectors in different kcache lines more likely to be accessed in

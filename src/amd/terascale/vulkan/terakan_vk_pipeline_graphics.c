@@ -105,21 +105,21 @@ terakan_vk_pipeline_graphics_vertex_input_init_without_fs_linkage_and_creation(
    struct terakan_vk_pipeline_graphics_vertex_input * const vertex_input,
    struct vk_graphics_pipeline_state const * const state)
 {
-   if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_VI) && state->vi != NULL) {
+   if (state->vi != NULL) {
       uint32_t const bindings_valid =
          state->vi->bindings_valid & BITFIELD_MASK(TERAKAN_VK_STATE_MAX_VERTEX_BINDINGS);
 
-      if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_VI_BINDING_STRIDES)) {
+      /* Always initialize strides from the pipeline as defaults. When MESA_VK_DYNAMIC_VI is set,
+       * the application can override strides later via vkCmdSetVertexInputEXT or
+       * vkCmdBindVertexBuffers2.
+       */
+      if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_VI_BINDING_STRIDES) ||
+          BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_VI)) {
          vertex_input->sq_resources_fetch_stride.static_stride_needed_for_bindings_bits =
             bindings_valid;
          u_foreach_bit (binding_index, bindings_valid) {
             uint16_t const stride = (uint16_t)state->vi->bindings[binding_index].stride;
             vertex_input->sq_resources_fetch_stride.stride[binding_index] = stride;
-            /* Note that if strides are dynamic, the static fetch shader is expected to be created
-             * as if the workaround isn't needed for any binding, because a stride of 2048 is likely
-             * a very rare situation. A transient fetch shader will be created during command buffer
-             * recording if it's needed for the 2048 stride as 1024 workaround.
-             */
             if (stride == 2048) {
                vertex_input->sq_pgm_fetch.layout.bindings_with_2048_stride_as_1024 |=
                   BITFIELD_BIT(binding_index);

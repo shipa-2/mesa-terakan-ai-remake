@@ -909,20 +909,18 @@ Shader::process_intrinsic(nir_intrinsic_instr *intr)
    case nir_intrinsic_load_tcs_out_param_base_r600:
       return emit_load_tcs_param_base(intr, 16);
    case nir_intrinsic_load_first_vertex:
-      return emit_get_lds_info_uint(intr,
-                                    offsetof(struct r600_lds_constant_buffer,
-                                             vertexid_base));
+      /* Same as base_vertex in Terakan's push constants layout. */
+      return emit_get_lds_info_uint(intr, 52);
    case nir_intrinsic_load_base_vertex:
-      return emit_get_lds_info_uint(intr,
-                                    offsetof(struct r600_lds_constant_buffer,
-                                             vertex_base));
+      /* In Terakan, LDS info is stored in the push constants kcache buffer (index 15).
+       * The push constants buffer layout: buffer_uav_base_granularity_offset[12] (48 bytes),
+       * then draw_id (48), base_vertex (52), base_instance (56).
+       */
+      return emit_get_lds_info_uint(intr, 52);
    case nir_intrinsic_load_base_instance:
-      return emit_get_lds_info_uint(intr,
-                                    offsetof(struct r600_lds_constant_buffer,
-                                             instance_base));
+      return emit_get_lds_info_uint(intr, 56);
    case nir_intrinsic_load_draw_id:
-      return emit_get_lds_info_uint(intr,
-                                    offsetof(struct r600_lds_constant_buffer, draw_id));
+      return emit_get_lds_info_uint(intr, 48);
    case nir_intrinsic_load_buffer_resource_r600:
       return emit_load_buffer_resource(intr);
    case nir_intrinsic_load_texture_resource_r600:

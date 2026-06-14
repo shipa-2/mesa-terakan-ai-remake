@@ -69,7 +69,7 @@
  * We only access this buffer through vtx clauses hence it's fine to exist
  * at index beyond 15.
  */
-#define R600_LDS_INFO_CONST_BUFFER (R600_MAX_USER_CONST_BUFFERS + 1)
+#define R600_LDS_INFO_CONST_BUFFER (R600_MAX_USER_CONST_BUFFERS)
 /*
  * Note GS doesn't use a constant buffer binding, just a resource index,
  * so it's fine to have it exist at index beyond 15. I.e. it's not actually
