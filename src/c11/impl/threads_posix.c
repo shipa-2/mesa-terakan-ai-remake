@@ -46,11 +46,13 @@ impl_thrd_routine(void *p)
 
 /*--------------- 7.25.2 Initialization functions ---------------*/
 // 7.25.2.1
+#ifndef __once_flag_defined
 void
 call_once(once_flag *flag, void (*func)(void))
 {
     pthread_once(flag, func);
 }
+#endif
 
 
 /*------------- 7.25.3 Condition variable functions -------------*/
@@ -96,7 +98,7 @@ cnd_timedwait(cnd_t *cond, mtx_t *mtx, const struct timespec *abs_time)
     assert(cond != NULL);
     assert(abs_time != NULL);
 
-    rt = pthread_cond_timedwait(cond, mtx, abs_time);
+    rt = pthread_cond_timedwait(cond, (pthread_mutex_t *)mtx, abs_time);
     if (rt == ETIMEDOUT)
         return thrd_timedout;
     return (rt == 0) ? thrd_success : thrd_error;
@@ -108,7 +110,7 @@ cnd_wait(cnd_t *cond, mtx_t *mtx)
 {
     assert(mtx != NULL);
     assert(cond != NULL);
-    return (pthread_cond_wait(cond, mtx) == 0) ? thrd_success : thrd_error;
+    return (pthread_cond_wait(cond, (pthread_mutex_t *)mtx) == 0) ? thrd_success : thrd_error;
 }
 
 
