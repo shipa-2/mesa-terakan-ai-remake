@@ -319,14 +319,13 @@ terakan_physical_device_chip_info_init(
     */
    chip_info_out->sq_pstmp_ring_bytes_per_item_dword_shr8 =
       (chip_info_out->is_r9xx
-          ? 256
+          ? 256 >> 3
           : MAX4(
                G_008C18_NUM_PS_THREADS(chip_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[0][0][0]),
                G_008C18_NUM_PS_THREADS(chip_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[0][1][0]),
                G_008C18_NUM_PS_THREADS(chip_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[1][0][0]),
                G_008C18_NUM_PS_THREADS(chip_info_out->sq_thread_resource_mgmt_ts_gs_r8xx[1][1][0])))
-         << (2 + chip_info_out->wave_lanes_log2) >>
-      8;
+      << (2 + chip_info_out->wave_lanes_log2 + 3 - 8);
 
    /* A compute shader may occupy all the available threads. */
    /* TODO(Triang3l): See how MBCNT behaves on wave32 chips and possibly scale the wave ID by 32
@@ -444,8 +443,8 @@ terakan_physical_device_get_capabilities(
    /* TODO(Triang3l): sampleRateShading. */
    features_out->dualSrcBlend = true;
    features_out->logicOp = true;
-   /* TODO(Triang3l): multiDrawIndirect. */
-   /* TODO(Triang3l): drawIndirectFirstInstance. */
+   features_out->multiDrawIndirect = true;
+   features_out->drawIndirectFirstInstance = true;
    features_out->depthClamp = true;
    features_out->depthBiasClamp = true;
    features_out->fillModeNonSolid = true;
@@ -468,13 +467,18 @@ terakan_physical_device_get_capabilities(
    /* TODO(Triang3l): shaderTessellationAndGeometryPointSize. */
    /* TODO(Triang3l): Possibly shaderImageGatherExtended. */
    /* TODO(Triang3l): Shader storage image format features. */
-   /* TODO(Triang3l): Shader binding array dynamic indexing. */
+   /* Shader binding array dynamic indexing is implemented in `terakan_nir_lower_bindings`. */
+   features_out->shaderUniformBufferArrayDynamicIndexing = true;
+   features_out->shaderSampledImageArrayDynamicIndexing = true;
+   features_out->shaderStorageBufferArrayDynamicIndexing = true;
+   features_out->shaderStorageImageArrayDynamicIndexing = true;
    /* TODO(Triang3l): shaderClipDistance. */
    /* TODO(Triang3l): shaderCullDistance. */
    /* TODO(Triang3l): shaderFloat64. */
    /* TODO(Triang3l): shaderResourceMinLod. */
    /* TODO(Triang3l): variableMultisampleRate. */
    features_out->inheritedQueries = true;
+   features_out->shaderDrawParameters = true;
 
    properties_out->apiVersion = TERAKAN_API_VERSION;
    /* TODO(Triang3l): Change to vk_get_driver_version() when Vulkan 1.0 compatibility is achieved.
@@ -581,6 +585,66 @@ terakan_physical_device_get_capabilities(
    properties_out->maxDescriptorSetInputAttachments =
       properties_out->maxPerStageDescriptorInputAttachments;
 
+   /* VK_EXT_descriptor_indexing: dynamic/non-uniform binding arrays are lowered in
+    * `terakan_nir_lower_bindings`; partially bound descriptors skip unbound slots at bind time.
+    */
+   extensions_out->EXT_descriptor_indexing = true;
+
+   features_out->shaderInputAttachmentArrayDynamicIndexing = true;
+   features_out->shaderUniformTexelBufferArrayDynamicIndexing = true;
+   features_out->shaderStorageTexelBufferArrayDynamicIndexing = true;
+   features_out->shaderUniformBufferArrayNonUniformIndexing = true;
+   features_out->shaderSampledImageArrayNonUniformIndexing = true;
+   features_out->shaderStorageBufferArrayNonUniformIndexing = true;
+   features_out->shaderStorageImageArrayNonUniformIndexing = true;
+   features_out->shaderInputAttachmentArrayNonUniformIndexing = true;
+   features_out->shaderUniformTexelBufferArrayNonUniformIndexing = true;
+   features_out->shaderStorageTexelBufferArrayNonUniformIndexing = true;
+   features_out->descriptorBindingUniformBufferUpdateAfterBind = true;
+   features_out->descriptorBindingSampledImageUpdateAfterBind = true;
+   features_out->descriptorBindingStorageImageUpdateAfterBind = true;
+   features_out->descriptorBindingStorageBufferUpdateAfterBind = true;
+   features_out->descriptorBindingUniformTexelBufferUpdateAfterBind = true;
+   features_out->descriptorBindingStorageTexelBufferUpdateAfterBind = true;
+   features_out->descriptorBindingUpdateUnusedWhilePending = true;
+   features_out->descriptorBindingPartiallyBound = true;
+   features_out->descriptorBindingVariableDescriptorCount = true;
+   features_out->runtimeDescriptorArray = true;
+
+   properties_out->maxUpdateAfterBindDescriptorsInAllPools = UINT32_MAX;
+   properties_out->robustBufferAccessUpdateAfterBind = true;
+
+   properties_out->maxPerStageDescriptorUpdateAfterBindSamplers =
+      properties_out->maxPerStageDescriptorSamplers;
+   properties_out->maxPerStageDescriptorUpdateAfterBindUniformBuffers =
+      properties_out->maxPerStageDescriptorUniformBuffers;
+   properties_out->maxPerStageDescriptorUpdateAfterBindStorageBuffers =
+      properties_out->maxPerStageDescriptorStorageBuffers;
+   properties_out->maxPerStageDescriptorUpdateAfterBindSampledImages =
+      properties_out->maxPerStageDescriptorSampledImages;
+   properties_out->maxPerStageDescriptorUpdateAfterBindStorageImages =
+      properties_out->maxPerStageDescriptorStorageImages;
+   properties_out->maxPerStageDescriptorUpdateAfterBindInputAttachments =
+      properties_out->maxPerStageDescriptorInputAttachments;
+   properties_out->maxPerStageUpdateAfterBindResources = properties_out->maxPerStageResources;
+
+   properties_out->maxDescriptorSetUpdateAfterBindSamplers =
+      properties_out->maxDescriptorSetSamplers;
+   properties_out->maxDescriptorSetUpdateAfterBindUniformBuffers =
+      properties_out->maxDescriptorSetUniformBuffers;
+   properties_out->maxDescriptorSetUpdateAfterBindUniformBuffersDynamic =
+      properties_out->maxDescriptorSetUniformBuffersDynamic;
+   properties_out->maxDescriptorSetUpdateAfterBindStorageBuffers =
+      properties_out->maxDescriptorSetStorageBuffers;
+   properties_out->maxDescriptorSetUpdateAfterBindStorageBuffersDynamic =
+      properties_out->maxDescriptorSetStorageBuffersDynamic;
+   properties_out->maxDescriptorSetUpdateAfterBindSampledImages =
+      properties_out->maxDescriptorSetSampledImages;
+   properties_out->maxDescriptorSetUpdateAfterBindStorageImages =
+      properties_out->maxDescriptorSetStorageImages;
+   properties_out->maxDescriptorSetUpdateAfterBindInputAttachments =
+      properties_out->maxDescriptorSetInputAttachments;
+
    /* There are no descriptor sets in the hardware, and technically there's no limit because sets
     * can be empty, but other drivers generally provide small numbers of bound sets, so expose a
     * finite amount assuming that every binding can be in its own set.
@@ -631,7 +695,7 @@ terakan_physical_device_get_capabilities(
 
    properties_out->maxDrawIndexedIndexValue = UINT32_MAX;
 
-   /* TODO(Triang3l): maxDrawIndirectCount when indirect drawing is enabled. */
+   properties_out->maxDrawIndirectCount = UINT32_MAX;
 
    properties_out->maxSamplerLodBias = 0x1.0p5f - 0x1.0p-8f;
    properties_out->maxSamplerAnisotropy = 0x1.0p4f;

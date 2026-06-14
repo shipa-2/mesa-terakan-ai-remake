@@ -238,7 +238,6 @@ terakan_CmdBindDescriptorSets(VkCommandBuffer const commandBuffer,
                   terakan_app_config_draw_set_cb_color_uav(&command_writer->app_config_draw,
                                                            shader_uav_index, NULL, NULL);
                }
-               /* TODO(Triang3l): Apply UAV bindings to the compute stage. */
             }
          }
       }
@@ -331,6 +330,7 @@ terakan_pipeline_layout_create(struct terakan_device * const device,
             &layout->shader_app_push_constants_extents_bytes[u_bit_scan(&remaining_stages)];
          *shader_app_push_constants_extent =
             MAX2(push_constant_range_extent, *shader_app_push_constants_extent);
+         remaining_stages &= remaining_stages - 1;
       }
    }
 
