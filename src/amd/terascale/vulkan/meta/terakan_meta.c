@@ -43,6 +43,7 @@ struct terakan_meta_shader const * const terakan_meta_shaders[TERAKAN_META_SHADE
    [TERAKAN_META_SHADER_COPY_BUFFER_TO_IMAGE_PS] = &terakan_meta_copy_buffer_to_image_ps,
    [TERAKAN_META_SHADER_COPY_IMAGE_TO_BUFFER_PS] = &terakan_meta_copy_image_to_buffer_ps,
    [TERAKAN_META_SHADER_COPY_IMAGE_PS] = &terakan_meta_copy_image_ps,
+   [TERAKAN_META_SHADER_BLIT_IMAGE_PS] = &terakan_meta_blit_image_ps,
    [TERAKAN_META_SHADER_COPY_EXPAND_3X_PS] = &terakan_meta_copy_expand_3x_ps,
    [TERAKAN_META_SHADER_QUERY_ACCUM_ZPASS_1_RB_VS] = &terakan_meta_query_accum_zpass_1_rb_vs,
    [TERAKAN_META_SHADER_QUERY_ACCUM_ZPASS_2_RB_VS] = &terakan_meta_query_accum_zpass_2_rb_vs,
@@ -184,6 +185,8 @@ terakan_meta_config_draw_begin(
    struct terakan_gfx_command_writer * const command_writer,
    struct terakan_meta_config_draw_begin_options const * const begin_options)
 {
+   command_writer->meta_blit_draw_session_active = false;
+
    /* Disable query counter incrementing. */
    terakan_hw_config_shared_set_pipelinestat_streamoutstats_enable(
       &command_writer->hw_config_shared, false);
