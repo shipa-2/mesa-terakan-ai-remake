@@ -320,6 +320,19 @@ terakan_GetPhysicalDeviceFormatProperties2(UNUSED VkPhysicalDevice const physica
    }
 }
 
+VKAPI_ATTR void VKAPI_CALL
+terakan_GetPhysicalDeviceSparseImageFormatProperties2(
+   UNUSED VkPhysicalDevice const physicalDevice,
+   UNUSED VkPhysicalDeviceSparseImageFormatInfo2 const * const format_info,
+   uint32_t * const property_count_out,
+   UNUSED VkSparseImageFormatProperties2 * const properties_out)
+{
+   /* Sparse binding and sparse residency aren't exposed by Terakan. The Vulkan 1.1 query is still
+    * a mandatory core entrypoint and must report that there are no supported sparse formats.
+    */
+   *property_count_out = 0;
+}
+
 VKAPI_ATTR VkResult VKAPI_CALL
 terakan_GetPhysicalDeviceImageFormatProperties2(
    VkPhysicalDevice const physicalDevice,

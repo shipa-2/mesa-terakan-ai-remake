@@ -42,6 +42,18 @@
 #include <stddef.h>
 #include <stdint.h>
 
+VKAPI_ATTR void VKAPI_CALL
+terakan_GetDeviceMemoryCommitment(UNUSED VkDevice const device,
+                                  UNUSED VkDeviceMemory const memory,
+                                  VkDeviceSize * const committed_memory_in_bytes_out)
+{
+   /* Terakan doesn't expose any lazily allocated memory types. Valid applications therefore can't
+    * call this entrypoint for any allocation, but Vulkan 1.0 still requires the entrypoint itself
+    * to be present.
+    */
+   *committed_memory_in_bytes_out = 0;
+}
+
 VKAPI_ATTR VkResult VKAPI_CALL
 terakan_GetMemoryFdPropertiesKHR(VkDevice const deviceHandle,
                                  VkExternalMemoryHandleTypeFlagBits const handleType, int const fd,

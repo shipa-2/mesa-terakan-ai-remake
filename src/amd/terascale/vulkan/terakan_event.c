@@ -15,6 +15,7 @@
 #include "util/macros.h"
 #include "util/u_atomic.h"
 #include "vk_alloc.h"
+#include "vk_common_entrypoints.h"
 #include "vk_log.h"
 
 #include <stdint.h>
@@ -30,8 +31,9 @@ terakan_CreateEvent(VkDevice const device_handle, VkEventCreateInfo const * cons
       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
    }
 
+   /* WAIT_REG_MEM requires the memory address to be aligned to 16 bytes. */
    VkResult const result = device->winsys_fn->bo->allocate_device_memory(
-      device, sizeof(uint64_t), sizeof(uint64_t),
+      device, sizeof(uint32_t), 16,
       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
          VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
       0, allocator, VK_SYSTEM_ALLOCATION_SCOPE_OBJECT, &event->bo);
@@ -133,4 +135,60 @@ terakan_CmdResetEvent(VkCommandBuffer const command_buffer, VkEvent const event,
                       UNUSED VkPipelineStageFlags const stage_mask)
 {
    terakan_cmd_write_event(command_buffer, event, 0);
+}
+
+static void
+terakan_cmd_wait_event(VkCommandBuffer const command_buffer_handle,
+                       VkEvent const event_handle)
+{
+   struct terakan_gfx_command_writer * const command_writer =
+      terakan_command_buffer_from_handle(command_buffer_handle)->command_writer.gfx;
+   struct terakan_event const * const event = terakan_event_from_handle(event_handle);
+
+   uint32_t * packet = terakan_gfx_command_writer_emit_with_bo(
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_OTHER, 7, 1, 0, 1);
+   if (unlikely(packet == NULL)) {
+      return;
+   }
+
+   *packet++ = PKT3(PKT3_WAIT_REG_MEM, 5, 0);
+   *packet++ = WAIT_REG_MEM_EQUAL | WAIT_REG_MEM_MEM_SPACE(1);
+   uint32_t const * const packet_address = packet;
+   *packet++ = (uint32_t)event->bo->va;
+   *packet++ = (event->bo->va >> 32) & 0xFF;
+   *packet++ = 1;
+   *packet++ = UINT32_MAX;
+   *packet++ = 4;
+   terakan_gfx_command_writer_add_relocation_for_40_bits(
+      command_writer, &packet, packet_address, packet_address + 1,
+      TERASCALE_WDDM_PATCH_IDS_EVENT_WRITE_LO, TERASCALE_WDDM_PATCH_IDS_EVENT_WRITE_HI,
+      terakan_bo_reference_writer_add_reference(&command_writer->base.bo_reference_writer,
+                                                event->bo, true, false,
+                                                TERAKAN_BO_PRIORITY_SYNC));
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
+}
+
+VKAPI_ATTR void VKAPI_CALL
+terakan_CmdWaitEvents(VkCommandBuffer const command_buffer, uint32_t const event_count,
+                      VkEvent const * const events, VkPipelineStageFlags const src_stage_mask,
+                      VkPipelineStageFlags const dst_stage_mask,
+                      uint32_t const memory_barrier_count,
+                      VkMemoryBarrier const * const memory_barriers,
+                      uint32_t const buffer_memory_barrier_count,
+                      VkBufferMemoryBarrier const * const buffer_memory_barriers,
+                      uint32_t const image_memory_barrier_count,
+                      VkImageMemoryBarrier const * const image_memory_barriers)
+{
+   if (event_count == 0) {
+      return;
+   }
+
+   for (uint32_t event_index = 0; event_index < event_count; ++event_index) {
+      terakan_cmd_wait_event(command_buffer, events[event_index]);
+   }
+
+   vk_common_CmdPipelineBarrier(
+      command_buffer, src_stage_mask, dst_stage_mask, 0, memory_barrier_count, memory_barriers,
+      buffer_memory_barrier_count, buffer_memory_barriers, image_memory_barrier_count,
+      image_memory_barriers);
 }

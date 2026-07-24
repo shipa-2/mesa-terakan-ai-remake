@@ -55,6 +55,19 @@
 #include <stdint.h>
 #include <string.h>
 
+VKAPI_ATTR void VKAPI_CALL
+terakan_GetImageSparseMemoryRequirements2(
+   UNUSED VkDevice const device,
+   UNUSED VkImageSparseMemoryRequirementsInfo2 const * const info,
+   uint32_t * const sparse_memory_requirement_count_out,
+   UNUSED VkSparseImageMemoryRequirements2 * const sparse_memory_requirements_out)
+{
+   /* Sparse images can't be created because no sparse features are exposed. Keep both this Vulkan
+    * 1.1 entrypoint and the Vulkan 1.0 vk_common wrapper well-defined by returning an empty list.
+    */
+   *sparse_memory_requirement_count_out = 0;
+}
+
 struct terakan_screen_rect
 terakan_vk_rect_to_screen_rect(VkRect2D rect, struct terakan_screen_rect const clip_rect)
 {
