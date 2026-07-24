@@ -571,9 +571,6 @@ terakan_meta_copy_buffer_image_translate_region_image(
       MIN2(rect_height_blocks_unclamped,
            subresource_height_blocks - region_image_out->rect_blocks.bounds[0][1]);
    if (unlikely(terakan_screen_rect_is_empty(region_image_out->rect_blocks))) {
-      /* Buffer extent calculations, such as those combining pitches and actual rectangle extents,
-       * may subtract 1 from the dimensions.
-       */
       return false;
    }
 
@@ -596,7 +593,7 @@ terakan_meta_copy_buffer_image_translate_region_image(
 
 VKAPI_ATTR void VKAPI_CALL
 terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
-                              VkCopyBufferToImageInfo2 const * const pCopyBufferToImageInfo)
+                               VkCopyBufferToImageInfo2 const * const pCopyBufferToImageInfo)
 {
    struct terakan_gfx_command_writer * const command_writer =
       terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx;
@@ -721,6 +718,21 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
          terakan_hw_config_sqk_set_resource_fs(
             &command_writer->hw_config_sqk, TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META,
             buffer->bo, &buffer_descriptor);
+         /* Meta shaders use VTX fetch (BUFFER_ID=TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META)
+          * to read from the source buffer. VTX fetch reads from resources_vi_[], but set_resource_fs
+          * only writes to resources_fs_[]. We must also set the descriptor in the VTX resource array.
+          */
+         terakan_hw_config_sqk_set_resource_vi(
+            &command_writer->hw_config_sqk, TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META,
+            buffer->bo, &buffer_descriptor);
+         /* Emit the VTX resource descriptor to hardware before the meta draw.
+          * The meta draw path (terakan_meta_before_draw → before_hw_draw) only emits
+          * barriers, not config state. Without this, the VTX resource is never emitted
+          * and the meta shader reads garbage from an unset VTX resource slot.
+          */
+         command_writer->hw_config_sqk.vi_.resources_used |=
+            BITFIELD_BIT(TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META);
+         terakan_hw_config_sqk_emit_modified_for_draw(command_writer);
 
          terakan_meta_draw_rect(command_writer, region_image.rect_blocks, image_descriptor_slices);
 

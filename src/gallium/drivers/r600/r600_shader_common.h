@@ -127,11 +127,17 @@ union r600_shader_key {
 		unsigned        apply_sample_id_mask:1;
 		unsigned        dual_source_blend:1;
 	} ps;
-	struct {
+struct {
 		unsigned        first_atomic_counter:4;
 		unsigned	as_es:1; /* export shader */
 		unsigned	as_ls:1; /* local shader */
 		unsigned	as_gs_a:1;
+		/* Terakan: when set, SFN must keep all vertex inputs even if
+		 * they appear unused after dead code elimination. Prevents
+		 * loss of passthrough inputs (e.g. frag_tex_coord1 = in_tex_coord1)
+		 * that SFN incorrectly optimizes away.
+		 */
+		unsigned	keep_all_vertex_inputs:1;
 	} vs;
 	struct {
 		unsigned        first_atomic_counter:4;

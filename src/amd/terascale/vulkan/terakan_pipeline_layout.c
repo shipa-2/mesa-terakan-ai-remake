@@ -109,41 +109,41 @@ terakan_CmdBindDescriptorSets(VkCommandBuffer const commandBuffer,
             uint8_t const range_shader_base =
                shader_resource_set_base + range->first_shader_descriptor;
             if (range->first_dynamic_offset != UINT16_MAX) {
-               uint32_t const * const range_dynamic_offsets =
-                  set_dynamic_offsets + range->first_dynamic_offset;
-               for (uint8_t resource_index = 0; resource_index < range->descriptor_count;
-                    ++resource_index) {
-                  struct terakan_descriptor_set_resource const * const set_resource =
-                     &range_set_resources[resource_index];
-                  struct terakan_resource_descriptor resource = set_resource->resource;
-                  /* Because descriptors for bindings not statically referenced by the pipeline can
-                   * be undefined, the BO pointer must not be dereferenced here as it may be
-                   * outdated.
-                   */
-                  /* TODO(Triang3l): #MemoryIntegrity with an additional remaining size variable. */
-                  if (set_resource->bo != NULL) {
-                     assert(G_03001C_TYPE(resource.resource[7]) ==
-                            V_03001C_SQ_TEX_VTX_VALID_BUFFER);
-                     uint64_t const resource_address =
-                        (resource.resource[0] |
-                         ((uint64_t)G_030008_BASE_ADDRESS_HI(resource.resource[2]) << 32)) +
-                        range_dynamic_offsets[resource_index];
-                     resource.resource[0] = (uint32_t)resource_address;
-                     resource.resource[2] = (resource.resource[2] & C_030008_BASE_ADDRESS_HI) |
-                                            S_030008_BASE_ADDRESS_HI(resource_address >> 32);
-                  }
-                  sqk_set_functions->resource(&command_writer->hw_config_sqk,
-                                              range_shader_base + resource_index, set_resource->bo,
-                                              &resource);
+                uint32_t const * const range_dynamic_offsets =
+                   set_dynamic_offsets + range->first_dynamic_offset;
+                for (uint8_t resource_index = 0; resource_index < range->descriptor_count;
+                     ++resource_index) {
+                   struct terakan_descriptor_set_resource const * const set_resource =
+                      &range_set_resources[resource_index];
+                   struct terakan_resource_descriptor resource = set_resource->resource;
+                   /* Because descriptors for bindings not statically referenced by the pipeline can
+                    * be undefined, the BO pointer must not be dereferenced here as it may be
+                    * outdated.
+                    */
+                   /* TODO(Triang3l): #MemoryIntegrity with an additional remaining size variable. */
+                   if (set_resource->bo != NULL) {
+                      assert(G_03001C_TYPE(resource.resource[7]) ==
+                             V_03001C_SQ_TEX_VTX_VALID_BUFFER);
+                      uint64_t const resource_address =
+                         (resource.resource[0] |
+                          ((uint64_t)G_030008_BASE_ADDRESS_HI(resource.resource[2]) << 32)) +
+                         range_dynamic_offsets[resource_index];
+                      resource.resource[0] = (uint32_t)resource_address;
+                      resource.resource[2] = (resource.resource[2] & C_030008_BASE_ADDRESS_HI) |
+                                             S_030008_BASE_ADDRESS_HI(resource_address >> 32);
+                   }
+                   sqk_set_functions->resource(&command_writer->hw_config_sqk,
+                                               range_shader_base + resource_index, set_resource->bo,
+                                               &resource);
                }
             } else {
-               for (uint8_t resource_index = 0; resource_index < range->descriptor_count;
-                    ++resource_index) {
-                  struct terakan_descriptor_set_resource const * const resource =
-                     &range_set_resources[resource_index];
-                  sqk_set_functions->resource(&command_writer->hw_config_sqk,
-                                              range_shader_base + resource_index, resource->bo,
-                                              &resource->resource);
+                for (uint8_t resource_index = 0; resource_index < range->descriptor_count;
+                     ++resource_index) {
+                   struct terakan_descriptor_set_resource const * const resource =
+                      &range_set_resources[resource_index];
+                   sqk_set_functions->resource(&command_writer->hw_config_sqk,
+                                               range_shader_base + resource_index, resource->bo,
+                                               &resource->resource);
                }
             }
          }
@@ -367,4 +367,27 @@ terakan_CreatePipelineLayout(VkDevice const deviceHandle,
    }
    *pPipelineLayout = terakan_pipeline_layout_to_handle(layout);
    return VK_SUCCESS;
+}
+
+VKAPI_ATTR void VKAPI_CALL
+terakan_GetDescriptorSetLayoutSupport(VkDevice device,
+                                      VkDescriptorSetLayoutCreateInfo const * const pCreateInfo,
+                                      VkDescriptorSetLayoutSupport * const pSupport)
+{
+   (void)device;
+   /* Validate descriptor set layout against hardware limits. */
+   uint32_t total_descriptors = 0;
+   for (uint32_t i = 0; i < pCreateInfo->bindingCount; ++i) {
+      total_descriptors += pCreateInfo->pBindings[i].descriptorCount;
+   }
+   /* Terakan supports up to 128 total descriptors per set. */
+   pSupport->supported = total_descriptors <= 128;
+}
+
+VKAPI_ATTR void VKAPI_CALL
+terakan_GetDescriptorSetLayoutSupportKHR(VkDevice device,
+                                         VkDescriptorSetLayoutCreateInfo const * const pCreateInfo,
+                                         VkDescriptorSetLayoutSupport * const pSupport)
+{
+   terakan_GetDescriptorSetLayoutSupport(device, pCreateInfo, pSupport);
 }

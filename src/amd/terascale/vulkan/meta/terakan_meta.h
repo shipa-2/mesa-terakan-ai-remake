@@ -55,6 +55,7 @@ struct terakan_meta_shader {
    struct terakan_meta_shader_description r9xx;
 
    uint16_t kcache_used;
+   uint32_t samplers_used;
    /* Whether `TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META` is used. */
    bool primary_meta_resource_used;
    /* Whether `TERAKAN_RESOURCE_RANGE_NON_PIXEL_STAGE_SPECIFIC` is used.

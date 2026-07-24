@@ -32,6 +32,7 @@ namespace r600 {
 
 struct ShaderBindingLayout {
    uint8_t texture_resource_offset = 0;
+   bool keep_all_vertex_inputs = false;
 };
 
 class ShaderIO {

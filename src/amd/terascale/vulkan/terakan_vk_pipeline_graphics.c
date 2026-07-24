@@ -109,6 +109,22 @@ terakan_vk_pipeline_graphics_vertex_input_init_without_fs_linkage_and_creation(
       uint32_t const bindings_valid =
          state->vi->bindings_valid & BITFIELD_MASK(TERAKAN_VK_STATE_MAX_VERTEX_BINDINGS);
 
+      static bool terakan_debug = false;
+      static bool terakan_debug_initialized = false;
+      if (!terakan_debug_initialized) {
+         terakan_debug = getenv("TERAKAN_DEBUG") != NULL && getenv("TERAKAN_DEBUG")[0] != '\0';
+         terakan_debug_initialized = true;
+      }
+
+      if (terakan_debug) {
+         fprintf(stderr, "[TERAKAN] pipeline_vi_init: bindings_valid=0x%x attrs_valid=0x%x\n",
+                 bindings_valid, state->vi->attributes_valid);
+         u_foreach_bit (bi, bindings_valid) {
+            fprintf(stderr, "[TERAKAN]   binding[%u] stride=%u\n",
+                    bi, state->vi->bindings[bi].stride);
+         }
+      }
+
       /* Always initialize strides from the pipeline as defaults. When MESA_VK_DYNAMIC_VI is set,
        * the application can override strides later via vkCmdSetVertexInputEXT or
        * vkCmdBindVertexBuffers2.
@@ -144,11 +160,25 @@ terakan_vk_pipeline_graphics_vertex_input_init_without_fs_linkage_and_creation(
              TERASCALE_FORMAT_INDEX_INVALID) {
             continue;
          }
-         vertex_input->sq_pgm_fetch.layout.attribute_format_fetch_word1[attribute_index] =
-            attribute_format_fetch_word1;
-         vertex_input->sq_pgm_fetch.layout.attribute_bindings[attribute_index] = attribute->binding;
-         vertex_input->sq_pgm_fetch.layout.attribute_offsets[attribute_index] =
-            (uint16_t)attribute->offset;
+          vertex_input->sq_pgm_fetch.layout.attribute_format_fetch_word1[attribute_index] =
+             attribute_format_fetch_word1;
+          vertex_input->sq_pgm_fetch.layout.attribute_bindings[attribute_index] = attribute->binding;
+          vertex_input->sq_pgm_fetch.layout.attribute_offsets[attribute_index] =
+             (uint16_t)attribute->offset;
+
+          {
+             static bool terakan_vi_debug = false;
+             static bool terakan_vi_debug_init = false;
+             if (!terakan_vi_debug_init) {
+                terakan_vi_debug = getenv("TERAKAN_DEBUG") != NULL;
+                terakan_vi_debug_init = true;
+             }
+             if (terakan_vi_debug) {
+                fprintf(stderr, "[TERAKAN] PIPE_VI attr_idx=%u binding=%u offset=%u fmt_fetch_w1=0x%08x\n",
+                        attribute_index, attribute->binding,
+                        attribute->offset, attribute_format_fetch_word1);
+             }
+          }
          struct vk_vertex_binding_state const * const attribute_binding =
             &state->vi->bindings[attribute->binding];
          if (attribute_binding->input_rate == VK_VERTEX_INPUT_RATE_INSTANCE) {
@@ -1142,6 +1172,7 @@ terakan_vk_pipeline_graphics_create(struct terakan_device * const device,
    if (fetch_shader_is_static) {
       pipeline->vertex_input.sq_pgm_fetch.layout.attributes_used =
          pipeline->shaders[MESA_SHADER_VERTEX].vs.vertex_attributes_needed;
+
       terakan_vertex_input_create_fs_code(&pipeline->vertex_input.sq_pgm_fetch.layout,
                                           terakan_device_physical_device(device)->chip_info.is_r9xx,
                                           &pipeline->vertex_input.sq_pgm_fetch.resource_usage,

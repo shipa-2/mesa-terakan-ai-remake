@@ -50,7 +50,7 @@ optimize(Shader& shader)
 
 class DCEVisitor : public InstrVisitor {
 public:
-   DCEVisitor();
+   DCEVisitor(bool keep_all_vertex_inputs = false);
 
    void visit(AluInstr *instr) override;
    void visit(AluGroup *instr) override;
@@ -72,12 +72,13 @@ public:
    void visit(RatInstr *instr) override { (void)instr; };
 
    bool progress;
+   bool m_keep_all_vertex_inputs;
 };
 
 bool
 dead_code_elimination(Shader& shader)
 {
-   DCEVisitor dce;
+   DCEVisitor dce(shader.binding_layout().keep_all_vertex_inputs);
 
    do {
 
@@ -101,8 +102,9 @@ dead_code_elimination(Shader& shader)
    return dce.progress;
 }
 
-DCEVisitor::DCEVisitor():
-    progress(false)
+DCEVisitor::DCEVisitor(bool keep_all_vertex_inputs):
+    progress(false),
+    m_keep_all_vertex_inputs(keep_all_vertex_inputs)
 {
 }
 
@@ -194,6 +196,15 @@ DCEVisitor::visit(FetchInstr *instr)
 
    if (has_uses)
       return;
+
+   /* Terakan workaround: When keep_all_vertex_inputs is set, prevent DCE from removing
+    * vertex fetch instructions even if their results appear unused. SFN optimization may
+    * incorrectly determine that passthrough inputs (e.g., frag_tex_coord1 = in_tex_coord1)
+    * are dead, but they are needed for multi-texture rendering.
+    */
+   if (m_keep_all_vertex_inputs) {
+      return;
+   }
 
    sfn_log << SfnLog::opt << "set dead: " << *instr << "\n";
 

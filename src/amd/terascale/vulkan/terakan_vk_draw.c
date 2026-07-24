@@ -177,15 +177,29 @@ terakan_vk_cmd_draw_indirect(VkCommandBuffer const commandBuffer, VkBuffer const
 
    terakan_app_config_draw_set_vgt_dma_index_buffer_draw_indexed(&command_writer->app_config_draw,
                                                                  indexed);
-   /* Draw parameters are loaded from the indirect buffer by the command processor. */
-   terakan_vk_draw_set_vertex_instance_offsets(command_writer, 0, 0);
 
    terakan_vk_before_draw(command_writer);
 
    terakan_vk_draw_emit_set_base(command_writer, buffer->bo);
 
+   /* For indirect draws, the CP reads firstInstance from the indirect buffer, but the SFN
+    * backend reads load_base_instance from push constants kcache buffer. We must map the
+    * indirect buffer and set base_instance per draw so gl_InstanceIndex is correct.
+    * This is critical for apps using SSBO indexed by gl_InstanceIndex (e.g., STK).
+    */
+   void * const indirect_map = buffer->bo->mapping;
+   uint32_t const indirect_va_offset =
+      (uint32_t)(buffer->va - buffer->bo->va + offset);
    uint32_t bo_relative_offset = terakan_vk_buffer_bo_relative_offset(buffer, offset);
    for (uint32_t draw_index = 0; draw_index < drawCount; ++draw_index) {
+      if (likely(indirect_map != NULL)) {
+         uint32_t const * const cmd =
+            (uint32_t const *)((char *)indirect_map + indirect_va_offset + draw_index * stride);
+         uint32_t const first_instance = indexed ? cmd[4] : cmd[3];
+         uint32_t const first_vertex = indexed ? 0 : cmd[0];
+         terakan_vk_draw_set_vertex_instance_offsets(command_writer, first_vertex, first_instance);
+         terakan_gfx_command_writer_before_app_draw(command_writer);
+      }
       terakan_vk_draw_emit_draw_indirect(command_writer, bo_relative_offset, indexed);
       bo_relative_offset += stride;
    }

@@ -35,6 +35,7 @@
 #include "util/compiler.h"
 #include "util/macros.h"
 #include "vk_alloc.h"
+#include "vk_descriptor_update_template.h"
 #include "vk_log.h"
 
 #include <assert.h>
@@ -272,6 +273,62 @@ terakan_UpdateDescriptorSets(UNUSED VkDevice const device, uint32_t const descri
                    sizeof(struct terakan_descriptor_set_sampler) *
                       (src_binding->first_set_sampler + descriptor_copy->srcArrayElement),
                 sizeof(struct terakan_descriptor_set_sampler) * descriptor_copy->descriptorCount);
+      }
+   }
+}
+
+VKAPI_ATTR void VKAPI_CALL
+terakan_UpdateDescriptorSetWithTemplate(
+   VkDevice const device, VkDescriptorSet const descriptor_set,
+   VkDescriptorUpdateTemplate const descriptor_update_template, void const * const data)
+{
+   struct vk_descriptor_update_template const * const update_template =
+      vk_descriptor_update_template_from_handle(descriptor_update_template);
+
+   for (uint32_t entry_index = 0; entry_index < update_template->entry_count; ++entry_index) {
+      struct vk_descriptor_template_entry const * const entry =
+         &update_template->entries[entry_index];
+
+      for (uint32_t descriptor_index = 0; descriptor_index < entry->array_count;
+           ++descriptor_index) {
+         void const * const descriptor_data =
+            (char const *)data + entry->offset + descriptor_index * entry->stride;
+         VkWriteDescriptorSet write = {
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstSet = descriptor_set,
+            .dstBinding = entry->binding,
+            .dstArrayElement = entry->array_element + descriptor_index,
+            .descriptorCount = 1,
+            .descriptorType = entry->type,
+         };
+
+         switch (entry->type) {
+         case VK_DESCRIPTOR_TYPE_SAMPLER:
+         case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+         case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+         case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+         case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
+            write.pImageInfo = descriptor_data;
+            break;
+
+         case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
+         case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+            write.pTexelBufferView = descriptor_data;
+            break;
+
+         case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+         case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+         case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
+         case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
+            write.pBufferInfo = descriptor_data;
+            break;
+
+         default:
+            assert(!"Unsupported descriptor type in update template");
+            continue;
+         }
+
+         terakan_UpdateDescriptorSets(device, 1, &write, 0, NULL);
       }
    }
 }

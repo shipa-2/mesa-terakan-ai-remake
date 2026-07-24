@@ -499,6 +499,130 @@ terakan_CmdClearColorImage(VkCommandBuffer const commandBuffer, VkImage const im
 }
 
 VKAPI_ATTR void VKAPI_CALL
+terakan_CmdClearDepthStencilImage(
+   VkCommandBuffer const commandBuffer, VkImage const imageHandle,
+   UNUSED VkImageLayout const imageLayout, VkClearDepthStencilValue const * const pDepthStencil,
+   uint32_t const rangeCount, VkImageSubresourceRange const * const pRanges)
+{
+   struct terakan_image const * const image = terakan_image_from_handle(imageHandle);
+
+   enum terascale_r8xx_depth_format depth_format = TERASCALE_R8XX_DEPTH_FORMAT_INVALID;
+   bool image_has_stencil = false;
+   if (unlikely(!terascale_get_r8xx_depth_stencil_format(
+          vk_format_to_pipe_format(image->vk.format), &depth_format, &image_has_stencil))) {
+      return;
+   }
+
+   struct terakan_gfx_command_writer * const command_writer =
+      terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx;
+
+   struct terakan_meta_config_draw_begin_options const meta_begin_options = {
+      .vgt_primitive_type = V_008958_DI_PT_RECTLIST,
+      .cb_and_db_shader_control_mode = TERAKAN_META_CONFIG_DRAW_BEGIN_CB_MODE_DYNAMIC,
+      .rasterization =
+         {
+            .enable = true,
+            .db_explicit = true,
+         },
+   };
+   terakan_meta_config_draw_begin(command_writer, &meta_begin_options);
+   terakan_meta_config_draw_set_db_shader_control(command_writer,
+                                                  TERAKAN_SHADER_DB_SHADER_CONTROL_IDENTITY);
+   terakan_meta_config_draw_set_cb_color_control_for_mode(command_writer, V_028808_CB_DISABLE);
+   terakan_meta_config_draw_set_sq_pgm_vs(command_writer, TERAKAN_META_SHADER_CLEAR_DEPTH_VS);
+   terakan_meta_config_draw_set_sq_pgm_ps(command_writer, TERAKAN_META_SHADER_DUMMY_OPAQUE_PS);
+
+   float depth_clear_value = pDepthStencil->depth;
+   if (depth_format != TERASCALE_R8XX_DEPTH_FORMAT_32_FLOAT ||
+       !terakan_gfx_command_writer_device(command_writer)
+           ->vk.enabled_extensions.EXT_depth_range_unrestricted) {
+      depth_clear_value = CLAMP(depth_clear_value, 0.0f, 1.0f);
+   }
+   float const depth_clear_constants[TERAKAN_META_CLEAR_DEPTH_CONSTS_COUNT] = {
+      [TERAKAN_META_CLEAR_DEPTH_CONST_CLEAR_VALUE] = depth_clear_value,
+   };
+   terakan_meta_config_draw_set_kcache_push_constants(
+      command_writer, sizeof(depth_clear_constants), depth_clear_constants, true, false);
+   terakan_meta_config_draw_set_db_stencilrefmask(
+      command_writer, false,
+      S_028430_STENCILREF(pDepthStencil->stencil) | S_028430_STENCILWRITEMASK(0xFF));
+
+   bool const image_is_3d = image->vk.image_type == VK_IMAGE_TYPE_3D;
+
+   for (uint32_t range_index = 0; range_index < rangeCount; ++range_index) {
+      VkImageSubresourceRange const * const range = &pRanges[range_index];
+      VkImageAspectFlags aspects =
+         range->aspectMask & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT);
+      if (!image_has_stencil) {
+         aspects &= ~VK_IMAGE_ASPECT_STENCIL_BIT;
+      }
+      if (unlikely(aspects == 0)) {
+         continue;
+      }
+
+      uint32_t db_depth_control = 0;
+      if (aspects & VK_IMAGE_ASPECT_DEPTH_BIT) {
+         db_depth_control |= S_028800_Z_ENABLE(true) | S_028800_Z_WRITE_ENABLE(true) |
+                             S_028800_ZFUNC(V_028800_STENCILFUNC_ALWAYS);
+      }
+      if (aspects & VK_IMAGE_ASPECT_STENCIL_BIT) {
+         db_depth_control |= S_028800_STENCIL_ENABLE(1) |
+                             S_028800_STENCILFUNC(V_028800_STENCILFUNC_ALWAYS) |
+                             S_028800_STENCILFAIL(V_028800_STENCIL_REPLACE) |
+                             S_028800_STENCILZPASS(V_028800_STENCIL_REPLACE) |
+                             S_028800_STENCILZFAIL(V_028800_STENCIL_REPLACE);
+      }
+      terakan_meta_config_draw_set_db_depth_control(command_writer, db_depth_control);
+
+      struct terakan_image_descriptor_subresource_range subresource_range = {
+         .base_mip_level = range->baseMipLevel,
+         .max_level_count = range->levelCount,
+         .max_depth_or_layer_count = 1,
+      };
+      if (!image_is_3d) {
+         subresource_range.base_z_or_array_layer = range->baseArrayLayer;
+         subresource_range.max_depth_or_layer_count = range->layerCount;
+      }
+      if (unlikely(!terakan_image_descriptor_subresource_range_sanitize(
+             image, &subresource_range, false))) {
+         continue;
+      }
+
+      uint32_t const level_count = subresource_range.max_level_count;
+      for (uint32_t level_index = 0; level_index < level_count; ++level_index) {
+         struct terakan_image_descriptor_subresource_range level_range = subresource_range;
+         level_range.base_mip_level += level_index;
+         level_range.max_level_count = 1;
+         if (image_is_3d) {
+            level_range.base_z_or_array_layer = 0;
+            level_range.max_depth_or_layer_count =
+               u_minify(image->vk.extent.depth, level_range.base_mip_level);
+         }
+
+         struct terakan_depth_stencil_descriptor descriptor;
+         if (unlikely(!terakan_image_create_depth_stencil_descriptor(
+                image, depth_format, image_has_stencil, &level_range, &descriptor))) {
+            continue;
+         }
+         terakan_meta_config_draw_set_db_depth_stencil_buffer(command_writer, image->bo,
+                                                              &descriptor);
+
+         struct terakan_screen_rect const rect = {
+            .bounds =
+               {
+                  {0, 0},
+                  {
+                     u_minify(image->vk.extent.width, level_range.base_mip_level),
+                     u_minify(image->vk.extent.height, level_range.base_mip_level),
+                  },
+               },
+         };
+         terakan_meta_draw_rect(command_writer, rect, level_range.max_depth_or_layer_count);
+      }
+   }
+}
+
+VKAPI_ATTR void VKAPI_CALL
 terakan_CmdClearAttachments(VkCommandBuffer const commandBuffer, uint32_t const attachmentCount,
                             VkClearAttachment const * const pAttachments, uint32_t const rectCount,
                             VkClearRect const * const pRects)

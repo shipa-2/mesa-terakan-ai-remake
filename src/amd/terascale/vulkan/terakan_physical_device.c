@@ -440,7 +440,7 @@ terakan_physical_device_get_capabilities(
    features_out->independentBlend = true;
    /* TODO(Triang3l): geometryShader. */
    /* TODO(Triang3l): tessellationShader. */
-   /* TODO(Triang3l): sampleRateShading. */
+   features_out->sampleRateShading = true;
    features_out->dualSrcBlend = true;
    features_out->logicOp = true;
    features_out->multiDrawIndirect = true;
@@ -448,9 +448,9 @@ terakan_physical_device_get_capabilities(
    features_out->depthClamp = true;
    features_out->depthBiasClamp = true;
    features_out->fillModeNonSolid = true;
-   /* TODO(Triang3l): wideLines. */
-   /* TODO(Triang3l): largePoints. */
-   /* TODO(Triang3l): alphaToOne. */
+   features_out->wideLines = true;
+   features_out->largePoints = true;
+   features_out->alphaToOne = true;
    features_out->multiViewport = true;
    features_out->samplerAnisotropy = true;
    features_out->textureCompressionBC = true;
@@ -705,7 +705,15 @@ terakan_physical_device_get_capabilities(
    properties_out->maxViewportDimensions[1] = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT;
    properties_out->viewportBoundsRange[0] = TERAKAN_HW_CONFIG_DRAW_PA_CL_GB_MIN;
    properties_out->viewportBoundsRange[1] = TERAKAN_HW_CONFIG_DRAW_PA_CL_GB_MAX;
-   properties_out->viewportSubPixelBits = 8;
+    properties_out->viewportSubPixelBits = 8;
+
+    /* Wide lines and large points. */
+    properties_out->lineWidthRange[0] = 1.0f;
+    properties_out->lineWidthRange[1] = 8191.0f;
+    properties_out->lineWidthGranularity = 1.0f / 16.0f;
+    properties_out->pointSizeRange[0] = 1.0f;
+    properties_out->pointSizeRange[1] = 8191.0f;
+    properties_out->pointSizeGranularity = 1.0f / 16.0f;
 
    properties_out->minMemoryMapAlignment = min_memory_map_alignment;
 
@@ -818,9 +826,26 @@ terakan_physical_device_get_capabilities(
    /* VK_KHR_bind_memory2 (#158, Vulkan 1.1). */
    extensions_out->KHR_bind_memory2 = true;
 
-   /* TODO(Triang3l) VK_KHR_maintenance3 (#169, Vulkan 1.1) when vkGetDescriptorSetLayoutSupport
-    * is implemented.
-    */
+   /* VK_KHR_maintenance3 (#169, Vulkan 1.1). */
+   extensions_out->KHR_maintenance3 = true;
+
+   /* VK_KHR_external_semaphore — promoted 1.1 extension (type definitions only). */
+   extensions_out->KHR_external_semaphore = true;
+
+   /* Vulkan 1.1 core properties. */
+
+   /* SubgroupProperties. */
+   properties_out->subgroupSize = 1u << chip_info->wave_lanes_log2;
+   properties_out->subgroupSupportedStages = VK_SHADER_STAGE_COMPUTE_BIT;
+   properties_out->subgroupSupportedOperations = VK_SUBGROUP_FEATURE_BASIC_BIT;
+   properties_out->subgroupQuadOperationsInAllStages = VK_FALSE;
+
+   /* DriverProperties. */
+   properties_out->driverID = VK_DRIVER_ID_MESA_RADV;
+   snprintf(properties_out->driverName, sizeof(properties_out->driverName), "Terakan");
+   snprintf(properties_out->driverInfo, sizeof(properties_out->driverInfo),
+            "Mesa %s", PACKAGE_VERSION);
+   properties_out->conformanceVersion = (VkConformanceVersion){1, 1, 0, 0};
 
    /* VK_KHR_timeline_semaphore (#208, Vulkan 1.2). */
    extensions_out->KHR_timeline_semaphore = true;

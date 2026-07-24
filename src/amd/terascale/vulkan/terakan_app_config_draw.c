@@ -1151,9 +1151,8 @@ terakan_app_config_draw_apply_sq_pgm_fragment(
 
    TERAKAN_APP_CONFIG_DRAW_ASSERT_MAY_DEPEND_ON(CB_COLOR_UAV_AND_UNUSED_MRT, SQ_PGM_FRAGMENT);
    uint8_t const rtv_dsb_export_count = util_bitcount(rtv_dsb_uncompacted_exports);
-
-   /* Don't overwrite uav_used when compute is active — it was already set from the compute
-    * shader in terakan_app_config_compute_bind_shader.
+   /* Compute shares the CB/RAT UAV path with fragment shaders. Preserve the compute UAV usage
+    * installed by terakan_app_config_compute_bind_shader while a compute pipeline is active.
     */
    if (command_writer->app_config_compute.shader == NULL) {
       static BITSET_WORD const
@@ -1912,7 +1911,8 @@ terakan_app_config_draw_apply_cb_color_uav_and_unused_mrt(
                      : TERAKAN_RESOURCE_RANGE_UAV_IMMEDIATE_BASE_PIXEL) +
          uav_count;
 
-      if (BITSET_SET(app_config->cb_color_uav_and_unused_mrt_.uav_bound, uav_uncompacted_index)) {
+      if (BITSET_TEST(app_config->cb_color_uav_and_unused_mrt_.uav_bound,
+                      uav_uncompacted_index)) {
          struct terakan_app_config_draw_cb_color_uav const * const uav =
             &app_config->cb_color_uav_and_unused_mrt_.uav[uav_uncompacted_index];
 
@@ -1939,11 +1939,13 @@ terakan_app_config_draw_apply_cb_color_uav_and_unused_mrt(
          if (is_compute) {
             terakan_hw_config_sqk_set_resource_cs(&command_writer->hw_config_sqk,
                                                   uav_immediate_resource_index,
-                                                  device->uav_immediate_bo, &uav_immediate_resource);
+                                                  device->uav_immediate_bo,
+                                                  &uav_immediate_resource);
          } else {
             terakan_hw_config_sqk_set_resource_fs(&command_writer->hw_config_sqk,
                                                   uav_immediate_resource_index,
-                                                  device->uav_immediate_bo, &uav_immediate_resource);
+                                                  device->uav_immediate_bo,
+                                                  &uav_immediate_resource);
          }
       } else {
          terakan_hw_config_draw_set_cb_color_unbound(hw_config, color_index,

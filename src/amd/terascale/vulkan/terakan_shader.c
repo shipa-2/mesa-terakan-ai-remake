@@ -324,6 +324,8 @@ terakan_shader_lower_and_optimize_post_link(
     */
 
    NIR_PASS(_, nir, nir_lower_global_vars_to_local);
+   NIR_PASS(_, nir, nir_split_var_copies);
+   NIR_PASS(_, nir, nir_lower_var_copies);
    NIR_PASS(_, nir, nir_lower_vars_to_ssa);
    do {
       progress = false;

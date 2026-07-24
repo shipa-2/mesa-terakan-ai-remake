@@ -38,6 +38,8 @@
 #include "vk_enum_to_str.h"
 #include "vk_format.h"
 #include "vk_graphics_state.h"
+
+#include <stdlib.h>
 #include "vk_log.h"
 
 #include <math.h>
@@ -346,9 +348,28 @@ typedef void (*terakan_vk_state_dynamic_apply_function)(
 static void
 terakan_vk_state_dynamic_apply_vi(struct terakan_gfx_command_writer * const command_writer)
 {
+   static bool terakan_debug = false;
+   static bool terakan_debug_initialized = false;
+   if (!terakan_debug_initialized) {
+      terakan_debug = getenv("TERAKAN_DEBUG") != NULL && getenv("TERAKAN_DEBUG")[0] != '\0';
+      terakan_debug_initialized = true;
+   }
+
    terakan_app_config_draw_set_sq_pgm_fetch_static_fs(&command_writer->app_config_draw, NULL);
    struct vk_vertex_input_state const * const vertex_input_state =
       command_writer->base.command_buffer->vk.dynamic_graphics_state.vi;
+
+   if (terakan_debug) {
+      fprintf(stderr, "[TERAKAN] apply_vi: bindings_valid=0x%x attrs_valid=0x%x\n",
+              vertex_input_state->bindings_valid, vertex_input_state->attributes_valid);
+      u_foreach_bit (bi, vertex_input_state->bindings_valid &
+                              BITFIELD_MASK(TERAKAN_VK_STATE_MAX_VERTEX_BINDINGS)) {
+         struct vk_vertex_binding_state const * const b = &vertex_input_state->bindings[bi];
+         fprintf(stderr, "[TERAKAN]   binding[%u] stride=%u rate=%u divisor=%u\n",
+                 bi, b->stride, b->input_rate, b->divisor);
+      }
+   }
+
    uint32_t attributes_unbound = BITFIELD_MASK(TERAKAN_VK_STATE_MAX_VERTEX_ATTRIBUTES);
    u_foreach_bit (attribute_index, vertex_input_state->attributes_valid &
                                       BITFIELD_MASK(TERAKAN_VK_STATE_MAX_VERTEX_ATTRIBUTES)) {
@@ -378,6 +399,21 @@ terakan_vk_state_dynamic_apply_vi(struct terakan_gfx_command_writer * const comm
    u_foreach_bit (attribute_index, attributes_unbound) {
       terakan_app_config_draw_set_sq_pgm_fetch_dynamic_attribute_unbound(
          &command_writer->app_config_draw, attribute_index);
+   }
+
+   /* Apply strides from dynamic vertex input state. When vkCmdSetVertexInputEXT is used,
+    * strides must be propagated to the resource descriptor stride field, otherwise vertex fetch
+    * reads with wrong stride (causes torn textures / all vertices at same position).
+    */
+   bool const use_2048_stride_as_1024 = terakan_vk_state_vertex_input_uses_2048_stride_as_1024(
+      terakan_gfx_command_writer_physical_device(command_writer));
+   u_foreach_bit (binding_index, vertex_input_state->bindings_valid &
+                                    BITFIELD_MASK(TERAKAN_VK_STATE_MAX_VERTEX_BINDINGS)) {
+      struct vk_vertex_binding_state const * const binding =
+         &vertex_input_state->bindings[binding_index];
+      terakan_app_config_draw_set_sq_pgm_and_resource_fetch_stride(
+         &command_writer->app_config_draw, binding_index, binding->stride,
+         use_2048_stride_as_1024);
    }
 }
 

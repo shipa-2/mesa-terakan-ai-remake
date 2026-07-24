@@ -45,7 +45,6 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
 #include <cstring>
 
 VkResult
@@ -69,10 +68,12 @@ terakan_shader_impl_compile(terakan_shader_impl * const shader, terakan_device *
     * DB_SHADER_CONTROL in fragment shaders.
     */
    nir_shader_gather_info(nir, nir_shader_get_entrypoint(nir));
+
    r600_lower_and_optimize_nir(nir, key, gfx_level, &so_info);
 
    r600::ShaderBindingLayout binding_layout;
    binding_layout.texture_resource_offset = 0;
+   binding_layout.keep_all_vertex_inputs = key->vs.keep_all_vertex_inputs;
 
    r600::Shader * const unscheduled_sfn_shader = r600::Shader::translate_from_nir(
       nir, &so_info, nullptr, *key, chip_info.is_r9xx ? ISA_CC_CAYMAN : ISA_CC_EVERGREEN,
@@ -138,7 +139,6 @@ terakan_shader_impl_compile(terakan_shader_impl * const shader, terakan_device *
       }
       return vk_errorf(device, VK_ERROR_UNKNOWN, "Failed to build the shader bytecode");
    }
-
    /* Fill shader registers and other info. */
 
    shader->static_state.sq_pgm_resources[0] = S_028844_NUM_GPRS(shader->shader.bc.ngpr) |

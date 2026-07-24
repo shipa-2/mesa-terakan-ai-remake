@@ -29,17 +29,47 @@ enum {
 };
 
 static uint32_t const terakan_meta_blit_image_ps_r8xx[] = {
-   S_SQ_CF_WORD0_ADDR(3) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS) |
+   S_SQ_CF_WORD0_ADDR(8),
+   S_SQ_CF_ALU_WORD1_COUNT(0) | S_SQ_CF_ALU_WORD1_BARRIER(true) |
+      EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
+
+   S_SQ_CF_WORD0_ADDR(9),
+   S_SQ_CF_ALU_WORD1_COUNT(0) | S_SQ_CF_ALU_WORD1_BARRIER(true) |
+      EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
+
+   S_SQ_CF_WORD0_ADDR(10) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS) |
       S_SQ_CF_ALU_WORD0_KCACHE_MODE0(V_SQ_CF_KCACHE_LOCK_1),
    S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(
       TERAKAN_KCACHE_DWORD_LINE(TERAKAN_META_BLIT_CONST_SCALE_X)) |
-      S_SQ_CF_ALU_WORD1_COUNT(1) | EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
+      S_SQ_CF_ALU_WORD1_COUNT(0) | S_SQ_CF_ALU_WORD1_BARRIER(true) |
+      EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
 
-   S_SQ_CF_WORD0_ADDR(6),
+   S_SQ_CF_WORD0_ADDR(11) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS) |
+      S_SQ_CF_ALU_WORD0_KCACHE_MODE0(V_SQ_CF_KCACHE_LOCK_1),
+   S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(
+      TERAKAN_KCACHE_DWORD_LINE(TERAKAN_META_BLIT_CONST_SCALE_X)) |
+      S_SQ_CF_ALU_WORD1_COUNT(0) | S_SQ_CF_ALU_WORD1_BARRIER(true) |
+      EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
+
+   S_SQ_CF_WORD0_ADDR(12) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS) |
+      S_SQ_CF_ALU_WORD0_KCACHE_MODE0(V_SQ_CF_KCACHE_LOCK_1),
+   S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(
+      TERAKAN_KCACHE_DWORD_LINE(TERAKAN_META_BLIT_CONST_SCALE_X)) |
+      S_SQ_CF_ALU_WORD1_COUNT(0) | S_SQ_CF_ALU_WORD1_BARRIER(true) |
+      EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
+
+   S_SQ_CF_WORD0_ADDR(13) | S_SQ_CF_ALU_WORD0_KCACHE_BANK0(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS) |
+      S_SQ_CF_ALU_WORD0_KCACHE_MODE0(V_SQ_CF_KCACHE_LOCK_1),
+   S_SQ_CF_ALU_WORD1_KCACHE_ADDR0(
+      TERAKAN_KCACHE_DWORD_LINE(TERAKAN_META_BLIT_CONST_SCALE_X)) |
+      S_SQ_CF_ALU_WORD1_COUNT(0) | S_SQ_CF_ALU_WORD1_BARRIER(true) |
+      EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
+
+   S_SQ_CF_WORD0_ADDR(14),
    S_SQ_CF_WORD1_COUNT(0) | S_SQ_CF_WORD1_BARRIER(true) | EG_V_SQ_CF_WORD1_SQ_CF_INST_TEX,
 
    S_SQ_CF_ALLOC_EXPORT_WORD0_TYPE(V_SQ_CF_ALLOC_EXPORT_WORD0_SQ_EXPORT_PIXEL) |
-      S_SQ_CF_ALLOC_EXPORT_WORD0_ARRAY_BASE(0) | S_SQ_CF_ALLOC_EXPORT_WORD0_RW_GPR(0),
+      S_SQ_CF_ALLOC_EXPORT_WORD0_ARRAY_BASE(0) | S_SQ_CF_ALLOC_EXPORT_WORD0_RW_GPR(2),
    S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_X(TERASCALE_SWIZZLE_X) |
       S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Y(TERASCALE_SWIZZLE_Y) |
       S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Z(TERASCALE_SWIZZLE_Z) |
@@ -47,24 +77,32 @@ static uint32_t const terakan_meta_blit_image_ps_r8xx[] = {
       S_SQ_CF_ALLOC_EXPORT_WORD1_BARRIER(true) | S_SQ_CF_ALLOC_EXPORT_WORD1_END_OF_PROGRAM(true) |
       EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_EXPORT_DONE,
 
-   /* R0.xy = R0.xy * scale + offset (single cycle; 2-cycle MUL+ADD PV hangs on Palm). */
+   /* Copy floating-point position components separately before scaling. On Palm, applying a
+    * MULADD_IEEE directly to both components aliases one source channel to the other.
+    */
+   TERAKAN_SHADER_OP1(true, 0, 'X', MOV, EG, 1, 'X', VEC_012),
+   TERAKAN_SHADER_OP1(true, 0, 'Y', MOV, EG, 1, 'Y', VEC_012),
    TERAKAN_KCACHE_DWORD_WORD0_SRC1(0, TERAKAN_META_BLIT_CONST_SCALE_X) |
-      TERAKAN_KCACHE_DWORD_WORD1_SRC2(0, TERAKAN_META_BLIT_CONST_OFF_X) |
-      TERAKAN_SHADER_OP3(false, 0, 'X', MULADD_IEEE, EG, 0, 'X', 0, 0, 0, 0, VEC_012),
+      TERAKAN_SHADER_OP2(true, 0, 'X', MUL_IEEE, EG, 0, 'X', 0, 0, VEC_012),
    TERAKAN_KCACHE_DWORD_WORD0_SRC1(0, TERAKAN_META_BLIT_CONST_SCALE_Y) |
-      TERAKAN_KCACHE_DWORD_WORD1_SRC2(0, TERAKAN_META_BLIT_CONST_OFF_Y) |
-      TERAKAN_SHADER_OP3(true, 0, 'Y', MULADD_IEEE, EG, 0, 'Y', 0, 0, 0, 0, VEC_012),
+      TERAKAN_SHADER_OP2(true, 0, 'Y', MUL_IEEE, EG, 0, 'Y', 0, 0, VEC_012),
+   TERAKAN_KCACHE_DWORD_WORD0_SRC1(0, TERAKAN_META_BLIT_CONST_OFF_X) |
+      TERAKAN_SHADER_OP2(true, 0, 'X', ADD, EG, 0, 'X', 0, 0, VEC_012),
+   TERAKAN_KCACHE_DWORD_WORD0_SRC1(0, TERAKAN_META_BLIT_CONST_OFF_Y) |
+      TERAKAN_SHADER_OP2(true, 0, 'Y', ADD, EG, 0, 'Y', 0, 0, VEC_012),
 
-   0,
-   0,
-   S_SQ_TEX_WORD0_TEX_INST(3) |
+   S_SQ_TEX_WORD0_TEX_INST(SQ_TEX_INST_SAMPLE) |
       S_SQ_TEX_WORD0_RESOURCE_ID(TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META) |
       S_SQ_TEX_WORD0_SRC_GPR(0),
-   S_SQ_TEX_WORD1_DST_GPR(0) | S_SQ_TEX_WORD1_DST_SEL_X(TERASCALE_SWIZZLE_X) |
+   S_SQ_TEX_WORD1_DST_GPR(2) | S_SQ_TEX_WORD1_DST_SEL_X(TERASCALE_SWIZZLE_X) |
       S_SQ_TEX_WORD1_DST_SEL_Y(TERASCALE_SWIZZLE_Y) |
-      S_SQ_TEX_WORD1_DST_SEL_Z(TERASCALE_SWIZZLE_Z) | S_SQ_TEX_WORD1_DST_SEL_W(TERASCALE_SWIZZLE_W),
+      S_SQ_TEX_WORD1_DST_SEL_Z(TERASCALE_SWIZZLE_Z) |
+      S_SQ_TEX_WORD1_DST_SEL_W(TERASCALE_SWIZZLE_W) |
+      S_SQ_TEX_WORD1_COORD_TYPE_X(V_SQ_TEX_WORD1_COORD_NORMALIZED) |
+      S_SQ_TEX_WORD1_COORD_TYPE_Y(V_SQ_TEX_WORD1_COORD_NORMALIZED),
    S_SQ_TEX_WORD2_SRC_SEL_X(TERASCALE_SWIZZLE_X) | S_SQ_TEX_WORD2_SRC_SEL_Y(TERASCALE_SWIZZLE_Y) |
-      S_SQ_TEX_WORD2_SRC_SEL_Z(TERASCALE_SWIZZLE_Z) | S_SQ_TEX_WORD2_SRC_SEL_W(TERASCALE_SWIZZLE_0),
+      S_SQ_TEX_WORD2_SRC_SEL_Z(TERASCALE_SWIZZLE_0) | S_SQ_TEX_WORD2_SRC_SEL_W(TERASCALE_SWIZZLE_0) |
+      S_SQ_TEX_WORD2_SAMPLER_ID(TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META),
    0,
 };
 
@@ -116,7 +154,7 @@ struct terakan_meta_shader const terakan_meta_blit_image_ps = {
             {
                .sq_pgm_resources =
                   {
-                     S_028844_NUM_GPRS(1) | TERAKAN_META_SQ_PGM_RESOURCES_COMMON,
+                     S_028844_NUM_GPRS(3) | TERAKAN_META_SQ_PGM_RESOURCES_COMMON,
                      TERAKAN_META_SQ_PGM_RESOURCES_2_COMMON,
                   },
                .stage =
@@ -126,9 +164,9 @@ struct terakan_meta_shader const terakan_meta_blit_image_ps = {
                            .sq_pgm_exports_ps = S_02884C_EXPORT_COLORS(1),
                            .spi_ps_in_control =
                               {
-                                 S_0286CC_NUM_INTERP(1) | S_0286CC_LINEAR_GRADIENT_ENA(1),
-                                 S_0286D0_FIXED_PT_POSITION_ENA(1) |
-                                    S_0286D0_FIXED_PT_POSITION_ADDR(0),
+                                 S_0286CC_NUM_INTERP(1) | S_0286CC_LINEAR_GRADIENT_ENA(1) |
+                                    S_0286CC_POSITION_ENA(1) | S_0286CC_POSITION_ADDR(1),
+                                 0,
                               },
                            .spi_baryc_cntl = S_0286E0_LINEAR_CENTER_ENA(1),
                            .cb_shader_mask = 0xF,
@@ -165,6 +203,7 @@ struct terakan_meta_shader const terakan_meta_blit_image_ps = {
             },
       },
    .kcache_used = BITFIELD_BIT(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS),
+   .samplers_used = BITFIELD_BIT(TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META),
    .primary_meta_resource_used = true,
 };
 
@@ -177,12 +216,6 @@ terakan_meta_blit_set_fs_sampler(struct terakan_gfx_command_writer * const comma
       sqk->stages_[MESA_SHADER_FRAGMENT]
          .samplers[TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META]
          .sampler;
-   bool const is_r9xx =
-      terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_r9xx;
-   if (!is_r9xx) {
-      /* R8xx: keep sqk_reset D3D11 null sampler — explicit writes hang Palm. */
-      return;
-   }
    uint32_t const xy_filter = terakan_sampler_translate_filter(filter, false);
    uint32_t const clamp = terakan_sampler_translate_address_mode(VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
 
@@ -506,6 +539,8 @@ terakan_CmdBlitImage2(VkCommandBuffer const commandBuffer,
    }
 
    if (has_scaled_regions) {
+      struct terakan_image const * const src_image =
+         terakan_image_from_handle(pBlitImageInfo->srcImage);
       if (!command_writer->meta_blit_draw_session_active) {
          terakan_meta_blit_emit_pre_draw_barriers(command_writer, same_image_scaled);
 
@@ -537,6 +572,14 @@ terakan_CmdBlitImage2(VkCommandBuffer const commandBuffer,
          terakan_meta_blit_region_scale_off(region->srcOffsets[0].y, region->srcOffsets[1].y,
                                             region->dstOffsets[0].y, region->dstOffsets[1].y,
                                             &scale_y, &off_y);
+         float const src_mip_width =
+            (float)u_minify(src_image->vk.extent.width, region->srcSubresource.mipLevel);
+         float const src_mip_height =
+            (float)u_minify(src_image->vk.extent.height, region->srcSubresource.mipLevel);
+         scale_x /= src_mip_width;
+         off_x /= src_mip_width;
+         scale_y /= src_mip_height;
+         off_y /= src_mip_height;
 
          uint32_t constants[TERAKAN_META_BLIT_CONSTS_COUNT] = {
             fui(scale_x),
