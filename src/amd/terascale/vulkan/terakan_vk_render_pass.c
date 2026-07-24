@@ -39,9 +39,18 @@ VKAPI_ATTR void VKAPI_CALL
 terakan_CmdBeginRendering(VkCommandBuffer const commandBuffer,
                           VkRenderingInfo const * const pRenderingInfo)
 {
-   struct terakan_gfx_command_writer * const command_writer =
-      terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx;
+   struct terakan_command_buffer * const command_buffer =
+      terakan_command_buffer_from_handle(commandBuffer);
+   struct terakan_gfx_command_writer * const command_writer = command_buffer->command_writer.gfx;
    struct terakan_app_config_draw * const config = &command_writer->app_config_draw;
+
+   command_buffer->rendering_flags = pRenderingInfo->flags;
+   for (unsigned color_attachment_index = 0;
+        color_attachment_index < TERAKAN_VK_STATE_MAX_COLOR_ATTACHMENTS;
+        ++color_attachment_index) {
+      command_buffer->rendering_color_resolves[color_attachment_index] =
+         (struct terakan_rendering_color_resolve){};
+   }
 
    VkSampleCountFlagBits db_eqaa_ps_iter_least_fragments_r9xx = VK_SAMPLE_COUNT_16_BIT;
 
@@ -193,6 +202,32 @@ terakan_CmdBeginRendering(VkCommandBuffer const commandBuffer,
          color_attachment_clear->colorAttachment = color_attachment_index;
          color_attachment_clear->clearValue = color_attachment->clearValue;
       }
+
+      if (color_attachment->resolveMode != VK_RESOLVE_MODE_NONE &&
+          color_attachment->resolveImageView != VK_NULL_HANDLE) {
+         struct terakan_image_view const * const resolve_view =
+            terakan_image_view_from_handle(color_attachment->resolveImageView);
+         if (resolve_view != NULL) {
+            struct terakan_rendering_color_resolve * const resolve =
+               &command_buffer->rendering_color_resolves[color_attachment_index];
+            resolve->src_image = terakan_image_to_handle(
+               container_of(color_attachment_view->vk.image, struct terakan_image, vk));
+            resolve->dst_image = terakan_image_to_handle(
+               container_of(resolve_view->vk.image, struct terakan_image, vk));
+            resolve->src_subresource = (VkImageSubresourceLayers){
+               .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+               .mipLevel = color_attachment_view->vk.base_mip_level,
+               .baseArrayLayer = color_attachment_view->vk.base_array_layer,
+               .layerCount = layer_count_minus_1 + 1,
+            };
+            resolve->dst_subresource = (VkImageSubresourceLayers){
+               .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+               .mipLevel = resolve_view->vk.base_mip_level,
+               .baseArrayLayer = resolve_view->vk.base_array_layer,
+               .layerCount = MIN2(layer_count_minus_1 + 1, resolve_view->vk.layer_count),
+            };
+         }
+      }
    }
 
    u_foreach_bit (color_attachment_index,
@@ -204,6 +239,16 @@ terakan_CmdBeginRendering(VkCommandBuffer const commandBuffer,
       pRenderingInfo->renderArea,
       (struct terakan_screen_rect){
          .bounds = {[1] = {render_area_upper_bound[0], render_area_upper_bound[1]}}});
+   command_buffer->rendering_resolve_area = (VkRect2D){
+      .offset = {
+         .x = render_area.bounds[0][0],
+         .y = render_area.bounds[0][1],
+      },
+      .extent = {
+         .width = render_area.bounds[1][0] - render_area.bounds[0][0],
+         .height = render_area.bounds[1][1] - render_area.bounds[0][1],
+      },
+   };
    terakan_app_config_draw_set_pa_vport_render_area(config, render_area);
 
    if (!(pRenderingInfo->flags & VK_RENDERING_RESUMING_BIT) && clear_attachment_count != 0) {
@@ -220,12 +265,52 @@ terakan_CmdBeginRendering(VkCommandBuffer const commandBuffer,
 }
 
 VKAPI_ATTR void VKAPI_CALL
-terakan_CmdEndRendering(UNUSED VkCommandBuffer const commandBuffer)
+terakan_CmdEndRendering(VkCommandBuffer const commandBuffer)
 {
-   /* TODO(Triang3l): Resolve the attachments. */
+   struct terakan_command_buffer * const command_buffer =
+      terakan_command_buffer_from_handle(commandBuffer);
+   if (!(command_buffer->rendering_flags & VK_RENDERING_SUSPENDING_BIT)) {
+      for (unsigned color_attachment_index = 0;
+           color_attachment_index < TERAKAN_VK_STATE_MAX_COLOR_ATTACHMENTS;
+           ++color_attachment_index) {
+         struct terakan_rendering_color_resolve const * const resolve =
+            &command_buffer->rendering_color_resolves[color_attachment_index];
+         if (resolve->src_image == VK_NULL_HANDLE || resolve->dst_image == VK_NULL_HANDLE) {
+            continue;
+         }
+         VkImageResolve2 const region = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_RESOLVE_2,
+            .srcSubresource = resolve->src_subresource,
+            .srcOffset = {
+               .x = command_buffer->rendering_resolve_area.offset.x,
+               .y = command_buffer->rendering_resolve_area.offset.y,
+            },
+            .dstSubresource = resolve->dst_subresource,
+            .dstOffset = {
+               .x = command_buffer->rendering_resolve_area.offset.x,
+               .y = command_buffer->rendering_resolve_area.offset.y,
+            },
+            .extent = {
+               .width = command_buffer->rendering_resolve_area.extent.width,
+               .height = command_buffer->rendering_resolve_area.extent.height,
+               .depth = 1,
+            },
+         };
+         VkResolveImageInfo2 const resolve_info = {
+            .sType = VK_STRUCTURE_TYPE_RESOLVE_IMAGE_INFO_2,
+            .srcImage = resolve->src_image,
+            .srcImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            .dstImage = resolve->dst_image,
+            .dstImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            .regionCount = 1,
+            .pRegions = &region,
+         };
+         terakan_CmdResolveImage2(commandBuffer, &resolve_info);
+      }
+   }
 
    struct terakan_app_config_draw * const config =
-      &terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx->app_config_draw;
+      &command_buffer->command_writer.gfx->app_config_draw;
    terakan_app_config_draw_set_pa_vport_render_area(config, (struct terakan_screen_rect){});
    terakan_app_config_draw_set_db_depth_stencil_buffer(config, NULL, NULL);
    for (unsigned color_attachment_index = 0;

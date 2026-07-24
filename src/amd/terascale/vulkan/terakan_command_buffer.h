@@ -195,6 +195,13 @@ struct terakan_command_buffer_indirect_buffer {
 
 struct terakan_gfx_command_writer;
 
+struct terakan_rendering_color_resolve {
+   VkImage src_image;
+   VkImage dst_image;
+   VkImageSubresourceLayers src_subresource;
+   VkImageSubresourceLayers dst_subresource;
+};
+
 struct terakan_command_buffer {
    struct vk_command_buffer vk;
 
@@ -212,6 +219,11 @@ struct terakan_command_buffer {
    uint32_t shader_ring_bytes_needed_for_se_shr8[TERAKAN_SHADER_RING_INDEX_COUNT];
 
    struct list_head indirect_buffers;
+
+   VkRenderingFlags rendering_flags;
+   VkRect2D rendering_resolve_area;
+   struct terakan_rendering_color_resolve
+      rendering_color_resolves[MESA_VK_MAX_COLOR_ATTACHMENTS];
 
    union {
       struct terakan_gfx_command_writer * gfx;

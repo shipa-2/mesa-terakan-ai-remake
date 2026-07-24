@@ -390,7 +390,12 @@ terakan_CmdClearColorImage(VkCommandBuffer const commandBuffer, VkImage const im
       .vgt_primitive_type = V_008958_DI_PT_RECTLIST,
       .cb_and_db_shader_control_mode =
          TERAKAN_META_CONFIG_DRAW_BEGIN_CB_MODE_NORMAL_WITH_RTV_AND_DYNAMIC_DB_SHADER_CONTROL,
-      .rasterization = {.enable = true},
+      .rasterization =
+         {
+            .enable = true,
+            .msaa_num_samples_log2 = util_logbase2((uint32_t)image->vk.samples),
+            .msaa_num_anchor_samples_log2 = util_logbase2((uint32_t)image->vk.samples),
+         },
    };
    terakan_meta_config_draw_begin(command_writer, &meta_begin_options);
    terakan_meta_config_draw_set_sq_pgm_vs(command_writer,

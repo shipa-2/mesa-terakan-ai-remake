@@ -48,6 +48,7 @@ libterakan_files = files(
   'meta/terakan_meta_impl.h',
   'meta/terakan_meta_query_accum.c',
   'meta/terakan_meta_query_copy.c',
+  'meta/terakan_meta_resolve.c',
   'nir/terakan_nir.h',
   'nir/terakan_nir_alu.c',
   'nir/terakan_nir_buffer.c',
