@@ -150,7 +150,7 @@ terakan_hw_config_sqk_set_sampler(struct terakan_hw_config_sqk_stage * const sta
 {
    assert(index < TERAKAN_SAMPLER_HW_COUNT_PER_STAGE);
    /* For simplicity, not storing unbound or invalid samplers in `terakan_hw_config_sqk`. */
-   if (unlikely(descriptor == NULL || G_03C008_TYPE(descriptor->sampler[2]))) {
+   if (unlikely(descriptor == NULL || !G_03C008_TYPE(descriptor->sampler[2]))) {
       return false;
    }
    struct terakan_sampler_descriptor * const stage_sampler = &stage->samplers[index];

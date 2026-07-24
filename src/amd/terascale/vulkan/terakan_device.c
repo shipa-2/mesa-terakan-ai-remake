@@ -281,6 +281,7 @@ terakan_device_init(struct terakan_device * const device,
          struct terakan_shader_sqk_usage * const meta_shader_sqk_usage =
             &device->meta_shader_sqk_usage[meta_shader_index];
          meta_shader_sqk_usage->kcache = meta_shader->kcache_used;
+         meta_shader_sqk_usage->samplers = meta_shader->samplers_used;
          if (meta_shader->primary_meta_resource_used) {
             BITSET_SET(meta_shader_sqk_usage->resources,
                        TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META);

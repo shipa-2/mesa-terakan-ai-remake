@@ -648,12 +648,21 @@ terakan_vertex_input_create_fs_code(
    /* [Binding index][buffer size truncation amount in dwords]. */
    uint8_t bindings_resource_indices[TERAKAN_RESOURCE_HW_COUNT_FETCH][(12 / 4) + 1] = {};
    u_foreach_bit (binding_index, bindings_used) {
+      if (unlikely(binding_index >= ARRAY_SIZE(bindings_resource_indices))) {
+         continue;
+      }
       uint8_t * const binding_resource_indices = bindings_resource_indices[binding_index];
 
       unsigned binding_truncations_remaining = bindings_truncations_used[binding_index];
 
       assert(binding_truncations_remaining);
+      if (unlikely(!binding_truncations_remaining)) {
+         continue;
+      }
       uint8_t const binding_truncation_largest = util_last_bit(binding_truncations_remaining) - 1;
+      if (unlikely(binding_truncation_largest >= ARRAY_SIZE(bindings_resource_indices[0]))) {
+         continue;
+      }
       binding_truncations_remaining &= ~(1u << binding_truncation_largest);
       resource_usage_out->resource_bindings_and_truncation[binding_index] =
          binding_index | (binding_truncation_largest << 5);
@@ -663,7 +672,14 @@ terakan_vertex_input_create_fs_code(
          unsigned const binding_truncation = u_bit_scan(&binding_truncations_remaining);
          uint32_t const resources_unallocated = ~resource_usage_out->resources_used;
          assert(resources_unallocated);
+         if (unlikely(!resources_unallocated)) {
+            break;
+         }
          unsigned const resource_index = util_last_bit(resources_unallocated) - 1;
+         if (unlikely(resource_index >=
+                      ARRAY_SIZE(resource_usage_out->resource_bindings_and_truncation))) {
+            break;
+         }
          resource_usage_out->resources_used |= BITFIELD_BIT(resource_index);
          resource_usage_out->resource_bindings_and_truncation[resource_index] =
             binding_index | (binding_truncation << 5);

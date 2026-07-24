@@ -287,7 +287,7 @@ terakan_descriptor_set_free_descriptors_and_finish(struct terakan_descriptor_poo
       assert(pool->descriptor_memory_size - pool->descriptor_memory_unallocated >=
              descriptors_size);
       pool->descriptor_memory_unallocated += descriptors_size;
-      util_vma_heap_free(&pool->descriptor_memory_heap, (uint64_t)set->descriptors,
+      util_vma_heap_free(&pool->descriptor_memory_heap, (uint64_t)(uintptr_t)set->descriptors,
                          descriptors_size);
    }
 
@@ -368,8 +368,8 @@ terakan_AllocateDescriptorSets(VkDevice const deviceHandle,
          if (pool->descriptor_memory_unallocated >= set_size) {
             set_descriptors_allocate_error = VK_ERROR_FRAGMENTED_POOL;
             set_descriptors =
-               (char *)util_vma_heap_alloc(&pool->descriptor_memory_heap, set_size,
-                                           TERAKAN_DESCRIPTOR_SET_DESCRIPTOR_ALIGNMENT);
+               (char *)(uintptr_t)util_vma_heap_alloc(&pool->descriptor_memory_heap, set_size,
+                                                      TERAKAN_DESCRIPTOR_SET_DESCRIPTOR_ALIGNMENT);
          }
          if (set_descriptors == NULL) {
             terakan_FreeDescriptorSets(deviceHandle, pAllocateInfo->descriptorPool, array_set_index,
@@ -542,7 +542,7 @@ terakan_CreateDescriptorPool(VkDevice const deviceHandle,
       /* Use the descriptor memory pointer directly as the start because VMA expects the start
        * address to be nonzero since it uses 0 to report allocation errors.
        */
-      util_vma_heap_init(&pool->descriptor_memory_heap, (uint64_t)descriptor_memory,
+      util_vma_heap_init(&pool->descriptor_memory_heap, (uint64_t)(uintptr_t)descriptor_memory,
                          descriptor_memory_size);
    }
    pool->descriptor_memory_unallocated = descriptor_memory_size;

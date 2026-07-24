@@ -257,3 +257,34 @@ _dev_icd = custom_target(
 )
 
 devenv.append('VK_ICD_FILENAMES', _dev_icd.full_path())
+
+if with_tests
+  terakan_vertex_input_test = executable(
+    'terakan_vertex_input_test',
+    [
+      'terakan_vertex_input.c',
+      'tests/terakan_vertex_input_test.c',
+    ],
+    include_directories : [
+      inc_include,
+      inc_src,
+      inc_mapi,
+      inc_mesa,
+      inc_gallium,
+      inc_gallium_aux,
+      inc_amd,
+      inc_amd_common,
+      inc_compiler,
+      inc_util,
+    ],
+    dependencies : [
+      idep_amd_terascale_common,
+      idep_mesautil,
+    ],
+    c_args : [
+      no_override_init_args,
+      c_msvc_compat_args,
+    ],
+  )
+  test('terakan_vertex_input', terakan_vertex_input_test)
+endif

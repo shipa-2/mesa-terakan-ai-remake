@@ -149,30 +149,30 @@ terakan_queue_drm_radeon_submit(
       .chunk_id = RADEON_CHUNK_ID_RELOCS,
       .length_dw =
          (__u32)((sizeof(struct drm_radeon_cs_reloc) / sizeof(__u32)) * bo_reference_count),
-      .chunk_data = (__u64)bo_references,
+      .chunk_data = (__u64)(uintptr_t)bo_references,
    };
 
    struct drm_radeon_cs_chunk indirect_buffer_chunk = {
       .chunk_id = RADEON_CHUNK_ID_IB,
       .length_dw = indirect_buffer_size_dwords,
-      .chunk_data = (__u64)(void const *)indirect_buffer,
+      .chunk_data = (__u64)(uintptr_t)indirect_buffer,
    };
 
    struct drm_radeon_cs_chunk flags_chunk = {
       .chunk_id = RADEON_CHUNK_ID_FLAGS,
       .length_dw = ARRAY_SIZE(flags),
-      .chunk_data = (__u64)(void const *)flags,
+      .chunk_data = (__u64)(uintptr_t)flags,
    };
 
    __u64 chunks[] = {
-      (__u64)(void *)&relocations_chunk,
-      (__u64)(void *)&indirect_buffer_chunk,
-      (__u64)(void *)&flags_chunk,
+      (__u64)(uintptr_t)&relocations_chunk,
+      (__u64)(uintptr_t)&indirect_buffer_chunk,
+      (__u64)(uintptr_t)&flags_chunk,
    };
 
    struct drm_radeon_cs cs_arguments = {
       .num_chunks = ARRAY_SIZE(chunks),
-      .chunks = (__u64)(void const *)chunks,
+      .chunks = (__u64)(uintptr_t)chunks,
    };
 
    int const cs_result = drmCommandWriteRead(device->render_node_fd, DRM_RADEON_CS, &cs_arguments,

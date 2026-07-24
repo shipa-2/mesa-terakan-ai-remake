@@ -204,7 +204,7 @@ terakan_physical_device_drm_radeon_try_create(struct vk_instance * const instanc
    __u32 tiling_config;
    struct drm_radeon_info tiling_config_info_arguments = {
       .request = RADEON_INFO_TILING_CONFIG,
-      .value = (__u64)(void *)&tiling_config,
+      .value = (__u64)(uintptr_t)&tiling_config,
    };
    int const tiling_config_info_result =
       drmCommandWriteRead(render_node_fd, DRM_RADEON_INFO, &tiling_config_info_arguments,
@@ -230,7 +230,7 @@ terakan_physical_device_drm_radeon_try_create(struct vk_instance * const instanc
    __u32 clock_crystal_frequency_khz;
    struct drm_radeon_info clock_crystal_frequency_info_arguments = {
       .request = RADEON_INFO_CLOCK_CRYSTAL_FREQ,
-      .value = (__u64)(void *)&clock_crystal_frequency_khz,
+      .value = (__u64)(uintptr_t)&clock_crystal_frequency_khz,
    };
    if (drmCommandWriteRead(render_node_fd, DRM_RADEON_INFO, &clock_crystal_frequency_info_arguments,
                            sizeof(clock_crystal_frequency_info_arguments)) != 0) {
