@@ -47,6 +47,18 @@ namespace dxvk {
 
     m_shared = canShareImage(info, createInfo.sharing);
 
+    // An unsupported export can still be used within the creating process,
+    // but importing as a fresh local image would silently return wrong data.
+    if (createInfo.sharing.mode == DxvkSharedHandleMode::Import && !m_shared)
+      throw DxvkError("DxvkImage: Cannot import unsupported shared image");
+
+    // Don't apply shared-only synchronization or pretend that the local
+    // fallback has an exportable allocation.
+    if (createInfo.sharing.mode == DxvkSharedHandleMode::Export && !m_shared) {
+      m_info.shared = false;
+      m_info.sharing = DxvkSharedHandleInfo();
+    }
+
     VkExternalMemoryImageCreateInfo externalInfo;
     if (m_shared) {
       externalInfo.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO;

@@ -323,6 +323,13 @@ namespace dxvk {
      */
     HANDLE sharedHandle() const;
 
+    /**
+     * \brief Whether external-memory sharing was enabled
+     */
+    bool isShared() const {
+      return m_shared;
+    }
+
   private:
 
     Rc<vk::DeviceFn>      m_vkd;

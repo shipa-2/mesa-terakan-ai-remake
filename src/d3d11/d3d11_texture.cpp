@@ -227,7 +227,7 @@ namespace dxvk {
     else
       m_image = m_device->GetDXVKDevice()->createImageFromVkImage(imageInfo, vkImage);
 
-    if (imageInfo.sharing.mode == DxvkSharedHandleMode::Export)
+    if (imageInfo.sharing.mode == DxvkSharedHandleMode::Export && m_image->isShared())
       ExportImageInfo();
   }
 
