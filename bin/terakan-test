@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
+build_dir=${TERAKAN_BUILD_DIR:-"$repo_root/build-vulkan"}
+run_gpu=true
+run_cube=false
+
+usage() {
+  cat <<'EOF'
+usage: bin/terakan-test [--unit-only] [--vkcube]
+
+Run focused unit tests and, by default, query the real GPU through the local
+Terakan ICD. --vkcube adds a ten-second windowed smoke test.
+EOF
+}
+
+while (($#)); do
+  case "$1" in
+    --unit-only) run_gpu=false ;;
+    --vkcube) run_cube=true ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "terakan-test: unknown argument: $1" >&2; usage >&2; exit 2 ;;
+  esac
+  shift
+done
+
+"$repo_root/bin/terakan-build"
+meson test -C "$build_dir" --print-errorlogs terakan_vertex_input
+
+if ! $run_gpu; then
+  exit 0
+fi
+if ! command -v vulkaninfo >/dev/null; then
+  echo "terakan-test: vulkaninfo is required for the GPU test" >&2
+  exit 1
+fi
+
+summary=$(mktemp --tmpdir terakan-vulkaninfo.XXXXXX)
+trap 'rm -f -- "$summary"' EXIT
+
+properties_test="$build_dir/src/amd/terascale/vulkan/terakan_physical_device_properties_test"
+test -x "$properties_test"
+timeout --signal=TERM --kill-after=2 20 \
+  "$repo_root/bin/terakan-run" "$properties_test"
+
+timeout --signal=TERM --kill-after=2 20 \
+  "$repo_root/bin/terakan-run" vulkaninfo --summary | tee "$summary"
+
+if ! grep -Eiq 'device(Name)?[[:space:]]*=.*(Terakan|CAICOS)' "$summary"; then
+  echo "terakan-test: local Terakan/CAICOS device was not reported" >&2
+  exit 1
+fi
+
+if $run_cube; then
+  if ! command -v vkcube >/dev/null; then
+    echo "terakan-test: vkcube is not installed" >&2
+    exit 1
+  fi
+  timeout --signal=TERM --kill-after=2 10 \
+    "$repo_root/bin/terakan-run" vkcube --validate=false
+fi

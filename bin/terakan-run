@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
+build_dir=${TERAKAN_BUILD_DIR:-"$repo_root/build-vulkan"}
+icd_dir="$build_dir/src/amd/terascale/vulkan"
+driver="$icd_dir/libvulkan_terascale.so"
+
+if (($# == 0)); then
+  echo "usage: bin/terakan-run COMMAND [ARG ...]" >&2
+  exit 2
+fi
+if [[ ! -r "$driver" ]]; then
+  echo "terakan-run: driver is not built; run bin/terakan-build" >&2
+  exit 1
+fi
+
+shopt -s nullglob
+icd_candidates=("$icd_dir"/terascale_devenv_icd.*.json)
+shopt -u nullglob
+if ((${#icd_candidates[@]} != 1)); then
+  echo "terakan-run: expected one development ICD manifest in $icd_dir" >&2
+  exit 1
+fi
+
+export VK_DRIVER_FILES="${icd_candidates[0]}"
+export VK_ICD_FILENAMES="${icd_candidates[0]}"
+export VK_LOADER_LAYERS_DISABLE=${VK_LOADER_LAYERS_DISABLE:-'~implicit~'}
+exec "$@"

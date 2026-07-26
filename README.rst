@@ -1,6 +1,14 @@
 `Mesa <https://mesa3d.org>`_ - The 3D Graphics Library
 ======================================================
 
+Terakan fork
+------------
+
+This branch contains the experimental Terakan Vulkan driver for AMD TeraScale
+GPUs. Development build, testing, packaging, and current-status instructions
+are maintained in ``docs/terakan/README.md``. The shortest verified workflow
+is ``./bin/terakan-build`` followed by ``./bin/terakan-test``.
+
 
 Source
 ------

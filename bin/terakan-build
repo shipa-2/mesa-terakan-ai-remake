@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
+build_dir=${TERAKAN_BUILD_DIR:-"$repo_root/build-vulkan"}
+build_type=${TERAKAN_BUILD_TYPE:-release}
+clean=false
+
+usage() {
+  cat <<'EOF'
+usage: bin/terakan-build [--clean] [--debug]
+
+Build only the Terakan Vulkan ICD and its focused unit tests.
+Environment:
+  TERAKAN_BUILD_DIR   build directory (default: ./build-vulkan)
+  TERAKAN_BUILD_TYPE  Meson build type (default: release)
+EOF
+}
+
+while (($#)); do
+  case "$1" in
+    --clean) clean=true ;;
+    --debug) build_type=debugoptimized ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "terakan-build: unknown argument: $1" >&2; usage >&2; exit 2 ;;
+  esac
+  shift
+done
+
+meson_args=(
+  --prefix=/usr
+  --libdir=lib
+  "--buildtype=$build_type"
+  -Dwrap_mode=nodownload
+  -Dvulkan-drivers=amd_terascale
+  -Dgallium-drivers=
+  -Dglx=disabled
+  -Degl=disabled
+  -Dgbm=disabled
+  -Dopengl=false
+  -Dgles1=disabled
+  -Dgles2=disabled
+  -Dllvm=disabled
+  -Dvalgrind=disabled
+  -Dlmsensors=disabled
+  -Dzstd=enabled
+  -Dshader-cache=enabled
+  -Dlibunwind=disabled
+  -Dplatforms=x11,wayland
+  -Dbuild-tests=true
+  '-Dtools=[]'
+)
+
+export PKG_CONFIG_PATH=/usr/lib/pkgconfig:/usr/share/pkgconfig
+export CCACHE_DIR=${TERAKAN_CCACHE_DIR:-"$build_dir/.ccache"}
+mkdir -p -- "$CCACHE_DIR"
+
+if [[ -f "$build_dir/meson-private/coredata.dat" ]]; then
+  if $clean; then
+    meson setup --wipe "$build_dir" "$repo_root" "${meson_args[@]}"
+  else
+    meson setup --reconfigure "$build_dir" "$repo_root" "${meson_args[@]}"
+  fi
+else
+  if $clean && [[ -e "$build_dir" ]]; then
+    echo "terakan-build: refusing to remove non-Meson path: $build_dir" >&2
+    exit 1
+  fi
+  meson setup "$build_dir" "$repo_root" "${meson_args[@]}"
+fi
+
+meson compile -C "$build_dir"
+
+driver="$build_dir/src/amd/terascale/vulkan/libvulkan_terascale.so"
+test -r "$driver"
+printf 'Terakan ICD built: %s\n' "$driver"
