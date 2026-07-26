@@ -346,6 +346,8 @@ enum terakan_hw_config_draw_cb_color_control_rop3 : uint8_t {
 /* No active VK_QUERY_TYPE_OCCLUSION */
 #define TERAKAN_HW_CONFIG_DRAW_DEFAULT_DB_COUNT_CONTROL S_028004_ZPASS_INCREMENT_DISABLE(true)
 
+#define TERAKAN_HW_CONFIG_DRAW_DEFAULT_DB_RENDER_CONTROL 0
+
 /* VK_EXT_depth_range_unrestricted not enabled */
 #define TERAKAN_HW_CONFIG_DRAW_DEFAULT_DB_RENDER_OVERRIDE 0
 
@@ -421,6 +423,7 @@ enum terakan_hw_config_draw_entry {
    TERAKAN_HW_CONFIG_DRAW_ENTRY_PA_CL_GB,
    TERAKAN_HW_CONFIG_DRAW_ENTRY_PA_SC_AA_MASK,
 
+   TERAKAN_HW_CONFIG_DRAW_ENTRY_DB_RENDER_CONTROL,
    TERAKAN_HW_CONFIG_DRAW_ENTRY_DB_COUNT_CONTROL,
    TERAKAN_HW_CONFIG_DRAW_ENTRY_DB_RENDER_OVERRIDE,
    TERAKAN_HW_CONFIG_DRAW_ENTRY_DB_RENDER_OVERRIDE2,
@@ -544,6 +547,8 @@ struct terakan_hw_config_draw {
    uint16_t pa_sc_aa_mask_;
 
    /* Depth / stencil buffer. */
+
+   uint32_t db_render_control_;
 
    uint32_t db_count_control_;
 
@@ -1022,6 +1027,14 @@ terakan_hw_config_draw_set_pa_cl_gb_disc_adj(struct terakan_hw_config_draw * con
    config->pa_cl_gb_.vert_horz_clip_disc_adj[0][1] = vertical;
    config->pa_cl_gb_.vert_horz_clip_disc_adj[1][1] = horizontal;
    BITSET_SET(config->entries_modified_, TERAKAN_HW_CONFIG_DRAW_ENTRY_PA_CL_GB);
+}
+
+static inline void
+terakan_hw_config_draw_set_db_render_control(struct terakan_hw_config_draw * const config,
+                                             uint32_t const value)
+{
+   terakan_hw_config_draw_set_single_register_(
+      config, TERAKAN_HW_CONFIG_DRAW_ENTRY_DB_RENDER_CONTROL, &config->db_render_control_, value);
 }
 
 static inline void

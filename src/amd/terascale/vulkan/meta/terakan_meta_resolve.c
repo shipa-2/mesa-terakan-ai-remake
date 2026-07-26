@@ -13,9 +13,9 @@
 #include "util/u_math.h"
 
 static bool
-terakan_meta_resolve_region_is_full(struct terakan_image const * const src_image,
-                                    struct terakan_image const * const dst_image,
-                                    VkImageResolve2 const * const region)
+terakan_meta_resolve_region_is_fixed_function_compatible(
+   struct terakan_image const * const src_image, struct terakan_image const * const dst_image,
+   VkImageResolve2 const * const region)
 {
    VkExtent3D const src_extent = {
       .width = u_minify(src_image->vk.extent.width, region->srcSubresource.mipLevel),
@@ -28,12 +28,18 @@ terakan_meta_resolve_region_is_full(struct terakan_image const * const src_image
       .depth = 1,
    };
 
-   return region->srcOffset.x == 0 && region->srcOffset.y == 0 && region->srcOffset.z == 0 &&
-          region->dstOffset.x == 0 && region->dstOffset.y == 0 && region->dstOffset.z == 0 &&
-          region->extent.width == src_extent.width &&
-          region->extent.height == src_extent.height && region->extent.depth == 1 &&
-          region->extent.width == dst_extent.width &&
-          region->extent.height == dst_extent.height;
+   /* CB_RESOLVE operates on matching source and destination coordinates and surface dimensions.
+    * Scissoring the draw makes same-offset subrectangles safe without rebasing either surface.
+    */
+   return src_extent.width == dst_extent.width && src_extent.height == dst_extent.height &&
+          region->srcOffset.x >= 0 && region->srcOffset.y >= 0 && region->srcOffset.z == 0 &&
+          region->srcOffset.x == region->dstOffset.x &&
+          region->srcOffset.y == region->dstOffset.y && region->dstOffset.z == 0 &&
+          region->extent.width != 0 && region->extent.height != 0 && region->extent.depth == 1 &&
+          region->extent.width <= src_extent.width &&
+          region->extent.height <= src_extent.height &&
+          (uint32_t)region->srcOffset.x <= src_extent.width - region->extent.width &&
+          (uint32_t)region->srcOffset.y <= src_extent.height - region->extent.height;
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -97,12 +103,13 @@ terakan_CmdResolveImage2(VkCommandBuffer const command_buffer_handle,
    for (uint32_t region_index = 0; region_index < resolve_info->regionCount; ++region_index) {
       VkImageResolve2 const * const region = &resolve_info->pRegions[region_index];
 
-      /* Evergreen's fixed-function CB resolve requires matching full-size source and destination
-       * surfaces. Partial and scaled regions need a shader fallback.
+      /* Evergreen's fixed-function CB resolve requires matching source and destination surface
+       * dimensions and coordinates. Differently offset regions need a shader fallback.
        */
       if (unlikely(region->srcSubresource.aspectMask != VK_IMAGE_ASPECT_COLOR_BIT ||
                    region->dstSubresource.aspectMask != VK_IMAGE_ASPECT_COLOR_BIT ||
-                   !terakan_meta_resolve_region_is_full(src_image, dst_image, region))) {
+                   !terakan_meta_resolve_region_is_fixed_function_compatible(src_image, dst_image,
+                                                                             region))) {
          continue;
       }
 
@@ -171,6 +178,10 @@ terakan_CmdResolveImage2(VkCommandBuffer const command_buffer_handle,
             },
          };
          VkRect2D const rect = {
+            .offset = {
+               .x = region->dstOffset.x,
+               .y = region->dstOffset.y,
+            },
             .extent = {
                .width = region->extent.width,
                .height = region->extent.height,

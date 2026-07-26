@@ -555,6 +555,8 @@ terakan_vk_pipeline_graphics_multisample_init_with_rasterization(
 
       if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_MS_ALPHA_TO_COVERAGE_ENABLE)) {
          multisample->db_alpha_to_mask_enable = state->ms->alpha_to_coverage_enable;
+         BITSET_SET(multisample->static_state,
+                    TERAKAN_VK_PIPELINE_GRAPHICS_MULTISAMPLE_STATIC_DB_ALPHA_TO_MASK_ENABLE);
       }
 
       if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_MS_SAMPLE_LOCATIONS_ENABLE)) {

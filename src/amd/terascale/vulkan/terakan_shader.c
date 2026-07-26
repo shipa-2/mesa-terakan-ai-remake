@@ -302,6 +302,44 @@ terakan_nir_should_vectorize_load_store(unsigned const align_mul, unsigned const
    return true;
 }
 
+static void
+terakan_shader_collect_draw_parameter_push_constants(
+   nir_shader * const nir, struct terakan_shader_sqk_usage * const sqk_usage,
+   uint32_t * const driver_push_constants_used)
+{
+   uint32_t used = 0;
+
+   nir_foreach_function_impl (impl, nir) {
+      nir_foreach_block (block, impl) {
+         nir_foreach_instr (instr, block) {
+            if (instr->type != nir_instr_type_intrinsic) {
+               continue;
+            }
+
+            switch (nir_instr_as_intrinsic(instr)->intrinsic) {
+            case nir_intrinsic_load_first_vertex:
+            case nir_intrinsic_load_base_vertex:
+               used |= BITFIELD_BIT(TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_BASE_VERTEX);
+               break;
+            case nir_intrinsic_load_base_instance:
+               used |= BITFIELD_BIT(TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_BASE_INSTANCE);
+               break;
+            case nir_intrinsic_load_draw_id:
+               used |= BITFIELD_BIT(TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_DRAW_ID);
+               break;
+            default:
+               break;
+            }
+         }
+      }
+   }
+
+   if (used != 0) {
+      *driver_push_constants_used |= used;
+      BITSET_SET(sqk_usage->resources, TERAKAN_RESOURCE_RANGE_PUSH_CONSTANTS);
+   }
+}
+
 void
 terakan_shader_lower_and_optimize_post_link(
    nir_shader * const nir, struct terakan_pipeline_layout const * const pipeline_layout,
@@ -333,6 +371,16 @@ terakan_shader_lower_and_optimize_post_link(
       NIR_PASS(progress, nir, nir_opt_dce);
       NIR_PASS(progress, nir, nir_opt_dead_cf);
    } while (progress);
+
+   /*
+    * SFN lowers Vulkan draw parameters to loads from Terakan's internal push-constant buffer.
+    * Account for those loads explicitly: unlike application push constants and descriptor
+    * lowerings, they don't otherwise contribute to the pipeline's push-constant usage. Without
+    * this, shaders using gl_BaseInstance (including gl_InstanceIndex after system-value lowering)
+    * may read an unbound buffer and index every per-object array from zero.
+    */
+   terakan_shader_collect_draw_parameter_push_constants(nir, sqk_usage,
+                                                        driver_push_constants_used);
 
    if (nir->info.stage == MESA_SHADER_FRAGMENT) {
       /* For fragment data location compaction. */

@@ -140,20 +140,34 @@ terakan_barrier_get_src_actions(struct terakan_gfx_command_writer const * const 
             actions |= command_writer->post_depth_stencil_image_copy_write_barrier_actions;
          }
       }
-      /* TODO(Triang3l): Resolve actions. */
+      if (src_stages & VK_PIPELINE_STAGE_2_RESOLVE_BIT) {
+         if (for_color_image) {
+            actions |= TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RTV_DATA |
+                       TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_PS;
+         }
+         if (for_depth_stencil_image) {
+            actions |= command_writer->post_depth_stencil_image_copy_write_barrier_actions;
+         }
+      }
       if (src_stages & VK_PIPELINE_STAGE_2_BLIT_BIT) {
          if (for_color_image) {
             actions |= TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RTV_DATA |
                        TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RTV_META;
          }
-         /* TODO(Triang3l): Depth/stencil blit actions. */
+         if (for_depth_stencil_image) {
+            actions |= TERAKAN_BARRIER_ACTION_FLUSH_INV_DB_DATA |
+                       TERAKAN_BARRIER_ACTION_FLUSH_INV_DB_META;
+         }
       }
       if (src_stages & VK_PIPELINE_STAGE_2_CLEAR_BIT) {
          if (for_color_image) {
             actions |= TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RTV_DATA |
                        TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RTV_META;
          }
-         /* TODO(Triang3l): Depth/stencil clear actions. */
+         if (for_depth_stencil_image) {
+            actions |= TERAKAN_BARRIER_ACTION_FLUSH_INV_DB_DATA |
+                       TERAKAN_BARRIER_ACTION_FLUSH_INV_DB_META;
+         }
       }
    }
 
@@ -231,6 +245,8 @@ terakan_barrier_get_dst_actions(struct terakan_gfx_command_writer const * const 
       bool const for_color_image =
          (image_aspects & (VK_IMAGE_ASPECT_COLOR_BIT | VK_IMAGE_ASPECT_PLANE_0_BIT |
                            VK_IMAGE_ASPECT_PLANE_1_BIT | VK_IMAGE_ASPECT_PLANE_2_BIT)) != 0;
+      bool const for_depth_stencil_image =
+         (image_aspects & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)) != 0;
       if (for_buffer) {
          actions |= TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_UAV;
       }
@@ -244,7 +260,10 @@ terakan_barrier_get_dst_actions(struct terakan_gfx_command_writer const * const 
             actions |= TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_UAV;
          }
       }
-      /* TODO(Triang3l): Depth/stencil actions. */
+      if (for_depth_stencil_image) {
+         actions |=
+            TERAKAN_BARRIER_ACTION_FLUSH_INV_DB_DATA | TERAKAN_BARRIER_ACTION_FLUSH_INV_DB_META;
+      }
    }
 
    if ((dst_access &
@@ -256,6 +275,29 @@ terakan_barrier_get_dst_actions(struct terakan_gfx_command_writer const * const 
       actions |= TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_UAV;
    }
 
+   return actions;
+}
+
+static enum terakan_barrier_action_flags
+terakan_barrier_get_image_layout_transition_actions(VkImageLayout const old_layout,
+                                                    VkImageLayout const new_layout,
+                                                    VkImageAspectFlags const image_aspects)
+{
+   if (old_layout == new_layout) {
+      return 0;
+   }
+
+   enum terakan_barrier_action_flags actions = TERAKAN_BARRIER_ACTION_INV_TC;
+   if (image_aspects &
+       (VK_IMAGE_ASPECT_COLOR_BIT | VK_IMAGE_ASPECT_PLANE_0_BIT |
+        VK_IMAGE_ASPECT_PLANE_1_BIT | VK_IMAGE_ASPECT_PLANE_2_BIT)) {
+      actions |= TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RTV_DATA |
+                 TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RTV_META;
+   }
+   if (image_aspects & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)) {
+      actions |=
+         TERAKAN_BARRIER_ACTION_FLUSH_INV_DB_DATA | TERAKAN_BARRIER_ACTION_FLUSH_INV_DB_META;
+   }
    return actions;
 }
 
@@ -476,6 +518,8 @@ terakan_CmdPipelineBarrier2(VkCommandBuffer const commandBuffer,
                                          barrier->subresourceRange.aspectMask) |
          terakan_barrier_get_dst_actions(command_writer, barrier->dstStageMask,
                                          barrier->dstAccessMask, false,
-                                         barrier->subresourceRange.aspectMask);
+                                         barrier->subresourceRange.aspectMask) |
+         terakan_barrier_get_image_layout_transition_actions(
+            barrier->oldLayout, barrier->newLayout, barrier->subresourceRange.aspectMask);
    }
 }

@@ -665,6 +665,35 @@ terakan_CmdClearAttachments(VkCommandBuffer const commandBuffer, uint32_t const 
    struct terakan_screen_rect const render_area =
       terakan_app_config_draw_get_pa_vport_render_area(&command_writer->app_config_draw);
 
+   /* Load-op clears happen before a graphics pipeline is necessarily bound, so the current
+    * rasterization sample count can't be taken from pipeline state. Derive it from the attachments
+    * being cleared. Using one-sample rasterization for an MSAA attachment only clears sample zero,
+    * leaving the other samples with old memory contents.
+    */
+   uint8_t clear_samples_log2 = 0;
+   if (depth_stencil_clear_aspects) {
+      struct terakan_bo const * depth_stencil_bo;
+      struct terakan_depth_stencil_descriptor const * const depth_stencil_descriptor =
+         terakan_app_config_draw_get_db_depth_stencil_buffer(&command_writer->app_config_draw,
+                                                             &depth_stencil_bo);
+      bool depth_bound, stencil_bound;
+      terakan_depth_stencil_descriptor_is_bound(depth_stencil_bo, depth_stencil_descriptor,
+                                                &depth_bound, &stencil_bound);
+      if (depth_bound || stencil_bound) {
+         clear_samples_log2 = MAX2(clear_samples_log2,
+                                   (uint8_t)G_028040_NUM_SAMPLES(depth_stencil_descriptor->z_info));
+      }
+   }
+   u_foreach_bit (color_attachment_index, color_clear_attachments) {
+      struct terakan_app_config_draw_cb_color_rtv const * const render_pass_rtv =
+         terakan_app_config_draw_get_cb_color_rtv(&command_writer->app_config_draw,
+                                                  color_attachment_index);
+      if (terakan_color_descriptor_is_bound(render_pass_rtv->bo, &render_pass_rtv->color)) {
+         clear_samples_log2 =
+            MAX2(clear_samples_log2, (uint8_t)G_028C74_NUM_SAMPLES(render_pass_rtv->color.attrib));
+      }
+   }
+
    struct terakan_meta_config_draw_begin_options const meta_begin_options = {
       .vgt_primitive_type = V_008958_DI_PT_RECTLIST,
       .cb_and_db_shader_control_mode = TERAKAN_META_CONFIG_DRAW_BEGIN_CB_MODE_DYNAMIC,
@@ -672,6 +701,8 @@ terakan_CmdClearAttachments(VkCommandBuffer const commandBuffer, uint32_t const 
          {
             .enable = true,
             .db_explicit = true,
+            .msaa_num_samples_log2 = clear_samples_log2,
+            .msaa_num_anchor_samples_log2 = clear_samples_log2,
          },
    };
    terakan_meta_config_draw_begin(command_writer, &meta_begin_options);

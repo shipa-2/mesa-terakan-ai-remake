@@ -300,9 +300,6 @@ terakan_hw_config_draw_emit_constant(struct terakan_gfx_command_writer * const c
 
    /* This array contains only compile-time constants to avoid copying. */
    uint32_t const common_config[] = {
-      /* TODO(Triang3l): Expose DB and CB metadata configuration. */
-      TERAKAN_HW_CONFIG_DRAW_EMIT_CONSTANT_SINGLE(R_028000_DB_RENDER_CONTROL, 0),
-
       TERAKAN_HW_CONFIG_DRAW_EMIT_CONSTANT_RANGE(R_028030_PA_SC_SCREEN_SCISSOR_TL,
                                                  R_028034_PA_SC_SCREEN_SCISSOR_BR),
       /* R_028030_PA_SC_SCREEN_SCISSOR_TL */
@@ -1155,6 +1152,14 @@ terakan_hw_config_draw_emit_pa_sc_aa_mask(struct terakan_gfx_command_writer * co
 }
 
 static void
+terakan_hw_config_draw_emit_db_render_control(
+   struct terakan_gfx_command_writer * const command_writer)
+{
+   terakan_hw_config_draw_emit_context_register(command_writer, R_028000_DB_RENDER_CONTROL,
+                                                command_writer->hw_config_draw.db_render_control_);
+}
+
+static void
 terakan_hw_config_draw_emit_db_count_control(
    struct terakan_gfx_command_writer * const command_writer)
 {
@@ -1603,6 +1608,8 @@ static terakan_hw_config_draw_emit_function const
          terakan_hw_config_draw_emit_pa_sc_aa_config_sample_locs,
       [TERAKAN_HW_CONFIG_DRAW_ENTRY_PA_CL_GB] = terakan_hw_config_draw_emit_pa_cl_gb,
       [TERAKAN_HW_CONFIG_DRAW_ENTRY_PA_SC_AA_MASK] = terakan_hw_config_draw_emit_pa_sc_aa_mask,
+      [TERAKAN_HW_CONFIG_DRAW_ENTRY_DB_RENDER_CONTROL] =
+         terakan_hw_config_draw_emit_db_render_control,
       [TERAKAN_HW_CONFIG_DRAW_ENTRY_DB_COUNT_CONTROL] =
          terakan_hw_config_draw_emit_db_count_control,
       [TERAKAN_HW_CONFIG_DRAW_ENTRY_DB_RENDER_OVERRIDE] =
@@ -1756,6 +1763,8 @@ terakan_hw_config_draw_reset(struct terakan_hw_config_draw * const config)
    }
 
    config->pa_sc_aa_mask_ = TERAKAN_HW_CONFIG_DRAW_DEFAULT_PA_SC_AA_MASK;
+
+   config->db_render_control_ = TERAKAN_HW_CONFIG_DRAW_DEFAULT_DB_RENDER_CONTROL;
 
    config->db_count_control_ = TERAKAN_HW_CONFIG_DRAW_DEFAULT_DB_COUNT_CONTROL;
 

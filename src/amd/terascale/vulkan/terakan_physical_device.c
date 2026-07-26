@@ -43,7 +43,9 @@
 #include "gallium/drivers/r600/r600_isa.h"
 #include "gallium/drivers/r600/sfn/sfn_nir.h"
 #include "util/macros.h"
+#include "util/mesa-sha1.h"
 #include "util/u_math.h"
+#include "git_sha1.h"
 #include "vk_alloc.h"
 #include "vk_device.h"
 #include "vk_extensions.h"
@@ -492,7 +494,21 @@ terakan_physical_device_get_capabilities(
    snprintf(properties_out->deviceName, sizeof(properties_out->deviceName),
             "AMD R%cxx %s (Terakan)", chip_info->is_r9xx ? '9' : '8',
             terakan_physical_device_chip_family_name(chip_info->chip_family));
-   /* TODO(Triang3l): pipelineCacheUUID when pipeline cache is implemented. */
+
+   /* Conservatively invalidate imported pipeline cache data whenever either the driver build or
+    * the target PCI device changes. The generic Vulkan runtime currently stores no
+    * Terakan-specific cache objects, but a real UUID still keeps cache headers from different
+    * drivers and future Terakan versions from appearing compatible.
+    */
+   static char const pipeline_cache_id[] = "Terakan pipeline cache " PACKAGE_VERSION MESA_GIT_SHA1;
+   struct mesa_sha1 pipeline_cache_sha1;
+   uint8_t pipeline_cache_digest[SHA1_DIGEST_LENGTH];
+   _mesa_sha1_init(&pipeline_cache_sha1);
+   _mesa_sha1_update(&pipeline_cache_sha1, pipeline_cache_id, sizeof(pipeline_cache_id));
+   _mesa_sha1_update(&pipeline_cache_sha1, &chip_info->pci_device_id,
+                     sizeof(chip_info->pci_device_id));
+   _mesa_sha1_final(&pipeline_cache_sha1, pipeline_cache_digest);
+   memcpy(properties_out->pipelineCacheUUID, pipeline_cache_digest, VK_UUID_SIZE);
 
    properties_out->maxImageDimension1D = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT;
    properties_out->maxImageDimension2D = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT;
@@ -656,6 +672,8 @@ terakan_physical_device_get_capabilities(
                                             properties_out->maxDescriptorSetStorageImages +
                                             properties_out->maxDescriptorSetInputAttachments;
    properties_out->maxBoundDescriptorSets = max_per_set_descriptors;
+   properties_out->maxPerSetDescriptors = max_per_set_descriptors;
+   properties_out->maxMemoryAllocationSize = max_memory_allocation_size;
 
    properties_out->maxVertexInputAttributes = TERAKAN_VK_STATE_MAX_VERTEX_ATTRIBUTES;
    properties_out->maxVertexInputBindings = TERAKAN_VK_STATE_MAX_VERTEX_BINDINGS;
@@ -794,15 +812,16 @@ terakan_physical_device_get_capabilities(
    extensions_out->KHR_sampler_mirror_clamp_to_edge = true;
    features_out->samplerMirrorClampToEdge = true;
 
-   /* VK_KHR_dynamic_rendering (#45, Vulkan 1.3). */
-   extensions_out->KHR_dynamic_rendering = true;
-   features_out->dynamicRendering = true;
+   /* VK_KHR_dynamic_rendering (#45, Vulkan 1.3) is used internally by the common render pass
+    * implementation, but must not be exposed until VK_KHR_depth_stencil_resolve and dynamic
+    * depth/stencil resolves are implemented as required by the extension dependency.
+    */
 
    /* VK_KHR_external_memory_capabilities (#72, Vulkan 1.1, instance). */
-   char const driver_uuid[] = "AMD-MESA-DRV";
-   static_assert(sizeof(driver_uuid) <= sizeof(properties_out->driverUUID),
-                 "Driver UUID must fit into the Vulkan UUID field.");
-   memcpy(properties_out->driverUUID, driver_uuid, sizeof(driver_uuid));
+   static char const driver_id[] = "Terakan " PACKAGE_VERSION MESA_GIT_SHA1;
+   uint8_t driver_digest[SHA1_DIGEST_LENGTH];
+   _mesa_sha1_compute(driver_id, sizeof(driver_id), driver_digest);
+   memcpy(properties_out->driverUUID, driver_digest, VK_UUID_SIZE);
 
    /* VK_KHR_external_memory (#73, Vulkan 1.1). */
    extensions_out->KHR_external_memory = true;
@@ -834,6 +853,8 @@ terakan_physical_device_get_capabilities(
 
    /* Vulkan 1.1 core properties. */
 
+   properties_out->pointClippingBehavior = VK_POINT_CLIPPING_BEHAVIOR_ALL_CLIP_PLANES;
+
    /* SubgroupProperties. */
    properties_out->subgroupSize = 1u << chip_info->wave_lanes_log2;
    properties_out->subgroupSupportedStages = VK_SHADER_STAGE_COMPUTE_BIT;
@@ -844,7 +865,7 @@ terakan_physical_device_get_capabilities(
    properties_out->driverID = VK_DRIVER_ID_MESA_RADV;
    snprintf(properties_out->driverName, sizeof(properties_out->driverName), "Terakan");
    snprintf(properties_out->driverInfo, sizeof(properties_out->driverInfo),
-            "Mesa %s", PACKAGE_VERSION);
+            "Mesa " PACKAGE_VERSION MESA_GIT_SHA1);
    properties_out->conformanceVersion = (VkConformanceVersion){1, 1, 0, 0};
 
    /* VK_KHR_timeline_semaphore (#208, Vulkan 1.2). */

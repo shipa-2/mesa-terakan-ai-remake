@@ -196,7 +196,14 @@ terakan_vk_cmd_draw_indirect(VkCommandBuffer const commandBuffer, VkBuffer const
          uint32_t const * const cmd =
             (uint32_t const *)((char *)indirect_map + indirect_va_offset + draw_index * stride);
          uint32_t const first_instance = indexed ? cmd[4] : cmd[3];
-         uint32_t const first_vertex = indexed ? 0 : cmd[0];
+         /*
+          * VkDrawIndexedIndirectCommand::vertexOffset is signed, but both
+          * VGT_INDX_OFFSET and the shader driver constant contain its two's
+          * complement bit pattern.  Ignoring this field makes every indirect
+          * indexed draw fetch from vertex base zero, which corrupts applications
+          * that pack multiple meshes into shared vertex buffers.
+          */
+         uint32_t const first_vertex = indexed ? cmd[3] : cmd[0];
          terakan_vk_draw_set_vertex_instance_offsets(command_writer, first_vertex, first_instance);
          terakan_gfx_command_writer_before_app_draw(command_writer);
       }

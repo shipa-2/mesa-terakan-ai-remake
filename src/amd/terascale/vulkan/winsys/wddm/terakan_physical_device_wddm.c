@@ -74,6 +74,8 @@ terakan_physical_device_wddm_get_winsys_extensions(
       sizeof(LUID) == VK_LUID_SIZE,
       "Using memcpy to copy the adapter LUID, the size must match between WDDM and Vulkan.");
    memcpy(properties->deviceLUID, &device->adapter_luid, VK_LUID_SIZE);
+   properties->deviceNodeMask = 1;
+   properties->deviceLUIDValid = VK_TRUE;
 
    /* VK_EXT_pci_bus_info (#213). */
    extensions->EXT_pci_bus_info = true;

@@ -290,4 +290,23 @@ if with_tests
     ],
   )
   test('terakan_vertex_input', terakan_vertex_input_test)
+
+  vulkan_loader_dep = dependency('vulkan', required : false)
+  if vulkan_loader_dep.found()
+    terakan_physical_device_properties_test = executable(
+      'terakan_physical_device_properties_test',
+      'tests/terakan_physical_device_properties_test.c',
+      dependencies : vulkan_loader_dep,
+    )
+    test(
+      'terakan_physical_device_properties',
+      terakan_physical_device_properties_test,
+      depends : [libvulkan_terascale, _dev_icd],
+      env : {
+        'VK_DRIVER_FILES' : _dev_icd.full_path(),
+        'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+        'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+      },
+    )
+  endif
 endif
