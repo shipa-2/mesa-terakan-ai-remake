@@ -4,8 +4,19 @@ The maintained package recipe is in
 [`shipa-2/mesa-terakan-patches`](https://github.com/shipa-2/mesa-terakan-patches)
 on branch `packaging-rework`. It produces two split packages:
 
-- `vulkan-terakan`: 64-bit Vulkan ICD and launch wrappers;
-- `lib32-vulkan-terakan`: 32-bit ICD for 32-bit Wine/DXVK processes.
+- `vulkan-ai-terakan`: 64-bit Vulkan ICD and launch wrappers;
+- `lib32-vulkan-ai-terakan`: 32-bit ICD for 32-bit Wine/DXVK processes.
+
+For a normal system installation from AUR:
+
+```bash
+./bin/terakan-install
+```
+
+This builds the latest `Terakan_state_rework` commit and installs both packages
+through pacman. The package owns the ICD libraries and manifests under the
+standard system locations, and provides `vulkan-driver` plus
+`lib32-vulkan-driver`. Uninstall it with `./bin/terakan-uninstall`.
 
 Build the committed Git branch:
 
@@ -34,8 +45,8 @@ the original source tree. Resulting packages are written to
 Install both packages for mixed 64/32-bit Wine workloads:
 
 ```bash
-sudo pacman -U packages/vulkan-terakan-*.pkg.tar.zst \
-  packages/lib32-vulkan-terakan-*.pkg.tar.zst
+sudo pacman -U packages/vulkan-ai-terakan-*.pkg.tar.zst \
+  packages/lib32-vulkan-ai-terakan-*.pkg.tar.zst
 ```
 
 After installation:

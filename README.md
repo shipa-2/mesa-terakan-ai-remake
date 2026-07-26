@@ -56,6 +56,22 @@ Run applications against the local build without installing it:
 The build and run helpers use `build-vulkan/` inside the source tree and do not
 replace system Mesa.
 
+Install the current AUR recipe as a system Vulkan ICD on Arch Linux:
+
+```bash
+./bin/terakan-install
+```
+
+The installer keeps package sources, build files, and archives in
+`.terakan-package/`, fetches the latest `Terakan_state_rework` revision, and
+installs both 64-bit and 32-bit packages through pacman. Remove them with:
+
+```bash
+./bin/terakan-uninstall
+# Compatibility path:
+./bin/terakan/uninstall
+```
+
 ## Documentation
 
 - [Build instructions](docs/terakan/BUILD.md)

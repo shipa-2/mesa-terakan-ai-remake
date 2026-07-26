@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ ! -e /etc/arch-release ]]; then
+  echo "terakan-uninstall: only Arch Linux derivatives are currently supported" >&2
+  exit 1
+fi
+for command_name in pacman sudo; do
+  if ! command -v "$command_name" >/dev/null; then
+    echo "terakan-uninstall: required command is missing: $command_name" >&2
+    exit 1
+  fi
+done
+
+installed=()
+for package_name in lib32-vulkan-ai-terakan vulkan-ai-terakan; do
+  if pacman -Q "$package_name" >/dev/null 2>&1; then
+    installed+=("$package_name")
+  fi
+done
+
+if ((${#installed[@]} == 0)); then
+  echo "terakan-uninstall: vulkan-ai-terakan is not installed"
+  exit 0
+fi
+
+sudo pacman -R -- "${installed[@]}"

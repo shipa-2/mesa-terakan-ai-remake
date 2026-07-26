@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
+work_root=${TERAKAN_PACKAGE_DIR:-"$repo_root/.terakan-package"}
+recipe_dir="$work_root/aur"
+aur_url=https://aur.archlinux.org/vulkan-ai-terakan.git
+
+if ((EUID == 0)); then
+  echo "terakan-install: run as a regular user; makepkg will use sudo when needed" >&2
+  exit 1
+fi
+if [[ ! -e /etc/arch-release ]]; then
+  echo "terakan-install: only Arch Linux derivatives are currently supported" >&2
+  exit 1
+fi
+for command_name in git makepkg pacman sudo; do
+  if ! command -v "$command_name" >/dev/null; then
+    echo "terakan-install: required command is missing: $command_name" >&2
+    exit 1
+  fi
+done
+
+mkdir -p -- "$work_root"
+if [[ -d "$recipe_dir/.git" ]]; then
+  if [[ -n "$(git -C "$recipe_dir" status --porcelain)" ]]; then
+    echo "terakan-install: refusing to update modified checkout: $recipe_dir" >&2
+    exit 1
+  fi
+  git -C "$recipe_dir" fetch --prune origin
+  git -C "$recipe_dir" checkout master
+  git -C "$recipe_dir" merge --ff-only origin/master
+elif [[ -e "$recipe_dir" ]]; then
+  echo "terakan-install: path exists but is not an AUR checkout: $recipe_dir" >&2
+  exit 1
+else
+  git clone "$aur_url" "$recipe_dir"
+fi
+
+export SRCDEST="$work_root/sources"
+export BUILDDIR="$work_root/build"
+export PKGDEST="$work_root/packages"
+mkdir -p -- "$SRCDEST" "$BUILDDIR" "$PKGDEST"
+
+cd "$recipe_dir"
+makepkg --cleanbuild --syncdeps --install --needed
+
+echo "Terakan is installed as a system Vulkan ICD."
+echo "Check it with: terakan-vulkan vulkaninfo --summary"
