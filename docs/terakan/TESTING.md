@@ -17,6 +17,10 @@ It performs three independently meaningful checks:
 This prevents a passing result from accidentally coming from RADV, llvmpipe,
 or the system Vulkan driver.
 
+On the current CAICOS test system the hardware report must identify an AMD
+R8xx/CAICOS Terakan device and Vulkan API 1.1. A different device name means
+that the intended ICD was not tested.
+
 CPU-only test:
 
 ```bash
@@ -47,7 +51,8 @@ Optional ten-second visual smoke test:
 
 ## Wine and DXVK
 
-Use a known Wine prefix containing DXVK-Sarek, then select the same local ICD:
+Use a known Wine prefix containing DXVK-Sarek, then select the same local
+Terakan ICD:
 
 ```bash
 ./bin/terakan-run wine /path/to/game.exe
@@ -55,6 +60,9 @@ Use a known Wine prefix containing DXVK-Sarek, then select the same local ICD:
 
 Do not set `PROTON_USE_WINED3D=1`: that bypasses DXVK and therefore does not
 test the Vulkan driver. Do not force unsupported Mesa/OpenGL extensions.
+
+The repository branch `dxvk-sarek-terakan` is kept as integration history; it
+is not selected or built by the Mesa helpers in `bin/`.
 
 ## Evidence and failure handling
 

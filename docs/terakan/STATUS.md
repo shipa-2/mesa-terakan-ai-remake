@@ -6,8 +6,8 @@ Last updated: 2026-07-26. Target hardware: AMD CAICOS.
 
 | Area | Result |
 |---|---|
-| Vulkan instance/device discovery | Terakan CAICOS device reported |
-| Focused unit tests | vertex input and physical-device properties pass |
+| Vulkan instance/device discovery | AMD R8xx (CAICOS) Terakan device, API 1.1.318 |
+| Focused unit tests | vertex input passes; physical-device report has 0 errors |
 | Compute smoke test | readback `{1,2,3,4}` passed |
 | Events and sparse property queries | implemented and CAICOS-tested |
 | Color MSAA resolve | 2x, 4x, and 8x; full/partial, layers, RGBA/BGRA passed |
@@ -20,6 +20,7 @@ Last updated: 2026-07-26. Target hardware: AMD CAICOS.
 - Cache and barrier synchronization across all game workloads.
 - Remaining resolve fallbacks for unusual formats and subresources.
 - Rendering correctness in Katamari gameplay under DXVK-Sarek.
+- Full Vulkan 1.1 feature coverage and conformance testing.
 - Vulkan conformance: Terakan is not a conformant implementation.
 
 The table records observed tests, not a claim of complete Vulkan 1.1 support.

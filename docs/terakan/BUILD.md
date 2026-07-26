@@ -1,5 +1,16 @@
 # Building Terakan
 
+## Get the canonical source
+
+```bash
+git clone --branch Terakan_state_rework --single-branch \
+  https://github.com/shipa-2/mesa-terakan-ai-upstreamed.git
+cd mesa-terakan-ai-upstreamed
+```
+
+This branch already contains the full Mesa tree and the Terakan driver. No
+overlay, copied source directory, or separate patch application is required.
+
 ## Arch Linux dependencies
 
 ```bash
@@ -32,6 +43,9 @@ TERAKAN_CCACHE_DIR="$PWD/.local-cache/ccache" ./bin/terakan-build
 
 `--clean` uses Meson's wipe operation only for an already configured Meson
 directory. It refuses to delete an unrelated path.
+
+For an incremental rebuild, run `./bin/terakan-build` again. Use `--clean`
+after Meson options, compilers, or important dependencies change.
 
 The main artifact is:
 

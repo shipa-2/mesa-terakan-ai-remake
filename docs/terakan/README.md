@@ -10,5 +10,8 @@ documentation remains under `docs/`.
 - [Status](STATUS.md) — verified functionality and known limitations.
 
 The canonical source tree is this repository on branch
-`Terakan_state_rework`. Older `mesa-terakan-*-development` overlay repositories
-are historical references and must not be copied over this tree.
+`Terakan_state_rework`. It is a complete Mesa tree: do not copy an old overlay,
+patch stack, or development repository over it.
+
+The separate `dxvk-sarek-terakan` branch is retained for DXVK-Sarek integration
+history. It is not a Mesa build branch.

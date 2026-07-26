@@ -1,12 +1,8 @@
 # Arch Linux packaging
 
-The maintained package recipe lives in the sibling repository:
-
-```text
-../vulkan-terakan/
-```
-
-It produces two split packages:
+The maintained package recipe is in
+[`shipa-2/mesa-terakan-patches`](https://github.com/shipa-2/mesa-terakan-patches)
+on branch `packaging-rework`. It produces two split packages:
 
 - `vulkan-terakan`: 64-bit Vulkan ICD and launch wrappers;
 - `lib32-vulkan-terakan`: 32-bit ICD for 32-bit Wine/DXVK processes.
@@ -14,16 +10,20 @@ It produces two split packages:
 Build the committed Git branch:
 
 ```bash
-cd ../vulkan-terakan
+git clone --branch packaging-rework --single-branch \
+  https://github.com/shipa-2/mesa-terakan-patches.git vulkan-terakan
+cd vulkan-terakan
 makepkg --cleanbuild --syncdeps --force
 ```
 
 Package the current local source tree, including uncommitted and untracked
-files:
+files. When the packaging and Mesa repositories are not siblings, pass the
+source tree explicitly:
 
 ```bash
-cd ../vulkan-terakan
-./build-local.sh --syncdeps
+cd /path/to/vulkan-terakan
+TERAKAN_SOURCE_TREE=/path/to/mesa-terakan-ai-upstreamed \
+  ./build-local.sh --syncdeps
 ```
 
 `build-local.sh` copies the working tree into an isolated temporary Git
