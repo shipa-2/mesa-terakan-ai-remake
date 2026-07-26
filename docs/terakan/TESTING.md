@@ -21,6 +21,10 @@ On the current CAICOS test system the hardware report must identify an AMD
 R8xx/CAICOS Terakan device and Vulkan API 1.1. A different device name means
 that the intended ICD was not tested.
 
+The report also validates `VK_KHR_driver_properties`. `driverName` must be
+`Terakan`, `driverInfo` must identify Mesa, and `conformanceVersion` remains
+`0.0.0.0` until the driver has passed the Vulkan conformance test suite.
+
 CPU-only test:
 
 ```bash

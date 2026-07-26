@@ -861,12 +861,14 @@ terakan_physical_device_get_capabilities(
    properties_out->subgroupSupportedOperations = VK_SUBGROUP_FEATURE_BASIC_BIT;
    properties_out->subgroupQuadOperationsInAllStages = VK_FALSE;
 
-   /* DriverProperties. */
+   /* VK_KHR_driver_properties (#197, Vulkan 1.2). */
+   extensions_out->KHR_driver_properties = true;
    properties_out->driverID = VK_DRIVER_ID_MESA_RADV;
    snprintf(properties_out->driverName, sizeof(properties_out->driverName), "Terakan");
    snprintf(properties_out->driverInfo, sizeof(properties_out->driverInfo),
             "Mesa " PACKAGE_VERSION MESA_GIT_SHA1);
-   properties_out->conformanceVersion = (VkConformanceVersion){1, 1, 0, 0};
+   /* Terakan has not passed the Vulkan conformance test suite. */
+   properties_out->conformanceVersion = (VkConformanceVersion){0, 0, 0, 0};
 
    /* VK_KHR_timeline_semaphore (#208, Vulkan 1.2). */
    extensions_out->KHR_timeline_semaphore = true;

@@ -137,6 +137,7 @@ main(void)
    TEST_CHECK(VK_API_VERSION_MINOR(legacy_properties.apiVersion) >= 1);
    TEST_CHECK(bytes_are_nonzero(legacy_properties.pipelineCacheUUID, VK_UUID_SIZE));
    TEST_CHECK(has_device_extension(physical_device, VK_KHR_MAINTENANCE_3_EXTENSION_NAME));
+   TEST_CHECK(has_device_extension(physical_device, VK_KHR_DRIVER_PROPERTIES_EXTENSION_NAME));
 
    VkPhysicalDeviceVulkan11Features vulkan_1_1_features = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
@@ -231,6 +232,19 @@ main(void)
    TEST_CHECK(maintenance_3.maxPerSetDescriptors >=
               properties_2.properties.limits.maxDescriptorSetSampledImages);
 
+   VkPhysicalDeviceDriverProperties driver = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES,
+   };
+   properties_2.pNext = &driver;
+   vkGetPhysicalDeviceProperties2(physical_device, &properties_2);
+   TEST_CHECK(driver.driverID == VK_DRIVER_ID_MESA_RADV);
+   TEST_CHECK(!strcmp(driver.driverName, "Terakan"));
+   TEST_CHECK(strstr(driver.driverInfo, "Mesa ") == driver.driverInfo);
+   TEST_CHECK(driver.conformanceVersion.major == 0);
+   TEST_CHECK(driver.conformanceVersion.minor == 0);
+   TEST_CHECK(driver.conformanceVersion.subminor == 0);
+   TEST_CHECK(driver.conformanceVersion.patch == 0);
+
    PFN_vkGetPhysicalDeviceFeatures2KHR const get_features_2_khr =
       (PFN_vkGetPhysicalDeviceFeatures2KHR)vkGetInstanceProcAddr(instance,
                                                                  "vkGetPhysicalDeviceFeatures2KHR");
@@ -290,6 +304,8 @@ main(void)
    printf("pointClippingBehavior=ALL_CLIP_PLANES\n");
    printf("maxPerSetDescriptors=%" PRIu32 "\n", maintenance_3.maxPerSetDescriptors);
    printf("maxMemoryAllocationSize=%" PRIu64 "\n", maintenance_3.maxMemoryAllocationSize);
+   printf("driverName=%s\n", driver.driverName);
+   printf("driverInfo=%s\n", driver.driverInfo);
    printf("\nErrors: 0\n");
 
 out:
