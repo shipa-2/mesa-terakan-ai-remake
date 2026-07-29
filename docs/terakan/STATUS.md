@@ -35,6 +35,10 @@ OpenGL driver on the same CAICOS hardware.
 - Full Vulkan 1.1 feature coverage and conformance testing.
 - Vulkan conformance: Terakan is not a conformant implementation.
 
+The prioritized implementation order, complexity estimates, hardware
+limitations, and completion criteria are maintained in the
+[development TODO](TODO.md).
+
 The table records observed tests, not a claim of complete Vulkan 1.1 support.
 Re-run `bin/terakan-test` after every clean build. A visually correct game
 frame complements the readback tests but does not replace them.

@@ -8,6 +8,7 @@ documentation remains under `docs/`.
 - [Testing](TESTING.md) — unit tests, CAICOS smoke tests, games, and logs.
 - [Packaging](PACKAGING.md) — Arch Linux split packages and local snapshots.
 - [Status](STATUS.md) — verified functionality and known limitations.
+- [TODO](TODO.md) — prioritized game-readiness work with acceptance criteria.
 
 The canonical source tree is this repository on branch
 `Terakan_state_rework`. It is a complete Mesa tree: do not copy an old overlay,

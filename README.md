@@ -80,6 +80,7 @@ installs both 64-bit and 32-bit packages through pacman. Remove them with:
 - [Testing and game launch instructions](docs/terakan/TESTING.md)
 - [Arch Linux packaging](docs/terakan/PACKAGING.md)
 - [Implemented functionality and known limitations](docs/terakan/STATUS.md)
+- [Prioritized development TODO](docs/terakan/TODO.md)
 
 Generic Mesa developer documentation remains under [`docs/`](docs/).
 

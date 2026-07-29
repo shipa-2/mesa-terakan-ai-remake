@@ -1,0 +1,72 @@
+# Terakan development TODO
+
+Last updated: 2026-07-29. Primary target: stable game rendering on AMD
+CAICOS with DXVK-Sarek.
+
+Importance measures the expected effect on real games. Complexity includes
+implementation, hardware research, and the CAICOS regression test needed to
+accept the work. Both use a 1–5 scale.
+
+## P0 — game-rendering blockers
+
+| Work item | Importance | Complexity | Feasibility | Acceptance criteria |
+|---|---:|---:|---|---|
+| Complete depth/stencil resolve and layout transitions | 5/5 | 5/5 | Implementable, potentially through a transient color-compatible surface and depth-export shader | Depth and stencil readbacks pass for partial regions, mip levels, array layers and every advertised sample count |
+| Implement and validate FMASK/CMASK allocation, identity initialization and sampled MSAA addressing | 5/5 | 5/5 | Implementable; requires Evergreen tiling research | Per-sample reads and resolved reads pass for 2x/4x/8x images without corrupting ordinary color targets |
+| Complete cache and barrier coherency | 5/5 | 4/5 | Implementable | Focused attachment, texture, storage, transfer, graphics/compute and query producer-consumer chains pass without application-specific waits |
+| Cover remaining copy, blit and resolve format/subresource combinations | 5/5 | 4/5 | Implementable | Boundary tests cover non-zero offsets, partial extents, mip levels, array/3D layers and every advertised compatible format class |
+
+## P1 — broad DXVK and D3D11 compatibility
+
+| Work item | Importance | Complexity | Feasibility | Acceptance criteria |
+|---|---:|---:|---|---|
+| Enable geometry shaders and complete vertex-pipeline stage plumbing | 4/5 | 5/5 | Hardware-supported | Focused GS tests pass and `geometryShader` is exposed only afterwards |
+| Enable tessellation control/evaluation shaders | 4/5 | 5/5 | Hardware-supported | Tessellation limits are reported from tested hardware behavior and representative pipelines pass |
+| Complete stream output / transform feedback | 4/5 | 4/5 | Hardware-supported | SFN receives NIR stream-output metadata and D3D11 stream-output workloads pass readback tests |
+| Complete storage-image/UAV format and atomic coverage | 4/5 | 4/5 | Mostly implementable; limited by hardware binding counts and formats | Every advertised storage-image format passes load, store and applicable integer-atomic tests |
+| Enforce robust buffer and image bounds everywhere | 4/5 | 4/5 | Implementable with lowering and descriptor bounds | Guard regions remain intact for misaligned, dynamic and end-of-range accesses |
+| Integrate query reset/copy/end synchronization with the common barrier machinery | 3/5 | 3/5 | Implementable | Occlusion, timestamp and pipeline-statistics queries pass reuse and cross-stage ordering tests |
+
+## P2 — optional Vulkan functionality
+
+These are useful, but Vulkan 1.1 permits the corresponding feature bits to be
+`VK_FALSE`. They do not block a legal Vulkan 1.1 capability report.
+
+| Work item | Importance | Complexity | Feasibility | Notes |
+|---|---:|---:|---|---|
+| Expose dynamic rendering | 2/5 | 3/5 after P0 | Implementable | Currently blocked by the depth/stencil resolve extension dependency |
+| Lower 64-bit buffer accesses and finish 64-bit shader coverage | 2/5 | 4/5 | Partly implementable through 32-bit lowering | Native performance will remain limited |
+| Add 16-bit storage support | 2/5 | 4/5 | Implementable through packing/lowering where necessary | Rare in the current DXVK-Sarek target set |
+| Add multiview | 1/5 | 3/5 | Implementable | Primarily useful for VR and Vulkan-native applications |
+| Add sampler YCbCr conversion | 1/5 | 3/5 | Implementable, likely shader-assisted | Primarily video-oriented |
+| Add variable pointers | 1/5 | 4/5 | Potentially implementable through lowering | Low game priority |
+| Complete shader float-control rounding modes | 1/5 | 3/5 | Partly hardware-limited | Expose only modes verified on R8xx |
+
+## Not planned for CAICOS
+
+| Item | Importance | Reason |
+|---|---:|---|
+| Protected memory | 0/5 | The required protected execution and allocation model is unavailable with this hardware and the `radeon` kernel interface |
+| Native high-performance FP64 | 1/5 | CAICOS lacks the hardware needed for a useful implementation; software lowering may be used only where practical |
+
+## Completed and regression-covered
+
+- Compute dispatch, loop constants and shader control flow.
+- Singleton subgroup `BASIC` and `ARITHMETIC` lowering.
+- Dynamic SSBO offsets, `firstInstance` and graphics/compute state restoration.
+- Layered buffer/image copies.
+- Mipmapped array and cubemap slice layout, including BC6H cube, single-level
+  and 2D-array views.
+- Color MSAA resolve for the currently tested sample counts, regions, layers
+  and RGBA/BGRA formats.
+
+## Completion policy
+
+A TODO is complete only when:
+
+1. the implementation builds from a clean configuration;
+2. a focused readback test covers normal, boundary and negative behavior;
+3. the test explicitly selects and reports the Terakan CAICOS ICD;
+4. existing CPU and GPU regression tests still pass;
+5. a relevant game test confirms rendering, without treating a surviving
+   process or a single screenshot as sufficient proof.
