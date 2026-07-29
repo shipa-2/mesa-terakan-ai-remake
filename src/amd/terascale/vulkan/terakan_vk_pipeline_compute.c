@@ -17,12 +17,15 @@
 #include "spirv/nir_spirv.h"
 #include "util/bitscan.h"
 #include "util/macros.h"
+#include "util/mesa-blake3.h"
 #include "util/u_math.h"
 #include "vk_log.h"
 #include "vk_pipeline.h"
 #include "vk_shader_module.h"
 
 #include <assert.h>
+#include <limits.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -59,10 +62,19 @@ terakan_vk_pipeline_compute_cmd_bind(struct vk_command_buffer * const command_bu
    struct terakan_vk_pipeline_compute const * const pipeline =
       container_of(pipeline_base, struct terakan_vk_pipeline_compute const, vk);
 
+   if (getenv("TERAKAN_DEBUG_COMPUTE") != NULL) {
+      fprintf(stderr,
+              "[TERAKAN_COMPUTE] bind command=%p pipeline=%p block=%u,%u,%u lds=%u waves=%u "
+              "uav_mask=0x%08x\n",
+              (void *)command_buffer, (void *)pipeline, pipeline->block_size_[0],
+              pipeline->block_size_[1], pipeline->block_size_[2], pipeline->lds_dwords_,
+              pipeline->num_waves_, pipeline->cb_target_mask_);
+   }
+
    terakan_app_config_compute_bind_shader(
       command_writer, &pipeline->shader, pipeline->block_size_[0], pipeline->block_size_[1],
       pipeline->block_size_[2], pipeline->lds_dwords_, pipeline->num_waves_,
-      pipeline->cb_target_mask_);
+      pipeline->cb_target_mask_, pipeline->diagnostic_skip_dispatch_);
 }
 
 static void
@@ -117,6 +129,52 @@ terakan_vk_pipeline_compute_create(struct terakan_device * const device,
       return vk_error(device, VK_ERROR_UNKNOWN);
    }
 
+   char module_blake3[BLAKE3_HEX_LEN];
+   _mesa_blake3_format(module_blake3, module->hash);
+   char const * const skip_blake3 = getenv("TERAKAN_DEBUG_SKIP_COMPUTE_BLAKE3");
+   bool const skip_by_blake3 =
+      skip_blake3 != NULL && strlen(skip_blake3) == BLAKE3_HEX_LEN - 1 &&
+      strcmp(skip_blake3, module_blake3) == 0;
+   char const * const skip_module_size_text =
+      getenv("TERAKAN_DEBUG_SKIP_COMPUTE_MODULE_SIZE");
+   char * skip_module_size_end = NULL;
+   unsigned long const skip_module_size =
+      skip_module_size_text != NULL ? strtoul(skip_module_size_text, &skip_module_size_end, 10) : 0;
+   bool const skip_by_module_size =
+      skip_module_size_text != NULL && skip_module_size_text[0] != '\0' &&
+      skip_module_size_end != NULL && skip_module_size_end[0] == '\0' &&
+      skip_module_size == module->size;
+   pipeline->diagnostic_skip_dispatch_ = skip_by_blake3 || skip_by_module_size;
+   if (pipeline->diagnostic_skip_dispatch_) {
+      fprintf(stderr,
+              "[TERAKAN_COMPUTE] diagnostic dispatch skip armed by %s for SPIR-V "
+              "BLAKE3 %s, module_bytes=%u\n",
+              skip_by_blake3 ? "BLAKE3" : "module size", module_blake3, module->size);
+   }
+
+   char const * const dump_spirv_directory =
+      getenv("TERAKAN_DEBUG_DUMP_COMPUTE_SPIRV_DIR");
+   if (dump_spirv_directory != NULL && dump_spirv_directory[0] != '\0') {
+      char dump_spirv_path[PATH_MAX];
+      int const path_length =
+         snprintf(dump_spirv_path, sizeof(dump_spirv_path), "%s/%s.spv",
+                  dump_spirv_directory, module_blake3);
+      if (path_length > 0 && (size_t)path_length < sizeof(dump_spirv_path)) {
+         FILE * const dump_spirv = fopen(dump_spirv_path, "wb");
+         if (dump_spirv != NULL) {
+            size_t const written = fwrite(module->data, 1, module->size, dump_spirv);
+            int const close_result = fclose(dump_spirv);
+            fprintf(stderr,
+                    "[TERAKAN_COMPUTE] SPIR-V dump %s: %zu/%u bytes%s\n",
+                    dump_spirv_path, written, module->size,
+                    written == module->size && close_result == 0 ? "" : " (incomplete)");
+         } else {
+            fprintf(stderr, "[TERAKAN_COMPUTE] failed to open SPIR-V dump %s\n",
+                    dump_spirv_path);
+         }
+      }
+   }
+
    struct terakan_shader_impl * const shader = &pipeline->shader;
    shader->push_constants_usage.app_extent_bytes =
       pipeline_layout->shader_app_push_constants_extents_bytes[MESA_SHADER_COMPUTE];
@@ -151,6 +209,22 @@ terakan_vk_pipeline_compute_create(struct terakan_device * const device,
    pipeline->num_waves_ = terakan_vk_pipeline_compute_num_waves(
       chip_info, pipeline->block_size_[0], pipeline->block_size_[1], pipeline->block_size_[2]);
    pipeline->cb_target_mask_ = terakan_vk_pipeline_compute_cb_target_mask(shader);
+
+   if (getenv("TERAKAN_DEBUG_COMPUTE") != NULL) {
+      blake3_hash machine_code_hash;
+      char machine_code_blake3[BLAKE3_HEX_LEN];
+      _mesa_blake3_compute(shader->shader.bc.bytecode,
+                           shader->shader.bc.ndw * sizeof(uint32_t), machine_code_hash);
+      _mesa_blake3_format(machine_code_blake3, machine_code_hash);
+      fprintf(stderr,
+              "[TERAKAN_COMPUTE] create pipeline=%p module=%p module_bytes=%u blake3=%s "
+              "block=%u,%u,%u lds=%u waves=%u uav_mask=0x%08x shader_dwords=%u "
+              "machine_blake3=%s\n",
+              (void *)pipeline, (void *)(uintptr_t)create_info->stage.module, module->size,
+              module_blake3, pipeline->block_size_[0], pipeline->block_size_[1],
+              pipeline->block_size_[2], pipeline->lds_dwords_, pipeline->num_waves_,
+              pipeline->cb_target_mask_, shader->shader.bc.ndw, machine_code_blake3);
+   }
 
    uint32_t const shader_bo_bytes_shr8 =
       DIV_ROUND_UP(shader->shader.bc.ndw, (uint32_t)1 << (8 - 2));

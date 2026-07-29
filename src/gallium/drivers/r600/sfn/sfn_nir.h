@@ -113,6 +113,12 @@ r600_vectorize_vs_inputs(nir_shader *shader);
 bool
 r600_lower_to_scalar_instr_filter(const nir_instr *instr, const void *);
 
+bool
+r600_lower_shared_io(nir_shader *nir);
+
+bool
+r600_lower_fs_special_inputs(nir_shader *nir);
+
 void
 r600_lower_and_optimize_nir(nir_shader *sh,
                             const union r600_shader_key *key,

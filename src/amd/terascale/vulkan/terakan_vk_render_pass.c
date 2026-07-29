@@ -33,7 +33,18 @@
 
 #include <assert.h>
 #include <stddef.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <stdint.h>
+
+static bool
+terakan_render_debug_enabled(void)
+{
+   static int enabled = -1;
+   if (enabled < 0)
+      enabled = getenv("TERAKAN_DEBUG_RENDER") != NULL ? 1 : 0;
+   return enabled != 0;
+}
 
 VKAPI_ATTR void VKAPI_CALL
 terakan_CmdBeginRendering(VkCommandBuffer const commandBuffer,
@@ -43,6 +54,25 @@ terakan_CmdBeginRendering(VkCommandBuffer const commandBuffer,
       terakan_command_buffer_from_handle(commandBuffer);
    struct terakan_gfx_command_writer * const command_writer = command_buffer->command_writer.gfx;
    struct terakan_app_config_draw * const config = &command_writer->app_config_draw;
+
+   if (terakan_render_debug_enabled()) {
+      fprintf(stderr, "[TERAKAN_RENDER] begin flags=0x%x area=%d,%d %ux%u colors=%u\n",
+              pRenderingInfo->flags, pRenderingInfo->renderArea.offset.x,
+              pRenderingInfo->renderArea.offset.y, pRenderingInfo->renderArea.extent.width,
+              pRenderingInfo->renderArea.extent.height, pRenderingInfo->colorAttachmentCount);
+      for (uint32_t i = 0; i < pRenderingInfo->colorAttachmentCount; ++i) {
+         struct terakan_image_view const * const view =
+            terakan_image_view_from_handle(pRenderingInfo->pColorAttachments[i].imageView);
+         if (view != NULL) {
+            fprintf(stderr,
+                    "[TERAKAN_RENDER] color[%u] extent=%ux%u samples=%u load=%u store=%u resolve=%u\n",
+                    i, view->vk.extent.width, view->vk.extent.height, view->vk.image->samples,
+                    pRenderingInfo->pColorAttachments[i].loadOp,
+                    pRenderingInfo->pColorAttachments[i].storeOp,
+                    pRenderingInfo->pColorAttachments[i].resolveMode);
+         }
+      }
+   }
 
    command_buffer->rendering_flags = pRenderingInfo->flags;
    for (unsigned color_attachment_index = 0;
@@ -269,6 +299,12 @@ terakan_CmdEndRendering(VkCommandBuffer const commandBuffer)
 {
    struct terakan_command_buffer * const command_buffer =
       terakan_command_buffer_from_handle(commandBuffer);
+   if (terakan_render_debug_enabled())
+      fprintf(stderr, "[TERAKAN_RENDER] end flags=0x%x resolve_area=%d,%d %ux%u\n",
+              command_buffer->rendering_flags, command_buffer->rendering_resolve_area.offset.x,
+              command_buffer->rendering_resolve_area.offset.y,
+              command_buffer->rendering_resolve_area.extent.width,
+              command_buffer->rendering_resolve_area.extent.height);
    if (!(command_buffer->rendering_flags & VK_RENDERING_SUSPENDING_BIT)) {
       for (unsigned color_attachment_index = 0;
            color_attachment_index < TERAKAN_VK_STATE_MAX_COLOR_ATTACHMENTS;

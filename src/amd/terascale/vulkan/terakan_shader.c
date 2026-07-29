@@ -302,42 +302,60 @@ terakan_nir_should_vectorize_load_store(unsigned const align_mul, unsigned const
    return true;
 }
 
-static void
-terakan_shader_collect_draw_parameter_push_constants(
+struct terakan_nir_lower_draw_parameters_state {
+   struct terakan_shader_sqk_usage * sqk_usage;
+   uint32_t * driver_push_constants_used;
+};
+
+static bool
+terakan_nir_lower_draw_parameters_instr(
+   nir_builder * const b, nir_intrinsic_instr * const intrin, void * const cb_data)
+{
+   struct terakan_nir_lower_draw_parameters_state * const state =
+      (struct terakan_nir_lower_draw_parameters_state *)cb_data;
+
+   enum terakan_push_constants_driver_index driver_index;
+   size_t byte_offset;
+   switch (intrin->intrinsic) {
+   case nir_intrinsic_load_first_vertex:
+   case nir_intrinsic_load_base_vertex:
+      driver_index = TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_BASE_VERTEX;
+      byte_offset = offsetof(struct terakan_push_constants_driver, base_vertex);
+      break;
+   case nir_intrinsic_load_base_instance:
+      driver_index = TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_BASE_INSTANCE;
+      byte_offset = offsetof(struct terakan_push_constants_driver, base_instance);
+      break;
+   case nir_intrinsic_load_draw_id:
+      driver_index = TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_DRAW_ID;
+      byte_offset = offsetof(struct terakan_push_constants_driver, draw_id);
+      break;
+   default:
+      return false;
+   }
+
+   b->cursor = nir_before_instr(&intrin->instr);
+   nir_def * const replacement = terakan_nir_load_raw_resource_buffer(
+      b, 1, 32, ACCESS_CAN_REORDER, TERAKAN_RESOURCE_RANGE_PUSH_CONSTANTS,
+      nir_imm_int(b, 0), (unsigned)byte_offset, nir_imm_int(b, 0));
+   nir_def_replace(&intrin->def, replacement);
+
+   *state->driver_push_constants_used |= BITFIELD_BIT(driver_index);
+   BITSET_SET(state->sqk_usage->resources, TERAKAN_RESOURCE_RANGE_PUSH_CONSTANTS);
+   return true;
+}
+
+static bool
+terakan_nir_lower_draw_parameters(
    nir_shader * const nir, struct terakan_shader_sqk_usage * const sqk_usage,
    uint32_t * const driver_push_constants_used)
 {
-   uint32_t used = 0;
-
-   nir_foreach_function_impl (impl, nir) {
-      nir_foreach_block (block, impl) {
-         nir_foreach_instr (instr, block) {
-            if (instr->type != nir_instr_type_intrinsic) {
-               continue;
-            }
-
-            switch (nir_instr_as_intrinsic(instr)->intrinsic) {
-            case nir_intrinsic_load_first_vertex:
-            case nir_intrinsic_load_base_vertex:
-               used |= BITFIELD_BIT(TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_BASE_VERTEX);
-               break;
-            case nir_intrinsic_load_base_instance:
-               used |= BITFIELD_BIT(TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_BASE_INSTANCE);
-               break;
-            case nir_intrinsic_load_draw_id:
-               used |= BITFIELD_BIT(TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_DRAW_ID);
-               break;
-            default:
-               break;
-            }
-         }
-      }
-   }
-
-   if (used != 0) {
-      *driver_push_constants_used |= used;
-      BITSET_SET(sqk_usage->resources, TERAKAN_RESOURCE_RANGE_PUSH_CONSTANTS);
-   }
+   struct terakan_nir_lower_draw_parameters_state state = {
+      .sqk_usage = sqk_usage,
+      .driver_push_constants_used = driver_push_constants_used,
+   };
+   return nir_shader_intrinsics_pass(nir, terakan_nir_lower_draw_parameters_instr,
+                                     nir_metadata_control_flow, &state);
 }
 
 void
@@ -373,14 +391,13 @@ terakan_shader_lower_and_optimize_post_link(
    } while (progress);
 
    /*
-    * SFN lowers Vulkan draw parameters to loads from Terakan's internal push-constant buffer.
-    * Account for those loads explicitly: unlike application push constants and descriptor
-    * lowerings, they don't otherwise contribute to the pipeline's push-constant usage. Without
-    * this, shaders using gl_BaseInstance (including gl_InstanceIndex after system-value lowering)
-    * may read an unbound buffer and index every per-object array from zero.
+    * Gallium's SFN draw-parameter path reads R600_LDS_INFO_CONST_BUFFER (resource 15), while
+    * Terakan reserves TERAKAN_RESOURCE_RANGE_PUSH_CONSTANTS (resource 1) for both application and
+    * driver push constants. Lower the Vulkan draw parameters explicitly so SFN uses Terakan's
+    * bound resource instead of the Gallium-specific one.
     */
-   terakan_shader_collect_draw_parameter_push_constants(nir, sqk_usage,
-                                                        driver_push_constants_used);
+   NIR_PASS(_, nir, terakan_nir_lower_draw_parameters, sqk_usage,
+            driver_push_constants_used);
 
    if (nir->info.stage == MESA_SHADER_FRAGMENT) {
       /* For fragment data location compaction. */
@@ -405,9 +422,27 @@ terakan_shader_lower_and_optimize_post_link(
       nir_assign_io_var_locations(nir, nir_var_shader_out, &nir->num_outputs, nir->info.stage);
    }
 
-   /* Lower texture operations. */
-
+   /* Lower texture operations to the subset accepted by the r600 SFN backend.
+    *
+    * Gallium normally does this in r600_finalize_nir_common before calling
+    * r600_lower_and_optimize_nir. Terakan has its own Vulkan-specific NIR
+    * pipeline and calls the latter directly, so leaving these operations
+    * untouched makes SFN receive texture instructions it doesn't implement
+    * consistently (notably array/cube TXL/TXF and offset forms).
+    */
+   struct nir_lower_tex_options lower_tex_options = {};
+   lower_tex_options.lower_txp = ~0u;
+   lower_tex_options.lower_txf_offset = true;
+   lower_tex_options.lower_invalid_implicit_lod = true;
+   lower_tex_options.lower_tg4_offsets = true;
+   NIR_PASS(_, nir, nir_lower_tex, &lower_tex_options);
+   NIR_PASS(_, nir, r600_nir_lower_txl_txf_array_or_cube);
    NIR_PASS(_, nir, r600_nir_lower_cube_to_2darray);
+
+   /* SFN assumes that undefined SSA values have already been made
+    * deterministic by the frontend finalization pipeline.
+    */
+   NIR_PASS(_, nir, nir_lower_undef_to_zero);
 
    /* Vectorize loads that will be lowered to typed buffer load (vertex fetch) instructions, but
     * first lower all loads to scalar to make sure hardware constraints for vectorizing are taken

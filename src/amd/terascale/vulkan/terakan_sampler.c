@@ -33,6 +33,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 VKAPI_ATTR void VKAPI_CALL
 terakan_DestroySampler(VkDevice const deviceHandle, VkSampler const samplerHandle,
@@ -93,6 +94,14 @@ terakan_CreateSampler(VkDevice const deviceHandle, VkSamplerCreateInfo const * c
       sampler->sampler.sampler[0] |= S_03C000_MAX_ANISO_RATIO(max_aniso_ratio);
       sampler->sampler.sampler[1] |= S_03C004_PERF_MIP(max_aniso_ratio + 6);
       sampler->sampler.sampler[2] |= S_03C008_ANISO_BIAS(max_aniso_ratio);
+   }
+
+   /* Diagnostic switch for separating mip layout/addressing failures from base-level texture
+    * sampling failures in applications. Clamping both limits to zero makes every implicit-LOD
+    * sample use the base level without changing normal driver behavior.
+    */
+   if (getenv("TERAKAN_DEBUG_FORCE_BASE_MIP") != NULL) {
+      sampler->sampler.sampler[1] &= C_03C004_MIN_LOD & C_03C004_MAX_LOD;
    }
 
    /* TODO(Triang3l): Border color. */

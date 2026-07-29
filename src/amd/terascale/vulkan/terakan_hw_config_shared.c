@@ -26,6 +26,7 @@
 #include "terakan_barrier.h"
 #include "terakan_command_buffer.h"
 #include "terakan_device.h"
+#include "terakan_hw_config_loop_constants.h"
 #include "terakan_limits.h"
 #include "terakan_physical_device.h"
 #include "terakan_shader.h"
@@ -160,6 +161,17 @@ terakan_hw_config_shared_indirect_buffer_begun(
       }
       memcpy(packet, common_constant_config, sizeof(common_constant_config));
       packet += ARRAY_SIZE(common_constant_config);
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
+   }
+
+   {
+      uint32_t * packet = terakan_gfx_command_writer_emit(
+         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG,
+         TERAKAN_HW_CONFIG_LOOP_CONSTANT_DWORDS);
+      if (unlikely(packet == NULL)) {
+         return;
+      }
+      packet = terakan_hw_config_loop_constants_write(packet, TERAKAN_PACKET3_COMPUTE);
       terakan_gfx_command_writer_emit_done(command_writer, packet);
    }
 

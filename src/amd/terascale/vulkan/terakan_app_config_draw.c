@@ -1151,8 +1151,8 @@ terakan_app_config_draw_apply_sq_pgm_fragment(
 
    TERAKAN_APP_CONFIG_DRAW_ASSERT_MAY_DEPEND_ON(CB_COLOR_UAV_AND_UNUSED_MRT, SQ_PGM_FRAGMENT);
    uint8_t const rtv_dsb_export_count = util_bitcount(rtv_dsb_uncompacted_exports);
-   /* Compute shares the CB/RAT UAV path with fragment shaders. Preserve the compute UAV usage
-    * installed by terakan_app_config_compute_bind_shader while a compute pipeline is active.
+   /* Applying the graphics fragment entry is also part of the shared CB setup before dispatch.
+    * Don't replace the compute UAV usage that prepare_dispatch installed for that operation.
     */
    if (command_writer->app_config_compute.shader == NULL) {
       static BITSET_WORD const
@@ -1182,6 +1182,35 @@ terakan_app_config_draw_apply_sq_pgm_fragment(
       config->db_shader_control_.from_apply_sq_pgm_fragment.db_shader_control = db_shader_control;
       terakan_app_config_draw_set_pending(config, TERAKAN_APP_CONFIG_DRAW_ENTRY_DB_SHADER_CONTROL);
    }
+}
+
+void
+terakan_app_config_draw_restore_cb_state_after_compute(
+   struct terakan_gfx_command_writer * const command_writer)
+{
+   struct terakan_app_config_draw * const config = &command_writer->app_config_draw;
+   struct terakan_shader_impl const * const fs = config->sq_pgm_fragment_;
+   uint8_t const rtv_dsb_uncompacted_exports =
+      fs != NULL ? fs->fs.rtv_dsb_uncompacted_exports : 0;
+   static BITSET_WORD const
+      uav_empty_bitset[BITSET_WORDS(TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL)];
+   BITSET_WORD const * const uav_used =
+      fs != NULL ? fs->uavs_for_mutable_resources_needed : uav_empty_bitset;
+
+   config->cb_color_uav_and_unused_mrt_.from_apply_sq_pgm_fragment.rtv_dsb_export_count =
+      util_bitcount(rtv_dsb_uncompacted_exports);
+   memcpy(config->cb_color_uav_and_unused_mrt_.from_apply_sq_pgm_fragment.uav_used, uav_used,
+          sizeof(config->cb_color_uav_and_unused_mrt_.from_apply_sq_pgm_fragment.uav_used));
+
+   /*
+    * Compute temporarily programs the shared CB/RAT target mask. Recompute both graphics color
+    * targets and fragment UAV slots before the next draw even if Vulkan keeps the graphics
+    * pipeline bound across the dispatch.
+    */
+   terakan_app_config_draw_set_pending(
+      config, TERAKAN_APP_CONFIG_DRAW_ENTRY_CB_COLOR_RTV_AND_BLEND_CONTROL);
+   terakan_app_config_draw_set_pending(
+      config, TERAKAN_APP_CONFIG_DRAW_ENTRY_CB_COLOR_UAV_AND_UNUSED_MRT);
 }
 
 static void

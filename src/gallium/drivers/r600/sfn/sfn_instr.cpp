@@ -42,7 +42,7 @@ Instr::ready() const
    if (is_scheduled())
       return true;
    for (auto& i : m_required_instr)
-      if (!i->ready())
+      if (!i->is_dead() && !i->ready())
          return false;
    return do_ready();
 }

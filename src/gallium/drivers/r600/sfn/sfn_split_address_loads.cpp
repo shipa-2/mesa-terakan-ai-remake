@@ -88,8 +88,13 @@ class CollectDeps : public ConstRegisterVisitor {
 public:
    void visit(const Register& r) override
    {
-      for (auto p : r.parents())
-         add_dep(p);
+      for (auto p : r.parents()) {
+         bool const precedes_use =
+            p->block_id() < use_instr->block_id() ||
+            (p->block_id() == use_instr->block_id() && p->index() < use_instr->index());
+         if (precedes_use)
+            add_dep(p);
+      }
    }
    void visit(const LocalArray& value) override {(void)value; unreachable("Array is not a value");}
    void visit(const LocalArrayValue& r) override
@@ -98,8 +103,8 @@ public:
       for (auto reg : a) {
          if (!instr->dest() || !reg->equal_to(*instr->dest())) {
             for (auto p : reg->parents()) {
-               if ((instr->block_id() == p->block_id()) &&
-                   (instr->index() > p->index()))
+               if ((use_instr->block_id() == p->block_id()) &&
+                   (use_instr->index() > p->index()))
                   add_dep(p);
             }
          }
@@ -126,6 +131,7 @@ public:
    int alu_level{0};
 
    AluInstr *instr;
+   Instr *use_instr;
 };
 
 
@@ -145,6 +151,7 @@ void AddressSplitVisitor::visit(AluInstr *instr)
       // Do this with a visitor to catch also local array values
       CollectDeps collector;
       collector.instr = m_last_ar_load;
+      collector.use_instr = instr;
       for (auto& s : instr->sources()) {
          s->accept(collector);
       }
@@ -298,6 +305,11 @@ void AddressSplitVisitor::visit(Block *instr)
    m_last_ar_load = nullptr;
    m_current_addr = nullptr;
    m_last_ar_use.clear();
+   /* Input blocks are scheduled in order and never interleaved. Dependencies
+    * on non-ALU instructions from older blocks are therefore redundant, and
+    * retaining them can leave inserted address loads chained to dead code.
+    */
+   m_prev_non_alu.clear();
    auto e = instr->end(); 
    while (m_block_iterator != e) {
       (*m_block_iterator)->accept(*this); 

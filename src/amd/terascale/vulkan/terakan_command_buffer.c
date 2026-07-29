@@ -582,8 +582,9 @@ terakan_gfx_command_writer_emit_hw_config(
    struct terakan_gfx_command_writer * const command_writer,
    enum terakan_gfx_command_writer_emit_contents const contents)
 {
-   if (contents == TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DRAW) {
-      if (command_writer->app_config_compute.shader != NULL) {
+   if (contents == TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DRAW ||
+       contents == TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DISPATCH) {
+      if (contents == TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DISPATCH) {
          terakan_hw_config_shared_compute_emit_modified(command_writer);
 
          if (!command_writer->hw_config_compute_initialized_in_indirect_buffer) {
@@ -591,6 +592,19 @@ terakan_gfx_command_writer_emit_hw_config(
             terakan_hw_config_compute_set_all_modified(&command_writer->hw_config_compute);
          }
          terakan_hw_config_compute_emit_modified(command_writer);
+
+         /*
+          * Compute storage buffers use the graphics CB/RAT register block. A new indirect buffer
+          * also has its own BO reference list, so re-emit the complete draw configuration here,
+          * not only entries modified by the compute binding. Otherwise attachments left bound by
+          * the preceding graphics IB have neither validated descriptors nor BO references in this
+          * submission, and DRM Radeon rejects the command stream.
+          */
+         if (!command_writer->hw_config_draw_initialized_in_indirect_buffer) {
+            command_writer->hw_config_draw_initialized_in_indirect_buffer = true;
+            terakan_hw_config_draw_set_all_modified(&command_writer->hw_config_draw);
+            terakan_hw_config_draw_emit_constant(command_writer);
+         }
 
          if (!command_writer->hw_config_sqk_initialized_in_indirect_buffer) {
             command_writer->hw_config_sqk_initialized_in_indirect_buffer = true;
@@ -647,6 +661,7 @@ terakan_gfx_command_writer_emit_with_bo(struct terakan_gfx_command_writer * cons
              "buffer setup or by hardware state applying");
    } else {
       assert((contents == TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DRAW ||
+              contents == TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DISPATCH ||
               contents == TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_OTHER) &&
              "`hw_config` emissions must be done only from within `hw_config` applying functions "
              "invoked from outer emissions");
@@ -677,7 +692,8 @@ terakan_gfx_command_writer_emit_with_bo(struct terakan_gfx_command_writer * cons
    }
 
 #ifdef TERAKAN_REGRESSION_TEST
-   if (contents == TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DRAW &&
+   if ((contents == TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DRAW ||
+        contents == TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DISPATCH) &&
        command_writer->actions_before_next_regression_test_indirect_buffer_split >= 0) {
       if (command_writer->actions_before_next_regression_test_indirect_buffer_split == 0) {
          terakan_gfx_command_writer_end_indirect_buffer(command_writer);

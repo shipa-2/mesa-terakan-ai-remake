@@ -25,11 +25,16 @@
 
 #include "terakan_entrypoints.h"
 #include "terakan_image.h"
+#include "terakan_cp_dma.h"
 
 #include "util/bitscan.h"
 #include "util/macros.h"
 
 #include <assert.h>
+#include <limits.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 enum {
    /* In blocks, signed. */
@@ -211,6 +216,126 @@ terakan_CmdCopyImage2(VkCommandBuffer const commandBuffer,
    struct terakan_image const * const src_image =
       terakan_image_from_handle(pCopyImageInfo->srcImage);
 
+   bool const debug_image_ops =
+      getenv("TERAKAN_DEBUG_IMAGE_OPS") != NULL ||
+      (getenv("TERAKAN_DEBUG_HDR_COPY") != NULL &&
+       (src_image->vk.format == VK_FORMAT_B10G11R11_UFLOAT_PACK32 ||
+        dst_image->vk.format == VK_FORMAT_B10G11R11_UFLOAT_PACK32));
+   static unsigned debug_copy_call_count;
+   unsigned const debug_copy_call = debug_image_ops ? debug_copy_call_count++ : UINT_MAX;
+   if (debug_copy_call < 4096) {
+         fprintf(stderr,
+                 "[TERAKAN_IMAGE_OP] copy #%u src=%p fmt=%u %ux%ux%u mips=%u layers=%u "
+                 "dst=%p fmt=%u %ux%ux%u mips=%u layers=%u regions=%u\n",
+                 debug_copy_call, (void *)src_image, src_image->vk.format,
+                 src_image->vk.extent.width,
+                 src_image->vk.extent.height, src_image->vk.extent.depth,
+                 src_image->vk.mip_levels, src_image->vk.array_layers, (void *)dst_image,
+                 dst_image->vk.format, dst_image->vk.extent.width, dst_image->vk.extent.height,
+                 dst_image->vk.extent.depth, dst_image->vk.mip_levels,
+                 dst_image->vk.array_layers, pCopyImageInfo->regionCount);
+         fprintf(stderr,
+                 "[TERAKAN_IMAGE_OP]   src usage=0x%x size=%u aspect0 off=%u size=%u "
+                 "level0 off=%u slice=%u aligned=%ux%ux%u mode=%u non_display=%u\n",
+                 src_image->vk.usage, src_image->surface.size_bytes_shr8,
+                 src_image->surface.aspects[0].offset_in_memory_bytes_shr8,
+                 src_image->surface.aspects[0].size_bytes_shr8,
+                 src_image->surface.aspects[0].levels[0].offset_in_memory_bytes_shr8,
+                 src_image->surface.aspects[0].levels[0].slice_size_bytes_shr8,
+                 src_image->surface.aspects[0].levels[0].aligned_extent_surfels[0],
+                 src_image->surface.aspects[0].levels[0].aligned_extent_surfels[1],
+                 src_image->surface.aspects[0].levels[0].aligned_extent_surfels[2],
+                 src_image->surface.aspects[0].levels[0].array_mode,
+                 src_image->surface.aspects[0].tiling.tc_non_display);
+         fprintf(stderr,
+                 "[TERAKAN_IMAGE_OP]   dst usage=0x%x size=%u aspect0 off=%u size=%u "
+                 "level0 off=%u slice=%u aligned=%ux%ux%u mode=%u non_display=%u "
+                 "pending=0x%x post_copy=0x%x\n",
+                 dst_image->vk.usage, dst_image->surface.size_bytes_shr8,
+                 dst_image->surface.aspects[0].offset_in_memory_bytes_shr8,
+                 dst_image->surface.aspects[0].size_bytes_shr8,
+                 dst_image->surface.aspects[0].levels[0].offset_in_memory_bytes_shr8,
+                 dst_image->surface.aspects[0].levels[0].slice_size_bytes_shr8,
+                 dst_image->surface.aspects[0].levels[0].aligned_extent_surfels[0],
+                 dst_image->surface.aspects[0].levels[0].aligned_extent_surfels[1],
+                 dst_image->surface.aspects[0].levels[0].aligned_extent_surfels[2],
+                 dst_image->surface.aspects[0].levels[0].array_mode,
+                 dst_image->surface.aspects[0].tiling.tc_non_display,
+                 command_writer->pending_barrier_actions,
+                 command_writer->post_color_image_copy_write_barrier_actions);
+         for (uint32_t region_index = 0; region_index < pCopyImageInfo->regionCount;
+              ++region_index) {
+            VkImageCopy2 const * const region = &pCopyImageInfo->pRegions[region_index];
+            fprintf(stderr,
+                    "[TERAKAN_IMAGE_OP]   region=%u src mip=%u layer=%u+%u off=%d,%d,%d "
+                    "dst mip=%u layer=%u+%u off=%d,%d,%d extent=%ux%ux%u\n",
+                    region_index, region->srcSubresource.mipLevel,
+                    region->srcSubresource.baseArrayLayer,
+                    region->srcSubresource.layerCount, region->srcOffset.x, region->srcOffset.y,
+                    region->srcOffset.z, region->dstSubresource.mipLevel,
+                    region->dstSubresource.baseArrayLayer,
+                    region->dstSubresource.layerCount, region->dstOffset.x, region->dstOffset.y,
+                    region->dstOffset.z, region->extent.width, region->extent.height,
+                    region->extent.depth);
+         }
+   }
+
+   /*
+    * Whole-image copies between identical single-sample color surface layouts don't need format
+    * conversion. Copy the backing storage directly, preserving tiled addressing and avoiding a
+    * full-screen meta draw. Multisample metadata is excluded because its state may not be
+    * represented solely by the copied color aspect.
+    */
+   if (getenv("TERAKAN_DEBUG_DISABLE_IMAGE_CP_DMA") == NULL &&
+       pCopyImageInfo->regionCount == 1 && src_image->vk.format == dst_image->vk.format &&
+       src_image->vk.image_type == dst_image->vk.image_type &&
+       src_image->vk.extent.width == dst_image->vk.extent.width &&
+       src_image->vk.extent.height == dst_image->vk.extent.height &&
+       src_image->vk.extent.depth == dst_image->vk.extent.depth &&
+       src_image->vk.mip_levels == dst_image->vk.mip_levels &&
+       src_image->vk.array_layers == dst_image->vk.array_layers &&
+       src_image->vk.samples == VK_SAMPLE_COUNT_1_BIT &&
+       dst_image->vk.samples == VK_SAMPLE_COUNT_1_BIT &&
+       src_image->surface.fmask.size_bytes_shr8 == 0 &&
+       dst_image->surface.fmask.size_bytes_shr8 == 0 &&
+       src_image->surface.cmask.size_bytes_shr8 == 0 &&
+       dst_image->surface.cmask.size_bytes_shr8 == 0 &&
+       memcmp(&src_image->surface, &dst_image->surface, sizeof(src_image->surface)) == 0) {
+      VkImageCopy2 const * const region = &pCopyImageInfo->pRegions[0];
+      if (region->srcSubresource.aspectMask == VK_IMAGE_ASPECT_COLOR_BIT &&
+          region->dstSubresource.aspectMask == VK_IMAGE_ASPECT_COLOR_BIT &&
+          region->srcSubresource.mipLevel == 0 && region->dstSubresource.mipLevel == 0 &&
+          region->srcSubresource.baseArrayLayer == 0 &&
+          region->dstSubresource.baseArrayLayer == 0 &&
+          region->srcSubresource.layerCount == src_image->vk.array_layers &&
+          region->dstSubresource.layerCount == dst_image->vk.array_layers &&
+          region->srcOffset.x == 0 && region->srcOffset.y == 0 && region->srcOffset.z == 0 &&
+          region->dstOffset.x == 0 && region->dstOffset.y == 0 && region->dstOffset.z == 0 &&
+          region->extent.width == src_image->vk.extent.width &&
+          region->extent.height == src_image->vk.extent.height &&
+          region->extent.depth == src_image->vk.extent.depth) {
+         if (debug_copy_call < 4096) {
+            fprintf(stderr,
+                    "[TERAKAN_IMAGE_OP]   path=cp-dma bytes=%llu pending_before=0x%x\n",
+                    (unsigned long long)src_image->surface.size_bytes_shr8 << 8,
+                    command_writer->pending_barrier_actions);
+         }
+         command_writer->post_color_image_copy_write_barrier_actions |=
+            TERAKAN_BARRIER_ACTION_SYNC_ME_TO_CP_DMA;
+         terakan_cp_dma_copy(command_writer, src_image->bo, src_image->va,
+                             TERAKAN_BO_PRIORITY_CP_DMA, dst_image->bo, dst_image->va,
+                             TERAKAN_BO_PRIORITY_CP_DMA,
+                             (VkDeviceSize)src_image->surface.size_bytes_shr8 << 8);
+         return;
+      }
+   }
+
+   if (debug_copy_call < 4096) {
+      fprintf(stderr, "[TERAKAN_IMAGE_OP]   path=meta-draw surface_equal=%u\n",
+              memcmp(&src_image->surface, &dst_image->surface,
+                     sizeof(src_image->surface)) == 0);
+   }
+
    /* TODO(Triang3l): Multisampled image copying, possibly by copying fragments (directly, not via
     * coverage samples) with sample shading, and the FMask with pixel shading - and with some path
     * for depth/stencil.
@@ -218,6 +343,23 @@ terakan_CmdCopyImage2(VkCommandBuffer const commandBuffer,
 
    struct terakan_image_descriptor_create_info dst_descriptor_create_info = {.image = dst_image};
    struct terakan_image_descriptor_create_info src_descriptor_create_info = {.image = src_image};
+
+   /*
+    * Meta shaders share SQ resource registers with application fragment shaders. Preserve the
+    * register used by the copy shader explicitly: changing it through hw_config_sqk also changes
+    * the driver's tracked application binding, so merely making the application stage pending
+    * would otherwise re-emit the meta source image on the next draw.
+    */
+   unsigned const meta_resource_index =
+      TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META;
+   struct terakan_hw_config_sqk_stage * const fs_sqk_stage =
+      &command_writer->hw_config_sqk.stages_[MESA_SHADER_FRAGMENT];
+   bool const saved_fs_resource_bound =
+      BITSET_TEST(fs_sqk_stage->resources_bound, meta_resource_index);
+   struct terakan_hw_config_sqk_resource saved_fs_resource;
+   if (saved_fs_resource_bound) {
+      saved_fs_resource = command_writer->hw_config_sqk.resources_fs_[meta_resource_index];
+   }
 
    command_writer->post_color_image_copy_write_barrier_actions |=
       TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RTV_DATA |
@@ -372,4 +514,9 @@ terakan_CmdCopyImage2(VkCommandBuffer const commandBuffer,
          } while (dst_descriptor_create_info.subresource_range.max_depth_or_layer_count != 0);
       }
    }
+
+   terakan_hw_config_sqk_set_resource_fs(
+      &command_writer->hw_config_sqk, meta_resource_index,
+      saved_fs_resource_bound ? saved_fs_resource.bo : NULL,
+      saved_fs_resource_bound ? &saved_fs_resource.descriptor : NULL);
 }

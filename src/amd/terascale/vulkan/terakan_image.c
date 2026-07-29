@@ -53,6 +53,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 VKAPI_ATTR void VKAPI_CALL
@@ -322,7 +324,11 @@ terakan_image_surface_tiling_compute(VkImageCreateInfo const * const image_creat
    uint8_t array_mode;
    enum terascale_format_index const aspect_data_format =
       format_info->aspect_formats[aspect_index].format;
-   if (image_create_info->tiling == VK_IMAGE_TILING_LINEAR ||
+   bool const debug_force_linear =
+      getenv("TERAKAN_DEBUG_FORCE_LINEAR_IMAGES") != NULL && !used_by_db &&
+      image_create_info->samples <= VK_SAMPLE_COUNT_1_BIT &&
+      !(TERASCALE_FORMATS_TILED_ONLY_R8XX & BITFIELD64_BIT(aspect_data_format));
+   if (image_create_info->tiling == VK_IMAGE_TILING_LINEAR || debug_force_linear ||
        (TERASCALE_FORMATS_LINEAR_ONLY & BITFIELD64_BIT(aspect_data_format))) {
       array_mode = V_028C70_ARRAY_LINEAR_ALIGNED;
    } else {
@@ -356,8 +362,6 @@ terakan_image_surface_tiling_compute(VkImageCreateInfo const * const image_creat
        * does that.
        */
 
-      /* TODO(Triang3l): Debug flag for disabling 2D tiling. */
-
       bool const is_combined_depth_stencil_used_by_db =
          used_by_db && format_info->aspect_map == TERAKAN_FORMAT_ASPECT_MAP_0_DEPTH_1_STENCIL;
 
@@ -384,7 +388,7 @@ terakan_image_surface_tiling_compute(VkImageCreateInfo const * const image_creat
       } else {
          if (samples_log2 != 0) {
             tile_split_bytes_log2 =
-               6 + bytes_per_block_for_tiling_log2 + util_logbase2_ceil(samples_log2);
+               6 + bytes_per_block_for_tiling_log2 + samples_log2;
             tile_split_bytes_log2 = MAX2(tile_split_bytes_log2, 8);
             /* For multisampled images, the calculated tile split may exceed the row size. */
             tile_split_bytes_log2 =
@@ -704,7 +708,19 @@ terakan_image_surface_aspect_compute(VkImageCreateInfo const * const image_creat
             ? u_minify(image_create_info->extent.depth, level_index)
             : image_create_info->arrayLayers,
       };
-      /* TODO(Triang3l): Research power of two padding of the array slice count. */
+      /* The texture unit derives the offsets of mip levels 2 and higher from the
+       * mip 1 address. Like AddrLib with pow2Pad enabled, it uses a power-of-two
+       * slice count for mipmapped array images. The descriptor still exposes the
+       * actual last array layer; the padding is only part of the memory layout.
+       *
+       * This is especially visible for cube maps: six stored faces occupy eight
+       * slice slots between mip levels.
+       */
+      if (image_create_info->imageType != VK_IMAGE_TYPE_3D &&
+          image_create_info->mipLevels > 1) {
+         level_extent_compute_pixels_expand_3x[2] =
+            util_next_power_of_two(level_extent_compute_pixels_expand_3x[2]);
+      }
       if (level_index != 0) {
          for (unsigned axis = 0; axis < mip_surface_power_of_two_axes; ++axis) {
             level_extent_compute_pixels_expand_3x[axis] =
@@ -1217,6 +1233,14 @@ terakan_image_create_resource_descriptor(
    uint32_t descriptor_width = origin_level_view_width;
    uint32_t descriptor_height = origin_level_view_height;
    uint32_t descriptor_depth_or_array_layers = origin_level_depth_or_array_layers;
+   if (hw_dimensionality == V_030000_SQ_TEX_DIM_CUBEMAP) {
+      /* SQ cubemap descriptors express TEX_DEPTH in cubes, while BASE_ARRAY and LAST_ARRAY
+       * continue to address individual face layers. Vulkan cube-compatible images therefore
+       * contribute one depth unit per six array layers.
+       */
+      assert((origin_level_depth_or_array_layers % 6) == 0);
+      descriptor_depth_or_array_layers = origin_level_depth_or_array_layers / 6;
+   }
    if (origin_level != 0) {
       /* The base level and mips are stored differently - the hardware rounds the extents up to
        * powers of 2 in memory addressing for mips, but not for the base level.
@@ -1402,14 +1426,20 @@ terakan_image_create_resource_descriptor(
       S_03001C_NUM_BANKS(physical_device->tiling_info.banks_log2 - 1) |
       S_03001C_TYPE(V_03001C_SQ_TEX_VTX_VALID_TEXTURE);
    if (is_multisampled) {
-      /* TODO(Triang3l): FMask (address in `MIP_ADDRESS`, `FMASK_BANK_HEIGHT`). */
-      descriptor_out->resource[3] = descriptor_out->resource[2];
+      descriptor_out->resource[3] =
+         image->surface.fmask.size_bytes_shr8 != 0
+            ? image_va_shr8 + image->surface.fmask.offset_in_memory_bytes_shr8
+            : descriptor_out->resource[2];
       unsigned const samples_log2 = util_logbase2((uint32_t)image->vk.samples);
       if (physical_device->chip_info.is_r9xx) {
          descriptor_out->resource[4] |= S_030010_LOG2_NUM_FRAGMENTS(samples_log2);
       }
       /* `LAST_LEVEL` is used for the sample count instead. */
       descriptor_out->resource[5] |= S_030014_LAST_LEVEL(samples_log2);
+      if (image->surface.fmask.size_bytes_shr8 != 0) {
+         descriptor_out->resource[6] |=
+            S_030018_FMASK_BANK_HEIGHT(image->surface.fmask.attrib_bank_height);
+      }
    } else {
       if (extract_single_level) {
          descriptor_out->resource[3] =
@@ -1428,7 +1458,11 @@ terakan_image_create_resource_descriptor(
             S_030014_LAST_LEVEL(descriptor_create_info->subresource_range.base_mip_level +
                                 (descriptor_create_info->subresource_range.max_level_count - 1));
       }
-      descriptor_out->resource[6] |= S_030018_MAX_ANISO_RATIO(4);
+      /* Anisotropic filtering may access neighboring mip levels. Disable its descriptor-side
+       * allowance for single-level views so SQ can't read beyond the view's only mip.
+       */
+      descriptor_out->resource[6] |= S_030018_MAX_ANISO_RATIO(
+         descriptor_create_info->subresource_range.max_level_count > 1 ? 4 : 0);
    }
    return true;
 }
@@ -1599,9 +1633,24 @@ terakan_image_create_color_descriptor(
 
    if (meta_descriptor_out_opt != NULL) {
       *meta_descriptor_out_opt = terakan_color_meta_descriptor_create_disabled(descriptor_out);
+      if (image->surface.fmask.size_bytes_shr8 != 0) {
+         descriptor_out->info |= S_028C70_COMPRESSION(true);
+         descriptor_out->info |= S_028C70_FAST_CLEAR(true);
+         descriptor_out->attrib =
+            (descriptor_out->attrib & ~S_028C74_FMASK_BANK_HEIGHT(3)) |
+            S_028C74_FMASK_BANK_HEIGHT(image->surface.fmask.attrib_bank_height);
+         meta_descriptor_out_opt->cmask =
+            (uint32_t)(image->va >> 8) + image->surface.cmask.offset_in_memory_bytes_shr8;
+         meta_descriptor_out_opt->cmask_slice =
+            S_028C80_TILE_MAX(image->surface.cmask.slice_tile_max);
+         meta_descriptor_out_opt->fmask =
+            (uint32_t)(image->va >> 8) + image->surface.fmask.offset_in_memory_bytes_shr8;
+         meta_descriptor_out_opt->fmask_slice =
+            S_028C88_TILE_MAX(image->surface.fmask.slice_tile_max);
+      }
    }
 
-   /* TODO(Triang3l): CMask, FMask. */
+   /* TODO(Triang3l): CMask. */
 
    return view_slice_end - view_slice_start;
 }
@@ -1919,6 +1968,23 @@ terakan_CreateImageView(VkDevice const deviceHandle,
              &descriptor_create_info, resource_dimensionality, &pCreateInfo->components,
              &image_view->resource)) {
          image_view->resource = (struct terakan_resource_descriptor){};
+      }
+      if (getenv("TERAKAN_DEBUG_TEXTURE") != NULL &&
+          resource_dimensionality == V_030000_SQ_TEX_DIM_CUBEMAP) {
+         fprintf(stderr,
+                 "[TERAKAN_TEXTURE] cube image=%p extent=%ux%u layers=%u mips=%u"
+                 " view_base_layer=%u view_layers=%u view_base_mip=%u view_mips=%u format=%u"
+                 " words=%08x,%08x,%08x,%08x,%08x,%08x,%08x,%08x\n",
+                 (void *)image, image->vk.extent.width, image->vk.extent.height,
+                 image->vk.array_layers, image->vk.mip_levels,
+                 pCreateInfo->subresourceRange.baseArrayLayer,
+                 pCreateInfo->subresourceRange.layerCount,
+                 pCreateInfo->subresourceRange.baseMipLevel,
+                 pCreateInfo->subresourceRange.levelCount, pCreateInfo->format,
+                 image_view->resource.resource[0], image_view->resource.resource[1],
+                 image_view->resource.resource[2], image_view->resource.resource[3],
+                 image_view->resource.resource[4], image_view->resource.resource[5],
+                 image_view->resource.resource[6], image_view->resource.resource[7]);
       }
       if (!descriptor_create_info.view_format.supports_cb_color ||
           terakan_image_create_color_descriptor(&descriptor_create_info, color_resource_type,

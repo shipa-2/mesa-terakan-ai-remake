@@ -134,12 +134,12 @@ public:
    BlockScheduler(r600_chip_class chip_class,
                   radeon_family family);
 
-   void run(Shader *shader);
+   bool run(Shader *shader);
 
    void finalize();
 
 private:
-   void
+   bool
    schedule_block(Block& in_block, Shader::ShaderBlocks& out_blocks, ValueFactory& vf);
 
    bool collect_ready(CollectInstructions& available);
@@ -244,7 +244,8 @@ schedule(Shader *original)
 
    BlockScheduler s(original->chip_class(), original->chip_family());
 
-   s.run(scheduled_shader);
+   if (!s.run(scheduled_shader))
+      return nullptr;
    s.finalize();
 
    sfn_log << SfnLog::schedule << "Scheduled shader\n";
@@ -274,7 +275,7 @@ BlockScheduler::BlockScheduler(r600_chip_class chip_class,
                          chip_family != CHIP_RS880;
 }
 
-void
+bool
 BlockScheduler::run(Shader *shader)
 {
    Shader::ShaderBlocks scheduled_blocks;
@@ -286,13 +287,15 @@ BlockScheduler::run(Shader *shader)
          block->print(ss);
          sfn_log << ss.str() << "\n";
       }
-      schedule_block(*block, scheduled_blocks, shader->value_factory());
+      if (!schedule_block(*block, scheduled_blocks, shader->value_factory()))
+         return false;
    }
 
    shader->reset_function(scheduled_blocks);
+   return true;
 }
 
-void
+bool
 BlockScheduler::schedule_block(Block& in_block,
                               Shader::ShaderBlocks& out_blocks,
                               ValueFactory& vf)
@@ -433,7 +436,9 @@ BlockScheduler::schedule_block(Block& in_block,
          std::cerr << "   [" << a->block_id() << ":"
                    << a->index() <<"]:" << *a << "\n";
          for (auto& d : a->required_instr())
-            std::cerr << "      R["<< d->block_id() << ":" << d->index() <<"]:"
+            std::cerr << "      R" << (d->is_scheduled() ? "S" : "")
+                      << (d->is_dead() ? "D" : "") << "[" << d->block_id() << ":"
+                      << d->index() << "]:"
                       << *d << "\n";
       }
       fail = true;
@@ -460,7 +465,16 @@ BlockScheduler::schedule_block(Block& in_block,
    if (!cir.fetches.empty()) {
       std::cerr << "Unscheduled Fetch ops:\n";
       for (auto& a : cir.fetches) {
-         std::cerr << "   " << *a << "\n";
+         std::cerr << "   [" << a->block_id() << ":" << a->index() << "]:"
+                   << *a << "\n";
+         for (auto& d : a->required_instr())
+            std::cerr << "      R" << (d->is_scheduled() ? "S" : "")
+                      << (d->is_dead() ? "D" : "") << "[" << d->block_id() << ":"
+                      << d->index() << "]:" << *d << "\n";
+         for (auto& p : a->src().parents())
+            std::cerr << "      P" << (p->is_scheduled() ? "S" : "")
+                      << (p->is_dead() ? "D" : "") << "[" << p->block_id() << ":"
+                      << p->index() << "]:" << *p << "\n";
       }
       fail = true;
    }
@@ -484,6 +498,7 @@ BlockScheduler::schedule_block(Block& in_block,
       for (auto i : *m_current_block)
          std::cerr << "[" << i->block_id() << ":" << i->index() << "] " << *i << "\n";
       std::cerr << "\n\n: ";
+      return false;
    }
 
    assert(cir.tex.empty());
@@ -508,6 +523,8 @@ BlockScheduler::schedule_block(Block& in_block,
       maybe_split_alu_block(out_blocks);
    else
       out_blocks.push_back(m_current_block);
+
+   return true;
 }
 
 void

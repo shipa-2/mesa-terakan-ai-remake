@@ -213,8 +213,12 @@ main(void)
 
    TEST_CHECK(subgroup.subgroupSize != 0);
    TEST_CHECK((subgroup.subgroupSize & (subgroup.subgroupSize - 1)) == 0);
-   TEST_CHECK(subgroup.supportedStages == VK_SHADER_STAGE_COMPUTE_BIT);
-   TEST_CHECK(subgroup.supportedOperations == VK_SUBGROUP_FEATURE_BASIC_BIT);
+   TEST_CHECK(subgroup.subgroupSize == 1);
+   TEST_CHECK(subgroup.supportedStages ==
+              (VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT |
+               VK_SHADER_STAGE_COMPUTE_BIT));
+   TEST_CHECK(subgroup.supportedOperations ==
+              (VK_SUBGROUP_FEATURE_BASIC_BIT | VK_SUBGROUP_FEATURE_ARITHMETIC_BIT));
    TEST_CHECK(subgroup.subgroupSize == vulkan_1_1_properties.subgroupSize);
    TEST_CHECK(point_clipping.pointClippingBehavior == VK_POINT_CLIPPING_BEHAVIOR_ALL_CLIP_PLANES);
    TEST_CHECK(point_clipping.pointClippingBehavior == vulkan_1_1_properties.pointClippingBehavior);
@@ -299,7 +303,8 @@ main(void)
    printf("[UNSUPPORTED] 16-bit storage, multiview, variable pointers, protected memory, "
           "sampler YCbCr conversion\n");
    printf("\nVulkan 1.1 properties:\n");
-   printf("subgroupSize=%" PRIu32 ", subgroupStages=COMPUTE, subgroupOperations=BASIC\n",
+   printf("subgroupSize=%" PRIu32
+          ", subgroupStages=VERTEX|FRAGMENT|COMPUTE, subgroupOperations=BASIC|ARITHMETIC\n",
           subgroup.subgroupSize);
    printf("pointClippingBehavior=ALL_CLIP_PLANES\n");
    printf("maxPerSetDescriptors=%" PRIu32 "\n", maintenance_3.maxPerSetDescriptors);

@@ -1,0 +1,45 @@
+#version 450
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, std140) uniform TestUniform {
+   uint active_count;
+};
+
+layout(set = 0, binding = 1, std430) readonly buffer InputA {
+   uint input_a[];
+};
+
+layout(set = 0, binding = 2, std430) readonly buffer InputB {
+   uint input_b[];
+};
+
+layout(set = 0, binding = 3, std430) readonly buffer InputC {
+   uint input_c[];
+};
+
+layout(set = 0, binding = 4, std430) buffer TestBuffer {
+   uint values[];
+};
+
+layout(push_constant) uniform PushConstants {
+   uint iteration_count;
+} push_constants;
+
+void
+main()
+{
+   uint invocation = gl_GlobalInvocationID.x;
+   if (invocation >= active_count)
+      return;
+
+   uint value = 1;
+   for (uint iteration = 0; iteration < push_constants.iteration_count; ++iteration)
+      value = value * 3 + 1;
+
+   uint base = 1 + invocation * 6;
+   for (uint component = 0; component < 6; ++component)
+      values[base + component] =
+         input_a[base + component] + input_b[base + component] +
+         input_c[base + component] + value;
+}

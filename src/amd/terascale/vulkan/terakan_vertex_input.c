@@ -38,6 +38,7 @@
 #include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define TERAKAN_VERTEX_INPUT_FORMAT_FETCH_WORD1_BITS                                               \
@@ -1384,6 +1385,8 @@ terakan_vertex_input_create_fs_code(
     */
    uint8_t are_mega_fetch_and_mega_fetch_counts[TERAKAN_RESOURCE_HW_COUNT_FETCH];
    if (!is_r9xx) {
+      bool const disable_mega_fetch_coalescing =
+         getenv("TERAKAN_DEBUG_DISABLE_MEGA_FETCH_COALESCING") != NULL;
       for (uint8_t sorted_attribute_index = 0;
            sorted_attribute_index < bound_used_attribute_count;) {
          uint8_t const mega_fetch_attribute_index =
@@ -1401,7 +1404,8 @@ terakan_vertex_input_create_fs_code(
          uint32_t const mega_fetch_offset = layout->attribute_offsets[mega_fetch_attribute_index];
          uint8_t const mega_fetch_indexing = attribute_indexings[mega_fetch_attribute_index];
          uint8_t mega_fetch_attribute_count = 1;
-         for (; sorted_attribute_index + mega_fetch_attribute_count < bound_used_attribute_count;
+         for (; !disable_mega_fetch_coalescing &&
+                sorted_attribute_index + mega_fetch_attribute_count < bound_used_attribute_count;
               ++mega_fetch_attribute_count) {
             uint8_t const mega_fetch_candidate_attribute_index =
                sorted_attribute_indices[sorted_attribute_index + mega_fetch_attribute_count];

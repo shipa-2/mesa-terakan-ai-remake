@@ -35,6 +35,7 @@
 #include "gallium/drivers/r600/sfn/sfn_assembler.h"
 #include "gallium/drivers/r600/sfn/sfn_memorypool.h"
 #include "gallium/drivers/r600/sfn/sfn_nir.h"
+#include "gallium/drivers/r600/sfn/sfn_nir_lower_alu.h"
 #include "gallium/include/pipe/p_shader_tokens.h"
 #include "gallium/include/pipe/p_state.h"
 #include "util/macros.h"
@@ -61,9 +62,19 @@ terakan_shader_impl_compile(terakan_shader_impl * const shader, terakan_device *
 
    r600::init_pool();
 
-#if 0
-   r600_finalize_nir_common(nir, gfx_level);
-#endif
+   /* Terakan doesn't run Gallium's r600_finalize_nir_common. Apply the
+    * backend-mandatory lowerings that SFN relies on explicitly.
+    */
+   static nir_lower_subgroups_options const subgroup_options = {
+      .subgroup_size = 1,
+      .ballot_bit_size = 32,
+      .ballot_components = 1,
+   };
+   NIR_PASS(_, nir, terakan_nir_lower_subgroups);
+   NIR_PASS(_, nir, nir_opt_uniform_subgroup, &subgroup_options);
+   NIR_PASS(_, nir, r600_nir_lower_pack_unpack_2x16);
+   NIR_PASS(_, nir, r600_lower_shared_io);
+
    /* For r600_lower_and_optimize_nir, for fields like number bit sizes, and also for
     * DB_SHADER_CONTROL in fragment shaders.
     */
@@ -121,9 +132,6 @@ terakan_shader_impl_compile(terakan_shader_impl * const shader, terakan_device *
       r600::release_pool();
 
       r600_bytecode_clear(&shader->shader.bc);
-      if (shader->shader.arrays != nullptr) {
-         std::free(shader->shader.arrays);
-      }
 
       return vk_errorf(device, VK_ERROR_UNKNOWN, "Failed to lower the shader to assembly");
    }
@@ -134,9 +142,6 @@ terakan_shader_impl_compile(terakan_shader_impl * const shader, terakan_device *
 
    if (r600_bytecode_build(&shader->shader.bc) != 0) {
       r600_bytecode_clear(&shader->shader.bc);
-      if (shader->shader.arrays != nullptr) {
-         std::free(shader->shader.arrays);
-      }
       return vk_errorf(device, VK_ERROR_UNKNOWN, "Failed to build the shader bytecode");
    }
    /* Fill shader registers and other info. */

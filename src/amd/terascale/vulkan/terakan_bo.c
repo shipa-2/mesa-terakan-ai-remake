@@ -51,6 +51,10 @@ terakan_bo_unmap(struct terakan_bo * const bo)
 void
 terakan_bo_free(struct terakan_bo * const bo, VkAllocationCallbacks const * const allocator)
 {
+   if (bo == NULL) {
+      return;
+   }
+
    terakan_bo_unmap(bo);
    bo->device->winsys_fn->bo->free_impl(bo, allocator);
 }

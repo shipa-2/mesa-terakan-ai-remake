@@ -1371,6 +1371,9 @@ struct terakan_gfx_command_writer;
 
 void terakan_app_config_draw_apply_pending(struct terakan_gfx_command_writer * command_writer);
 
+void terakan_app_config_draw_restore_cb_state_after_compute(
+   struct terakan_gfx_command_writer * command_writer);
+
 void terakan_app_config_draw_reset(struct terakan_app_config_draw * config);
 
 #ifdef __cplusplus

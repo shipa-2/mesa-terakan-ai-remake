@@ -19,7 +19,10 @@
 #include "vk_pipeline.h"
 
 #include <assert.h>
+#include <inttypes.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 VKAPI_ATTR void VKAPI_CALL
 terakan_CmdBindPipeline(VkCommandBuffer const commandBuffer,
@@ -38,7 +41,7 @@ terakan_vk_emit_dispatch_direct(struct terakan_gfx_command_writer * const comman
                                 uint32_t const group_count_z)
 {
    uint32_t * packet = terakan_gfx_command_writer_emit(
-      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DRAW, 5);
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DISPATCH, 5);
    if (unlikely(packet == NULL)) {
       return;
    }
@@ -61,6 +64,21 @@ terakan_vk_cmd_dispatch(VkCommandBuffer const commandBuffer, uint32_t const grou
    }
    struct terakan_gfx_command_writer * const command_writer =
       terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx;
+
+   if (getenv("TERAKAN_DEBUG_COMPUTE") != NULL) {
+      fprintf(stderr,
+              "[TERAKAN_COMPUTE] dispatch command=%p groups=%u,%u,%u base=%u,%u,%u\n",
+              (void *)(uintptr_t)commandBuffer, groupCountX, groupCountY, groupCountZ, baseGroupX,
+              baseGroupY, baseGroupZ);
+   }
+   if (getenv("TERAKAN_DEBUG_SKIP_COMPUTE") != NULL ||
+       command_writer->app_config_compute.diagnostic_skip_dispatch_) {
+      fprintf(stderr,
+              "[TERAKAN_COMPUTE] dispatch skipped by %s diagnostic option, groups=%u,%u,%u\n",
+              command_writer->app_config_compute.diagnostic_skip_dispatch_ ? "targeted" : "global",
+              groupCountX, groupCountY, groupCountZ);
+      return;
+   }
 
    if (unlikely(baseGroupX != 0 || baseGroupY != 0 || baseGroupZ != 0)) {
       /* Set VGT_COMPUTE_START_X/Y/Z before dispatch for non-zero base groups. */
@@ -86,10 +104,17 @@ terakan_vk_cmd_dispatch(VkCommandBuffer const commandBuffer, uint32_t const grou
    terakan_gfx_command_writer_before_app_dispatch(command_writer);
    terakan_vk_emit_dispatch_direct(command_writer, groupCountX, groupCountY, groupCountZ);
 
-   /* Invalidate TC, VC, and SH after dispatch so subsequent reads get fresh data. */
+   /* Compute storage writes go through the CB UAV path. Before any later consumer
+    * reads them (notably vertex fetch after a skinning dispatch), wait for CS,
+    * write back and invalidate the UAV cache, and invalidate all shader/fetch
+    * read caches. Keep this pending so consecutive dispatches may coalesce it
+    * with the pre-dispatch barrier of the next dispatch.
+    */
    command_writer->pending_barrier_actions |=
+      TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CS | TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_UAV |
       TERAKAN_BARRIER_ACTION_INV_TC | TERAKAN_BARRIER_ACTION_INV_VC |
       TERAKAN_BARRIER_ACTION_INV_SH;
+   terakan_app_config_draw_restore_cb_state_after_compute(command_writer);
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -146,6 +171,23 @@ terakan_CmdDispatchIndirect(VkCommandBuffer const commandBuffer, VkBuffer const 
    uint32_t const grid_z = params[2];
    terakan_bo_unmap((struct terakan_bo *)buffer->bo);
 
+   if (getenv("TERAKAN_DEBUG_COMPUTE") != NULL) {
+      fprintf(stderr,
+              "[TERAKAN_COMPUTE] dispatch_indirect command=%p buffer=%p offset=%" PRIu64
+              " groups=%u,%u,%u\n",
+              (void *)(uintptr_t)commandBuffer, (void *)(uintptr_t)bufferHandle, (uint64_t)offset,
+              grid_x, grid_y, grid_z);
+   }
+   if (getenv("TERAKAN_DEBUG_SKIP_COMPUTE") != NULL ||
+       command_writer->app_config_compute.diagnostic_skip_dispatch_) {
+      fprintf(stderr,
+              "[TERAKAN_COMPUTE] dispatch_indirect skipped by %s diagnostic option, "
+              "groups=%u,%u,%u\n",
+              command_writer->app_config_compute.diagnostic_skip_dispatch_ ? "targeted" : "global",
+              grid_x, grid_y, grid_z);
+      return;
+   }
+
    if (grid_x == 0 || grid_y == 0 || grid_z == 0) {
       return;
    }
@@ -159,8 +201,12 @@ terakan_CmdDispatchIndirect(VkCommandBuffer const commandBuffer, VkBuffer const 
    terakan_gfx_command_writer_before_app_dispatch(command_writer);
    terakan_vk_emit_dispatch_direct(command_writer, grid_x, grid_y, grid_z);
 
-   /* Invalidate TC, VC, and SH after dispatch so subsequent reads get fresh data. */
+   /* See the direct-dispatch path above: make UAV writes available before a
+    * later shader or vertex-fetch consumer.
+    */
    command_writer->pending_barrier_actions |=
+      TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CS | TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_UAV |
       TERAKAN_BARRIER_ACTION_INV_TC | TERAKAN_BARRIER_ACTION_INV_VC |
       TERAKAN_BARRIER_ACTION_INV_SH;
+   terakan_app_config_draw_restore_cb_state_after_compute(command_writer);
 }

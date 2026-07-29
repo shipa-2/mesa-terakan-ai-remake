@@ -175,6 +175,21 @@ terakan_queue_drm_radeon_submit(
       .chunks = (__u64)(uintptr_t)chunks,
    };
 
+   if (debug_get_bool_option("TERAKAN_DUMP_CS", false)) {
+      fprintf(stderr,
+              "terakan/drm_radeon: BEGIN_CS ring=%" PRIu32 " size=%" PRIu32
+              " bo_references=%" PRIu32 "\n",
+              submission_context->ring, indirect_buffer_size_dwords, bo_reference_count);
+      for (uint32_t indirect_buffer_dword_index = 0;
+           indirect_buffer_dword_index < indirect_buffer_size_dwords;
+           ++indirect_buffer_dword_index) {
+         fprintf(stderr, "[%" PRIu32 "] = 0x%08" PRIX32 ",\n",
+                 indirect_buffer_dword_index, indirect_buffer[indirect_buffer_dword_index]);
+      }
+      fputs("terakan/drm_radeon: END_CS\n", stderr);
+      fflush(stderr);
+   }
+
    int const cs_result = drmCommandWriteRead(device->render_node_fd, DRM_RADEON_CS, &cs_arguments,
                                              sizeof(cs_arguments));
 
@@ -189,15 +204,6 @@ terakan_queue_drm_radeon_submit(
               "The kernel has rejected the command submission with error number %d, see dmesg for "
               "more information",
               cs_result);
-      if (debug_get_bool_option("TERAKAN_DUMP_CS", false)) {
-         fputs("terakan/drm_radeon: Dumping the rejected command buffer...\n", stderr);
-         for (uint32_t indirect_buffer_dword_index = 0;
-              indirect_buffer_dword_index < indirect_buffer_size_dwords;
-              ++indirect_buffer_dword_index) {
-            fprintf(stderr, "[%" PRIu32 "] = 0x%08" PRIX32 ",\n", indirect_buffer_dword_index,
-                    indirect_buffer[indirect_buffer_dword_index]);
-         }
-      }
       return VK_ERROR_UNKNOWN;
    }
 

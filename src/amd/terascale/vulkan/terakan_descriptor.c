@@ -91,6 +91,9 @@ terakan_color_descriptor_calculate_buffer_base_pitch_slice_dim_offset(
    uint32_t const base_granularity_offset_bytes = (uint32_t)(va - va_granularity_aligned);
    *base_granularity_offset_bytes_out = base_granularity_offset_bytes;
 
+   /* For buffer RATs, DIM is the inclusive maximum element coordinate relative to the
+    * granularity-aligned BASE. The offset therefore needs to be converted from bytes to elements.
+    */
    assert(elements != 0);
    descriptor->dim = (uint32_t)(base_granularity_offset_bytes / bytes_per_element + elements - 1);
 }

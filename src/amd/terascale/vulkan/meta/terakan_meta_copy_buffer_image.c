@@ -608,6 +608,33 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
 
    struct terakan_buffer const * const buffer =
       terakan_buffer_from_handle(pCopyBufferToImageInfo->srcBuffer);
+
+   /*
+    * The buffer-to-image shader fetches the upload buffer through resource
+    * slot 0 in both the FS and VI resource arrays. This slot is shared with
+    * application descriptors and, most importantly, application vertex
+    * buffer 0. Preserve the tracked application state so the next draw
+    * doesn't keep fetching vertices from texture upload data.
+    */
+   unsigned const meta_resource_index =
+      TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META;
+   struct terakan_hw_config_sqk_stage * const fs_sqk_stage =
+      &command_writer->hw_config_sqk.stages_[MESA_SHADER_FRAGMENT];
+   bool const saved_fs_resource_bound =
+      BITSET_TEST(fs_sqk_stage->resources_bound, meta_resource_index);
+   struct terakan_hw_config_sqk_resource saved_fs_resource;
+   if (saved_fs_resource_bound) {
+      saved_fs_resource = command_writer->hw_config_sqk.resources_fs_[meta_resource_index];
+   }
+
+   uint32_t const saved_vi_resources_used = command_writer->hw_config_sqk.vi_.resources_used;
+   bool const saved_vi_resource_bound =
+      (command_writer->hw_config_sqk.vi_.resources_bound & BITFIELD_BIT(meta_resource_index)) != 0;
+   struct terakan_hw_config_sqk_resource saved_vi_resource;
+   if (saved_vi_resource_bound) {
+      saved_vi_resource = command_writer->hw_config_sqk.resources_vi_[meta_resource_index];
+   }
+
    struct terakan_resource_descriptor buffer_descriptor = {
       .resource = {
          [7] = S_03001C_TYPE(V_03001C_SQ_TEX_VTX_VALID_BUFFER),
@@ -742,8 +769,18 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
             image_descriptor_slices;
          buffer_offset += buffer_z_pitch_bytes * image_descriptor_slices;
       } while (region_image.image_descriptor_create_info.subresource_range
-                  .max_depth_or_layer_count != 0);
+         .max_depth_or_layer_count != 0);
    }
+
+   terakan_hw_config_sqk_set_resource_fs(
+      &command_writer->hw_config_sqk, meta_resource_index,
+      saved_fs_resource_bound ? saved_fs_resource.bo : NULL,
+      saved_fs_resource_bound ? &saved_fs_resource.descriptor : NULL);
+   terakan_hw_config_sqk_set_resource_vi(
+      &command_writer->hw_config_sqk, meta_resource_index,
+      saved_vi_resource_bound ? saved_vi_resource.bo : NULL,
+      saved_vi_resource_bound ? &saved_vi_resource.descriptor : NULL);
+   command_writer->hw_config_sqk.vi_.resources_used = saved_vi_resources_used;
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -763,6 +800,19 @@ terakan_CmdCopyImageToBuffer2(VkCommandBuffer const commandBuffer,
 
    struct terakan_buffer const * const buffer =
       terakan_buffer_from_handle(pCopyImageToBufferInfo->dstBuffer);
+
+   /* The meta shader temporarily occupies FS resource slot 0. */
+   unsigned const meta_resource_index =
+      TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META;
+   struct terakan_hw_config_sqk_stage * const fs_sqk_stage =
+      &command_writer->hw_config_sqk.stages_[MESA_SHADER_FRAGMENT];
+   bool const saved_fs_resource_bound =
+      BITSET_TEST(fs_sqk_stage->resources_bound, meta_resource_index);
+   struct terakan_hw_config_sqk_resource saved_fs_resource;
+   if (saved_fs_resource_bound) {
+      saved_fs_resource = command_writer->hw_config_sqk.resources_fs_[meta_resource_index];
+   }
+
    struct terakan_color_descriptor buffer_descriptor = {
       .attrib = TERAKAN_COLOR_DESCRIPTOR_BUFFER_UAV_ATTRIB,
    };
@@ -884,4 +934,9 @@ terakan_CmdCopyImageToBuffer2(VkCommandBuffer const commandBuffer,
          command_writer, region_image.rect_blocks,
          region_image.image_descriptor_create_info.subresource_range.max_depth_or_layer_count);
    }
+
+   terakan_hw_config_sqk_set_resource_fs(
+      &command_writer->hw_config_sqk, meta_resource_index,
+      saved_fs_resource_bound ? saved_fs_resource.bo : NULL,
+      saved_fs_resource_bound ? &saved_fs_resource.descriptor : NULL);
 }

@@ -856,9 +856,11 @@ terakan_physical_device_get_capabilities(
    properties_out->pointClippingBehavior = VK_POINT_CLIPPING_BEHAVIOR_ALL_CLIP_PLANES;
 
    /* SubgroupProperties. */
-   properties_out->subgroupSize = 1u << chip_info->wave_lanes_log2;
-   properties_out->subgroupSupportedStages = VK_SHADER_STAGE_COMPUTE_BIT;
-   properties_out->subgroupSupportedOperations = VK_SUBGROUP_FEATURE_BASIC_BIT;
+   properties_out->subgroupSize = 1;
+   properties_out->subgroupSupportedStages =
+      VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
+   properties_out->subgroupSupportedOperations =
+      VK_SUBGROUP_FEATURE_BASIC_BIT | VK_SUBGROUP_FEATURE_ARITHMETIC_BIT;
    properties_out->subgroupQuadOperationsInAllStages = VK_FALSE;
 
    /* VK_KHR_driver_properties (#197, Vulkan 1.2). */
@@ -1266,7 +1268,9 @@ terakan_physical_device_init(
       .lower_unpack_snorm_4x8 = true,
       .lower_unpack_32_2x16_split = true,
 
-      .lower_pack_split = true,
+      /* SFN implements the split half pack/unpack operations directly.
+       * lower_pack_split would expand them back to unsupported 16-bit f2f ALU.
+       */
 
       .lower_extract_byte = true,
       .lower_extract_word = true,

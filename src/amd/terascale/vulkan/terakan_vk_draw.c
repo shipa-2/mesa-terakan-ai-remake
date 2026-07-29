@@ -36,7 +36,9 @@
 #include <assert.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 VKAPI_ATTR void VKAPI_CALL
 terakan_CmdBindIndexBuffer2(VkCommandBuffer const commandBuffer, VkBuffer const bufferHandle,
@@ -94,6 +96,7 @@ terakan_vk_draw_set_vertex_instance_offsets(struct terakan_gfx_command_writer * 
    pc->driver_constants_modified |=
       BITFIELD_BIT(TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_BASE_VERTEX) |
       BITFIELD_BIT(TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_BASE_INSTANCE);
+
 }
 
 static void
@@ -203,7 +206,17 @@ terakan_vk_cmd_draw_indirect(VkCommandBuffer const commandBuffer, VkBuffer const
           * indexed draw fetch from vertex base zero, which corrupts applications
           * that pack multiple meshes into shared vertex buffers.
           */
-         uint32_t const first_vertex = indexed ? cmd[3] : cmd[0];
+         uint32_t const first_vertex = indexed ? cmd[3] : cmd[2];
+         static unsigned debug_indirect_count;
+         if (getenv("TERAKAN_DEBUG_DRAW_INDIRECT") != NULL && debug_indirect_count < 256) {
+            fprintf(stderr,
+                    "[TERAKAN_DRAW_INDIRECT] indexed=%u draw=%u count=%u instances=%u "
+                    "first_index=%u vertex_offset=%d first_instance=%u\n",
+                    indexed, draw_index, cmd[0], cmd[1], indexed ? cmd[2] : 0,
+                    indexed ? (int32_t)cmd[3] : (int32_t)cmd[2],
+                    indexed ? cmd[4] : cmd[3]);
+            ++debug_indirect_count;
+         }
          terakan_vk_draw_set_vertex_instance_offsets(command_writer, first_vertex, first_instance);
          terakan_gfx_command_writer_before_app_draw(command_writer);
       }

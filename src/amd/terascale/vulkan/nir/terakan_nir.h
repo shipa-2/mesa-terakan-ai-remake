@@ -83,6 +83,12 @@ bool terakan_nir_lower_bindings(nir_shader * shader, struct terakan_pipeline_lay
 
 bool terakan_nir_lower_sin_cos(nir_shader * shader);
 
+/* TeraScale doesn't have general cross-lane data exchange instructions usable by all Vulkan
+ * shader stages. Expose a logical subgroup containing one invocation and lower the subgroup
+ * operations supported by that model to scalar NIR.
+ */
+bool terakan_nir_lower_subgroups(nir_shader * shader);
+
 #ifdef __cplusplus
 }
 #endif

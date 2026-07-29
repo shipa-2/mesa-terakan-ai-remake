@@ -26,6 +26,7 @@ struct terakan_vk_pipeline_compute {
    uint32_t lds_dwords_;
    uint32_t num_waves_;
    uint32_t cb_target_mask_;
+   bool diagnostic_skip_dispatch_;
 };
 
 uint32_t terakan_vk_pipeline_compute_cb_target_mask(

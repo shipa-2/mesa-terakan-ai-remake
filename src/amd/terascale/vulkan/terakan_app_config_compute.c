@@ -28,6 +28,7 @@ terakan_app_config_compute_reset(struct terakan_app_config_compute * const confi
    config->lds_dwords_ = 0;
    config->num_waves_ = 1;
    config->cb_target_mask_ = 0;
+   config->diagnostic_skip_dispatch_ = false;
    config->pending_ = false;
 }
 
@@ -36,34 +37,24 @@ terakan_app_config_compute_clear_binding(struct terakan_app_config_compute * con
 {
    config->shader = NULL;
    config->cb_target_mask_ = 0;
+   config->diagnostic_skip_dispatch_ = false;
    config->pending_ = false;
 }
 
 void
-terakan_app_config_compute_bind_shader(struct terakan_gfx_command_writer * const command_writer,
-                                       struct terakan_shader_impl const * const shader,
-                                       uint32_t const block_size_x, uint32_t const block_size_y,
-                                       uint32_t const block_size_z, uint32_t const lds_dwords,
-                                       uint32_t const num_waves, uint32_t const cb_target_mask)
+terakan_app_config_compute_prepare_dispatch(
+   struct terakan_gfx_command_writer * const command_writer)
 {
-   struct terakan_app_config_compute * const config = &command_writer->app_config_compute;
-
-   config->shader = shader;
-   config->block_size_[0] = block_size_x;
-   config->block_size_[1] = block_size_y;
-   config->block_size_[2] = block_size_z;
-   config->lds_dwords_ = lds_dwords;
-   config->num_waves_ = num_waves;
-   config->cb_target_mask_ = cb_target_mask;
-   config->pending_ = true;
-
    /* Storage buffer UAVs reuse the fragment CB/RAT path; mark which slots the compute shader
-    * needs so vkCmdBindDescriptorSets can populate `app_config_draw` before dispatch.
+    * needs. Repeat this for every dispatch because the previous dispatch restores the independent
+    * graphics CB state for draws that don't rebind their graphics pipeline.
     */
+   struct terakan_app_config_compute const * const config =
+      &command_writer->app_config_compute;
    struct terakan_app_config_draw * const draw = &command_writer->app_config_draw;
    static BITSET_WORD const uav_empty[BITSET_WORDS(TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL)];
    BITSET_WORD const * const uav_used =
-      shader != NULL ? shader->uavs_for_mutable_resources_needed : uav_empty;
+      config->shader != NULL ? config->shader->uavs_for_mutable_resources_needed : uav_empty;
    size_t const uav_bitset_size =
       sizeof(BITSET_WORD) * BITSET_WORDS(TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL);
    if (draw->cb_color_uav_and_unused_mrt_.from_apply_sq_pgm_fragment.rtv_dsb_export_count != 0 ||
@@ -75,6 +66,29 @@ terakan_app_config_compute_bind_shader(struct terakan_gfx_command_writer * const
       terakan_app_config_draw_set_pending(draw,
                                           TERAKAN_APP_CONFIG_DRAW_ENTRY_CB_COLOR_UAV_AND_UNUSED_MRT);
    }
+}
+
+void
+terakan_app_config_compute_bind_shader(struct terakan_gfx_command_writer * const command_writer,
+                                       struct terakan_shader_impl const * const shader,
+                                       uint32_t const block_size_x, uint32_t const block_size_y,
+                                       uint32_t const block_size_z, uint32_t const lds_dwords,
+                                       uint32_t const num_waves, uint32_t const cb_target_mask,
+                                       bool const diagnostic_skip_dispatch)
+{
+   struct terakan_app_config_compute * const config = &command_writer->app_config_compute;
+
+   config->shader = shader;
+   config->block_size_[0] = block_size_x;
+   config->block_size_[1] = block_size_y;
+   config->block_size_[2] = block_size_z;
+   config->lds_dwords_ = lds_dwords;
+   config->num_waves_ = num_waves;
+   config->cb_target_mask_ = cb_target_mask;
+   config->diagnostic_skip_dispatch_ = diagnostic_skip_dispatch;
+   config->pending_ = true;
+
+   terakan_app_config_compute_prepare_dispatch(command_writer);
 }
 
 void

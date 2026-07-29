@@ -11,7 +11,9 @@ usage() {
 usage: bin/terakan-test [--unit-only] [--vkcube]
 
 Run focused unit tests and, by default, query the real GPU through the local
-Terakan ICD. --vkcube adds a ten-second windowed smoke test.
+Terakan ICD. The GPU suite also checks that the BC6H oracle fails when its
+expected result is deliberately corrupted. --vkcube adds a ten-second
+windowed smoke test.
 EOF
 }
 
@@ -26,7 +28,14 @@ while (($#)); do
 done
 
 "$repo_root/bin/terakan-build"
-meson test -C "$build_dir" --print-errorlogs terakan_vertex_input
+
+cpu_tests=(
+  terakan_sfn_lowering
+  terakan_hw_config_loop_constants
+  terakan_descriptor_buffer
+  terakan_vertex_input
+)
+meson test -C "$build_dir" --print-errorlogs "${cpu_tests[@]}"
 
 if ! $run_gpu; then
   exit 0
@@ -36,14 +45,35 @@ if ! command -v vulkaninfo >/dev/null; then
   exit 1
 fi
 
+gpu_tests=(
+  terakan_image_array_copy
+  terakan_instance_dynamic_ssbo
+  terakan_bc6_cube
+  terakan_bc6_cube_single_level_views
+  terakan_bc6_array_view
+  terakan_compute_loop
+  terakan_physical_device_properties
+)
+meson test -C "$build_dir" --print-errorlogs "${gpu_tests[@]}"
+
+bc6_dir="$build_dir/src/amd/terascale/vulkan"
+set +e
+timeout --signal=TERM --kill-after=2 20 \
+  "$repo_root/bin/terakan-run" \
+  "$bc6_dir/terakan_bc6_cube_test" \
+  "$bc6_dir/terakan_bc6_cube.vert.spv" \
+  "$bc6_dir/terakan_bc6_cube.frag.spv" \
+  --corrupt-expectation
+bc6_negative_status=$?
+set -e
+if ((bc6_negative_status != 1)); then
+  echo "terakan-test: BC6H negative control returned $bc6_negative_status, expected 1" >&2
+  exit 1
+fi
+echo "terakan-test: BC6H negative control rejected the corrupted oracle as expected"
+
 summary=$(mktemp --tmpdir terakan-vulkaninfo.XXXXXX)
 trap 'rm -f -- "$summary"' EXIT
-
-properties_test="$build_dir/src/amd/terascale/vulkan/terakan_physical_device_properties_test"
-test -x "$properties_test"
-timeout --signal=TERM --kill-after=2 20 \
-  "$repo_root/bin/terakan-run" "$properties_test"
-
 timeout --signal=TERM --kill-after=2 20 \
   "$repo_root/bin/terakan-run" vulkaninfo --summary | tee "$summary"
 

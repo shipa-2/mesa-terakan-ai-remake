@@ -89,6 +89,7 @@ extern struct terakan_meta_shader const terakan_meta_copy_buffer_to_image_ps;
 extern struct terakan_meta_shader const terakan_meta_copy_image_to_buffer_ps;
 extern struct terakan_meta_shader const terakan_meta_copy_image_ps;
 extern struct terakan_meta_shader const terakan_meta_blit_image_ps;
+extern struct terakan_meta_shader const terakan_meta_resolve_2x_ps;
 extern struct terakan_meta_shader const terakan_meta_copy_expand_3x_ps;
 extern struct terakan_meta_shader const terakan_meta_query_accum_zpass_1_rb_vs;
 extern struct terakan_meta_shader const terakan_meta_query_accum_zpass_2_rb_vs;
@@ -326,6 +327,7 @@ terakan_meta_config_draw_begin(struct terakan_gfx_command_writer * command_write
 static inline void
 terakan_meta_before_draw(struct terakan_gfx_command_writer * const command_writer)
 {
+   terakan_gfx_command_writer_split_for_draw_compute_switch(command_writer, false);
    terakan_gfx_command_writer_before_hw_draw(command_writer);
 }
 

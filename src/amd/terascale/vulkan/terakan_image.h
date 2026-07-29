@@ -124,6 +124,23 @@ struct terakan_image_surface {
    uint32_t alignment_bytes_shr8;
    uint32_t size_bytes_shr8;
 
+   struct {
+      uint32_t alignment_bytes_shr8;
+      uint32_t offset_in_memory_bytes_shr8;
+      uint32_t size_bytes_shr8;
+      uint32_t slice_size_bytes_shr8;
+      uint32_t slice_tile_max;
+      uint8_t attrib_bank_height;
+   } fmask;
+
+   struct {
+      uint32_t alignment_bytes_shr8;
+      uint32_t offset_in_memory_bytes_shr8;
+      uint32_t size_bytes_shr8;
+      uint32_t slice_size_bytes_shr8;
+      uint32_t slice_tile_max;
+   } cmask;
+
    /* If the image has a combined depth and stencil format and has DB usage enabled, DB register
     * fields shared between depth and stencil are the same for the two aspects.
     */

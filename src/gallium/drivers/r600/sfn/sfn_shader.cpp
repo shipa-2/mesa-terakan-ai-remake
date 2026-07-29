@@ -1439,7 +1439,7 @@ void Shader::InstructionChain::visit(AluInstr *instr)
        instr->opcode() == op0_group_barrier) {
       last_group_barrier = instr;
       if (last_lds_access)
-         instr->add_required_instr(last_group_barrier);
+         instr->add_required_instr(last_lds_access);
       if (last_ssbo_instr)
          instr->add_required_instr(last_ssbo_instr);
    }

@@ -497,7 +497,7 @@ r600_lower_shared_io_impl(nir_function_impl *impl)
    return nir_progress(progress, impl, nir_metadata_control_flow);
 }
 
-static bool
+bool
 r600_lower_shared_io(nir_shader *nir)
 {
    bool progress = false;
@@ -510,10 +510,12 @@ r600_lower_shared_io(nir_shader *nir)
 }
 
 static nir_def *
-r600_lower_fs_pos_input_impl(nir_builder *b, nir_instr *instr, void *_options)
+r600_lower_fs_special_input_impl(nir_builder *b, nir_instr *instr, void *_options)
 {
    (void)_options;
    auto old_ir = nir_instr_as_intrinsic(instr);
+   gl_varying_slot const location =
+      (gl_varying_slot)nir_intrinsic_io_semantics(old_ir).location;
    auto load = nir_intrinsic_instr_create(b->shader, nir_intrinsic_load_input);
    nir_def_init(&load->instr, &load->def,
                 old_ir->def.num_components, old_ir->def.bit_size);
@@ -521,15 +523,16 @@ r600_lower_fs_pos_input_impl(nir_builder *b, nir_instr *instr, void *_options)
 
    nir_intrinsic_set_base(load, nir_intrinsic_base(old_ir));
    nir_intrinsic_set_component(load, nir_intrinsic_component(old_ir));
-   nir_intrinsic_set_dest_type(load, nir_type_float32);
+   nir_intrinsic_set_dest_type(
+      load, location == VARYING_SLOT_FACE ? nir_type_bool32 : nir_type_float32);
    load->num_components = old_ir->num_components;
    load->src[0] = old_ir->src[1];
    nir_builder_instr_insert(b, &load->instr);
    return &load->def;
 }
 
-bool
-r600_lower_fs_pos_input_filter(const nir_instr *instr, const void *_options)
+static bool
+r600_lower_fs_special_input_filter(const nir_instr *instr, const void *_options)
 {
    (void)_options;
 
@@ -540,16 +543,20 @@ r600_lower_fs_pos_input_filter(const nir_instr *instr, const void *_options)
    if (ir->intrinsic != nir_intrinsic_load_interpolated_input)
       return false;
 
-   return nir_intrinsic_io_semantics(ir).location == VARYING_SLOT_POS;
+   gl_varying_slot const location =
+      (gl_varying_slot)nir_intrinsic_io_semantics(ir).location;
+   return location == VARYING_SLOT_POS || location == VARYING_SLOT_FACE;
 }
 
-/* Strip the interpolator specification, it is not needed and irritates */
+/* Position and front-facing are fixed-function inputs, not interpolated
+ * varyings. Strip the interpolator specification before SFN translation.
+ */
 bool
-r600_lower_fs_pos_input(nir_shader *shader)
+r600_lower_fs_special_inputs(nir_shader *shader)
 {
    return nir_shader_lower_instructions(shader,
-                                        r600_lower_fs_pos_input_filter,
-                                        r600_lower_fs_pos_input_impl,
+                                        r600_lower_fs_special_input_filter,
+                                        r600_lower_fs_special_input_impl,
                                         nullptr);
 };
 
@@ -892,7 +899,7 @@ r600_lower_and_optimize_nir(nir_shader *sh,
       (sh->options->lower_int64_options || sh->options->lower_doubles_options) &&
       lower_64bit_io_to_vec2;
    if (sh->info.stage == MESA_SHADER_FRAGMENT)
-      NIR_PASS(_, sh, r600_lower_fs_pos_input);
+      NIR_PASS(_, sh, r600_lower_fs_special_inputs);
 
    /**/
    if (lower_64bit)
@@ -1041,6 +1048,9 @@ r600::Shader *
 r600_schedule_shader(r600::Shader *shader)
 {
    auto scheduled_shader = r600::schedule(shader);
+   if (!scheduled_shader)
+      return nullptr;
+
    if (r600::sfn_log.has_debug_flag(r600::SfnLog::steps)) {
       std::cerr << "Shader after scheduling\n";
       scheduled_shader->print(std::cerr);

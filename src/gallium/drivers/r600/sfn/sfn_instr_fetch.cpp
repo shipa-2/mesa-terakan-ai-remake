@@ -139,7 +139,7 @@ bool
 FetchInstr::do_ready() const
 {
    for (auto i : required_instr()) {
-      if (!i->is_scheduled())
+      if (!i->is_scheduled() && !i->is_dead())
          return false;
    }
 

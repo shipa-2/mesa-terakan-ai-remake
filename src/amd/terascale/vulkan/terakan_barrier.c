@@ -26,6 +26,7 @@
 #include "terakan_cp_dma.h"
 #include "terakan_device.h"
 #include "terakan_entrypoints.h"
+#include "terakan_image.h"
 #include "terakan_physical_device.h"
 
 #include "gallium/drivers/r600/evergreend.h"
@@ -435,6 +436,13 @@ terakan_barrier_emit_pending_actions(struct terakan_gfx_command_writer * const c
 
    /* Perform implicit stage waits and cache flushes and invalidations in ME. */
 
+   /* r600 enables SMX coherency for every CB/DB flush on R700 and newer. Without it, texture
+    * reads may observe stale color or depth blocks after an attachment is made shader-readable.
+    */
+   if (cp_coher_cntl_cb_db_dest_base_ena) {
+      cp_coher_cntl |= S_0085F0_SMX_ACTION_ENA(1);
+   }
+
    cp_coher_cntl |= cp_coher_cntl_cb_db_dest_base_ena;
    if (cp_coher_cntl) {
       uint32_t * surface_sync_packet = terakan_gfx_command_writer_emit(
@@ -521,5 +529,55 @@ terakan_CmdPipelineBarrier2(VkCommandBuffer const commandBuffer,
                                          barrier->subresourceRange.aspectMask) |
          terakan_barrier_get_image_layout_transition_actions(
             barrier->oldLayout, barrier->newLayout, barrier->subresourceRange.aspectMask);
+
+      /* Evergreen TXF_MS uses FMASK to map sample indices. Unlike r600's combined CMASK/FMASK
+       * setup, Terakan exposes FMASK directly, so initialize it to the identity mapping before
+       * the first color use. This must be recorded on the command buffer rather than done at image
+       * creation because the image memory may not be bound yet.
+       */
+      if (barrier->oldLayout == VK_IMAGE_LAYOUT_UNDEFINED &&
+          (barrier->subresourceRange.aspectMask & VK_IMAGE_ASPECT_COLOR_BIT) != 0) {
+         struct terakan_image const * const image = terakan_image_from_handle(barrier->image);
+         if (image->surface.fmask.size_bytes_shr8 != 0 && image->bo != NULL) {
+            uint32_t const sample_count_log2 =
+               (uint32_t)terakan_image_vk_sample_count_to_hw_log2(image->vk.samples, false);
+            static uint32_t const identity_fmask[4] = {
+               0x00000000, 0x02020202, 0xE4E4E4E4, 0x76543210
+            };
+
+            uint32_t base_slice = barrier->subresourceRange.baseArrayLayer;
+            uint32_t slice_count = barrier->subresourceRange.layerCount;
+            if (image->vk.image_type == VK_IMAGE_TYPE_3D) {
+               base_slice = 0;
+               slice_count = image->surface.fmask.size_bytes_shr8 /
+                             image->surface.fmask.slice_size_bytes_shr8;
+            } else {
+               slice_count =
+                  MIN2(slice_count, image->vk.array_layers - MIN2(base_slice, image->vk.array_layers));
+            }
+
+            if (slice_count != 0 && base_slice < image->vk.array_layers) {
+               VkDeviceSize const slice_size =
+                  (VkDeviceSize)image->surface.fmask.slice_size_bytes_shr8 << 8;
+               command_writer->post_buffer_copy_write_barrier_actions |=
+                  TERAKAN_BARRIER_ACTION_SYNC_ME_TO_CP_DMA;
+               terakan_cp_dma_fill(
+                  command_writer, identity_fmask[sample_count_log2], image->bo,
+                  image->va +
+                     ((VkDeviceSize)image->surface.fmask.offset_in_memory_bytes_shr8 << 8) +
+                     slice_size * base_slice,
+                  TERAKAN_BO_PRIORITY_SEPARATE_META, slice_size * slice_count);
+
+               VkDeviceSize const cmask_slice_size =
+                  (VkDeviceSize)image->surface.cmask.slice_size_bytes_shr8 << 8;
+               terakan_cp_dma_fill(
+                  command_writer, 0xCCCCCCCC, image->bo,
+                  image->va +
+                     ((VkDeviceSize)image->surface.cmask.offset_in_memory_bytes_shr8 << 8) +
+                     cmask_slice_size * base_slice,
+                  TERAKAN_BO_PRIORITY_SEPARATE_META, cmask_slice_size * slice_count);
+            }
+         }
+      }
    }
 }

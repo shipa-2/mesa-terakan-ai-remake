@@ -2068,6 +2068,31 @@ terakan_CmdCopyQueryPoolResults(VkCommandBuffer const commandBuffer, VkQueryPool
       return;
    }
 
+   /* Meta shaders share the VS SQ resource registers with application vertex shaders. Preserve
+    * the application bindings because the setters below also update the driver's tracked state;
+    * merely making the application stage pending would otherwise re-emit the query buffers on the
+    * next draw.
+    */
+   uint32_t const samples_resource_index =
+      TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META;
+   uint32_t const availability_resource_index =
+      TERAKAN_RESOURCE_RANGE_NON_PIXEL_STAGE_SPECIFIC;
+   struct terakan_hw_config_sqk_stage * const vs_sqk_stage =
+      &command_writer->hw_config_sqk.stages_[MESA_SHADER_VERTEX];
+   bool const saved_samples_resource_bound =
+      BITSET_TEST(vs_sqk_stage->resources_bound, samples_resource_index);
+   bool const saved_availability_resource_bound =
+      BITSET_TEST(vs_sqk_stage->resources_bound, availability_resource_index);
+   struct terakan_hw_config_sqk_resource saved_samples_resource;
+   struct terakan_hw_config_sqk_resource saved_availability_resource;
+   if (saved_samples_resource_bound) {
+      saved_samples_resource = command_writer->hw_config_sqk.resources_vs_[samples_resource_index];
+   }
+   if (saved_availability_resource_bound) {
+      saved_availability_resource =
+         command_writer->hw_config_sqk.resources_vs_[availability_resource_index];
+   }
+
    struct terakan_meta_config_draw_begin_options const meta_begin_options = {
       .vgt_primitive_type = V_008958_DI_PT_POINTLIST,
       .cb_and_db_shader_control_mode = TERAKAN_META_CONFIG_DRAW_BEGIN_CB_MODE_NORMAL_UAV_ONLY,
@@ -2192,7 +2217,7 @@ terakan_CmdCopyQueryPoolResults(VkCommandBuffer const commandBuffer, VkQueryPool
       src_samples_resource.resource[1] =
          (uint32_t)((uint64_t)src_samples_size_bytes * batch_query_count - 1);
       terakan_hw_config_sqk_set_resource_vs(&command_writer->hw_config_sqk,
-                                            TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META,
+                                            samples_resource_index,
                                             query_pool->bo, &src_samples_resource);
 
       /* Source availability resource. */
@@ -2205,7 +2230,7 @@ terakan_CmdCopyQueryPoolResults(VkCommandBuffer const commandBuffer, VkQueryPool
        */
       src_availability_resource.resource[1] = (uint32_t)sizeof(uint32_t) * batch_query_count - 1;
       terakan_hw_config_sqk_set_resource_vs(&command_writer->hw_config_sqk,
-                                            TERAKAN_RESOURCE_RANGE_NON_PIXEL_STAGE_SPECIFIC,
+                                            availability_resource_index,
                                             query_pool->bo, &src_availability_resource);
 
       /* Destination UAV. */
@@ -2227,7 +2252,7 @@ terakan_CmdCopyQueryPoolResults(VkCommandBuffer const commandBuffer, VkQueryPool
             command_writer->base.command_buffer, constants_size_bytes, &constants_bo,
             &constants_va_lines);
          if (unlikely(constants == NULL)) {
-            return;
+            goto restore_resources;
          }
          constants[TERAKAN_META_QUERY_COPY_CONST_PARTIAL] =
             (flags & VK_QUERY_RESULT_PARTIAL_BIT) ? UINT32_MAX : 0;
@@ -2265,7 +2290,7 @@ terakan_CmdCopyQueryPoolResults(VkCommandBuffer const commandBuffer, VkQueryPool
       packet = terakan_gfx_command_writer_emit(command_writer,
                                                TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_OTHER, 5);
       if (unlikely(packet == NULL)) {
-         return;
+         goto restore_resources;
       }
       *packet++ = PKT3(PKT3_SURFACE_SYNC, 4 - 1, 0);
       *packet++ = S_0085F0_CB0_DEST_BASE_ENA(1) | S_0085F0_SMX_ACTION_ENA(1) |
@@ -2275,4 +2300,14 @@ terakan_CmdCopyQueryPoolResults(VkCommandBuffer const commandBuffer, VkQueryPool
       *packet++ = TERAKAN_BARRIER_SURFACE_SYNC_POLL_INTERVAL;
       terakan_gfx_command_writer_emit_done(command_writer, packet);
    }
+
+restore_resources:
+   terakan_hw_config_sqk_set_resource_vs(
+      &command_writer->hw_config_sqk, samples_resource_index,
+      saved_samples_resource_bound ? saved_samples_resource.bo : NULL,
+      saved_samples_resource_bound ? &saved_samples_resource.descriptor : NULL);
+   terakan_hw_config_sqk_set_resource_vs(
+      &command_writer->hw_config_sqk, availability_resource_index,
+      saved_availability_resource_bound ? saved_availability_resource.bo : NULL,
+      saved_availability_resource_bound ? &saved_availability_resource.descriptor : NULL);
 }

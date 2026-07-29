@@ -22,6 +22,7 @@ struct terakan_app_config_compute {
 
    uint32_t cb_target_mask_;
 
+   bool diagnostic_skip_dispatch_;
    bool pending_;
 };
 
@@ -35,9 +36,13 @@ void terakan_app_config_compute_bind_shader(struct terakan_gfx_command_writer * 
                                             struct terakan_shader_impl const * shader,
                                             uint32_t block_size_x, uint32_t block_size_y,
                                             uint32_t block_size_z, uint32_t lds_dwords,
-                                            uint32_t num_waves, uint32_t cb_target_mask);
+                                            uint32_t num_waves, uint32_t cb_target_mask,
+                                            bool diagnostic_skip_dispatch);
 
 void terakan_app_config_compute_apply_pending(struct terakan_gfx_command_writer * command_writer);
+
+void terakan_app_config_compute_prepare_dispatch(
+   struct terakan_gfx_command_writer * command_writer);
 
 #ifdef __cplusplus
 }

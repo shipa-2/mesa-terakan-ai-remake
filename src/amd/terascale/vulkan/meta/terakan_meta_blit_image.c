@@ -492,6 +492,24 @@ terakan_CmdBlitImage2(VkCommandBuffer const commandBuffer,
    struct terakan_gfx_command_writer * const command_writer =
       terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx;
 
+   if (getenv("TERAKAN_DEBUG_IMAGE_OPS") != NULL) {
+      static unsigned blit_call_count;
+      unsigned const call = blit_call_count++;
+      if (call < 4096) {
+         struct terakan_image const * const src_image =
+            terakan_image_from_handle(pBlitImageInfo->srcImage);
+         struct terakan_image const * const dst_image =
+            terakan_image_from_handle(pBlitImageInfo->dstImage);
+         fprintf(stderr,
+                 "[TERAKAN_IMAGE_OP] blit #%u src=%p fmt=%u %ux%u dst=%p fmt=%u %ux%u "
+                 "regions=%u filter=%u\n",
+                 call, (void *)src_image, src_image->vk.format, src_image->vk.extent.width,
+                 src_image->vk.extent.height, (void *)dst_image, dst_image->vk.format,
+                 dst_image->vk.extent.width, dst_image->vk.extent.height,
+                 pBlitImageInfo->regionCount, pBlitImageInfo->filter);
+      }
+   }
+
    if (debug_get_bool_option("TERAKAN_SKIP_SCALED_BLIT", false)) {
       STACK_ARRAY(VkImageCopy2, copies, pBlitImageInfo->regionCount);
       uint32_t copy_count = 0;

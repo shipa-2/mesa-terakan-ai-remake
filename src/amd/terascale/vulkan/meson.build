@@ -54,6 +54,7 @@ libterakan_files = files(
   'nir/terakan_nir_buffer.c',
   'nir/terakan_nir_compact_rtv_dsb_exports.c',
   'nir/terakan_nir_lower_bindings.c',
+  'nir/terakan_nir_lower_subgroups.c',
   'terakan_app_config_compute.c',
   'terakan_app_config_compute.h',
   'terakan_app_config_draw.c',
@@ -85,6 +86,8 @@ libterakan_files = files(
   'terakan_hw_config_draw.h',
   'terakan_hw_config_compute.c',
   'terakan_hw_config_compute.h',
+  'terakan_hw_config_loop_constants.c',
+  'terakan_hw_config_loop_constants.h',
   'terakan_hw_config_shared.c',
   'terakan_hw_config_shared.h',
   'terakan_hw_config_sqk.c',
@@ -262,6 +265,71 @@ _dev_icd = custom_target(
 devenv.append('VK_ICD_FILENAMES', _dev_icd.full_path())
 
 if with_tests
+  terakan_sfn_lowering_test = executable(
+    'terakan_sfn_lowering_test',
+    [
+      'nir/terakan_nir_lower_subgroups.c',
+      'tests/terakan_sfn_lowering_test.cpp',
+    ],
+    include_directories : [
+      inc_include,
+      inc_src,
+      inc_mapi,
+      inc_mesa,
+      inc_gallium,
+      inc_gallium_aux,
+      inc_amd,
+      inc_amd_common,
+      inc_compiler,
+      inc_util,
+    ],
+    dependencies : [
+      idep_amd_terascale_compiler,
+      idep_mesautil,
+      idep_nir,
+    ],
+    cpp_args : cpp_msvc_compat_args,
+  )
+  test('terakan_sfn_lowering', terakan_sfn_lowering_test)
+
+  terakan_hw_config_loop_constants_test = executable(
+    'terakan_hw_config_loop_constants_test',
+    [
+      'terakan_hw_config_loop_constants.c',
+      'tests/terakan_hw_config_loop_constants_test.c',
+    ],
+    include_directories : [
+      inc_include,
+      inc_src,
+      inc_gallium,
+    ],
+    c_args : c_msvc_compat_args,
+  )
+  test('terakan_hw_config_loop_constants', terakan_hw_config_loop_constants_test)
+
+  terakan_descriptor_buffer_test = executable(
+    'terakan_descriptor_buffer_test',
+    [
+      'terakan_descriptor.c',
+      'tests/terakan_descriptor_buffer_test.c',
+    ],
+    include_directories : [
+      inc_include,
+      inc_src,
+      inc_mapi,
+      inc_mesa,
+      inc_gallium,
+      inc_gallium_aux,
+      inc_amd,
+      inc_amd_common,
+      inc_compiler,
+      inc_util,
+    ],
+    dependencies : libterakan_deps,
+    c_args : c_msvc_compat_args,
+  )
+  test('terakan_descriptor_buffer', terakan_descriptor_buffer_test)
+
   terakan_vertex_input_test = executable(
     'terakan_vertex_input_test',
     [
@@ -293,10 +361,212 @@ if with_tests
 
   vulkan_loader_dep = dependency('vulkan', required : false)
   if vulkan_loader_dep.found()
+    terakan_image_array_copy_test = executable(
+      'terakan_image_array_copy_test',
+      'tests/terakan_image_array_copy_test.cpp',
+      dependencies : vulkan_loader_dep,
+      cpp_args : cpp_msvc_compat_args,
+    )
+    test(
+      'terakan_image_array_copy',
+      terakan_image_array_copy_test,
+      depends : [libvulkan_terascale, _dev_icd],
+      env : {
+        'VK_DRIVER_FILES' : _dev_icd.full_path(),
+        'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+        'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+      },
+      timeout : 10,
+    )
+
+    if prog_glslang.found()
+      terakan_instance_dynamic_ssbo_vertex_spv = custom_target(
+        'terakan_instance_dynamic_ssbo.vert.spv',
+        input : 'tests/terakan_instance_dynamic_ssbo.vert',
+        output : 'terakan_instance_dynamic_ssbo.vert.spv',
+        command : [
+          prog_glslang, '-V', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_instance_dynamic_ssbo.vert.spv.d',
+      )
+      terakan_instance_dynamic_ssbo_fragment_spv = custom_target(
+        'terakan_instance_dynamic_ssbo.frag.spv',
+        input : 'tests/terakan_instance_dynamic_ssbo.frag',
+        output : 'terakan_instance_dynamic_ssbo.frag.spv',
+        command : [
+          prog_glslang, '-V', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_instance_dynamic_ssbo.frag.spv.d',
+      )
+      terakan_instance_dynamic_ssbo_test = executable(
+        'terakan_instance_dynamic_ssbo_test',
+        'tests/terakan_instance_dynamic_ssbo_test.cpp',
+        dependencies : vulkan_loader_dep,
+        cpp_args : cpp_msvc_compat_args,
+      )
+      test(
+        'terakan_instance_dynamic_ssbo',
+        terakan_instance_dynamic_ssbo_test,
+        args : [
+          terakan_instance_dynamic_ssbo_vertex_spv,
+          terakan_instance_dynamic_ssbo_fragment_spv,
+        ],
+        depends : [
+          libvulkan_terascale,
+          _dev_icd,
+          terakan_instance_dynamic_ssbo_vertex_spv,
+          terakan_instance_dynamic_ssbo_fragment_spv,
+        ],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 5,
+      )
+
+      terakan_bc6_cube_vertex_spv = custom_target(
+        'terakan_bc6_cube.vert.spv',
+        input : 'tests/terakan_bc6_cube.vert',
+        output : 'terakan_bc6_cube.vert.spv',
+        command : [
+          prog_glslang, '-V', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_bc6_cube.vert.spv.d',
+      )
+      terakan_bc6_cube_fragment_spv = custom_target(
+        'terakan_bc6_cube.frag.spv',
+        input : 'tests/terakan_bc6_cube.frag',
+        output : 'terakan_bc6_cube.frag.spv',
+        command : [
+          prog_glslang, '-V', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_bc6_cube.frag.spv.d',
+      )
+      terakan_bc6_array_fragment_spv = custom_target(
+        'terakan_bc6_array.frag.spv',
+        input : 'tests/terakan_bc6_array.frag',
+        output : 'terakan_bc6_array.frag.spv',
+        command : [
+          prog_glslang, '-V', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_bc6_array.frag.spv.d',
+      )
+      terakan_bc6_cube_test = executable(
+        'terakan_bc6_cube_test',
+        'tests/terakan_bc6_cube_test.cpp',
+        dependencies : [vulkan_loader_dep, idep_mesautil],
+        cpp_args : cpp_msvc_compat_args,
+      )
+      test(
+        'terakan_bc6_cube',
+        terakan_bc6_cube_test,
+        args : [
+          terakan_bc6_cube_vertex_spv,
+          terakan_bc6_cube_fragment_spv,
+        ],
+        depends : [
+          libvulkan_terascale,
+          _dev_icd,
+          terakan_bc6_cube_vertex_spv,
+          terakan_bc6_cube_fragment_spv,
+        ],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 10,
+      )
+      test(
+        'terakan_bc6_cube_single_level_views',
+        terakan_bc6_cube_test,
+        args : [
+          terakan_bc6_cube_vertex_spv,
+          terakan_bc6_cube_fragment_spv,
+          '--single-level-views',
+        ],
+        depends : [
+          libvulkan_terascale,
+          _dev_icd,
+          terakan_bc6_cube_vertex_spv,
+          terakan_bc6_cube_fragment_spv,
+        ],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 10,
+      )
+      test(
+        'terakan_bc6_array_view',
+        terakan_bc6_cube_test,
+        args : [
+          terakan_bc6_cube_vertex_spv,
+          terakan_bc6_array_fragment_spv,
+          '--2d-array-view',
+        ],
+        depends : [
+          libvulkan_terascale,
+          _dev_icd,
+          terakan_bc6_cube_vertex_spv,
+          terakan_bc6_array_fragment_spv,
+        ],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 10,
+      )
+
+      terakan_compute_loop_spv = custom_target(
+        'terakan_compute_loop.spv.h',
+        input : 'tests/terakan_compute_loop.comp',
+        output : 'terakan_compute_loop.spv.h',
+        command : [
+          prog_glslang, '-V', '-x', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_compute_loop.spv.h.d',
+      )
+      terakan_compute_loop_test = executable(
+        'terakan_compute_loop_test',
+        [
+          'tests/terakan_compute_loop_test.c',
+          terakan_compute_loop_spv,
+        ],
+        dependencies : vulkan_loader_dep,
+      )
+      test(
+        'terakan_compute_loop',
+        terakan_compute_loop_test,
+        depends : [libvulkan_terascale, _dev_icd],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 5,
+      )
+    endif
+
     terakan_physical_device_properties_test = executable(
       'terakan_physical_device_properties_test',
       'tests/terakan_physical_device_properties_test.c',
       dependencies : vulkan_loader_dep,
+    )
+    executable(
+      'terakan_shader_corpus_test',
+      'tests/terakan_shader_corpus_test.cpp',
+      dependencies : vulkan_loader_dep,
+      cpp_args : cpp_msvc_compat_args,
     )
     test(
       'terakan_physical_device_properties',

@@ -312,6 +312,12 @@ enum terakan_gfx_command_writer_emit_contents {
     */
    TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DRAW,
 
+   /* Application compute dispatch commands. Compute configuration will be actualized before the
+    * packet sequence. Graphics and compute bindings are independent Vulkan state.
+    * Outer only.
+    */
+   TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DISPATCH,
+
    /* Packet types not requiring configuration or context state.
     * Outer or inner.
     */
@@ -648,10 +654,36 @@ terakan_gfx_command_writer_before_hw_draw(struct terakan_gfx_command_writer * co
    terakan_barrier_emit_pending_actions(command_writer, TERAKAN_BARRIER_ACTIONS_ALL);
 }
 
+/*
+ * Evergreen's graphics and compute state is not safe to switch in the middle of one hardware
+ * indirect buffer. The r600 Gallium driver submits a new command stream when entering compute;
+ * keep the Vulkan command buffer intact, but split its internal IBs at both mode transitions.
+ * The queue submits the resulting IBs in list order.
+ */
+static inline void
+terakan_gfx_command_writer_split_for_draw_compute_switch(
+   struct terakan_gfx_command_writer * const command_writer, bool const entering_compute)
+{
+   if (command_writer->indirect_buffer != NULL &&
+       command_writer->hw_config_shared.is_compute_active_ != entering_compute) {
+      /*
+       * Complete writes in the old mode before closing its IB. In particular, dispatch records
+       * CS_PARTIAL_FLUSH and CB/RAT cache actions as pending; carrying them into the new graphics
+       * IB would let its preamble invalidate caches and change shared state before compute writes
+       * have become available.
+       */
+      terakan_barrier_emit_pending_actions(command_writer, TERAKAN_BARRIER_ACTIONS_ALL);
+      terakan_gfx_command_writer_end_indirect_buffer(command_writer);
+   }
+}
+
 static inline void
 terakan_gfx_command_writer_before_app_draw(struct terakan_gfx_command_writer * const command_writer)
 {
+   terakan_gfx_command_writer_split_for_draw_compute_switch(command_writer, false);
    terakan_app_config_draw_apply_pending(command_writer);
+   terakan_hw_config_draw_set_db_render_control(
+      &command_writer->hw_config_draw, TERAKAN_HW_CONFIG_DRAW_DEFAULT_DB_RENDER_CONTROL);
 
    /* Not a part of `app_config_draw` because pipeline statistics queries are used for both graphics
     * and compute, and handled before every draw because query counter incrementing is disabled
@@ -671,12 +703,23 @@ static inline void
 terakan_gfx_command_writer_before_app_dispatch(
    struct terakan_gfx_command_writer * const command_writer)
 {
+   terakan_gfx_command_writer_split_for_draw_compute_switch(command_writer, true);
+   terakan_app_config_compute_prepare_dispatch(command_writer);
    terakan_app_config_compute_apply_pending(command_writer);
 
    /* Storage buffer UAVs for compute reuse CB/RAT state tracked in `app_config_draw`. */
    if (command_writer->app_config_compute.cb_target_mask_ != 0) {
       terakan_app_config_draw_apply_pending(command_writer);
    }
+
+   /* app_config_draw derives CB_TARGET_MASK from graphics color attachments and may clear it when
+    * a compute dispatch has no framebuffer. Compute storage buffer writes use the same CB/RAT
+    * targets, so restore their component mask after applying the shared draw state.
+    */
+   terakan_hw_config_draw_set_cb_target_mask(
+      &command_writer->hw_config_draw, command_writer->app_config_compute.cb_target_mask_);
+   terakan_hw_config_draw_set_db_render_control(&command_writer->hw_config_draw,
+                                                S_028000_COLOR_DISABLE(1));
 
    terakan_hw_config_shared_set_pipelinestat_streamoutstats_enable(
       &command_writer->hw_config_shared,

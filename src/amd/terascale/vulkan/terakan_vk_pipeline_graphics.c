@@ -23,6 +23,7 @@
 
 #include "terakan_vk_pipeline_graphics.h"
 
+#include "terakan_app_config_compute.h"
 #include "terakan_command_buffer.h"
 #include "terakan_device.h"
 #include "terakan_entrypoints.h"
@@ -921,6 +922,8 @@ terakan_vk_pipeline_graphics_cmd_bind(struct vk_command_buffer * const command_b
    struct terakan_vk_pipeline_graphics const * const pipeline =
       container_of(pipeline_base, struct terakan_vk_pipeline_graphics const, vk);
 
+   terakan_app_config_compute_clear_binding(&command_writer->app_config_compute);
+
    BITSET_COPY(command_buffer->graphics_state_is_dynamic, pipeline->dynamic_state);
    /* For consistency with the dynamic state in the `vk_command_buffer`, mark the state that's
     * static in the pipeline object as dirty in the command buffer's dynamic state so it's reapplied
@@ -1128,6 +1131,7 @@ terakan_vk_pipeline_graphics_create(struct terakan_device * const device,
 
    struct terakan_pipeline_layout const * const pipeline_layout =
       terakan_pipeline_layout_from_handle(create_info->layout);
+   VkShaderStageFlags compiled_shader_stages = 0;
 
    u_foreach_bit (shader_stage_vk_bit_index, pipeline->shader_stages) {
       gl_shader_stage const shader_stage =
@@ -1164,6 +1168,7 @@ terakan_vk_pipeline_graphics_create(struct terakan_device * const device,
       if (result != VK_SUCCESS) {
          goto fail_shaders;
       }
+      compiled_shader_stages |= BITFIELD_BIT(shader_stage_vk_bit_index);
    }
 
    bool const fetch_shader_is_static =
@@ -1254,12 +1259,11 @@ terakan_vk_pipeline_graphics_create(struct terakan_device * const device,
 fail_shader_bo:
    terakan_bo_free(pipeline->shader_bo, allocator);
 fail_shaders:
-   u_foreach_bit (shader_stage_vk_bit_index, pipeline->shader_stages) {
+   u_foreach_bit (shader_stage_vk_bit_index, compiled_shader_stages) {
       gl_shader_stage const shader_stage =
          vk_to_mesa_shader_stage((VkShaderStageFlagBits)BITFIELD_BIT(shader_stage_vk_bit_index));
       struct terakan_shader_impl * const shader = &pipeline->shaders[shader_stage];
       r600_bytecode_clear(&shader->shader.bc);
-      free(shader->shader.arrays);
    }
 fail_pipeline:
    terakan_vk_pipeline_graphics_destroy(&device->vk, &pipeline->vk, allocator);

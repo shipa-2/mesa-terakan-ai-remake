@@ -666,8 +666,14 @@ RatInstr::emit_uav_instr(nir_intrinsic_instr *intrin, Shader& shader)
                                  1,
                                  value_component_mask,
                                  0);
-   uav_instr->set_ack();
    if (op_returns) {
+      /* Only returning UAV operations need an acknowledgement so their
+       * result can be fetched from the immediate-return buffer. Plain
+       * stores are completed by the command-stream cache/stage barrier;
+       * marking every scalar STORE_TYPED as acknowledged inserts a
+       * RAT/WAIT_ACK chain and can deadlock Evergreen compute.
+       */
+      uav_instr->set_ack();
       uav_instr->set_instr_flag(Instr::ack_rat_return_write);
    }
    if (nir_intrinsic_access(intrin) & ACCESS_INCLUDE_HELPERS) {
