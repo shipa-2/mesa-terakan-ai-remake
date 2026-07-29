@@ -29,8 +29,10 @@ From the repository root:
 ```
 
 This configures `build-vulkan/` as a release build containing only the
-`amd_terascale` Vulkan driver and focused unit tests. It does not install or
-replace the system Mesa stack.
+`amd_terascale` Vulkan driver and the focused Terakan regression suite. With
+the Vulkan loader and `glslang` available, the build includes four CPU tests,
+seven CAICOS GPU tests, and the optional shader-corpus runner. It does not
+install or replace the system Mesa stack.
 
 Useful variants:
 
@@ -62,6 +64,16 @@ Run a program with this exact build without installing it:
 
 The launcher selects the generated development ICD manifest and disables
 implicit Vulkan layers. It does not modify global environment or system files.
+
+Build and run the complete focused suite:
+
+```bash
+./bin/terakan-test
+```
+
+Use `./bin/terakan-test --unit-only` on a machine without the target GPU. The
+normal command deliberately refuses to accept a report from RADV, llvmpipe, or
+another Vulkan ICD.
 
 ## Manual Meson invocation
 

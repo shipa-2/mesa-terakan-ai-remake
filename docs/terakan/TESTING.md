@@ -6,13 +6,17 @@
 ./bin/terakan-test
 ```
 
-It performs three independently meaningful checks:
+It performs independently meaningful CPU, GPU, identity, and negative checks:
 
 1. builds the current working tree;
-2. runs the CPU-only `terakan_vertex_input` unit test;
-3. runs `terakan_physical_device_properties` and `vulkaninfo --summary`
-   against the generated local ICD, and rejects the
-   result unless a Terakan or CAICOS device is actually reported.
+2. runs the CPU-only shader lowering, loop-constant, descriptor-buffer, and
+   vertex-input tests;
+3. runs seven tests against the generated local ICD: layered image copies,
+   instanced dynamic SSBO access, three BC6H cube/array view variants, compute
+   loops, and the physical-device report;
+4. corrupts one BC6H expected sample and requires the test to fail;
+5. runs `vulkaninfo --summary` and rejects the result unless a Terakan or
+   CAICOS device is actually reported.
 
 This prevents a passing result from accidentally coming from RADV, llvmpipe,
 or the system Vulkan driver.
@@ -25,7 +29,7 @@ The report also validates `VK_KHR_driver_properties`. `driverName` must be
 `Terakan`, `driverInfo` must identify Mesa, and `conformanceVersion` remains
 `0.0.0.0` until the driver has passed the Vulkan conformance test suite.
 
-CPU-only test:
+CPU-only tests:
 
 ```bash
 ./bin/terakan-test --unit-only
@@ -35,6 +39,32 @@ Optional ten-second visual smoke test:
 
 ```bash
 ./bin/terakan-test --vkcube
+```
+
+Run selected tests directly through Meson:
+
+```bash
+meson test -C build-vulkan --print-errorlogs \
+  terakan_image_array_copy \
+  terakan_instance_dynamic_ssbo \
+  terakan_bc6_cube \
+  terakan_bc6_cube_single_level_views \
+  terakan_bc6_array_view \
+  terakan_compute_loop
+```
+
+The BC6H test covers six cube faces across eight mip levels. It uploads every
+subresource, samples through cube/array views, copies the result back, and
+compares all 48 outputs. To verify that the oracle is live rather than a
+pass-only smoke test:
+
+```bash
+./bin/terakan-run \
+  build-vulkan/src/amd/terascale/vulkan/terakan_bc6_cube_test \
+  build-vulkan/src/amd/terascale/vulkan/terakan_bc6_cube.vert.spv \
+  build-vulkan/src/amd/terascale/vulkan/terakan_bc6_cube.frag.spv \
+  --corrupt-expectation
+echo "$?"  # must be 1
 ```
 
 ## Windowed vkQuake3 test
@@ -67,6 +97,16 @@ test the Vulkan driver. Do not force unsupported Mesa/OpenGL extensions.
 
 The repository branch `dxvk-sarek-terakan` is kept as integration history; it
 is not selected or built by the Mesa helpers in `bin/`.
+
+Current focused game evidence:
+
+- Katamari Damacy REROLL: gameplay and display-settings scenes render correctly
+  after fixing mipmapped cube/array slice layout.
+- Disco Elysium: the tested in-game scene renders correctly after descriptor,
+  shader, copy, and graphics/compute state fixes.
+- SuperTuxKart: useful as an exploratory Vulkan workload, but its Vulkan
+  renderer is not treated as a conformance oracle and driver behavior must be
+  confirmed with focused tests.
 
 ## Evidence and failure handling
 

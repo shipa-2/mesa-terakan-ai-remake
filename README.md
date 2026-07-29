@@ -19,14 +19,16 @@ kernel driver.
 | Vulkan device discovery | AMD R8xx (CAICOS) is detected as Terakan |
 | Reported API version | Vulkan 1.1.318 |
 | Properties/features validation | Focused report completes with 0 errors |
-| Compute smoke test | GPU readback `{1,2,3,4}` passes |
+| Compute and shader control flow | Loop constants, singleton subgroup lowering, dispatch transitions and GPU readback pass |
+| Draw state | `firstInstance`, dynamic SSBO offsets and graphics/compute state restoration pass |
+| Image copies and sampling | Layered copies and mipmapped BC6H cube/array views pass on CAICOS |
 | Color MSAA resolve | 2x/4x/8x, full/partial regions, layers, RGBA/BGRA pass |
 | vkQuake3 | Vulkan renderer works in a 640x480 window |
-| DXVK-Sarek | D3D11 FL 11_1 device creation works; game rendering remains experimental |
+| DXVK-Sarek | D3D11 FL 11_1; tested Katamari and Disco Elysium scenes render correctly |
 
-The main unfinished areas are complete depth/stencil resolve behavior, unusual
-MSAA formats and subresources, cache/barrier synchronization, and rendering
-correctness in demanding DXVK-Sarek games. See the detailed
+The main unfinished areas are complete depth/stencil resolve behavior,
+FMASK/CMASK-backed multisample sampling, unusual MSAA formats and subresources,
+complete cache/barrier coverage, and Vulkan conformance. See the detailed
 [status page](docs/terakan/STATUS.md).
 
 ## Quick start

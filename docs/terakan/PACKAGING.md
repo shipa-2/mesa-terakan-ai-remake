@@ -18,6 +18,11 @@ through pacman. The package owns the ICD libraries and manifests under the
 standard system locations, and provides `vulkan-driver` plus
 `lib32-vulkan-driver`. Uninstall it with `./bin/terakan-uninstall`.
 
+The AUR recipe follows the Git branch rather than a manually maintained release
+archive. Rebuilding the package therefore picks up current driver fixes,
+including shader/compiler, image-layout, copy/resolve, and synchronization
+changes, without editing the AUR recipe for every Terakan commit.
+
 Build the committed Git branch:
 
 ```bash
