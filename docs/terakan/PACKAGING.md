@@ -38,7 +38,7 @@ source tree explicitly:
 
 ```bash
 cd /path/to/vulkan-terakan
-TERAKAN_SOURCE_TREE=/path/to/mesa-terakan-ai-upstreamed \
+TERAKAN_SOURCE_TREE=/path/to/mesa-terakan-ai-remake \
   ./build-local.sh --syncdeps
 ```
 

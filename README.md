@@ -42,8 +42,8 @@ sudo pacman -S --needed base-devel git glslang libdrm libx11 libxcb \
   wayland wayland-protocols xcb-util-keysyms xorgproto zlib zstd
 
 git clone --branch Terakan_state_rework --single-branch \
-  https://github.com/shipa-2/mesa-terakan-ai-upstreamed.git
-cd mesa-terakan-ai-upstreamed
+  https://github.com/shipa-2/mesa-terakan-ai-remake.git
+cd mesa-terakan-ai-remake
 ./bin/terakan-build
 ./bin/terakan-test
 ```
@@ -94,4 +94,7 @@ Historical overlay branches are not part of the supported build workflow.
 ## Upstream
 
 Terakan was originally developed by Triang3l. This repository carries the
-ongoing integration and hardware-validation work for the Mesa driver.
+ongoing integration and hardware-validation work for the Mesa driver. The
+remake is directed and hardware-tested by Shipa Snake, with implementation and
+analysis performed in collaboration with AI coding agents; it is not presented
+as the work of one person.

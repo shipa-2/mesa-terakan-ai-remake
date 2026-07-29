@@ -4,8 +4,8 @@
 
 ```bash
 git clone --branch Terakan_state_rework --single-branch \
-  https://github.com/shipa-2/mesa-terakan-ai-upstreamed.git
-cd mesa-terakan-ai-upstreamed
+  https://github.com/shipa-2/mesa-terakan-ai-remake.git
+cd mesa-terakan-ai-remake
 ```
 
 This branch already contains the full Mesa tree and the Terakan driver. No
