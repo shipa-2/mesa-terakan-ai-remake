@@ -59,6 +59,8 @@ These are useful, but Vulkan 1.1 permits the corresponding feature bits to be
   and 2D-array views.
 - Color MSAA resolve for the currently tested sample counts, regions, layers
   and RGBA/BGRA formats.
+- `VK_EXT_memory_budget` with per-process allocation accounting and
+  kernel-informed VRAM/GTT budgets.
 
 ## Completion policy
 

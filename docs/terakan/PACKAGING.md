@@ -59,9 +59,15 @@ After installation:
 ```bash
 terakan-vulkan vulkaninfo --summary
 terakan-vulkan vkcube
+terakan-vulkan --mangohud vkcube
 terakan-wine wine /path/to/game.exe
+terakan-wine --mangohud wine /path/to/game.exe
 terakan-test-capabilities
 ```
+
+The MangoHud options enable only its matching 64/32-bit implicit layer and
+keep other implicit layers disabled. Install the optional `mangohud` and
+`lib32-mangohud` packages for mixed-architecture Wine games.
 
 The package intentionally does not install r600 Gallium/OpenGL, kernel module
 options, or initramfs hooks. CAICOS continues using the distribution's

@@ -53,10 +53,13 @@ Run applications against the local build without installing it:
 ```bash
 ./bin/terakan-run vulkaninfo --summary
 ./bin/terakan-run vkcube
+./bin/terakan-run --mangohud vkcube
 ```
 
 The build and run helpers use `build-vulkan/` inside the source tree and do not
-replace system Mesa.
+replace system Mesa. MangoHud mode keeps every other implicit Vulkan layer
+disabled, so a device-selection layer cannot redirect the application to
+another GPU.
 
 Install the current AUR recipe as a system Vulkan ICD on Arch Linux:
 

@@ -1093,6 +1093,51 @@ terakan_GetPhysicalDeviceMemoryProperties2(
       terakan_physical_device_from_handle(physicalDevice);
 
    pMemoryProperties->memoryProperties = device->memory_properties;
+
+   VkPhysicalDeviceMemoryBudgetPropertiesEXT * const memory_budget =
+      vk_find_struct(pMemoryProperties->pNext, PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT);
+   if (memory_budget == NULL) {
+      return;
+   }
+
+   VkDeviceSize vram_system_usage = 0;
+   VkDeviceSize gtt_system_usage = 0;
+   if (device->winsys_fn->get_memory_usage != NULL) {
+      device->winsys_fn->get_memory_usage(device, &vram_system_usage, &gtt_system_usage);
+   }
+
+   VkDeviceSize total_vram_size = 0;
+   VkDeviceSize total_vram_app_usage = 0;
+   for (uint32_t i = 0; i < device->memory_properties.memoryHeapCount; ++i) {
+      VkMemoryHeap const * const heap = &device->memory_properties.memoryHeaps[i];
+      VkDeviceSize const app_usage = p_atomic_read(&device->memory_heap_usage[i]);
+      memory_budget->heapUsage[i] = app_usage;
+      if (heap->flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) {
+         total_vram_size += heap->size;
+         total_vram_app_usage += app_usage;
+      }
+   }
+
+   VkDeviceSize const vram_free =
+      total_vram_size - MIN2(total_vram_size, MAX2(vram_system_usage, total_vram_app_usage));
+   for (uint32_t i = 0; i < device->memory_properties.memoryHeapCount; ++i) {
+      VkMemoryHeap const * const heap = &device->memory_properties.memoryHeaps[i];
+      VkDeviceSize const app_usage = memory_budget->heapUsage[i];
+      VkDeviceSize free_space;
+      if (heap->flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) {
+         free_space = total_vram_size != 0
+                         ? (VkDeviceSize)(((__uint128_t)vram_free * heap->size) / total_vram_size)
+                         : 0;
+      } else {
+         free_space = heap->size - MIN2(heap->size, MAX2(gtt_system_usage, app_usage));
+      }
+      memory_budget->heapBudget[i] = MIN2(heap->size, app_usage + free_space);
+   }
+
+   for (uint32_t i = device->memory_properties.memoryHeapCount; i < VK_MAX_MEMORY_HEAPS; ++i) {
+      memory_budget->heapBudget[i] = 0;
+      memory_budget->heapUsage[i] = 0;
+   }
 }
 
 static void
@@ -1200,6 +1245,10 @@ terakan_physical_device_init(
    vk_warn_non_conformant_implementation("terakan");
 
    device->winsys_fn = winsys_fn_static;
+
+   for (uint32_t i = 0; i < VK_MAX_MEMORY_HEAPS; ++i) {
+      p_atomic_set(&device->memory_heap_usage[i], 0);
+   }
 
    terakan_physical_device_chip_info_init(pci_device_id, &device->chip_info);
 

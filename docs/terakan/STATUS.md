@@ -8,6 +8,7 @@ Last updated: 2026-07-29. Target hardware: AMD CAICOS.
 |---|---|
 | Vulkan instance/device discovery | AMD R8xx (CAICOS) Terakan device, API 1.1.318 |
 | Properties and driver identity | `VK_KHR_driver_properties`; Terakan/Mesa identity; non-conformant version reported honestly |
+| VRAM reporting | `VK_EXT_memory_budget`; per-process heap usage plus kernel-reported global VRAM/GTT pressure |
 | Focused regression suite | 4 CPU tests and 7 CAICOS GPU tests pass |
 | Compute and subgroup behavior | loop constants, singleton subgroup lowering, descriptor buffers, dispatch state and readback pass |
 | Draw state | `firstInstance` plus dynamic SSBO offsets pass; graphics/compute transitions preserve descriptors and draw state |

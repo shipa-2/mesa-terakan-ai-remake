@@ -82,6 +82,9 @@ terakan_physical_device_drm_radeon_get_winsys_extensions(
    properties->pciDevice = device->pci_bus_info.dev;
    properties->pciFunction = device->pci_bus_info.func;
 
+   /* VK_EXT_memory_budget (#238). */
+   extensions->EXT_memory_budget = true;
+
    /* VK_EXT_physical_device_drm (#354). */
    extensions->EXT_physical_device_drm = true;
    if (device->has_primary_node) {
@@ -92,6 +95,33 @@ terakan_physical_device_drm_radeon_get_winsys_extensions(
    properties->drmHasRender = VK_TRUE;
    properties->drmRenderMajor = device->render_node_device_id_major;
    properties->drmRenderMinor = device->render_node_device_id_minor;
+}
+
+static VkDeviceSize
+terakan_physical_device_drm_radeon_query_memory_usage(int const fd, uint32_t const request)
+{
+   uint64_t usage = 0;
+   struct drm_radeon_info info = {
+      .request = request,
+      .value = (__u64)(uintptr_t)&usage,
+   };
+   if (drmCommandWriteRead(fd, DRM_RADEON_INFO, &info, sizeof(info)) != 0) {
+      return 0;
+   }
+   return usage;
+}
+
+static void
+terakan_physical_device_drm_radeon_get_memory_usage(
+   struct terakan_physical_device const * const device_base,
+   VkDeviceSize * const vram_usage_out, VkDeviceSize * const gtt_usage_out)
+{
+   struct terakan_physical_device_drm_radeon const * const device =
+      container_of(device_base, struct terakan_physical_device_drm_radeon const, base);
+   *vram_usage_out = terakan_physical_device_drm_radeon_query_memory_usage(
+      device->render_node_validation_fd, RADEON_INFO_VRAM_USAGE);
+   *gtt_usage_out = terakan_physical_device_drm_radeon_query_memory_usage(
+      device->render_node_validation_fd, RADEON_INFO_GTT_USAGE);
 }
 
 static void
@@ -112,6 +142,7 @@ terakan_physical_device_drm_radeon_destroy(struct terakan_physical_device * cons
 static struct terakan_physical_device_winsys_fn const terakan_physical_device_drm_radeon_fn = {
    .get_winsys_extensions = terakan_physical_device_drm_radeon_get_winsys_extensions,
    .create_device = terakan_device_drm_radeon_create,
+   .get_memory_usage = terakan_physical_device_drm_radeon_get_memory_usage,
    .destroy = terakan_physical_device_drm_radeon_destroy,
 };
 

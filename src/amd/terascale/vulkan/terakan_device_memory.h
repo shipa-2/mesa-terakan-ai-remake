@@ -36,6 +36,9 @@ struct terakan_device_memory {
    struct vk_device_memory vk;
 
    struct terakan_bo * bo;
+
+   VkDeviceSize accounted_size;
+   uint32_t memory_heap_index;
 };
 
 VK_DEFINE_NONDISP_HANDLE_CASTS(terakan_device_memory, vk.base, VkDeviceMemory,

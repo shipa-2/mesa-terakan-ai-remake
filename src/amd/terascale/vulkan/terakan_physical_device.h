@@ -33,6 +33,7 @@
 #include "nir.h"
 #include "vk_physical_device.h"
 #include "vk_sync.h"
+#include "util/u_atomic.h"
 #include "vk_sync_binary.h"
 
 #include <stdbool.h>
@@ -171,6 +172,11 @@ struct terakan_physical_device_winsys_fn {
                              VkAllocationCallbacks const * allocator,
                              struct terakan_device ** device_out);
 
+   /* Returns system-wide usage reported by the kernel. Optional when
+    * VK_EXT_memory_budget isn't exposed by the winsys. */
+   void (*get_memory_usage)(struct terakan_physical_device const * device,
+                            VkDeviceSize * vram_usage_out, VkDeviceSize * gtt_usage_out);
+
    void (*destroy)(struct terakan_physical_device * device);
 };
 
@@ -196,6 +202,7 @@ struct terakan_physical_device {
    struct r600_isa * isa;
 
    VkPhysicalDeviceMemoryProperties memory_properties;
+   uint64_t memory_heap_usage[VK_MAX_MEMORY_HEAPS];
 
    struct wsi_device wsi_device;
 };

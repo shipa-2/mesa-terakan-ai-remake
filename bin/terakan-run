@@ -5,9 +5,72 @@ repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
 build_dir=${TERAKAN_BUILD_DIR:-"$repo_root/build-vulkan"}
 icd_dir="$build_dir/src/amd/terascale/vulkan"
 driver="$icd_dir/libvulkan_terascale.so"
+mangohud=false
+mangohud_config=
+mangohud_prefix=${TERAKAN_MANGOHUD_PREFIX:-}
+
+usage() {
+  cat <<'EOF'
+usage: bin/terakan-run [--mangohud] [--mangohud-config CONFIG]
+                       [--mangohud-prefix PATH] [--] COMMAND [ARG ...]
+
+Run COMMAND through the local Terakan ICD. By default all implicit Vulkan
+layers are disabled. --mangohud safely allows only the installed MangoHud
+implicit layer; --mangohud-config also sets MANGOHUD_CONFIG.
+--mangohud-prefix selects a project-local MangoHud installation.
+EOF
+}
+
+while (($#)); do
+  case "$1" in
+    --mangohud)
+      mangohud=true
+      shift
+      ;;
+    --mangohud-config)
+      if (($# < 2)); then
+        echo "terakan-run: --mangohud-config requires a value" >&2
+        exit 2
+      fi
+      mangohud=true
+      mangohud_config=$2
+      shift 2
+      ;;
+    --mangohud-config=*)
+      mangohud=true
+      mangohud_config=${1#*=}
+      shift
+      ;;
+    --mangohud-prefix)
+      if (($# < 2)); then
+        echo "terakan-run: --mangohud-prefix requires a value" >&2
+        exit 2
+      fi
+      mangohud=true
+      mangohud_prefix=$2
+      shift 2
+      ;;
+    --mangohud-prefix=*)
+      mangohud=true
+      mangohud_prefix=${1#*=}
+      shift
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
 
 if (($# == 0)); then
-  echo "usage: bin/terakan-run COMMAND [ARG ...]" >&2
+  usage >&2
   exit 2
 fi
 if [[ ! -r "$driver" ]]; then
@@ -26,4 +89,38 @@ fi
 export VK_DRIVER_FILES="${icd_candidates[0]}"
 export VK_ICD_FILENAMES="${icd_candidates[0]}"
 export VK_LOADER_LAYERS_DISABLE=${VK_LOADER_LAYERS_DISABLE:-'~implicit~'}
+
+if $mangohud; then
+  if [[ -n "$mangohud_prefix" ]]; then
+    mangohud_prefix=$(cd -- "$mangohud_prefix" 2>/dev/null && pwd -P) || {
+      echo "terakan-run: MangoHud prefix does not exist: $mangohud_prefix" >&2
+      exit 1
+    }
+    mangohud_manifest_dir="$mangohud_prefix/share/vulkan/implicit_layer.d"
+    mangohud_library="$mangohud_prefix/lib/mangohud/libMangoHud.so"
+    if [[ ! -r "$mangohud_library" ||
+          ! -r "$mangohud_manifest_dir/MangoHud.x86_64.json" ]]; then
+      echo "terakan-run: incomplete MangoHud installation in $mangohud_prefix" >&2
+      exit 1
+    fi
+    export VK_IMPLICIT_LAYER_PATH="$mangohud_manifest_dir"
+  elif ! command -v mangohud >/dev/null; then
+    echo "terakan-run: MangoHud is not installed" >&2
+    exit 1
+  fi
+
+  unset DISABLE_MANGOHUD
+  export MANGOHUD=1
+  if [[ -n "$mangohud_config" ]]; then
+    export MANGOHUD_CONFIG="$mangohud_config"
+  fi
+
+  mangohud_layer='VK_LAYER_MANGOHUD_overlay*'
+  if [[ -n "${VK_LOADER_LAYERS_ALLOW:-}" ]]; then
+    export VK_LOADER_LAYERS_ALLOW="${VK_LOADER_LAYERS_ALLOW},${mangohud_layer}"
+  else
+    export VK_LOADER_LAYERS_ALLOW="$mangohud_layer"
+  fi
+fi
+
 exec "$@"

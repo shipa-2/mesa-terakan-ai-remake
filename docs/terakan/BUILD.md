@@ -60,10 +60,13 @@ Run a program with this exact build without installing it:
 ```bash
 ./bin/terakan-run vulkaninfo --summary
 ./bin/terakan-run vkcube
+./bin/terakan-run --mangohud vkcube
 ```
 
 The launcher selects the generated development ICD manifest and disables
-implicit Vulkan layers. It does not modify global environment or system files.
+implicit Vulkan layers. With `--mangohud`, it allowlists only the installed
+MangoHud layer while keeping device-selection and other overlays disabled. It
+does not modify global environment or system files.
 
 Build and run the complete focused suite:
 

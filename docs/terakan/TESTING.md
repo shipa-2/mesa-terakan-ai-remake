@@ -41,6 +41,37 @@ Optional ten-second visual smoke test:
 ./bin/terakan-test --vkcube
 ```
 
+## MangoHud
+
+Enable MangoHud without allowing other implicit Vulkan layers:
+
+```bash
+./bin/terakan-run --mangohud vkcube
+./bin/terakan-run \
+  --mangohud-config 'fps,frametime,vram,proc_vram,gpu_name,vulkan_driver' \
+  wine /path/to/game.exe
+```
+
+Use a project-local patched MangoHud without replacing the system package:
+
+```bash
+./bin/terakan-run \
+  --mangohud-prefix ../MangoHud-debug/install-terakan64 \
+  --mangohud-config 'fps,frametime,vram,gpu_name,vulkan_driver,gpu_list=0' \
+  wine /path/to/game.exe
+```
+
+The launcher still selects only the local Terakan ICD. It uses the Vulkan
+Loader allowlist to exempt `VK_LAYER_MANGOHUD_overlay*` from the default
+`~implicit~` block, so Mesa device-select, Steam overlays, RenderDoc and other
+implicit layers remain disabled. Both 64-bit and 32-bit MangoHud manifests are
+supported when the corresponding distribution packages are installed.
+On DRM Radeon, Terakan exposes `VK_EXT_memory_budget`: `heapUsage` tracks
+successful application `VkDeviceMemory` allocations and frees, while
+`heapBudget` also accounts for system-wide VRAM/GTT pressure reported by the
+kernel. The CAICOS properties test allocates 16 MiB, verifies the matching
+usage increase, frees it, and requires the counter to return to its baseline.
+
 Run selected tests directly through Meson:
 
 ```bash

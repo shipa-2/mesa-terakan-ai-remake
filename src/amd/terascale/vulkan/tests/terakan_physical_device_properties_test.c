@@ -88,6 +88,8 @@ main(void)
 {
    int result = EXIT_SUCCESS;
    VkInstance instance = VK_NULL_HANDLE;
+   VkDevice device = VK_NULL_HANDLE;
+   VkDeviceMemory budget_test_memory = VK_NULL_HANDLE;
    VkApplicationInfo const application_info = {
       .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
       .pApplicationName = "terakan_physical_device_properties_test",
@@ -138,6 +140,7 @@ main(void)
    TEST_CHECK(bytes_are_nonzero(legacy_properties.pipelineCacheUUID, VK_UUID_SIZE));
    TEST_CHECK(has_device_extension(physical_device, VK_KHR_MAINTENANCE_3_EXTENSION_NAME));
    TEST_CHECK(has_device_extension(physical_device, VK_KHR_DRIVER_PROPERTIES_EXTENSION_NAME));
+   TEST_CHECK(has_device_extension(physical_device, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME));
 
    VkPhysicalDeviceVulkan11Features vulkan_1_1_features = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
@@ -276,6 +279,87 @@ main(void)
    /* The maximum addressable allocation may be larger than every currently available heap. */
    TEST_CHECK(maintenance_3.maxMemoryAllocationSize <= UINT32_MAX);
 
+   VkPhysicalDeviceMemoryBudgetPropertiesEXT memory_budget_before = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT,
+   };
+   VkPhysicalDeviceMemoryProperties2 memory_properties_2 = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2,
+      .pNext = &memory_budget_before,
+   };
+   vkGetPhysicalDeviceMemoryProperties2(physical_device, &memory_properties_2);
+
+   uint32_t device_local_memory_type = UINT32_MAX;
+   for (uint32_t i = 0; i < memory_properties_2.memoryProperties.memoryTypeCount; ++i) {
+      if (memory_properties_2.memoryProperties.memoryTypes[i].propertyFlags &
+          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) {
+         device_local_memory_type = i;
+         break;
+      }
+   }
+   TEST_CHECK(device_local_memory_type != UINT32_MAX);
+   uint32_t const budget_test_heap =
+      memory_properties_2.memoryProperties.memoryTypes[device_local_memory_type].heapIndex;
+   TEST_CHECK(memory_budget_before.heapBudget[budget_test_heap] <=
+              memory_properties_2.memoryProperties.memoryHeaps[budget_test_heap].size);
+
+   float const queue_priority = 1.0f;
+   VkDeviceQueueCreateInfo const queue_create_info = {
+      .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+      .queueFamilyIndex = 0,
+      .queueCount = 1,
+      .pQueuePriorities = &queue_priority,
+   };
+   char const * const device_extensions[] = {
+      VK_EXT_MEMORY_BUDGET_EXTENSION_NAME,
+   };
+   VkDeviceCreateInfo const device_create_info = {
+      .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+      .queueCreateInfoCount = 1,
+      .pQueueCreateInfos = &queue_create_info,
+      .enabledExtensionCount = 1,
+      .ppEnabledExtensionNames = device_extensions,
+   };
+   TEST_CHECK(vkCreateDevice(physical_device, &device_create_info, NULL, &device) == VK_SUCCESS);
+
+   /* Take the baseline after device creation because internal device BOs aren't VkDeviceMemory
+    * allocations and therefore aren't part of the application allocation counter. */
+   vkGetPhysicalDeviceMemoryProperties2(physical_device, &memory_properties_2);
+   VkDeviceSize const usage_before = memory_budget_before.heapUsage[budget_test_heap];
+
+   VkDeviceSize const budget_test_size = 16 * 1024 * 1024;
+   VkMemoryAllocateInfo const budget_test_allocate_info = {
+      .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+      .allocationSize = budget_test_size,
+      .memoryTypeIndex = device_local_memory_type,
+   };
+   TEST_CHECK(vkAllocateMemory(device, &budget_test_allocate_info, NULL, &budget_test_memory) ==
+              VK_SUCCESS);
+
+   VkPhysicalDeviceMemoryBudgetPropertiesEXT memory_budget_allocated = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT,
+   };
+   memory_properties_2.pNext = &memory_budget_allocated;
+   vkGetPhysicalDeviceMemoryProperties2(physical_device, &memory_properties_2);
+   TEST_CHECK(memory_budget_allocated.heapUsage[budget_test_heap] >=
+              usage_before + budget_test_size);
+   TEST_CHECK(memory_budget_allocated.heapBudget[budget_test_heap] <=
+              memory_properties_2.memoryProperties.memoryHeaps[budget_test_heap].size);
+
+   vkFreeMemory(device, budget_test_memory, NULL);
+   budget_test_memory = VK_NULL_HANDLE;
+
+   VkPhysicalDeviceMemoryBudgetPropertiesEXT memory_budget_freed = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT,
+   };
+   memory_properties_2.pNext = &memory_budget_freed;
+   vkGetPhysicalDeviceMemoryProperties2(physical_device, &memory_properties_2);
+   TEST_CHECK(memory_budget_freed.heapUsage[budget_test_heap] == usage_before);
+   for (uint32_t i = memory_properties_2.memoryProperties.memoryHeapCount;
+        i < VK_MAX_MEMORY_HEAPS; ++i) {
+      TEST_CHECK(memory_budget_freed.heapBudget[i] == 0);
+      TEST_CHECK(memory_budget_freed.heapUsage[i] == 0);
+   }
+
    printf("Terakan Vulkan 1.1 capability report\n");
    printf("Device: %s (vendor=%04" PRIx32 ", device=%04" PRIx32 ")\n", legacy_properties.deviceName,
           legacy_properties.vendorID, legacy_properties.deviceID);
@@ -298,6 +382,12 @@ main(void)
    printf("[PASS] vkGetPhysicalDeviceProperties2\n");
    printf("[PASS] vkGetPhysicalDeviceProperties2KHR\n");
    printf("[PASS] vkGetPhysicalDeviceMemoryProperties\n");
+   printf("[PASS] VK_EXT_memory_budget allocation/free accounting\n");
+   printf("memoryBudget heap=%" PRIu32 " before=%" PRIu64 " allocated=%" PRIu64
+          " freed=%" PRIu64 " budget=%" PRIu64 "\n",
+          budget_test_heap, usage_before, memory_budget_allocated.heapUsage[budget_test_heap],
+          memory_budget_freed.heapUsage[budget_test_heap],
+          memory_budget_allocated.heapBudget[budget_test_heap]);
    printf("\nVulkan 1.1 features:\n");
    printf("[SUPPORTED] shaderDrawParameters\n");
    printf("[UNSUPPORTED] 16-bit storage, multiview, variable pointers, protected memory, "
@@ -314,6 +404,10 @@ main(void)
    printf("\nErrors: 0\n");
 
 out:
+   if (budget_test_memory != VK_NULL_HANDLE)
+      vkFreeMemory(device, budget_test_memory, NULL);
+   if (device != VK_NULL_HANDLE)
+      vkDestroyDevice(device, NULL);
    if (instance != VK_NULL_HANDLE)
       vkDestroyInstance(instance, NULL);
    return result;

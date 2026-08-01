@@ -6,4 +6,7 @@
 *.out
 /build
 /.terakan-package/
+/.sentry-native/
+/SteamEmu/
+/artifacts/
 .venv/

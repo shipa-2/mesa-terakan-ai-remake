@@ -87,6 +87,14 @@ if $run_cube; then
     echo "terakan-test: vkcube is not installed" >&2
     exit 1
   fi
+  set +e
   timeout --signal=TERM --kill-after=2 10 \
-    "$repo_root/bin/terakan-run" vkcube --validate=false
+    "$repo_root/bin/terakan-run" vkcube
+  cube_status=$?
+  set -e
+  if ((cube_status != 0 && cube_status != 124)); then
+    echo "terakan-test: vkcube failed with status $cube_status" >&2
+    exit 1
+  fi
+  echo "terakan-test: vkcube remained alive for the ten-second smoke window"
 fi

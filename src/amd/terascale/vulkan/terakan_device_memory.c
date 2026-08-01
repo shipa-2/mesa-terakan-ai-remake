@@ -32,6 +32,7 @@
 
 #include "util/bitscan.h"
 #include "util/macros.h"
+#include "util/u_atomic.h"
 #include "util/u_math.h"
 #include "vk_alloc.h"
 #include "vk_log.h"
@@ -172,6 +173,11 @@ terakan_FreeMemory(VkDevice const deviceHandle, VkDeviceMemory const deviceMemor
       return;
    }
 
+   struct terakan_physical_device * const physical_device =
+      terakan_device_physical_device(terakan_device_from_handle(deviceHandle));
+   p_atomic_add(&physical_device->memory_heap_usage[device_memory->memory_heap_index],
+                -device_memory->accounted_size);
+
    terakan_bo_free(device_memory->bo, pAllocator);
 
    vk_object_free(&terakan_device_from_handle(deviceHandle)->vk, pAllocator, device_memory);
@@ -192,7 +198,7 @@ terakan_AllocateMemory(VkDevice const deviceHandle,
       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
    }
 
-   struct terakan_physical_device const * const physical_device =
+   struct terakan_physical_device * const physical_device =
       terakan_device_physical_device(device);
 
    /* Storage and uniform buffers in Vulkan require only the offset to be aligned, not the range,
@@ -301,6 +307,11 @@ terakan_AllocateMemory(VkDevice const deviceHandle,
          }
       }
    }
+
+   device_memory->accounted_size = bo_size;
+   device_memory->memory_heap_index =
+      physical_device->memory_properties.memoryTypes[device_memory->vk.memory_type_index].heapIndex;
+   p_atomic_add(&physical_device->memory_heap_usage[device_memory->memory_heap_index], bo_size);
 
    *pMemory = terakan_device_memory_to_handle(device_memory);
    return VK_SUCCESS;
