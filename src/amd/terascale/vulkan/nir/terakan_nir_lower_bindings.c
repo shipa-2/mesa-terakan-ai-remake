@@ -233,6 +233,13 @@ terakan_nir_get_binding(nir_src const src, VkDescriptorType const expected_type,
          type_compatible =
             set_binding->descriptor_type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER ||
             set_binding->descriptor_type == VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+      } else if (expected_type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) {
+         /* SPIR-V input attachments reach this pass as image_deref_load too. They are read-only
+          * texture resources rather than UAVs, but their descriptor type can't be recovered from
+          * the image intrinsic alone, so accept it here and select the texture path below after
+          * resolving the pipeline-layout binding.
+          */
+         type_compatible = set_binding->descriptor_type == VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
       } else if (expected_type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER) {
          type_compatible =
             set_binding->descriptor_type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
@@ -375,6 +382,10 @@ terakan_nir_gather_uavs_needed_instr(nir_builder * const b, nir_instr * const in
    assert(expected_type != VK_DESCRIPTOR_TYPE_MAX_ENUM);
    struct terakan_nir_binding binding;
    if (unlikely(!terakan_nir_get_binding(src, expected_type, state->layout, b->shader, &binding))) {
+      return false;
+   }
+   if (binding.set_binding->descriptor_type == VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT) {
+      /* Input attachments are read-only and never consume a color UAV slot. */
       return false;
    }
    uint8_t mutable_resource_first =
@@ -1092,7 +1103,9 @@ terakan_nir_lower_bindings_instr_image_deref_load(
 
    bool apply_uav_array_index;
    unsigned const uav_index_zero_based =
-      terakan_nir_get_binding_uav(&binding, true, state, stage, &apply_uav_array_index);
+      binding.set_binding->descriptor_type == VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT
+         ? UINT_MAX
+         : terakan_nir_get_binding_uav(&binding, true, state, stage, &apply_uav_array_index);
 
    if (uav_index_zero_based == UINT_MAX) {
       /* UAV not needed or not available at this stage, load via the texture cache. */
