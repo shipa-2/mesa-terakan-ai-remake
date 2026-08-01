@@ -70,6 +70,15 @@ discarded direct experiment bound the final depth-layout image as a CB target
 and left all 256 D32 readback values unchanged. Do not restore that path; use a
 transient flushed-depth surface followed by a shader depth/stencil export.
 
+The first staged CAICOS experiment narrowed the remaining problem further. A
+single-sample R32 companion was safe and the R32-to-D32 pixel-shader depth
+export wrote the destination, but DB-to-CB produced zero in the companion. A
+matching 2x companion caused the submission fence to time out and must not be
+retried without FMASK/CMASK-safe multisample allocation and addressing. The
+next implementation should therefore either complete that metadata first or
+extract sample zero into a single-sample surface without binding a multisample
+color target.
+
 A TODO is complete only when:
 
 1. the implementation builds from a clean configuration;
