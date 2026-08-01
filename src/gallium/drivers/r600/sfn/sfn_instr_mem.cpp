@@ -407,7 +407,7 @@ RatInstr::do_ready() const
 {
    if (m_rat_op != STORE_TYPED) {
       for (auto i : required_instr()) {
-         if (!i->is_scheduled()) {
+         if (!i->is_scheduled() && !i->is_dead()) {
             return false;
          }
       }

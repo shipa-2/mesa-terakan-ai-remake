@@ -6,6 +6,7 @@
 #include "compiler/glsl_types.h"
 #include "gallium/drivers/r600/sfn/sfn_instr_alu.h"
 #include "gallium/drivers/r600/sfn/sfn_instr_fetch.h"
+#include "gallium/drivers/r600/sfn/sfn_instr_mem.h"
 #include "gallium/drivers/r600/sfn/sfn_memorypool.h"
 #include "gallium/drivers/r600/sfn/sfn_nir.h"
 #include "gallium/drivers/r600/sfn/sfn_nir_lower_alu.h"
@@ -87,6 +88,37 @@ test_fetch_dead_required_instruction_readiness()
    CHECK(!fetch.ready());
    CHECK(dead_fetch.set_dead());
    CHECK(fetch.ready());
+
+   release_pool();
+}
+
+static void
+test_rat_dead_required_instruction_readiness()
+{
+   using namespace r600;
+
+   init_pool();
+
+   AluInstr dead_dependency(
+      op1_mov, new Register(128, 0, pin_none), new LiteralConstant(1),
+      {alu_write, alu_last_instr});
+   RatInstr rat(cf_mem_rat,
+                RatInstr::NOP_RTN,
+                RegisterVec4(129),
+                RegisterVec4(130),
+                0,
+                nullptr,
+                1,
+                0xf,
+                0);
+
+   dead_dependency.set_blockid(0, 0);
+   rat.set_blockid(0, 1);
+   rat.add_required_instr(&dead_dependency);
+
+   CHECK(!rat.ready());
+   CHECK(dead_dependency.set_dead());
+   CHECK(rat.ready());
 
    release_pool();
 }
@@ -448,6 +480,7 @@ main()
    glsl_type_singleton_init_or_ref();
    test_dead_required_instruction_readiness();
    test_fetch_dead_required_instruction_readiness();
+   test_rat_dead_required_instruction_readiness();
    test_address_load_ignores_future_register_write();
    test_address_load_ignores_loop_carried_future_parent();
    test_shared_store_lowering();
