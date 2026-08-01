@@ -64,6 +64,12 @@ These are useful, but Vulkan 1.1 permits the corresponding feature bits to be
 
 ## Completion policy
 
+Depth/stencil implementation note: Evergreen's `DB_RENDER_CONTROL` copy path
+writes to a separately allocated color-compatible flushed-depth surface. The
+discarded direct experiment bound the final depth-layout image as a CB target
+and left all 256 D32 readback values unchanged. Do not restore that path; use a
+transient flushed-depth surface followed by a shader depth/stencil export.
+
 A TODO is complete only when:
 
 1. the implementation builds from a clean configuration;

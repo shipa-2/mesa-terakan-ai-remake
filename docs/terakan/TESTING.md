@@ -18,6 +18,11 @@ It performs independently meaningful CPU, GPU, identity, and negative checks:
 5. runs `vulkaninfo --summary` and rejects the result unless a Terakan or
    CAICOS device is actually reported.
 
+The physical-device report also guards the current depth/stencil resolve
+boundary: `VK_KHR_depth_stencil_resolve` and `VK_KHR_dynamic_rendering` must
+remain unadvertised, with no supported resolve modes, until the staged
+DB-to-color and depth-export implementation passes readback coverage.
+
 This prevents a passing result from accidentally coming from RADV, llvmpipe,
 or the system Vulkan driver.
 

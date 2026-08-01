@@ -141,6 +141,12 @@ main(void)
    TEST_CHECK(has_device_extension(physical_device, VK_KHR_MAINTENANCE_3_EXTENSION_NAME));
    TEST_CHECK(has_device_extension(physical_device, VK_KHR_DRIVER_PROPERTIES_EXTENSION_NAME));
    TEST_CHECK(has_device_extension(physical_device, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME));
+   /* Dynamic rendering depends on depth/stencil resolve. Keep both hidden until the staged
+    * DB-to-color and depth-export path has passed its readback tests. This prevents the old
+    * direct DB-to-depth experiment from being accidentally advertised again. */
+   TEST_CHECK(!has_device_extension(physical_device,
+                                    VK_KHR_DEPTH_STENCIL_RESOLVE_EXTENSION_NAME));
+   TEST_CHECK(!has_device_extension(physical_device, VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME));
 
    VkPhysicalDeviceVulkan11Features vulkan_1_1_features = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
@@ -228,6 +234,16 @@ main(void)
    TEST_CHECK(multiview.maxMultiviewViewCount == 0);
    TEST_CHECK(multiview.maxMultiviewInstanceIndex == 0);
    TEST_CHECK(!protected_memory.protectedNoFault);
+
+   VkPhysicalDeviceDepthStencilResolveProperties depth_stencil_resolve = {
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_STENCIL_RESOLVE_PROPERTIES,
+   };
+   properties_2.pNext = &depth_stencil_resolve;
+   vkGetPhysicalDeviceProperties2(physical_device, &properties_2);
+   TEST_CHECK(depth_stencil_resolve.supportedDepthResolveModes == VK_RESOLVE_MODE_NONE);
+   TEST_CHECK(depth_stencil_resolve.supportedStencilResolveModes == VK_RESOLVE_MODE_NONE);
+   TEST_CHECK(!depth_stencil_resolve.independentResolveNone);
+   TEST_CHECK(!depth_stencil_resolve.independentResolve);
 
    TEST_CHECK(maintenance_3.maxPerSetDescriptors != 0);
    TEST_CHECK(maintenance_3.maxMemoryAllocationSize != 0);
@@ -383,6 +399,7 @@ main(void)
    printf("[PASS] vkGetPhysicalDeviceProperties2KHR\n");
    printf("[PASS] vkGetPhysicalDeviceMemoryProperties\n");
    printf("[PASS] VK_EXT_memory_budget allocation/free accounting\n");
+   printf("[PASS] incomplete depth/stencil resolve and dynamic rendering remain hidden\n");
    printf("memoryBudget heap=%" PRIu32 " before=%" PRIu64 " allocated=%" PRIu64
           " freed=%" PRIu64 " budget=%" PRIu64 "\n",
           budget_test_heap, usage_before, memory_budget_allocated.heapUsage[budget_test_heap],
