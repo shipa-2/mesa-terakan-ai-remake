@@ -1275,7 +1275,11 @@ terakan_physical_device_init(
       .lower_fdiv = true,
 
       .fuse_ffma16 = true,
-      .fuse_ffma32 = true,
+      /* Keep vertex-position arithmetic reproducible across depth-prepass and
+       * color-pass shader variants.  FMA fusion can otherwise change the
+       * rounded gl_Position.z value and make VK_COMPARE_OP_EQUAL fail.
+       */
+      .fuse_ffma32 = false,
       .fuse_ffma64 = true,
 
       .lower_flrp16 = true,
