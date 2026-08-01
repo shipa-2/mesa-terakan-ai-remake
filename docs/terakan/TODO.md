@@ -1,6 +1,6 @@
 # Terakan development TODO
 
-Last updated: 2026-07-29. Primary target: stable game rendering on AMD
+Last updated: 2026-08-01. Primary target: stable game rendering on AMD
 CAICOS with DXVK-Sarek.
 
 Importance measures the expected effect on real games. Complexity includes
@@ -78,6 +78,13 @@ retried without FMASK/CMASK-safe multisample allocation and addressing. The
 next implementation should therefore either complete that metadata first or
 extract sample zero into a single-sample surface without binding a multisample
 color target.
+
+FMASK/CMASK memory layout and deferred initialization are now implemented for
+2x/4x/8x color images. Memory-requirement checks and bounded CAICOS submissions
+for identity FMASK plus compressed-state CMASK initialization pass. This does
+not complete the item yet: per-sample texture reads and real color-target
+resolve coverage are still required before reusing an MSAA color companion for
+depth resolve.
 
 A TODO is complete only when:
 

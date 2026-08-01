@@ -30,6 +30,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define ARRAY_SIZE(array) (sizeof(array) / sizeof((array)[0]))
+
 #define TEST_CHECK(condition)                                                                      \
    do {                                                                                            \
       if (!(condition)) {                                                                          \
@@ -90,6 +92,10 @@ main(void)
    VkInstance instance = VK_NULL_HANDLE;
    VkDevice device = VK_NULL_HANDLE;
    VkDeviceMemory budget_test_memory = VK_NULL_HANDLE;
+   VkImage msaa_images[4] = {VK_NULL_HANDLE};
+   VkDeviceMemory msaa_memory[4] = {VK_NULL_HANDLE};
+   VkCommandPool command_pool = VK_NULL_HANDLE;
+   VkFence metadata_fence = VK_NULL_HANDLE;
    VkApplicationInfo const application_info = {
       .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
       .pApplicationName = "terakan_physical_device_properties_test",
@@ -337,6 +343,97 @@ main(void)
    };
    TEST_CHECK(vkCreateDevice(physical_device, &device_create_info, NULL, &device) == VK_SUCCESS);
 
+   VkSampleCountFlagBits const sample_counts[] = {
+      VK_SAMPLE_COUNT_1_BIT,
+      VK_SAMPLE_COUNT_2_BIT,
+      VK_SAMPLE_COUNT_4_BIT,
+      VK_SAMPLE_COUNT_8_BIT,
+   };
+   VkDeviceSize image_requirement_sizes[ARRAY_SIZE(sample_counts)];
+   for (uint32_t i = 0; i < ARRAY_SIZE(sample_counts); ++i) {
+      VkImageCreateInfo const image_create_info = {
+         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+         .imageType = VK_IMAGE_TYPE_2D,
+         .format = VK_FORMAT_R8G8B8A8_UNORM,
+         .extent = {1024, 1024, 1},
+         .mipLevels = 1,
+         .arrayLayers = 1,
+         .samples = sample_counts[i],
+         .tiling = VK_IMAGE_TILING_OPTIMAL,
+         .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+      };
+      TEST_CHECK(vkCreateImage(device, &image_create_info, NULL, &msaa_images[i]) == VK_SUCCESS);
+      VkMemoryRequirements object_memory_requirements;
+      vkGetImageMemoryRequirements(device, msaa_images[i], &object_memory_requirements);
+      image_requirement_sizes[i] = object_memory_requirements.size;
+      if (i != 0) {
+         TEST_CHECK(object_memory_requirements.memoryTypeBits & (1u << device_local_memory_type));
+         VkMemoryAllocateInfo const allocate_info = {
+            .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+            .allocationSize = object_memory_requirements.size,
+            .memoryTypeIndex = device_local_memory_type,
+         };
+         TEST_CHECK(vkAllocateMemory(device, &allocate_info, NULL, &msaa_memory[i]) == VK_SUCCESS);
+         TEST_CHECK(vkBindImageMemory(device, msaa_images[i], msaa_memory[i], 0) == VK_SUCCESS);
+      }
+   }
+   TEST_CHECK(image_requirement_sizes[1] > 2 * image_requirement_sizes[0]);
+   TEST_CHECK(image_requirement_sizes[2] > 4 * image_requirement_sizes[0]);
+   TEST_CHECK(image_requirement_sizes[3] > 8 * image_requirement_sizes[0]);
+
+   VkCommandPoolCreateInfo const command_pool_create_info = {
+      .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+      .queueFamilyIndex = 0,
+   };
+   TEST_CHECK(vkCreateCommandPool(device, &command_pool_create_info, NULL, &command_pool) ==
+              VK_SUCCESS);
+   VkCommandBuffer command_buffer;
+   VkCommandBufferAllocateInfo const command_buffer_allocate_info = {
+      .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+      .commandPool = command_pool,
+      .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+      .commandBufferCount = 1,
+   };
+   TEST_CHECK(vkAllocateCommandBuffers(device, &command_buffer_allocate_info, &command_buffer) ==
+              VK_SUCCESS);
+   VkCommandBufferBeginInfo const command_buffer_begin_info = {
+      .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+   };
+   TEST_CHECK(vkBeginCommandBuffer(command_buffer, &command_buffer_begin_info) == VK_SUCCESS);
+   VkImageMemoryBarrier metadata_barriers[3];
+   for (uint32_t i = 0; i < ARRAY_SIZE(metadata_barriers); ++i) {
+      metadata_barriers[i] = (VkImageMemoryBarrier){
+         .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+         .srcAccessMask = 0,
+         .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+         .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+         .newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+         .image = msaa_images[i + 1],
+         .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
+      };
+   }
+   vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, NULL, 0, NULL,
+                        ARRAY_SIZE(metadata_barriers), metadata_barriers);
+   TEST_CHECK(vkEndCommandBuffer(command_buffer) == VK_SUCCESS);
+   VkFenceCreateInfo const fence_create_info = {
+      .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+   };
+   TEST_CHECK(vkCreateFence(device, &fence_create_info, NULL, &metadata_fence) == VK_SUCCESS);
+   VkSubmitInfo const submit_info = {
+      .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+      .commandBufferCount = 1,
+      .pCommandBuffers = &command_buffer,
+   };
+   VkQueue queue;
+   vkGetDeviceQueue(device, 0, 0, &queue);
+   TEST_CHECK(vkQueueSubmit(queue, 1, &submit_info, metadata_fence) == VK_SUCCESS);
+   TEST_CHECK(vkWaitForFences(device, 1, &metadata_fence, VK_TRUE, 2000000000ull) == VK_SUCCESS);
+
    /* Take the baseline after device creation because internal device BOs aren't VkDeviceMemory
     * allocations and therefore aren't part of the application allocation counter. */
    vkGetPhysicalDeviceMemoryProperties2(physical_device, &memory_properties_2);
@@ -399,6 +496,8 @@ main(void)
    printf("[PASS] vkGetPhysicalDeviceProperties2KHR\n");
    printf("[PASS] vkGetPhysicalDeviceMemoryProperties\n");
    printf("[PASS] VK_EXT_memory_budget allocation/free accounting\n");
+   printf("[PASS] 2x/4x/8x color images reserve FMASK/CMASK memory\n");
+   printf("[PASS] 2x/4x/8x FMASK identity and CMASK initialization submission\n");
    printf("[PASS] incomplete depth/stencil resolve and dynamic rendering remain hidden\n");
    printf("memoryBudget heap=%" PRIu32 " before=%" PRIu64 " allocated=%" PRIu64
           " freed=%" PRIu64 " budget=%" PRIu64 "\n",
@@ -421,6 +520,18 @@ main(void)
    printf("\nErrors: 0\n");
 
 out:
+   if (device != VK_NULL_HANDLE) {
+      if (metadata_fence != VK_NULL_HANDLE)
+         vkDestroyFence(device, metadata_fence, NULL);
+      if (command_pool != VK_NULL_HANDLE)
+         vkDestroyCommandPool(device, command_pool, NULL);
+      for (uint32_t i = 0; i < ARRAY_SIZE(msaa_images); ++i) {
+         if (msaa_images[i] != VK_NULL_HANDLE)
+            vkDestroyImage(device, msaa_images[i], NULL);
+         if (msaa_memory[i] != VK_NULL_HANDLE)
+            vkFreeMemory(device, msaa_memory[i], NULL);
+      }
+   }
    if (budget_test_memory != VK_NULL_HANDLE)
       vkFreeMemory(device, budget_test_memory, NULL);
    if (device != VK_NULL_HANDLE)

@@ -837,6 +837,84 @@ terakan_image_surface_aspect_compute(VkImageCreateInfo const * const image_creat
    surface_aspect_out->size_bytes_shr8 = level_offset_in_aspect_bytes_shr8;
 }
 
+static void
+terakan_image_surface_color_metadata_compute(
+   VkImageCreateInfo const * const image_create_info,
+   struct terakan_physical_device const * const physical_device,
+   struct terakan_image_surface * const surface)
+{
+   unsigned const samples = (unsigned)image_create_info->samples;
+   assert(samples == 2 || samples == 4 || samples == 8);
+
+   /* Evergreen FMASK is laid out as a single-sample 2D tiled image. Two and four samples use one
+    * byte per pixel, while eight samples use four bytes. Keep its macro-tile parameters equal to
+    * the color surface, as required by CB and TC, except for the documented 4-bank-tall FMASK
+    * override used for 2x and 4x images.
+    */
+   VkImageCreateInfo fmask_create_info = *image_create_info;
+   fmask_create_info.mipLevels = 1;
+   fmask_create_info.samples = VK_SAMPLE_COUNT_1_BIT;
+
+   struct terakan_image_surface_tiling fmask_tiling = surface->aspects[0].tiling;
+   if (samples <= 4) {
+      fmask_tiling.attrib_bank_height = 2;
+   }
+
+   struct terakan_image_surface_aspect fmask_surface;
+   terakan_image_surface_aspect_compute(
+      &fmask_create_info,
+      samples == 8 ? TERASCALE_FORMAT_INDEX_32 : TERASCALE_FORMAT_INDEX_8, physical_device,
+      fmask_tiling, V_028C70_ARRAY_2D_TILED_THIN1, false, surface->size_bytes_shr8,
+      &fmask_surface);
+
+   struct terakan_image_surface_level const * const fmask_level = &fmask_surface.levels[0];
+   uint32_t const fmask_slice_tiles =
+      ((uint32_t)fmask_level->aligned_extent_surfels[0] *
+       fmask_level->aligned_extent_surfels[1]) /
+      64;
+   assert(fmask_slice_tiles != 0);
+   surface->fmask.alignment_bytes_shr8 = fmask_surface.alignment_bytes_shr8;
+   surface->fmask.offset_in_memory_bytes_shr8 = fmask_surface.offset_in_memory_bytes_shr8;
+   surface->fmask.size_bytes_shr8 = fmask_surface.size_bytes_shr8;
+   surface->fmask.slice_size_bytes_shr8 = fmask_level->slice_size_bytes_shr8;
+   surface->fmask.slice_tile_max = fmask_slice_tiles - 1;
+   surface->fmask.attrib_bank_height = fmask_tiling.attrib_bank_height;
+   surface->alignment_bytes_shr8 =
+      MAX2(surface->alignment_bytes_shr8, surface->fmask.alignment_bytes_shr8);
+   surface->size_bytes_shr8 =
+      surface->fmask.offset_in_memory_bytes_shr8 + surface->fmask.size_bytes_shr8;
+
+   /* CMASK has one 4-bit element per 8x8 color tile. Its macro-tile contains one 1024-bit cache
+    * line per memory pipe, matching r600_texture_get_cmask_info.
+    */
+   unsigned const macro_tile_pixels_log2 = 14 + physical_device->tiling_info.pipes_log2;
+   unsigned const macro_tile_width_log2 = DIV_ROUND_UP(macro_tile_pixels_log2, 2);
+   uint32_t const macro_tile_width = 1u << macro_tile_width_log2;
+   uint32_t const macro_tile_height = 1u << (macro_tile_pixels_log2 - macro_tile_width_log2);
+   assert((macro_tile_width & 127) == 0 && (macro_tile_height & 127) == 0);
+
+   uint32_t const cmask_pitch = ALIGN_POT(image_create_info->extent.width, macro_tile_width);
+   uint32_t const cmask_height = ALIGN_POT(image_create_info->extent.height, macro_tile_height);
+   uint32_t const cmask_alignment_bytes =
+      MAX2(256u, 1u << (physical_device->tiling_info.pipes_log2 +
+                       physical_device->tiling_info.pipe_interleave_bytes_log2));
+   uint64_t const cmask_slice_bytes =
+      ALIGN_POT((uint64_t)cmask_pitch * cmask_height / 128, cmask_alignment_bytes);
+   uint64_t const cmask_size_bytes = cmask_slice_bytes * image_create_info->arrayLayers;
+   assert(cmask_slice_bytes <= UINT32_MAX && cmask_size_bytes <= UINT32_MAX);
+
+   surface->cmask.alignment_bytes_shr8 = cmask_alignment_bytes >> 8;
+   surface->cmask.offset_in_memory_bytes_shr8 =
+      ALIGN_POT(surface->size_bytes_shr8, surface->cmask.alignment_bytes_shr8);
+   surface->cmask.slice_size_bytes_shr8 = (uint32_t)(cmask_slice_bytes >> 8);
+   surface->cmask.size_bytes_shr8 = (uint32_t)(cmask_size_bytes >> 8);
+   surface->cmask.slice_tile_max = cmask_pitch * cmask_height / (128 * 128) - 1;
+   surface->alignment_bytes_shr8 =
+      MAX2(surface->alignment_bytes_shr8, surface->cmask.alignment_bytes_shr8);
+   surface->size_bytes_shr8 =
+      surface->cmask.offset_in_memory_bytes_shr8 + surface->cmask.size_bytes_shr8;
+}
+
 /* format_info must be the result of terakan_format_info_get for image_create_info->format.
  * On failure, the output is left in an undefined state.
  */
@@ -889,12 +967,17 @@ terakan_image_surface_compute(VkImageCreateInfo const * const image_create_info,
          surface_aspect->offset_in_memory_bytes_shr8 + surface_aspect->size_bytes_shr8;
    }
 
+   if (image_create_info->samples > VK_SAMPLE_COUNT_1_BIT &&
+       (terakan_format_aspect_map_aspect_masks[format_info->aspect_map] &
+        VK_IMAGE_ASPECT_COLOR_BIT) != 0) {
+      terakan_image_surface_color_metadata_compute(image_create_info, physical_device, surface_out);
+   }
+
    /* TODO(Triang3l): Intermediate depth surface for the largest 1D tiled mip whose pitch alignment
     * is below that of stencil. Need to be careful with maintenance4's requirement that "The size
     * memory requirement of a buffer or image is never greater than that of another buffer or image
     * created with a greater or equal size."
     */
-   /* TODO(Triang3l): Attachment compression metadata. */
 }
 
 VKAPI_ATTR void VKAPI_CALL
