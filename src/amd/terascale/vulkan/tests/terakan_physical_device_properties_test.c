@@ -233,7 +233,8 @@ main(void)
               (VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT |
                VK_SHADER_STAGE_COMPUTE_BIT));
    TEST_CHECK(subgroup.supportedOperations ==
-              (VK_SUBGROUP_FEATURE_BASIC_BIT | VK_SUBGROUP_FEATURE_ARITHMETIC_BIT));
+              (VK_SUBGROUP_FEATURE_BASIC_BIT | VK_SUBGROUP_FEATURE_ARITHMETIC_BIT |
+               VK_SUBGROUP_FEATURE_BALLOT_BIT));
    TEST_CHECK(subgroup.subgroupSize == vulkan_1_1_properties.subgroupSize);
    TEST_CHECK(point_clipping.pointClippingBehavior == VK_POINT_CLIPPING_BEHAVIOR_ALL_CLIP_PLANES);
    TEST_CHECK(point_clipping.pointClippingBehavior == vulkan_1_1_properties.pointClippingBehavior);

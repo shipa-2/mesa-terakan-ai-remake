@@ -860,7 +860,8 @@ terakan_physical_device_get_capabilities(
    properties_out->subgroupSupportedStages =
       VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
    properties_out->subgroupSupportedOperations =
-      VK_SUBGROUP_FEATURE_BASIC_BIT | VK_SUBGROUP_FEATURE_ARITHMETIC_BIT;
+      VK_SUBGROUP_FEATURE_BASIC_BIT | VK_SUBGROUP_FEATURE_ARITHMETIC_BIT |
+      VK_SUBGROUP_FEATURE_BALLOT_BIT;
    properties_out->subgroupQuadOperationsInAllStages = VK_FALSE;
 
    /* VK_KHR_driver_properties (#197, Vulkan 1.2). */
