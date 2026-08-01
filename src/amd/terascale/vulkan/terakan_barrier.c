@@ -538,7 +538,7 @@ terakan_CmdPipelineBarrier2(VkCommandBuffer const commandBuffer,
       if (barrier->oldLayout == VK_IMAGE_LAYOUT_UNDEFINED &&
           (barrier->subresourceRange.aspectMask & VK_IMAGE_ASPECT_COLOR_BIT) != 0) {
          struct terakan_image const * const image = terakan_image_from_handle(barrier->image);
-         if (image->surface.fmask.size_bytes_shr8 != 0 && image->bo != NULL) {
+         if (terakan_image_surface_has_color_metadata(&image->surface) && image->bo != NULL) {
             uint32_t const sample_count_log2 =
                (uint32_t)terakan_image_vk_sample_count_to_hw_log2(image->vk.samples, false);
             static uint32_t const identity_fmask[4] = {

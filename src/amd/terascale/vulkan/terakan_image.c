@@ -1427,7 +1427,7 @@ terakan_image_create_resource_descriptor(
       S_03001C_TYPE(V_03001C_SQ_TEX_VTX_VALID_TEXTURE);
    if (is_multisampled) {
       descriptor_out->resource[3] =
-         image->surface.fmask.size_bytes_shr8 != 0
+         terakan_image_surface_has_color_metadata(&image->surface)
             ? image_va_shr8 + image->surface.fmask.offset_in_memory_bytes_shr8
             : descriptor_out->resource[2];
       unsigned const samples_log2 = util_logbase2((uint32_t)image->vk.samples);
@@ -1436,7 +1436,7 @@ terakan_image_create_resource_descriptor(
       }
       /* `LAST_LEVEL` is used for the sample count instead. */
       descriptor_out->resource[5] |= S_030014_LAST_LEVEL(samples_log2);
-      if (image->surface.fmask.size_bytes_shr8 != 0) {
+      if (terakan_image_surface_has_color_metadata(&image->surface)) {
          descriptor_out->resource[6] |=
             S_030018_FMASK_BANK_HEIGHT(image->surface.fmask.attrib_bank_height);
       }
@@ -1633,7 +1633,7 @@ terakan_image_create_color_descriptor(
 
    if (meta_descriptor_out_opt != NULL) {
       *meta_descriptor_out_opt = terakan_color_meta_descriptor_create_disabled(descriptor_out);
-      if (image->surface.fmask.size_bytes_shr8 != 0) {
+      if (terakan_image_surface_has_color_metadata(&image->surface)) {
          descriptor_out->info |= S_028C70_COMPRESSION(true);
          descriptor_out->info |= S_028C70_FAST_CLEAR(true);
          descriptor_out->attrib =

@@ -147,6 +147,23 @@ struct terakan_image_surface {
    struct terakan_image_surface_aspect aspects[TERAKAN_FORMAT_MAX_ASPECTS];
 };
 
+/* FMASK and CMASK form one hardware-visible color metadata allocation. Never enable only one of
+ * them: CB compression consumes both addresses, and an incomplete pair can make a submission hang
+ * rather than merely return incorrect samples.
+ */
+static inline bool
+terakan_image_surface_has_color_metadata(struct terakan_image_surface const * const surface)
+{
+   bool const has_fmask = surface->fmask.size_bytes_shr8 != 0;
+   bool const has_cmask = surface->cmask.size_bytes_shr8 != 0;
+   assert(has_fmask == has_cmask);
+   if (has_fmask && has_cmask) {
+      assert(surface->fmask.slice_size_bytes_shr8 != 0);
+      assert(surface->cmask.slice_size_bytes_shr8 != 0);
+   }
+   return has_fmask && has_cmask;
+}
+
 /* TODO(Triang3l): Replace in favor of terakan_format_aspect_index, but need to handle errors when
  * using it, and never to use it with combined depth and stencil.
  */
