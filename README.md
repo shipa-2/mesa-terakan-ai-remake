@@ -56,6 +56,18 @@ Run applications against the local build without installing it:
 ./bin/terakan-run --mangohud vkcube
 ```
 
+For Steam/Proton, install the per-user launcher and use it in the game's launch
+options:
+
+```bash
+./bin/steam-terakan-run --install
+steam-terakan-run --doctor
+```
+
+```text
+steam-terakan-run %command%
+```
+
 The build and run helpers use `build-vulkan/` inside the source tree and do not
 replace system Mesa. MangoHud mode keeps every other implicit Vulkan layer
 disabled, so a device-selection layer cannot redirect the application to

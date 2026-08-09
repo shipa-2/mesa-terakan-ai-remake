@@ -131,6 +131,38 @@ Terakan ICD:
 Do not set `PROTON_USE_WINED3D=1`: that bypasses DXVK and therefore does not
 test the Vulkan driver. Do not force unsupported Mesa/OpenGL extensions.
 
+### Steam launch option
+
+Install the repository launcher into the user command path once:
+
+```bash
+./bin/steam-terakan-run --install
+steam-terakan-run --doctor
+```
+
+Then put this in the game's Steam launch options:
+
+```text
+steam-terakan-run %command%
+```
+
+The launcher follows its symbolic link back to this repository, delegates ICD
+selection and implicit-layer filtering to `bin/terakan-run`, and preserves
+Steam/Proton arguments without shell re-evaluation. If a sibling
+`../DXVK-Sarek/x64` build is present, it also prepends that directory to
+`WINEDLLPATH` and requests native `d3d11`, `d3d10`, `d3d10core` and `dxgi`.
+Override it with `TERAKAN_DXVK_DIR`, pass `--dxvk-sarek DIR`, or disable DLL
+selection for a Vulkan-native game with:
+
+```text
+steam-terakan-run --no-dxvk-sarek %command%
+```
+
+The default implicit-layer block disables Steam's Vulkan overlay and
+Fossilize layers as well as device-selection and capture layers. This keeps a
+game from being redirected away from the selected Terakan ICD while the
+driver is experimental.
+
 The repository branch `dxvk-sarek-terakan` is kept as integration history; it
 is not selected or built by the Mesa helpers in `bin/`.
 

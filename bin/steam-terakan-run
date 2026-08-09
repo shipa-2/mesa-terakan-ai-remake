@@ -1,0 +1,168 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+source_path=$(readlink -f -- "${BASH_SOURCE[0]}")
+repo_root=$(cd -- "$(dirname -- "$source_path")/.." && pwd -P)
+terakan_runner="$repo_root/bin/terakan-run"
+dxvk_dir=${TERAKAN_DXVK_DIR:-}
+use_dxvk=true
+
+usage() {
+  cat <<'EOF'
+usage: steam-terakan-run [OPTIONS] COMMAND [ARG ...]
+       steam-terakan-run --install
+       steam-terakan-run --doctor
+
+Steam launch option:
+  steam-terakan-run %command%
+
+Options:
+  --dxvk-sarek DIR  use 64-bit DXVK-Sarek DLLs from DIR
+  --no-dxvk-sarek   don't alter WINEDLLPATH or WINEDLLOVERRIDES
+  --install         link this launcher into ~/.local/bin
+  --doctor          print resolved paths and validate the local build
+  -h, --help        show this help
+
+Environment:
+  TERAKAN_BUILD_DIR  override the Mesa build directory (used by terakan-run)
+  TERAKAN_DXVK_DIR   override the DXVK-Sarek x64 directory
+EOF
+}
+
+install_launcher() {
+  local install_dir=${XDG_BIN_HOME:-"$HOME/.local/bin"}
+  local install_path="$install_dir/steam-terakan-run"
+
+  mkdir -p -- "$install_dir"
+  if [[ -e "$install_path" || -L "$install_path" ]]; then
+    local installed_source
+    installed_source=$(readlink -f -- "$install_path" 2>/dev/null || true)
+    if [[ "$installed_source" != "$source_path" ]]; then
+      echo "steam-terakan-run: refusing to replace $install_path" >&2
+      exit 1
+    fi
+  else
+    ln -s -- "$source_path" "$install_path"
+  fi
+
+  printf 'Installed: %s -> %s\n' "$install_path" "$source_path"
+  case ":${PATH:-}:" in
+    *":$install_dir:"*) ;;
+    *)
+      printf 'Warning: %s is not in PATH; use %s %%command%% in Steam.\n' \
+        "$install_dir" "$install_path" >&2
+      ;;
+  esac
+}
+
+resolve_dxvk() {
+  if [[ -z "$dxvk_dir" ]]; then
+    local sibling_dxvk="$repo_root/../DXVK-Sarek/x64"
+    if [[ -r "$sibling_dxvk/dxgi.dll" && -r "$sibling_dxvk/d3d11.dll" ]]; then
+      dxvk_dir=$(cd -- "$sibling_dxvk" && pwd -P)
+    fi
+  else
+    dxvk_dir=$(cd -- "$dxvk_dir" 2>/dev/null && pwd -P) || {
+      echo "steam-terakan-run: DXVK-Sarek directory does not exist: $dxvk_dir" >&2
+      exit 1
+    }
+    if [[ ! -r "$dxvk_dir/dxgi.dll" || ! -r "$dxvk_dir/d3d11.dll" ]]; then
+      echo "steam-terakan-run: dxgi.dll and d3d11.dll are required in $dxvk_dir" >&2
+      exit 1
+    fi
+  fi
+}
+
+doctor=false
+while (($#)); do
+  case "$1" in
+    --dxvk-sarek)
+      if (($# < 2)); then
+        echo "steam-terakan-run: --dxvk-sarek requires a directory" >&2
+        exit 2
+      fi
+      dxvk_dir=$2
+      use_dxvk=true
+      shift 2
+      ;;
+    --dxvk-sarek=*)
+      dxvk_dir=${1#*=}
+      use_dxvk=true
+      shift
+      ;;
+    --no-dxvk-sarek)
+      use_dxvk=false
+      shift
+      ;;
+    --install)
+      install_launcher
+      exit 0
+      ;;
+    --doctor)
+      doctor=true
+      shift
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+if [[ ! -x "$terakan_runner" ]]; then
+  echo "steam-terakan-run: missing executable $terakan_runner" >&2
+  exit 1
+fi
+
+if $use_dxvk; then
+  resolve_dxvk
+fi
+
+if $doctor; then
+  build_dir=${TERAKAN_BUILD_DIR:-"$repo_root/build-vulkan"}
+  icd_dir="$build_dir/src/amd/terascale/vulkan"
+  driver="$icd_dir/libvulkan_terascale.so"
+  shopt -s nullglob
+  icd_candidates=("$icd_dir"/terascale_devenv_icd.*.json)
+  shopt -u nullglob
+
+  printf 'repository: %s\n' "$repo_root"
+  printf 'runner:     %s\n' "$terakan_runner"
+  printf 'build:      %s\n' "$build_dir"
+  printf 'driver:     %s%s\n' "$driver" "$([[ -r "$driver" ]] && printf ' [ok]' || printf ' [missing]')"
+  if ((${#icd_candidates[@]} == 1)); then
+    printf 'ICD:        %s [ok]\n' "${icd_candidates[0]}"
+  else
+    printf 'ICD:        expected one manifest, found %u [error]\n' "${#icd_candidates[@]}"
+  fi
+  if $use_dxvk && [[ -n "$dxvk_dir" ]]; then
+    printf 'DXVK-Sarek: %s [ok]\n' "$dxvk_dir"
+  elif $use_dxvk; then
+    printf 'DXVK-Sarek: not found [optional]\n'
+  else
+    printf 'DXVK-Sarek: disabled\n'
+  fi
+
+  [[ -r "$driver" && ${#icd_candidates[@]} == 1 ]]
+  exit
+fi
+
+if (($# == 0)); then
+  usage >&2
+  exit 2
+fi
+
+if $use_dxvk && [[ -n "$dxvk_dir" ]]; then
+  export WINEDLLPATH="$dxvk_dir${WINEDLLPATH:+:$WINEDLLPATH}"
+  native_overrides='d3d11=n;d3d10=n;d3d10core=n;dxgi=n'
+  export WINEDLLOVERRIDES="$native_overrides${WINEDLLOVERRIDES:+;$WINEDLLOVERRIDES}"
+fi
+
+exec "$terakan_runner" -- "$@"
