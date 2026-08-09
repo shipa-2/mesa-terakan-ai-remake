@@ -1,6 +1,6 @@
 # Terakan development TODO
 
-Last updated: 2026-08-01. Primary target: stable game rendering on AMD
+Last updated: 2026-08-09. Primary target: stable game rendering on AMD
 CAICOS with DXVK-Sarek.
 
 Importance measures the expected effect on real games. Complexity includes
@@ -11,11 +11,12 @@ accept the work. Both use a 1–5 scale.
 
 | Work item | Importance | Complexity | Feasibility | Acceptance criteria |
 |---|---:|---:|---|---|
+| Fix workgroup barriers under divergent control flow | 5/5 | 4/5 | Implementable in NIR/SFN control-flow lowering | `dEQP-VK.compute.pipeline.basic.branch_past_barrier` passes and existing shared-memory tests remain green |
+| Repair the repeated-dispatch compute regression | 5/5 | 2/5 | Test correction is straightforward; driver impact is not known until the test has a valid memory dependency | Insert an inter-dispatch shader-write dependency, establish a passing RADV oracle, then require identical CAICOS readback and intact guard regions |
 | Complete depth/stencil resolve and layout transitions | 5/5 | 5/5 | Implementable, potentially through a transient color-compatible surface and depth-export shader | Depth and stencil readbacks pass for partial regions, mip levels, array layers and every advertised sample count |
 | Implement and validate FMASK/CMASK allocation, identity initialization and sampled MSAA addressing | 5/5 | 5/5 | Implementable; requires Evergreen tiling research | Per-sample reads and resolved reads pass for 2x/4x/8x images without corrupting ordinary color targets |
 | Complete cache and barrier coherency | 5/5 | 4/5 | Implementable | Focused attachment, texture, storage, transfer, graphics/compute and query producer-consumer chains pass without application-specific waits |
 | Cover remaining copy, blit and resolve format/subresource combinations | 5/5 | 4/5 | Implementable | Boundary tests cover non-zero offsets, partial extents, mip levels, array/3D layers and every advertised compatible format class |
-| Fix workgroup barriers under divergent control flow | 5/5 | 4/5 | Implementable in NIR/SFN control-flow lowering | `dEQP-VK.compute.pipeline.basic.branch_past_barrier` passes and existing shared-memory tests remain green |
 
 ## P1 — broad DXVK and D3D11 compatibility
 
@@ -25,6 +26,10 @@ accept the work. Both use a 1–5 scale.
 | Enable tessellation control/evaluation shaders | 4/5 | 5/5 | Hardware-supported | Tessellation limits are reported from tested hardware behavior and representative pipelines pass |
 | Complete stream output / transform feedback | 4/5 | 4/5 | Hardware-supported | SFN receives NIR stream-output metadata and D3D11 stream-output workloads pass readback tests |
 | Complete storage-image/UAV format and atomic coverage | 4/5 | 4/5 | Mostly implementable; limited by hardware binding counts and formats | Every advertised storage-image format passes load, store and applicable integer-atomic tests |
+| Implement formatless storage-image reads/writes and multisample storage images | 4/5 | 4/5 | Implementable with format-aware lowering and RAT validation | Typed and formatless UAV loads/stores pass for every exposed format, including multisample cases before the feature bits are enabled |
+| Implement shader clip/cull distances | 4/5 | 3/5 | Hardware-supported; requires stage-interface and SFN export plumbing | Focused vertex/fragment clip and cull distance tests pass before `shaderClipDistance` and `shaderCullDistance` are enabled |
+| Implement extended image gather | 4/5 | 3/5 | Likely implementable through Evergreen texture instructions plus lowering | Component selection and constant/dynamic offset gather tests pass for all advertised sampled formats |
+| Implement vertex-pipeline stores and atomics | 4/5 | 4/5 | Hardware-supported with stage-specific RAT synchronization work | VS/GS/TES storage writes and applicable atomics pass readback and cross-stage visibility tests before exposure |
 | Enforce robust buffer and image bounds everywhere | 4/5 | 4/5 | Implementable with lowering and descriptor bounds | Guard regions remain intact for misaligned, dynamic and end-of-range accesses |
 | Integrate query reset/copy/end synchronization with the common barrier machinery | 3/5 | 3/5 | Implementable | Occlusion, timestamp and pipeline-statistics queries pass reuse and cross-stage ordering tests |
 

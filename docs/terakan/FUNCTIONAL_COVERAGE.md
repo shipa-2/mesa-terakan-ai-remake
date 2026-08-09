@@ -39,21 +39,34 @@ The current development cycle adds or changes the following behavior:
 
 ### Local Terakan suite
 
-All 11 Meson tests pass:
+The wrapper currently reports all four CPU tests passing:
 
 ```text
 terakan_sfn_lowering
 terakan_hw_config_loop_constants
 terakan_descriptor_buffer
 terakan_vertex_input
+```
+
+Six of the seven CAICOS GPU tests pass:
+
+```text
 terakan_image_array_copy
 terakan_instance_dynamic_ssbo
 terakan_bc6_cube
 terakan_bc6_cube_single_level_views
 terakan_bc6_array_view
-terakan_compute_loop
 terakan_physical_device_properties
 ```
+
+`terakan_compute_loop` currently fails, but it is not a valid driver verdict.
+The test submits 12 dispatches that read and overwrite the same storage-buffer
+range without an inter-dispatch memory dependency. Its CPU oracle assumes that
+every dispatch observes the preceding write. A repeat on RADV also fails: RADV
+produces one visible transformation while Terakan leaves the initial values
+unchanged. Add a shader-write-to-shader-read barrier between dispatches and
+establish a passing RADV oracle before using this difference to diagnose
+Terakan.
 
 ### Vulkan CTS basic compute
 
@@ -129,9 +142,23 @@ require one of the following:
 
 Terakan also intentionally leaves geometry and tessellation shaders,
 vertex-stage stores and atomics, extended or formatless storage-image access,
-Int16/Int64/Float64, sparse resources and depth bounds disabled. Vulkan 1.1
-allows these feature bits to be false, but geometry shaders and broader
-storage-image support are relevant compatibility gaps for some games.
+image gather extensions, clip/cull distances, Int16/Int64/Float64, sparse
+resources and depth bounds disabled. Vulkan 1.1 allows these feature bits to be
+false, but they do not have equal game impact:
+
+| Capability group | Game importance | Estimated complexity |
+|---|---:|---:|
+| Storage-image/UAV formats, formatless access and multisample access | 4/5 | 4/5 |
+| Shader clip/cull distances and extended image gather | 4/5 | 3/5 |
+| Geometry shaders | 4/5 | 5/5 |
+| Vertex-pipeline stores and atomics | 4/5 | 4/5 |
+| Tessellation shaders | 3/5 | 5/5 |
+| FP16/Int16 storage and arithmetic | 2/5 | 4/5 |
+| FP64/Int64, sparse resources and depth bounds | 1/5 | 4-5/5 |
+
+The 21 replicated-composite cases, maintenance5, custom resolve and specialized
+queue topology are not Vulkan 1.1 or ordinary D3D11 game blockers. They should
+not displace the shader, UAV, MSAA and control-flow work above.
 
 ## Application evidence
 
