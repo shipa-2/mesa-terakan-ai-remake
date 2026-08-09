@@ -9,4 +9,5 @@
 /.sentry-native/
 /SteamEmu/
 /artifacts/
+/shadercache.bin
 .venv/
