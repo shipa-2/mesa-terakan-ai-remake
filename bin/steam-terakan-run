@@ -32,8 +32,29 @@ EOF
 install_launcher() {
   local install_dir=${XDG_BIN_HOME:-"$HOME/.local/bin"}
   local install_path="$install_dir/steam-terakan-run"
+  local steam_game_bin="$HOME/.local/share/Steam/ubuntu12_32/steam-runtime/game-bin"
 
   mkdir -p -- "$install_dir"
+  install_link "$install_path"
+
+  # A Steam process started by a desktop launcher often doesn't inherit ~/.local/bin. Its legacy
+  # runtime prepends game-bin to every launch command, so place the same safe symlink there when
+  # that user-owned directory exists. Steam updates may recreate this directory; --install is
+  # intentionally idempotent.
+  if [[ -d "$steam_game_bin" && -w "$steam_game_bin" ]]; then
+    install_link "$steam_game_bin/steam-terakan-run"
+  fi
+
+  case ":${PATH:-}:" in
+    *":$install_dir:"*) ;;
+    *)
+      printf 'Warning: %s is not in this shell PATH.\n' "$install_dir" >&2
+      ;;
+  esac
+}
+
+install_link() {
+  local install_path=$1
   if [[ -e "$install_path" || -L "$install_path" ]]; then
     local installed_source
     installed_source=$(readlink -f -- "$install_path" 2>/dev/null || true)
@@ -46,13 +67,6 @@ install_launcher() {
   fi
 
   printf 'Installed: %s -> %s\n' "$install_path" "$source_path"
-  case ":${PATH:-}:" in
-    *":$install_dir:"*) ;;
-    *)
-      printf 'Warning: %s is not in PATH; use %s %%command%% in Steam.\n' \
-        "$install_dir" "$install_path" >&2
-      ;;
-  esac
 }
 
 resolve_dxvk() {

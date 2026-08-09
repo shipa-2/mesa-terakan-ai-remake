@@ -158,6 +158,20 @@ selection for a Vulkan-native game with:
 steam-terakan-run --no-dxvk-sarek %command%
 ```
 
+`--install` creates a link in `~/.local/bin` and, when the user-owned legacy
+Steam runtime is present, in its `game-bin` directory too. Desktop-launched
+Steam commonly omits `~/.local/bin` from `PATH`, while `game-bin` is prepended
+to game commands. If a runtime update removes that link, run `--install`
+again. The always-valid fallback is:
+
+```text
+/home/shipa/.local/bin/steam-terakan-run %command%
+```
+
+The wrapper must precede `%command%`. Supplying only `steam-terakan-run`, or
+placing it after `%command%`, merely passes the name to the Windows game as an
+ordinary argument and cannot affect its Vulkan environment.
+
 The default implicit-layer block disables Steam's Vulkan overlay and
 Fossilize layers as well as device-selection and capture layers. This keeps a
 game from being redirected away from the selected Terakan ICD while the
