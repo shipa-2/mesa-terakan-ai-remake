@@ -504,7 +504,8 @@ const std::map<EVTXDataFormat, const char *> FetchInstr::s_data_format_map = {
 
 QueryBufferSizeInstr::QueryBufferSizeInstr(const RegisterVec4& dst,
                                            const RegisterVec4::Swizzle& dst_swz,
-                                           uint32_t resid):
+                                           uint32_t resid,
+                                           PRegister resource_offset):
     FetchInstr(vc_get_buf_resinfo,
                dst,
                dst_swz,
@@ -515,7 +516,7 @@ QueryBufferSizeInstr::QueryBufferSizeInstr(const RegisterVec4& dst,
                vtx_nf_norm,
                vtx_es_none,
                resid,
-               nullptr)
+               resource_offset)
 {
    set_fetch_flag(format_comp_signed);
    set_print_skip(mfc);

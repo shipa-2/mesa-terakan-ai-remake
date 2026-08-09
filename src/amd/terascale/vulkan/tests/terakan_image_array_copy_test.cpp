@@ -77,13 +77,19 @@ create_image(VkDevice device, VkPhysicalDevice physical_device, VkFormat format,
 int
 main(int argc, char **argv)
 {
+   bool const r32_mode =
+      argc == 2 && (std::strcmp(argv[1], "--r32") == 0 ||
+                    std::strcmp(argv[1], "--r32-full") == 0);
+   bool const r32_full_mode =
+      argc == 2 && std::strcmp(argv[1], "--r32-full") == 0;
    bool const hdr_mode =
       argc == 2 && (std::strcmp(argv[1], "--hdr") == 0 ||
                     std::strcmp(argv[1], "--hdr-full") == 0);
    bool const hdr_full_mode =
       argc == 2 && std::strcmp(argv[1], "--hdr-full") == 0;
-   if (argc > 2 || (argc == 2 && !hdr_mode)) {
-      std::fprintf(stderr, "Usage: %s [--hdr|--hdr-full]\n", argv[0]);
+   if (argc > 2 || (argc == 2 && !hdr_mode && !r32_mode)) {
+      std::fprintf(stderr,
+                   "Usage: %s [--hdr|--hdr-full|--r32|--r32-full]\n", argv[0]);
       return 2;
    }
 
@@ -147,10 +153,10 @@ main(int argc, char **argv)
    VkQueue queue;
    vkGetDeviceQueue(device, queue_family, 0, &queue);
 
-   uint32_t const image_width = hdr_full_mode ? 1920 : 136;
-   uint32_t const image_height = hdr_full_mode ? 1080 : 136;
+   uint32_t const image_width = hdr_full_mode ? 1920 : r32_full_mode ? 512 : r32_mode ? 64 : 136;
+   uint32_t const image_height = hdr_full_mode ? 1080 : r32_full_mode ? 512 : r32_mode ? 64 : 136;
    VkDeviceSize const payload_size =
-      hdr_mode ? image_width * image_height * sizeof(uint32_t) : 34 * 34 * 8;
+      (hdr_mode || r32_mode) ? image_width * image_height * sizeof(uint32_t) : 34 * 34 * 8;
    std::vector<uint32_t> const test_layers =
       hdr_full_mode ? std::vector<uint32_t>{0}
                     : std::vector<uint32_t>{0, 1, 7, 8, 255, 480, 899};
@@ -186,14 +192,19 @@ main(int argc, char **argv)
    uint8_t *mapping;
    VK_CHECK(vkMapMemory(device, buffer_memory, 0, buffer_size, 0,
                         reinterpret_cast<void **>(&mapping)));
-   if (hdr_mode) {
+   if (hdr_mode || r32_mode) {
       auto *pixels = reinterpret_cast<uint32_t *>(mapping);
       for (uint32_t y = 0; y < image_height; ++y) {
          for (uint32_t x = 0; x < image_width; ++x) {
-            uint32_t const r = (15u << 6) | ((x * 13 + y * 7) & 63);
-            uint32_t const g = (14u << 6) | ((x * 3 + y * 11) & 63);
-            uint32_t const b = (13u << 5) | ((x * 5 + y * 17) & 31);
-            pixels[y * image_width + x] = r | (g << 11) | (b << 22);
+            if (r32_mode) {
+               pixels[y * image_width + x] =
+                  0x6d2b79f5u ^ (x * 0x9e3779b9u) ^ (y * 0x85ebca6bu);
+            } else {
+               uint32_t const r = (15u << 6) | ((x * 13 + y * 7) & 63);
+               uint32_t const g = (14u << 6) | ((x * 3 + y * 11) & 63);
+               uint32_t const b = (13u << 5) | ((x * 5 + y * 17) & 31);
+               pixels[y * image_width + x] = r | (g << 11) | (b << 22);
+            }
          }
       }
    } else {
@@ -205,11 +216,15 @@ main(int argc, char **argv)
    VkImage source, destination;
    VkDeviceMemory source_memory, destination_memory;
    VkFormat const image_format =
-      hdr_mode ? VK_FORMAT_B10G11R11_UFLOAT_PACK32 : VK_FORMAT_BC1_RGBA_UNORM_BLOCK;
+      r32_mode ? VK_FORMAT_R32_UINT
+               : hdr_mode ? VK_FORMAT_B10G11R11_UFLOAT_PACK32
+                          : VK_FORMAT_BC1_RGBA_UNORM_BLOCK;
    VkImageUsageFlags const image_usage =
-      VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-      VK_IMAGE_USAGE_SAMPLED_BIT |
-      (hdr_mode ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT : 0);
+      (r32_mode ? 0 : VK_IMAGE_USAGE_TRANSFER_SRC_BIT) |
+      VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+      (r32_mode ? 0 : VK_IMAGE_USAGE_SAMPLED_BIT) |
+      (hdr_mode ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT : 0) |
+      (r32_mode ? VK_IMAGE_USAGE_STORAGE_BIT : 0);
    uint32_t const destination_layers = hdr_full_mode ? 1 : 900;
    VK_CHECK(static_cast<VkResult>(
       create_image(device, physical_device, image_format, image_usage, image_width,

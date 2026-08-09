@@ -523,6 +523,8 @@ RatInstr::emit(nir_intrinsic_instr *intr, Shader& shader)
       return emit_image_samples(intr, shader);
    case nir_intrinsic_get_ssbo_size:
       return emit_ssbo_size(intr, shader);
+   case nir_intrinsic_load_buffer_size_r600:
+      return emit_buffer_size_r600(intr, shader);
    default:
       return false;
    }
@@ -935,6 +937,19 @@ RatInstr::emit_ssbo_size(nir_intrinsic_instr *intr, Shader& shader)
       assert(0 && "dynamic buffer offset not supported in buffer_size");
 
    shader.emit_instruction(new QueryBufferSizeInstr(dest, {0, 1, 2, 3}, res_id));
+   return true;
+}
+
+bool
+RatInstr::emit_buffer_size_r600(nir_intrinsic_instr *intr, Shader& shader)
+{
+   auto& vf = shader.value_factory();
+   auto dest = vf.dest_vec4(intr->def, pin_group);
+   auto [offset, resource_offset] = shader.evaluate_resource_offset(intr, 0);
+   int const res_id = nir_intrinsic_id_base(intr) + offset;
+
+   shader.emit_instruction(
+      new QueryBufferSizeInstr(dest, {0, 1, 2, 3}, res_id, resource_offset));
    return true;
 }
 

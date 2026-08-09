@@ -773,10 +773,21 @@ static void
 terakan_vk_state_dynamic_apply_ds_depth_compare_op(
    struct terakan_gfx_command_writer * const command_writer)
 {
+   VkCompareOp depth_compare_op =
+      command_writer->base.command_buffer->vk.dynamic_graphics_state.ds.depth.compare_op;
+   char const * const debug_depth_equal = getenv("TERAKAN_DEBUG_DEPTH_EQUAL");
+   if (depth_compare_op == VK_COMPARE_OP_EQUAL && debug_depth_equal != NULL) {
+      if (strcmp(debug_depth_equal, "always") == 0) {
+         depth_compare_op = VK_COMPARE_OP_ALWAYS;
+      } else if (strcmp(debug_depth_equal, "greater") == 0) {
+         depth_compare_op = VK_COMPARE_OP_GREATER_OR_EQUAL;
+      } else {
+         depth_compare_op = VK_COMPARE_OP_LESS_OR_EQUAL;
+      }
+   }
    terakan_app_config_draw_set_db_depth_control(
       &command_writer->app_config_draw, C_028800_ZFUNC,
-      S_028800_ZFUNC(
-         command_writer->base.command_buffer->vk.dynamic_graphics_state.ds.depth.compare_op));
+      S_028800_ZFUNC(depth_compare_op));
 }
 
 static void

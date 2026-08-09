@@ -37,6 +37,7 @@
 #include "gallium/drivers/r600/r600_asm.h"
 #include "util/bitscan.h"
 #include "util/macros.h"
+#include "util/mesa-blake3.h"
 #include "util/ralloc.h"
 #include "util/u_math.h"
 
@@ -48,7 +49,9 @@
 #include "vk_util.h"
 
 #include <assert.h>
+#include <limits.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -627,8 +630,19 @@ terakan_vk_pipeline_graphics_fragment_shading_init_with_rasterization(
       }
 
       if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_DS_DEPTH_COMPARE_OP)) {
+         VkCompareOp depth_compare_op = state->ds->depth.compare_op;
+         char const * const debug_depth_equal = getenv("TERAKAN_DEBUG_DEPTH_EQUAL");
+         if (depth_compare_op == VK_COMPARE_OP_EQUAL && debug_depth_equal != NULL) {
+            if (strcmp(debug_depth_equal, "always") == 0) {
+               depth_compare_op = VK_COMPARE_OP_ALWAYS;
+            } else if (strcmp(debug_depth_equal, "greater") == 0) {
+               depth_compare_op = VK_COMPARE_OP_GREATER_OR_EQUAL;
+            } else {
+               depth_compare_op = VK_COMPARE_OP_LESS_OR_EQUAL;
+            }
+         }
          fragment_shading->db_depth_control_keep &= C_028800_ZFUNC;
-         fragment_shading->db_depth_control |= S_028800_ZFUNC(state->ds->depth.compare_op);
+         fragment_shading->db_depth_control |= S_028800_ZFUNC(depth_compare_op);
       }
 
       if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_DS_STENCIL_TEST_ENABLE)) {
@@ -1137,6 +1151,25 @@ terakan_vk_pipeline_graphics_create(struct terakan_device * const device,
       gl_shader_stage const shader_stage =
          vk_to_mesa_shader_stage((VkShaderStageFlagBits)BITFIELD_BIT(shader_stage_vk_bit_index));
       struct shader_create_data const * const shader_data = &shaders_create_data[shader_stage];
+
+      char const * const dump_spirv_directory = getenv("TERAKAN_DEBUG_DUMP_GRAPHICS_SPIRV_DIR");
+      if (unlikely(dump_spirv_directory != NULL && dump_spirv_directory[0] != '\0')) {
+         blake3_hash spirv_blake3;
+         char spirv_blake3_hex[BLAKE3_HEX_LEN];
+         _mesa_blake3_compute(shader_data->spirv, shader_data->spirv_size_bytes, spirv_blake3);
+         _mesa_blake3_format(spirv_blake3_hex, spirv_blake3);
+         char dump_spirv_path[PATH_MAX];
+         int const path_length =
+            snprintf(dump_spirv_path, sizeof(dump_spirv_path), "%s/%s.stage%u.spv",
+                     dump_spirv_directory, spirv_blake3_hex, (unsigned)shader_stage);
+         if (path_length > 0 && (size_t)path_length < sizeof(dump_spirv_path)) {
+            FILE * const dump_spirv = fopen(dump_spirv_path, "wb");
+            if (dump_spirv != NULL) {
+               fwrite(shader_data->spirv, 1, shader_data->spirv_size_bytes, dump_spirv);
+               fclose(dump_spirv);
+            }
+         }
+      }
 
       nir_shader * const nir = terakan_shader_spirv_to_nir(
          device, shader_data->spirv_size_bytes, shader_data->spirv, shader_stage,

@@ -7,6 +7,7 @@
 #include "terakan_app_config_compute.h"
 #include "terakan_bo.h"
 #include "terakan_command_buffer.h"
+#include "terakan_descriptor_set_layout.h"
 #include "terakan_device.h"
 #include "terakan_entrypoints.h"
 #include "terakan_physical_device.h"
@@ -171,6 +172,41 @@ terakan_vk_pipeline_compute_create(struct terakan_device * const device,
          } else {
             fprintf(stderr, "[TERAKAN_COMPUTE] failed to open SPIR-V dump %s\n",
                     dump_spirv_path);
+         }
+
+         char dump_layout_path[PATH_MAX];
+         int const layout_path_length =
+            snprintf(dump_layout_path, sizeof(dump_layout_path), "%s.layout", dump_spirv_path);
+         if (layout_path_length > 0 && (size_t)layout_path_length < sizeof(dump_layout_path)) {
+            FILE * const dump_layout = fopen(dump_layout_path, "w");
+            if (dump_layout != NULL) {
+               uint32_t const push_constant_size =
+                  pipeline_layout->shader_app_push_constants_extents_bytes[MESA_SHADER_COMPUTE];
+               if (push_constant_size != 0)
+                  fprintf(dump_layout, "vk_push %u %u\n", push_constant_size,
+                          VK_SHADER_STAGE_COMPUTE_BIT);
+               for (uint32_t set_index = 0; set_index < pipeline_layout->vk.set_count;
+                    ++set_index) {
+                  struct vk_descriptor_set_layout const * const set_layout_vk =
+                     pipeline_layout->vk.set_layouts[set_index];
+                  if (set_layout_vk == NULL)
+                     continue;
+                  struct terakan_descriptor_set_layout const * const set_layout =
+                     container_of(set_layout_vk, struct terakan_descriptor_set_layout const, vk);
+                  for (uint32_t binding_index = 0; binding_index < set_layout->binding_count;
+                       ++binding_index) {
+                     struct terakan_descriptor_set_layout_binding const * const binding =
+                        &set_layout->bindings[binding_index];
+                     if (binding->descriptor_count == 0 ||
+                         !(binding->stage_flags & VK_SHADER_STAGE_COMPUTE_BIT))
+                        continue;
+                     fprintf(dump_layout, "vk_binding %u %u %u %u %u\n", set_index,
+                             binding_index, binding->descriptor_type, binding->descriptor_count,
+                             (unsigned)binding->stage_flags);
+                  }
+               }
+               fclose(dump_layout);
+            }
          }
       }
    }

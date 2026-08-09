@@ -1694,6 +1694,11 @@ load("buffer_resource_r600", src_comp=[1, 1],
      indices=[ACCESS, ID_BASE, BASE, COMPONENT, FORMAT, MEGA_FETCH_COUNT_R600, FLAGS],
      flags=[CAN_ELIMINATE])
 
+# Query the size in bytes of a buffer resource.
+# src[] = { buffer index offset relative to ID_BASE }
+load("buffer_size_r600", src_comp=[1], indices=[ID_BASE],
+     flags=[CAN_ELIMINATE, CAN_REORDER])
+
 # Load from a texture resource.
 # src[] = { texture index offset relative to ID_BASE, XYZ coordinates and LOD }
 # Relevant ACCESS: NON_UNIFORM, INCLUDE_HELPERS

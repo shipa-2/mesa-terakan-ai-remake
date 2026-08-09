@@ -47,6 +47,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <mutex>
 
 VkResult
 terakan_shader_impl_compile(terakan_shader_impl * const shader, terakan_device * const device,
@@ -81,6 +82,17 @@ terakan_shader_impl_compile(terakan_shader_impl * const shader, terakan_device *
    nir_shader_gather_info(nir, nir_shader_get_entrypoint(nir));
 
    r600_lower_and_optimize_nir(nir, key, gfx_level, &so_info);
+
+   if (unlikely(getenv("TERAKAN_DUMP_HANGOVER_VERTEX_NIR") != nullptr) && nir->info.name != nullptr &&
+       (!strcmp(nir->info.name, "084bedbeef7924b534d4157927e0e4a8fc8e2749") ||
+        !strcmp(nir->info.name, "57931c606823732885ad1cd6f6fbbcce8f02c0ce") ||
+        !strcmp(nir->info.name, "afc8b6c53206c3e7ab3a56cde73155696d6244e7"))) {
+      static std::mutex dump_mutex;
+      std::lock_guard<std::mutex> const dump_lock(dump_mutex);
+      fprintf(stderr, "\n===== TERAKAN HANGOVER NIR %s =====\n", nir->info.name);
+      nir_print_shader(nir, stderr);
+      fprintf(stderr, "===== END TERAKAN HANGOVER NIR %s =====\n", nir->info.name);
+   }
 
    r600::ShaderBindingLayout binding_layout;
    binding_layout.texture_resource_offset = 0;
@@ -143,6 +155,17 @@ terakan_shader_impl_compile(terakan_shader_impl * const shader, terakan_device *
    if (r600_bytecode_build(&shader->shader.bc) != 0) {
       r600_bytecode_clear(&shader->shader.bc);
       return vk_errorf(device, VK_ERROR_UNKNOWN, "Failed to build the shader bytecode");
+   }
+   if (unlikely(getenv("TERAKAN_DUMP_HANGOVER_BYTECODE") != nullptr) &&
+       nir->info.name != nullptr &&
+       (!strcmp(nir->info.name, "084bedbeef7924b534d4157927e0e4a8fc8e2749") ||
+        !strcmp(nir->info.name, "57931c606823732885ad1cd6f6fbbcce8f02c0ce") ||
+        !strcmp(nir->info.name, "afc8b6c53206c3e7ab3a56cde73155696d6244e7"))) {
+      static std::mutex disasm_mutex;
+      std::lock_guard<std::mutex> const disasm_lock(disasm_mutex);
+      fprintf(stderr, "\n===== TERAKAN HANGOVER BYTECODE %s =====\n", nir->info.name);
+      r600_bytecode_disasm(&shader->shader.bc);
+      fprintf(stderr, "===== END TERAKAN HANGOVER BYTECODE %s =====\n", nir->info.name);
    }
    /* Fill shader registers and other info. */
 

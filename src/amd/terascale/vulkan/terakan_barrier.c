@@ -71,7 +71,7 @@ terakan_barrier_filter_access(VkAccessFlags2 * const access, VkPipelineStageFlag
  */
 
 static enum terakan_barrier_action_flags
-terakan_barrier_get_src_actions(struct terakan_gfx_command_writer const * const command_writer,
+terakan_barrier_get_src_actions(struct terakan_gfx_command_writer * const command_writer,
                                 VkPipelineStageFlags2 src_stages, VkAccessFlags2 src_access,
                                 bool const for_buffer, VkImageAspectFlags const image_aspects)
 {
@@ -119,7 +119,8 @@ terakan_barrier_get_src_actions(struct terakan_gfx_command_writer const * const 
 
    if (src_access & VK_ACCESS_2_TRANSFER_READ_BIT) {
       actions |= TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_PS;
-      if (src_stages & VK_PIPELINE_STAGE_2_COPY_BIT) {
+      if (src_stages & (VK_PIPELINE_STAGE_2_COPY_BIT |
+                        VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT)) {
          actions |= TERAKAN_BARRIER_ACTION_SYNC_ME_TO_CP_DMA;
       }
    }
@@ -130,15 +131,22 @@ terakan_barrier_get_src_actions(struct terakan_gfx_command_writer const * const 
                            VK_IMAGE_ASPECT_PLANE_1_BIT | VK_IMAGE_ASPECT_PLANE_2_BIT)) != 0;
       bool const for_depth_stencil_image =
          (image_aspects & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)) != 0;
-      if (src_stages & VK_PIPELINE_STAGE_2_COPY_BIT) {
+      /* Legacy vkCmdPipelineBarrier exposes all copies as TRANSFER / ALL_TRANSFER rather than the
+       * synchronization2 COPY stage. Both designate the copy commands tracked by post_*_actions.
+       */
+      if (src_stages & (VK_PIPELINE_STAGE_2_COPY_BIT |
+                        VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT)) {
          if (for_buffer) {
             actions |= command_writer->post_buffer_copy_write_barrier_actions;
+            command_writer->post_buffer_copy_write_barrier_actions = 0;
          }
          if (for_color_image) {
             actions |= command_writer->post_color_image_copy_write_barrier_actions;
+            command_writer->post_color_image_copy_write_barrier_actions = 0;
          }
          if (for_depth_stencil_image) {
             actions |= command_writer->post_depth_stencil_image_copy_write_barrier_actions;
+            command_writer->post_depth_stencil_image_copy_write_barrier_actions = 0;
          }
       }
       if (src_stages & VK_PIPELINE_STAGE_2_RESOLVE_BIT) {
@@ -254,7 +262,9 @@ terakan_barrier_get_dst_actions(struct terakan_gfx_command_writer const * const 
       if (for_color_image) {
          actions |= TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RTV_DATA |
                     TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RTV_META;
-         if (dst_stages & (VK_PIPELINE_STAGE_2_COPY_BIT | VK_PIPELINE_STAGE_2_CLEAR_BIT)) {
+         if (dst_stages & (VK_PIPELINE_STAGE_2_COPY_BIT |
+                           VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT |
+                           VK_PIPELINE_STAGE_2_CLEAR_BIT)) {
             /* Formats with non-power-of-two bytes per block don't support RTV usage and may use a
              * buffer UAV instead.
              */
@@ -311,7 +321,8 @@ terakan_barrier_emit_event_write(struct terakan_gfx_command_writer * const comma
    if (unlikely(packet == NULL)) {
       return;
    }
-   *packet++ = PKT3(PKT3_EVENT_WRITE, 0, 0);
+   *packet++ = PKT3(PKT3_EVENT_WRITE, 0, 0) |
+               (command_writer->barrier_compute_mode_override ? TERAKAN_PACKET3_COMPUTE : 0);
    *packet++ = event;
    terakan_gfx_command_writer_emit_done(command_writer, packet);
 }
@@ -333,9 +344,6 @@ terakan_barrier_emit_pending_actions(struct terakan_gfx_command_writer * const c
       actions |= TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_VS;
    }
    command_writer->pending_barrier_actions &= ~actions;
-   command_writer->post_buffer_copy_write_barrier_actions &= ~actions;
-   command_writer->post_color_image_copy_write_barrier_actions &= ~actions;
-   command_writer->post_depth_stencil_image_copy_write_barrier_actions &= ~actions;
 
    uint32_t cp_coher_cntl_cb_db_dest_base_ena = 0;
    uint32_t cp_coher_cntl = 0;
@@ -343,6 +351,28 @@ terakan_barrier_emit_pending_actions(struct terakan_gfx_command_writer * const c
    /* Flushes are performed in bottom-to-top-of-pipe order, so preceding flushes are likely to be
     * able to make subsequent ones not have to wait.
     */
+
+   /* A CB UAV cache flush does not by itself wait for compute shader invocations to finish.
+    * Wait for CS first, otherwise a short dispatch may continue issuing RAT writes after the
+    * cache has already been flushed. This ordering matches r600_flush_emit and is required before
+    * making compute storage writes available to later commands or the host.
+    */
+   if (actions & TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CS) {
+      terakan_barrier_emit_event_write(command_writer,
+                                       EVENT_TYPE(EVENT_TYPE_CS_PARTIAL_FLUSH) | EVENT_INDEX(4));
+   }
+
+   /* Wait packets must precede cache flush events. Otherwise a short meta draw can still be
+    * writing after FLUSH_AND_INV_CB_* has sampled the cache state. This is the ordering used by
+    * r600_flush_emit as well.
+    */
+   if (actions & TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_PS) {
+      terakan_barrier_emit_event_write(command_writer,
+                                       EVENT_TYPE(EVENT_TYPE_PS_PARTIAL_FLUSH) | EVENT_INDEX(4));
+   } else if (actions & TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_VS) {
+      terakan_barrier_emit_event_write(command_writer,
+                                       EVENT_TYPE(EVENT_TYPE_VS_PARTIAL_FLUSH) | EVENT_INDEX(4));
+   }
 
    /* Wait for graphics writes to be flushed to prevent read/write-after-write hazards. */
 
@@ -393,27 +423,6 @@ terakan_barrier_emit_pending_actions(struct terakan_gfx_command_writer * const c
       }
    }
 
-   /* Wait for graphics stages that perform reads to become idle before invalidating their read
-    * caches via SURFACE_SYNC and launching new work to prevent write-after-read hazards.
-    *
-    * SURFACE_SYNC with any CB/DB_DEST_BASE_ENA implies PS_PARTIAL_FLUSH.
-    */
-
-   if (!cp_coher_cntl_cb_db_dest_base_ena) {
-      if (actions & TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_PS) {
-         terakan_barrier_emit_event_write(command_writer,
-                                          EVENT_TYPE(EVENT_TYPE_PS_PARTIAL_FLUSH) | EVENT_INDEX(4));
-      } else if (actions & TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_VS) {
-         terakan_barrier_emit_event_write(command_writer,
-                                          EVENT_TYPE(EVENT_TYPE_VS_PARTIAL_FLUSH) | EVENT_INDEX(4));
-      }
-   }
-
-   if (actions & TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CS) {
-      terakan_barrier_emit_event_write(command_writer,
-                                       EVENT_TYPE(EVENT_TYPE_CS_PARTIAL_FLUSH) | EVENT_INDEX(4));
-   }
-
    /* Wait for CP DMA writes and reads to complete in ME. */
 
    if (actions & TERAKAN_BARRIER_ACTION_SYNC_ME_TO_CP_DMA) {
@@ -450,7 +459,10 @@ terakan_barrier_emit_pending_actions(struct terakan_gfx_command_writer * const c
       if (unlikely(surface_sync_packet == NULL)) {
          return;
       }
-      *surface_sync_packet++ = PKT3(PKT3_SURFACE_SYNC, 4 - 1, 0);
+      *surface_sync_packet++ = PKT3(PKT3_SURFACE_SYNC, 4 - 1, 0) |
+                               (command_writer->barrier_compute_mode_override
+                                   ? TERAKAN_PACKET3_COMPUTE
+                                   : 0);
       *surface_sync_packet++ = cp_coher_cntl | TERAKAN_BARRIER_SURFACE_SYNC_ENGINE_ME;
       *surface_sync_packet++ = UINT32_MAX;
       *surface_sync_packet++ = 0;

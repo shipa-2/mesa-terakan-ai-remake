@@ -281,9 +281,12 @@ terakan_hw_config_draw_emit_context_register(
    if (unlikely(packet == NULL)) {
       return false;
    }
-   *packet++ =
-      PKT3(PKT3_SET_CONTEXT_REG, 1, 0) |
-      (command_writer->app_config_compute.shader != NULL ? TERAKAN_PACKET3_COMPUTE : 0);
+   /* The packet mode follows the draw/compute state currently being emitted, not the last bound
+    * application pipeline. Meta graphics commands may be recorded while a compute pipeline stays
+    * bound, and marking their context-register writes as COMPUTE makes the RTV setup ineffective.
+    */
+   *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0) |
+               (command_writer->hw_config_shared.is_compute_active_ ? TERAKAN_PACKET3_COMPUTE : 0);
    *packet++ = TERAKAN_CONTEXT_REG_OFFSET(register_address_bytes);
    *packet++ = register_value;
    terakan_gfx_command_writer_emit_done(command_writer, packet);
@@ -1388,9 +1391,10 @@ terakan_hw_config_draw_emit_cb_blend_control(
       if (unlikely(packet == NULL)) {
          return;
       }
-      *packet++ =
-         PKT3(PKT3_SET_CONTEXT_REG, range_length, 0) |
-         (command_writer->app_config_compute.shader != NULL ? TERAKAN_PACKET3_COMPUTE : 0);
+      *packet++ = PKT3(PKT3_SET_CONTEXT_REG, range_length, 0) |
+                  (command_writer->hw_config_shared.is_compute_active_
+                      ? TERAKAN_PACKET3_COMPUTE
+                      : 0);
       *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028780_CB_BLEND0_CONTROL) + range_start;
       memcpy(packet, &command_writer->hw_config_draw.cb_blend_control_.blend_control[range_start],
              sizeof(uint32_t) * range_length);
@@ -1425,9 +1429,10 @@ terakan_hw_config_draw_emit_cb_immed(struct terakan_gfx_command_writer * const c
       if (unlikely(packet == NULL)) {
          return;
       }
-      *packet++ =
-         PKT3(PKT3_SET_CONTEXT_REG, range_length, 0) |
-         (command_writer->app_config_compute.shader != NULL ? TERAKAN_PACKET3_COMPUTE : 0);
+      *packet++ = PKT3(PKT3_SET_CONTEXT_REG, range_length, 0) |
+                  (command_writer->hw_config_shared.is_compute_active_
+                      ? TERAKAN_PACKET3_COMPUTE
+                      : 0);
       *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028B9C_CB_IMMED0_BASE) + range_start;
       uint32_t * const packet_bases = packet;
       for (unsigned range_uav_index = 0; range_uav_index < (unsigned)range_length;
@@ -1503,9 +1508,10 @@ terakan_hw_config_draw_emit_cb_color(struct terakan_gfx_command_writer * const c
          return;
       }
 
-      *packet++ =
-         PKT3(PKT3_SET_CONTEXT_REG, register_count, 0) |
-         (command_writer->app_config_compute.shader != NULL ? TERAKAN_PACKET3_COMPUTE : 0);
+      *packet++ = PKT3(PKT3_SET_CONTEXT_REG, register_count, 0) |
+                  (command_writer->hw_config_shared.is_compute_active_
+                      ? TERAKAN_PACKET3_COMPUTE
+                      : 0);
       *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028C60_CB_COLOR0_BASE) + register_offset_dwords;
 
       uint32_t * const packet_descriptor = packet;

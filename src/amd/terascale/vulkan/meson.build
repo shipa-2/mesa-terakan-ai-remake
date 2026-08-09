@@ -390,6 +390,16 @@ if with_tests
         ],
         depfile : 'terakan_instance_dynamic_ssbo.vert.spv.d',
       )
+      terakan_instance_dynamic_ssbo_depth_vertex_spv = custom_target(
+        'terakan_instance_dynamic_ssbo_depth.vert.spv',
+        input : 'tests/terakan_instance_dynamic_ssbo_depth.vert',
+        output : 'terakan_instance_dynamic_ssbo_depth.vert.spv',
+        command : [
+          prog_glslang, '-V', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_instance_dynamic_ssbo_depth.vert.spv.d',
+      )
       terakan_instance_dynamic_ssbo_fragment_spv = custom_target(
         'terakan_instance_dynamic_ssbo.frag.spv',
         input : 'tests/terakan_instance_dynamic_ssbo.frag',
@@ -411,12 +421,14 @@ if with_tests
         terakan_instance_dynamic_ssbo_test,
         args : [
           terakan_instance_dynamic_ssbo_vertex_spv,
+          terakan_instance_dynamic_ssbo_depth_vertex_spv,
           terakan_instance_dynamic_ssbo_fragment_spv,
         ],
         depends : [
           libvulkan_terascale,
           _dev_icd,
           terakan_instance_dynamic_ssbo_vertex_spv,
+          terakan_instance_dynamic_ssbo_depth_vertex_spv,
           terakan_instance_dynamic_ssbo_fragment_spv,
         ],
         env : {

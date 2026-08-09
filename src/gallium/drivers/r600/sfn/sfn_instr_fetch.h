@@ -140,7 +140,8 @@ class QueryBufferSizeInstr : public FetchInstr {
 public:
    QueryBufferSizeInstr(const RegisterVec4& dst,
                         const RegisterVec4::Swizzle& swizzle,
-                        uint32_t resid);
+                        uint32_t resid,
+                        PRegister resource_offset = nullptr);
    static Instr::Pointer from_string(std::istream& is, ValueFactory& vf);
 };
 

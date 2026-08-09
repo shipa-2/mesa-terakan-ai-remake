@@ -381,6 +381,7 @@ struct terakan_gfx_command_writer {
    bool hw_config_draw_initialized_in_indirect_buffer;
    bool hw_config_compute_initialized_in_indirect_buffer;
    bool hw_config_sqk_initialized_in_indirect_buffer;
+   bool barrier_compute_mode_override;
 
    /* Scaled blit reuses one meta draw session per command buffer (STK: one vkCmdBlitImage per mip). */
    bool meta_blit_draw_session_active;
@@ -672,8 +673,17 @@ terakan_gfx_command_writer_split_for_draw_compute_switch(
        * IB would let its preamble invalidate caches and change shared state before compute writes
        * have become available.
        */
+      /* Write caches must be flushed while the old mode is active. Read-cache invalidations,
+       * however, must also execute after the new IB preamble has established the destination
+       * graphics/compute context; otherwise the new mode may retain stale TC/VC/SH lines.
+       */
+      uint32_t const destination_cache_invalidations =
+         command_writer->pending_barrier_actions &
+         (TERAKAN_BARRIER_ACTION_INV_TC | TERAKAN_BARRIER_ACTION_INV_VC |
+          TERAKAN_BARRIER_ACTION_INV_SH);
       terakan_barrier_emit_pending_actions(command_writer, TERAKAN_BARRIER_ACTIONS_ALL);
       terakan_gfx_command_writer_end_indirect_buffer(command_writer);
+      command_writer->pending_barrier_actions |= destination_cache_invalidations;
    }
 }
 

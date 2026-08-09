@@ -37,6 +37,7 @@
 #include "spirv/nir_spirv.h"
 #include "util/bitscan.h"
 #include "util/macros.h"
+#include "util/mesa-sha1.h"
 #include "vk_nir.h"
 
 #include <assert.h>
@@ -151,6 +152,15 @@ terakan_shader_spirv_to_nir(struct terakan_device * const device, size_t const s
                                                     : &physical_device->nir_options_non_fs,
                       false, NULL);
 
+   if (unlikely(getenv("TERAKAN_DUMP_HANGOVER_VERTEX_NIR") != NULL ||
+                getenv("TERAKAN_DUMP_HANGOVER_BYTECODE") != NULL)) {
+      unsigned char sha1[SHA1_DIGEST_LENGTH];
+      char sha1_string[SHA1_DIGEST_STRING_LENGTH];
+      _mesa_sha1_compute(spirv, spirv_size_bytes, sha1);
+      _mesa_sha1_format(sha1_string, sha1);
+      nir->info.name = ralloc_strdup(nir, sha1_string);
+   }
+
    /* SFN expects certain fragment shader system values to be accessed via load_input rather than
     * the system value load intrinsics, make sure that's the case before nir_lower_system_values is
     * done that would otherwise generate system value load intrinsics.
@@ -199,6 +209,7 @@ terakan_shader_spirv_to_nir(struct terakan_device * const device, size_t const s
 
    if (nir->info.stage == MESA_SHADER_COMPUTE) {
       nir_lower_compute_system_values_options csv_options = {
+         .has_base_workgroup_id = true,
          .global_id_is_32bit = true,
       };
       NIR_PASS(_, nir, nir_lower_compute_system_values, &csv_options);
@@ -316,6 +327,7 @@ terakan_nir_lower_draw_parameters_instr(
 
    enum terakan_push_constants_driver_index driver_index;
    size_t byte_offset;
+   unsigned num_components = 1;
    switch (intrin->intrinsic) {
    case nir_intrinsic_load_first_vertex:
    case nir_intrinsic_load_base_vertex:
@@ -330,13 +342,23 @@ terakan_nir_lower_draw_parameters_instr(
       driver_index = TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_DRAW_ID;
       byte_offset = offsetof(struct terakan_push_constants_driver, draw_id);
       break;
+   case nir_intrinsic_load_num_workgroups:
+      driver_index = TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_NUM_WORKGROUPS;
+      byte_offset = offsetof(struct terakan_push_constants_driver, num_workgroups);
+      num_components = 3;
+      break;
+   case nir_intrinsic_load_base_workgroup_id:
+      driver_index = TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_BASE_WORKGROUP;
+      byte_offset = offsetof(struct terakan_push_constants_driver, base_workgroup);
+      num_components = 3;
+      break;
    default:
       return false;
    }
 
    b->cursor = nir_before_instr(&intrin->instr);
    nir_def * const replacement = terakan_nir_load_raw_resource_buffer(
-      b, 1, 32, ACCESS_CAN_REORDER, TERAKAN_RESOURCE_RANGE_PUSH_CONSTANTS,
+      b, num_components, 32, ACCESS_CAN_REORDER, TERAKAN_RESOURCE_RANGE_PUSH_CONSTANTS,
       nir_imm_int(b, 0), (unsigned)byte_offset, nir_imm_int(b, 0));
    nir_def_replace(&intrin->def, replacement);
 
@@ -391,10 +413,10 @@ terakan_shader_lower_and_optimize_post_link(
    } while (progress);
 
    /*
-    * Gallium's SFN draw-parameter path reads R600_LDS_INFO_CONST_BUFFER (resource 15), while
+    * Gallium's SFN draw-parameter and NumWorkgroups paths read its private info buffers, while
     * Terakan reserves TERAKAN_RESOURCE_RANGE_PUSH_CONSTANTS (resource 1) for both application and
-    * driver push constants. Lower the Vulkan draw parameters explicitly so SFN uses Terakan's
-    * bound resource instead of the Gallium-specific one.
+    * driver push constants. Lower these Vulkan system values explicitly so SFN uses Terakan's
+    * bound resource instead of Gallium-specific resources.
     */
    NIR_PASS(_, nir, terakan_nir_lower_draw_parameters, sqk_usage,
             driver_push_constants_used);
@@ -471,6 +493,20 @@ terakan_shader_lower_and_optimize_post_link(
       _, nir, terakan_nir_lower_bindings, pipeline_layout, sqk_usage,
       nir->info.stage == MESA_SHADER_FRAGMENT ? util_bitcount(rtv_dsb_uncompacted_exports) : 0,
       uavs_for_mutable_resources_needed, driver_push_constants_used);
+
+   /* Binding lowering replaces SSBO and image operations, but their
+    * vulkan_resource_index producers may become dead only after the replacement. SFN doesn't
+    * consume Vulkan descriptor intrinsics, so remove those newly orphaned producers before the
+    * backend sees them. This is particularly important for shaders using separate source and
+    * destination SSBO bindings. */
+   NIR_PASS(_, nir, nir_opt_dce);
+
+   if (unlikely(nir->info.stage == MESA_SHADER_COMPUTE &&
+                getenv("TERAKAN_DEBUG_DUMP_COMPUTE_NIR") != NULL)) {
+      fprintf(stderr, "\n===== TERAKAN COMPUTE NIR AFTER BINDINGS =====\n");
+      nir_print_shader(nir, stderr);
+      fprintf(stderr, "===== END TERAKAN COMPUTE NIR AFTER BINDINGS =====\n");
+   }
 
    /* Perform lowerings on the level of basic building blocks after the interface has been set up.
     */

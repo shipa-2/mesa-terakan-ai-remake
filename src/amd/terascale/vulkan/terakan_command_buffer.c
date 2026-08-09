@@ -923,7 +923,8 @@ terakan_gfx_command_writer_emit_event_write_eop_discarding_data(
    }
    struct terakan_bo const * const gfx_discard_bo =
       terakan_gfx_command_writer_device(command_writer)->gfx_discard_bo;
-   *packet++ = PKT3(PKT3_EVENT_WRITE_EOP, 5 - 1, 0);
+   *packet++ = PKT3(PKT3_EVENT_WRITE_EOP, 5 - 1, 0) |
+               (command_writer->barrier_compute_mode_override ? TERAKAN_PACKET3_COMPUTE : 0);
    *packet++ = event;
    uint32_t const * const packet_address = packet;
    *packet++ = (uint32_t)gfx_discard_bo->va;      /* ADDRESS_LO */
@@ -956,6 +957,9 @@ terakan_EndCommandBuffer(VkCommandBuffer const commandBuffer)
       gfx_command_writer->post_buffer_copy_write_barrier_actions |
       gfx_command_writer->post_color_image_copy_write_barrier_actions |
       gfx_command_writer->post_depth_stencil_image_copy_write_barrier_actions;
+   gfx_command_writer->post_buffer_copy_write_barrier_actions = 0;
+   gfx_command_writer->post_color_image_copy_write_barrier_actions = 0;
+   gfx_command_writer->post_depth_stencil_image_copy_write_barrier_actions = 0;
 
    /* As barriers are deferred rather than emitted immediately in vkCmdPipelineBarrier, flush them.
     */
@@ -1033,6 +1037,7 @@ terakan_BeginCommandBuffer(VkCommandBuffer const commandBuffer,
    gfx_command_writer->hw_config_draw_initialized_in_indirect_buffer = false;
    gfx_command_writer->hw_config_compute_initialized_in_indirect_buffer = false;
    gfx_command_writer->hw_config_sqk_initialized_in_indirect_buffer = false;
+   gfx_command_writer->barrier_compute_mode_override = false;
    gfx_command_writer->meta_blit_draw_session_active = false;
 
    struct terakan_physical_device const * const physical_device =

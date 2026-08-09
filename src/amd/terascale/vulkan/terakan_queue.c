@@ -205,6 +205,45 @@ terakan_queue_get_graphics_signal_indirect_buffer(
       cp_coher_cntl |= S_0085F0_SH_ACTION_ENA(1);
    }
 
+   VkPipelineStageFlags2 const partial_flush_stages =
+      expanded_signal_stages | expanded_shader_ring_signal_stages;
+
+   /* Shader completion must be awaited before flushing destination caches. Otherwise a semaphore
+    * may become visible to WSI after the flush, while late PS or CS invocations can still write
+    * portions of the presented image afterwards. This is the same ordering required by
+    * r600_flush_emit and by command-buffer barriers.
+    *
+    * SURFACE_SYNC with a CB/DB destination base implies a PS partial flush, so an explicit PS
+    * event is only needed when no such destination is synchronized.
+    */
+   if (!cp_coher_cntl_cb_db_dest_base_ena) {
+      if (partial_flush_stages &
+          (VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_BLIT_BIT)) {
+         assert(TERAKAN_QUEUE_SIGNAL_INDIRECT_BUFFER_MAX_DWORDS - indirect_buffer_size_dwords >= 2);
+         indirect_buffer[indirect_buffer_size_dwords++] = PKT3(PKT3_EVENT_WRITE, 1 - 1, 0);
+         indirect_buffer[indirect_buffer_size_dwords++] =
+            EVENT_TYPE(EVENT_TYPE_PS_PARTIAL_FLUSH) | EVENT_INDEX(4);
+      } else if (partial_flush_stages &
+                 (VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT |
+                  VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT |
+                  VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT |
+                  VK_PIPELINE_STAGE_2_TESSELLATION_CONTROL_SHADER_BIT |
+                  VK_PIPELINE_STAGE_2_TESSELLATION_EVALUATION_SHADER_BIT |
+                  VK_PIPELINE_STAGE_2_GEOMETRY_SHADER_BIT)) {
+         assert(TERAKAN_QUEUE_SIGNAL_INDIRECT_BUFFER_MAX_DWORDS - indirect_buffer_size_dwords >= 2);
+         indirect_buffer[indirect_buffer_size_dwords++] = PKT3(PKT3_EVENT_WRITE, 1 - 1, 0);
+         indirect_buffer[indirect_buffer_size_dwords++] =
+            EVENT_TYPE(EVENT_TYPE_VS_PARTIAL_FLUSH) | EVENT_INDEX(4);
+      }
+   }
+
+   if (partial_flush_stages & VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT) {
+      assert(TERAKAN_QUEUE_SIGNAL_INDIRECT_BUFFER_MAX_DWORDS - indirect_buffer_size_dwords >= 2);
+      indirect_buffer[indirect_buffer_size_dwords++] = PKT3(PKT3_EVENT_WRITE, 1 - 1, 0);
+      indirect_buffer[indirect_buffer_size_dwords++] =
+         EVENT_TYPE(EVENT_TYPE_CS_PARTIAL_FLUSH) | EVENT_INDEX(4);
+   }
+
    if (flush_uav || sx_surface_sync_mask) {
       /* Perform a full destination cache flush if UAVs need to be flushed because
        * FLUSH_AND_INV_CB_DATA_TS writes a timestamp and thus needs a BO.
@@ -232,38 +271,6 @@ terakan_queue_get_graphics_signal_indirect_buffer(
          indirect_buffer[indirect_buffer_size_dwords++] =
             EVENT_TYPE(EVENT_TYPE_DB_CACHE_FLUSH_AND_INV) | EVENT_INDEX(0);
       }
-   }
-
-   VkPipelineStageFlags2 const partial_flush_stages =
-      expanded_signal_stages | expanded_shader_ring_signal_stages;
-
-   /* SURFACE_SYNC with any CB/DB_DEST_BASE_ENA implies PS_PARTIAL_FLUSH. */
-   if (!cp_coher_cntl_cb_db_dest_base_ena) {
-      if (partial_flush_stages &
-          (VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_BLIT_BIT)) {
-         assert(TERAKAN_QUEUE_SIGNAL_INDIRECT_BUFFER_MAX_DWORDS - indirect_buffer_size_dwords >= 2);
-         indirect_buffer[indirect_buffer_size_dwords++] = PKT3(PKT3_EVENT_WRITE, 1 - 1, 0);
-         indirect_buffer[indirect_buffer_size_dwords++] =
-            EVENT_TYPE(EVENT_TYPE_PS_PARTIAL_FLUSH) | EVENT_INDEX(4);
-      } else if (partial_flush_stages &
-                 (VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT |
-                  VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT |
-                  VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT |
-                  VK_PIPELINE_STAGE_2_TESSELLATION_CONTROL_SHADER_BIT |
-                  VK_PIPELINE_STAGE_2_TESSELLATION_EVALUATION_SHADER_BIT |
-                  VK_PIPELINE_STAGE_2_GEOMETRY_SHADER_BIT)) {
-         assert(TERAKAN_QUEUE_SIGNAL_INDIRECT_BUFFER_MAX_DWORDS - indirect_buffer_size_dwords >= 2);
-         indirect_buffer[indirect_buffer_size_dwords++] = PKT3(PKT3_EVENT_WRITE, 1 - 1, 0);
-         indirect_buffer[indirect_buffer_size_dwords++] =
-            EVENT_TYPE(EVENT_TYPE_VS_PARTIAL_FLUSH) | EVENT_INDEX(4);
-      }
-   }
-
-   if (partial_flush_stages & VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT) {
-      assert(TERAKAN_QUEUE_SIGNAL_INDIRECT_BUFFER_MAX_DWORDS - indirect_buffer_size_dwords >= 2);
-      indirect_buffer[indirect_buffer_size_dwords++] = PKT3(PKT3_EVENT_WRITE, 1 - 1, 0);
-      indirect_buffer[indirect_buffer_size_dwords++] =
-         EVENT_TYPE(EVENT_TYPE_CS_PARTIAL_FLUSH) | EVENT_INDEX(4);
    }
 
    /* VK_PIPELINE_STAGE_2_COPY_BIT is flushed in command buffer ending. */

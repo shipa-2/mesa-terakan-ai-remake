@@ -159,6 +159,9 @@ read_layout(fs::path const & path, std::vector<Binding> & bindings,
          fields >> push_constant.size >> godot_stages;
          push_constant.offset = 0;
          push_constant.stageFlags = godot_stage_flags_to_vulkan(godot_stages);
+      } else if (kind == "vk_push") {
+         fields >> push_constant.size >> push_constant.stageFlags;
+         push_constant.offset = 0;
       } else if (kind == "binding") {
          Binding binding = {};
          uint32_t godot_type;
@@ -173,6 +176,13 @@ read_layout(fs::path const & path, std::vector<Binding> & bindings,
          }
          binding.vk.descriptorCount = descriptor_count_is_length ? std::max(1U, length) : 1;
          binding.vk.stageFlags = godot_stage_flags_to_vulkan(godot_stages);
+         bindings.push_back(binding);
+      } else if (kind == "vk_binding") {
+         Binding binding = {};
+         uint32_t descriptor_type;
+         fields >> binding.set >> binding.vk.binding >> descriptor_type >>
+            binding.vk.descriptorCount >> binding.vk.stageFlags;
+         binding.vk.descriptorType = static_cast<VkDescriptorType>(descriptor_type);
          bindings.push_back(binding);
       } else if (!kind.empty()) {
          throw std::runtime_error("unknown layout record");
@@ -782,16 +792,23 @@ main(int argc, char ** argv)
    unsigned failed = 0;
    unsigned skipped = 0;
    bool const execute_skinning = std::getenv("TERAKAN_CORPUS_EXECUTE_SKINNING") != nullptr;
+   bool const ignore_unsupported_capabilities =
+      std::getenv("TERAKAN_CORPUS_IGNORE_UNSUPPORTED_CAPABILITIES") != nullptr;
    for (fs::recursive_directory_iterator it(argv[1]), end; it != end; ++it) {
       std::string const filename = it->path().filename().string();
-      static std::string const suffix = ".comp.spv";
+      /* Runtime dumps produced by TERAKAN_DEBUG_DUMP_COMPUTE_SPIRV_DIR contain compute shaders
+       * only, but use the generic .spv suffix. Accept both those dumps and the named .comp.spv
+       * corpus used by the offline extractor.
+       */
+      static std::string const suffix = ".spv";
       if (!it->is_regular_file() || filename.size() < suffix.size() ||
           filename.compare(filename.size() - suffix.size(), suffix.size(), suffix) != 0) {
          continue;
       }
       try {
          std::vector<uint32_t> const spirv = read_spirv(it->path());
-         if (char const * const reason = unsupported_capability(spirv, features)) {
+         if (char const * const reason = unsupported_capability(spirv, features);
+             reason != nullptr && !ignore_unsupported_capabilities) {
             std::cout << "SKIP " << it->path() << ' ' << reason << '\n';
             ++skipped;
             continue;

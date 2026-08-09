@@ -360,7 +360,10 @@ terakan_nir_gather_uavs_needed_instr(nir_builder * const b, nir_instr * const in
          break;
       case nir_intrinsic_image_deref_load:
          if (nir_intrinsic_image_dim(intrin) != GLSL_SAMPLER_DIM_BUF) {
-            /* TODO(Triang3l): Detect more precisely whether the image load actually needs a UAV. */
+            /* Storage image reads use the CB/RAT path too. Besides providing write-read coherence,
+             * this avoids crossing from meta RTV writes to the texture cache between graphics and
+             * compute modes on Evergreen.
+             */
             src = intrin->src[0];
             expected_type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
          }
@@ -864,7 +867,50 @@ terakan_nir_lower_bindings_instr_load_ssbo(nir_builder * const b,
       binding.array_index = nir_imm_zero(b, 1, 32);
    }
 
-   /* Vertex fetches are coherent with UAVs, do a vertex fetch unconditionally. */
+   /* If this binding is also writable in the shader, read through the same UAV path. Waiting for
+    * an acknowledged RAT write is not sufficient to make the new value visible to VFETCH on all
+    * Evergreen hardware, while NOP_RTN observes the CB/UAV data directly.
+    */
+   bool apply_uav_array_index;
+   unsigned const uav_index_zero_based = terakan_nir_get_binding_uav(
+      &binding, true, state, b->shader->info.stage, &apply_uav_array_index);
+   if (uav_index_zero_based != UINT_MAX) {
+      nir_def * const uav_array_index =
+         apply_uav_array_index ? binding.array_index : nir_imm_zero(b, 1, 32);
+      enum gl_access_qualifier const access = nir_intrinsic_access(intrin) & ~ACCESS_CAN_REORDER;
+      nir_def * coord = terakan_nir_buffer_uav_coord(
+         b, intrin->src[1].ssa, uav_index_zero_based, uav_array_index,
+         state->layout->vk.base.device->enabled_features.robustBufferAccess,
+         (access & ACCESS_INCLUDE_HELPERS) != 0, state);
+      coord = nir_udiv_imm(b, coord, sizeof(uint32_t));
+
+      nir_def * const immed_index =
+         terakan_nir_uav_immed_index(b, &container_of(state->layout->vk.base.device->physical,
+                                                      struct terakan_physical_device const, vk)
+                                            ->chip_info);
+      nir_def * const undef = nir_undef(b, 1, 32);
+      nir_def * components[NIR_MAX_VEC_COMPONENTS];
+      assert(intrin->num_components <= ARRAY_SIZE(components));
+      for (unsigned component = 0; component < intrin->num_components; ++component) {
+         components[component] = nir_uav_returning_instr_r600(
+            b, 1, 32, uav_array_index,
+            component != 0 ? nir_iadd_imm(b, coord, component) : coord, undef, undef, immed_index,
+            .uav_op_r600 = V_RAT_INST_NOP_RTN, .access = access,
+            .id_base = state->uav_base + uav_index_zero_based,
+            .uav_return_id_base_r600 =
+               (b->shader->info.stage == MESA_SHADER_FRAGMENT
+                   ? TERAKAN_RESOURCE_RANGE_UAV_IMMEDIATE_BASE_PIXEL
+                   : TERAKAN_RESOURCE_RANGE_UAV_IMMEDIATE_BASE_COMPUTE) +
+               uav_index_zero_based);
+      }
+      nir_def_rewrite_uses(&intrin->def,
+                           nir_u2uN(b, nir_vec(b, components, intrin->num_components),
+                                    intrin->def.bit_size));
+      nir_instr_remove(&intrin->instr);
+      return;
+   }
+
+   /* Read-only storage buffers can use the vertex-fetch path. */
    uint8_t const resource_index_base =
       binding.set->first_shader_resources[b->shader->info.stage] +
       binding.set_binding->first_shader_resources[b->shader->info.stage];
@@ -884,6 +930,38 @@ terakan_nir_lower_bindings_instr_load_ssbo(nir_builder * const b,
                                          b, intrin->num_components, intrin->def.bit_size,
                                          nir_intrinsic_access(intrin), resource_index_base,
                                          binding.array_index, 0, intrin->src[1].ssa));
+   nir_instr_remove(&intrin->instr);
+}
+
+static void
+terakan_nir_lower_bindings_instr_get_ssbo_size(
+   nir_builder * const b, nir_intrinsic_instr * const intrin,
+   struct terakan_nir_lower_bindings_state * const state)
+{
+   assert(intrin->intrinsic == nir_intrinsic_get_ssbo_size);
+
+   b->cursor = nir_before_instr(&intrin->instr);
+
+   struct terakan_nir_binding binding;
+   if (unlikely(!terakan_nir_get_binding(intrin->src[0], VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                                         state->layout, b->shader, &binding))) {
+      terakan_nir_lower_bindings_instr_to_null(&intrin->instr);
+      return;
+   }
+   if (binding.array_index == NULL) {
+      binding.array_index = nir_imm_zero(b, 1, 32);
+   }
+
+   gl_shader_stage const stage = b->shader->info.stage;
+   uint8_t const resource_index_base = binding.set->first_shader_resources[stage] +
+                                       binding.set_binding->first_shader_resources[stage];
+   BITSET_SET_RANGE(state->sqk_usage->resources,
+                    resource_index_base + binding.array_index_range_first,
+                    resource_index_base + binding.array_index_range_last);
+
+   nir_def_rewrite_uses(&intrin->def,
+                        nir_load_buffer_size_r600(b, 1, 32, binding.array_index,
+                                                  .id_base = resource_index_base));
    nir_instr_remove(&intrin->instr);
 }
 
@@ -1325,6 +1403,9 @@ terakan_nir_lower_bindings_instr(nir_builder * const b, nir_instr * const instr,
          return true;
       case nir_intrinsic_load_ssbo:
          terakan_nir_lower_bindings_instr_load_ssbo(b, intrin, state);
+         return true;
+      case nir_intrinsic_get_ssbo_size:
+         terakan_nir_lower_bindings_instr_get_ssbo_size(b, intrin, state);
          return true;
       case nir_intrinsic_store_ssbo:
          terakan_nir_lower_bindings_instr_store_ssbo(b, intrin, state);

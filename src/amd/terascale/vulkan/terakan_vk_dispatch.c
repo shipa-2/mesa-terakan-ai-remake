@@ -36,6 +36,24 @@ terakan_CmdBindPipeline(VkCommandBuffer const commandBuffer,
 }
 
 static void
+terakan_vk_emit_dispatch_start(struct terakan_gfx_command_writer * const command_writer,
+                               uint32_t const base_group_x, uint32_t const base_group_y,
+                               uint32_t const base_group_z)
+{
+   uint32_t * packet = terakan_gfx_command_writer_emit(
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG, 2 + 3);
+   if (unlikely(packet == NULL)) {
+      return;
+   }
+   *packet++ = PKT3(PKT3_SET_CONFIG_REG, 3, 0);
+   *packet++ = TERAKAN_CONFIG_REG_OFFSET(R_00899C_VGT_COMPUTE_START_X);
+   *packet++ = base_group_x;
+   *packet++ = base_group_y;
+   *packet++ = base_group_z;
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
+}
+
+static void
 terakan_vk_emit_dispatch_direct(struct terakan_gfx_command_writer * const command_writer,
                                 uint32_t const group_count_x, uint32_t const group_count_y,
                                 uint32_t const group_count_z)
@@ -80,28 +98,22 @@ terakan_vk_cmd_dispatch(VkCommandBuffer const commandBuffer, uint32_t const grou
       return;
    }
 
-   if (unlikely(baseGroupX != 0 || baseGroupY != 0 || baseGroupZ != 0)) {
-      /* Set VGT_COMPUTE_START_X/Y/Z before dispatch for non-zero base groups. */
-      uint32_t * start_packet = terakan_gfx_command_writer_emit(
-         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG, 2 + 3);
-      if (unlikely(start_packet == NULL)) {
-         return;
-      }
-      *start_packet++ = PKT3(PKT3_SET_CONFIG_REG, 3, 0);
-      *start_packet++ = TERAKAN_CONFIG_REG_OFFSET(R_00899C_VGT_COMPUTE_START_X);
-      *start_packet++ = baseGroupX;
-      *start_packet++ = baseGroupY;
-      *start_packet++ = baseGroupZ;
-      terakan_gfx_command_writer_emit_done(command_writer, start_packet);
-   }
-
    /* Flush CB UAV data and CS state before dispatch so compute shader can read previous writes. */
+   command_writer->barrier_compute_mode_override = true;
    terakan_barrier_emit_actions_unconditionally(
       command_writer,
       TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_UAV | TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_PS |
          TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CS);
+   command_writer->barrier_compute_mode_override = false;
 
+   terakan_push_constants_set_num_workgroups(command_writer, groupCountX, groupCountY,
+                                              groupCountZ);
+   terakan_push_constants_set_base_workgroup(command_writer, baseGroupX, baseGroupY, baseGroupZ);
    terakan_gfx_command_writer_before_app_dispatch(command_writer);
+   /* Vulkan base group coordinates are added by the shader from driver constants. Keep the
+    * hardware start at zero because Terascale's START semantics don't implement DispatchBase.
+    */
+   terakan_vk_emit_dispatch_start(command_writer, 0, 0, 0);
    terakan_vk_emit_dispatch_direct(command_writer, groupCountX, groupCountY, groupCountZ);
 
    /* Compute storage writes go through the CB UAV path. Before any later consumer
@@ -198,7 +210,10 @@ terakan_CmdDispatchIndirect(VkCommandBuffer const commandBuffer, VkBuffer const 
       TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_UAV | TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_PS |
          TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CS);
 
+   terakan_push_constants_set_num_workgroups(command_writer, grid_x, grid_y, grid_z);
+   terakan_push_constants_set_base_workgroup(command_writer, 0, 0, 0);
    terakan_gfx_command_writer_before_app_dispatch(command_writer);
+   terakan_vk_emit_dispatch_start(command_writer, 0, 0, 0);
    terakan_vk_emit_dispatch_direct(command_writer, grid_x, grid_y, grid_z);
 
    /* See the direct-dispatch path above: make UAV writes available before a

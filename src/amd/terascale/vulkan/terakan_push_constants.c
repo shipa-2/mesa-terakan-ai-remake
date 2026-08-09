@@ -149,3 +149,37 @@ terakan_push_constants_apply(struct terakan_gfx_command_writer * const command_w
       state->up_to_date_push_constants_bound_to_stages |= bind_to_stages;
    }
 }
+
+void
+terakan_push_constants_set_num_workgroups(
+   struct terakan_gfx_command_writer * const command_writer, uint32_t const x,
+   uint32_t const y, uint32_t const z)
+{
+   struct terakan_push_constants_state * const state = &command_writer->push_constants_state;
+   uint32_t const num_workgroups[3] = {x, y, z};
+   if (memcmp(state->driver_constants.num_workgroups, num_workgroups,
+              sizeof(num_workgroups)) == 0) {
+      return;
+   }
+
+   memcpy(state->driver_constants.num_workgroups, num_workgroups, sizeof(num_workgroups));
+   state->driver_constants_modified |=
+      BITFIELD_BIT(TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_NUM_WORKGROUPS);
+}
+
+void
+terakan_push_constants_set_base_workgroup(
+   struct terakan_gfx_command_writer * const command_writer, uint32_t const x,
+   uint32_t const y, uint32_t const z)
+{
+   struct terakan_push_constants_state * const state = &command_writer->push_constants_state;
+   uint32_t const base_workgroup[3] = {x, y, z};
+   if (memcmp(state->driver_constants.base_workgroup, base_workgroup,
+              sizeof(base_workgroup)) == 0) {
+      return;
+   }
+
+   memcpy(state->driver_constants.base_workgroup, base_workgroup, sizeof(base_workgroup));
+   state->driver_constants_modified |=
+      BITFIELD_BIT(TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_BASE_WORKGROUP);
+}

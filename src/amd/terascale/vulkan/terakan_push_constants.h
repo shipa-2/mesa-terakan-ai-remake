@@ -45,6 +45,8 @@ enum terakan_push_constants_driver_index {
    TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_DRAW_ID,
    TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_BASE_VERTEX,
    TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_BASE_INSTANCE,
+   TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_NUM_WORKGROUPS,
+   TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_BASE_WORKGROUP,
 
    TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_COUNT,
 };
@@ -63,6 +65,8 @@ struct terakan_push_constants_driver {
    uint32_t draw_id;
    uint32_t base_vertex;
    uint32_t base_instance;
+   uint32_t num_workgroups[3];
+   uint32_t base_workgroup[3];
 };
 
 /* Aligned to vec4 to avoid placing vectors in different kcache lines more likely to be accessed in
@@ -131,6 +135,12 @@ struct terakan_gfx_command_writer;
 
 void terakan_push_constants_apply(struct terakan_gfx_command_writer * command_writer,
                                   bool is_compute);
+
+void terakan_push_constants_set_num_workgroups(struct terakan_gfx_command_writer * command_writer,
+                                               uint32_t x, uint32_t y, uint32_t z);
+
+void terakan_push_constants_set_base_workgroup(struct terakan_gfx_command_writer * command_writer,
+                                               uint32_t x, uint32_t y, uint32_t z);
 
 #ifdef __cplusplus
 }
