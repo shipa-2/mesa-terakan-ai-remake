@@ -154,3 +154,11 @@ Current focused game evidence:
   rendering correctness result.
 - Compare readbacks or screenshots where possible. A successful return code
   alone is insufficient for resolve, clear, copy, and synchronization tests.
+
+## Focused Vulkan CTS coverage
+
+The current safe compute matrix, image/graphics synchronization results,
+unsupported capability breakdown and known failing cases are maintained in
+[functional coverage](FUNCTIONAL_COVERAGE.md). In particular, do not include
+the three `max_local_size_*` cases in unattended runs until their previous GPU
+lockup has been diagnosed.

@@ -19,7 +19,7 @@ kernel driver.
 | Vulkan device discovery | AMD R8xx (CAICOS) is detected as Terakan |
 | Reported API version | Vulkan 1.1.318 |
 | Properties/features validation | Focused report completes with 0 errors |
-| Compute and shader control flow | Loop constants, singleton subgroup lowering, dispatch transitions and GPU readback pass |
+| Compute and shader control flow | 47/48 executed safe basic-compute CTS cases pass; conditional workgroup barriers remain broken |
 | Draw state | `firstInstance`, dynamic SSBO offsets and graphics/compute state restoration pass |
 | Image copies and sampling | Layered copies and mipmapped BC6H cube/array views pass on CAICOS |
 | Color MSAA resolve | 2x/4x/8x, full/partial regions, layers, RGBA/BGRA pass |
@@ -83,6 +83,7 @@ installs both 64-bit and 32-bit packages through pacman. Remove them with:
 - [Testing and game launch instructions](docs/terakan/TESTING.md)
 - [Arch Linux packaging](docs/terakan/PACKAGING.md)
 - [Implemented functionality and known limitations](docs/terakan/STATUS.md)
+- [Focused Vulkan functional coverage](docs/terakan/FUNCTIONAL_COVERAGE.md)
 - [Prioritized development TODO](docs/terakan/TODO.md)
 
 Generic Mesa developer documentation remains under [`docs/`](docs/).

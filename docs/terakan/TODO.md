@@ -15,6 +15,7 @@ accept the work. Both use a 1–5 scale.
 | Implement and validate FMASK/CMASK allocation, identity initialization and sampled MSAA addressing | 5/5 | 5/5 | Implementable; requires Evergreen tiling research | Per-sample reads and resolved reads pass for 2x/4x/8x images without corrupting ordinary color targets |
 | Complete cache and barrier coherency | 5/5 | 4/5 | Implementable | Focused attachment, texture, storage, transfer, graphics/compute and query producer-consumer chains pass without application-specific waits |
 | Cover remaining copy, blit and resolve format/subresource combinations | 5/5 | 4/5 | Implementable | Boundary tests cover non-zero offsets, partial extents, mip levels, array/3D layers and every advertised compatible format class |
+| Fix workgroup barriers under divergent control flow | 5/5 | 4/5 | Implementable in NIR/SFN control-flow lowering | `dEQP-VK.compute.pipeline.basic.branch_past_barrier` passes and existing shared-memory tests remain green |
 
 ## P1 — broad DXVK and D3D11 compatibility
 
@@ -41,6 +42,7 @@ These are useful, but Vulkan 1.1 permits the corresponding feature bits to be
 | Add sampler YCbCr conversion | 1/5 | 3/5 | Implementable, likely shader-assisted | Primarily video-oriented |
 | Add variable pointers | 1/5 | 4/5 | Potentially implementable through lowering | Low game priority |
 | Complete shader float-control rounding modes | 1/5 | 3/5 | Partly hardware-limited | Expose only modes verified on R8xx |
+| Complete device-group compute system values | 1/5 | 3/5 | Implementable with explicit driver constants | `dispatch_base`, `dispatch_base_maintenance5` when exposed, and `device_index` pass |
 
 ## Not planned for CAICOS
 
@@ -51,7 +53,7 @@ These are useful, but Vulkan 1.1 permits the corresponding feature bits to be
 
 ## Completed and regression-covered
 
-- Compute dispatch, loop constants and shader control flow.
+- Ordinary compute dispatch, loop constants and non-barrier shader control flow.
 - Singleton subgroup `BASIC` and `ARITHMETIC` lowering.
 - Dynamic SSBO offsets, `firstInstance` and graphics/compute state restoration.
 - Layered buffer/image copies.
@@ -61,6 +63,8 @@ These are useful, but Vulkan 1.1 permits the corresponding feature bits to be
   and RGBA/BGRA formats.
 - `VK_EXT_memory_budget` with per-process allocation accounting and
   kernel-informed VRAM/GTT budgets.
+- SSBO runtime-array length, writable-SSBO returning reads, compute image
+  hazards and graphics/compute cache transition coverage.
 
 ## Completion policy
 

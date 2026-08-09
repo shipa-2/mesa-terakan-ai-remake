@@ -1,6 +1,6 @@
 # Terakan status
 
-Last updated: 2026-07-29. Target hardware: AMD CAICOS.
+Last updated: 2026-08-09. Target hardware: AMD CAICOS.
 
 ## Verified in the current development cycle
 
@@ -9,8 +9,8 @@ Last updated: 2026-07-29. Target hardware: AMD CAICOS.
 | Vulkan instance/device discovery | AMD R8xx (CAICOS) Terakan device, API 1.1.318 |
 | Properties and driver identity | `VK_KHR_driver_properties`; Terakan/Mesa identity; non-conformant version reported honestly |
 | VRAM reporting | `VK_EXT_memory_budget`; per-process heap usage plus kernel-reported global VRAM/GTT pressure |
-| Focused regression suite | 4 CPU tests and 7 CAICOS GPU tests pass |
-| Compute and subgroup behavior | loop constants, singleton subgroup lowering, descriptor buffers, dispatch state and readback pass |
+| Focused regression suite | 11 local tests pass; 47/48 executed safe basic-compute CTS cases pass |
+| Compute and subgroup behavior | SSBO, atomics, shared memory, ordinary barriers, image access and indirect dispatch pass; conditional workgroup barrier remains broken |
 | Draw state | `firstInstance` plus dynamic SSBO offsets pass; graphics/compute transitions preserve descriptors and draw state |
 | Events and sparse property queries | implemented and CAICOS-tested |
 | Image copy and layout | layered buffer/image copies pass; mipmapped array storage uses hardware-compatible power-of-two slice padding |
@@ -18,6 +18,7 @@ Last updated: 2026-07-29. Target hardware: AMD CAICOS.
 | Color MSAA resolve | 2x, 4x, and 8x; full/partial, layers, RGBA/BGRA passed |
 | vkQuake3 | Vulkan renderer works in a 640x480 window |
 | DXVK-Sarek | D3D11 FL 11_1; Katamari display settings and tested Disco Elysium gameplay scene render correctly |
+| Godot workloads | Hangover Gallery and Fused 240 render correctly in user testing; Buckshot Roulette remains visually corrupted |
 
 The BC6H regression test validates 48 independently addressed samples and has
 a negative control that corrupts one expected value. The normal run reports
@@ -34,6 +35,8 @@ OpenGL driver on the same CAICOS hardware.
 - Remaining resolve fallbacks for unusual formats and subresources.
 - Long-session stability and untested scenes in DXVK-Sarek games.
 - Full Vulkan 1.1 feature coverage and conformance testing.
+- SFN workgroup barriers nested in control flow (`branch_past_barrier`).
+- Complete `vkCmdDispatchBase` and `gl_DeviceIndex` semantics.
 - Vulkan conformance: Terakan is not a conformant implementation.
 
 The prioritized implementation order, complexity estimates, hardware
@@ -43,3 +46,6 @@ limitations, and completion criteria are maintained in the
 The table records observed tests, not a claim of complete Vulkan 1.1 support.
 Re-run `bin/terakan-test` after every clean build. A visually correct game
 frame complements the readback tests but does not replace them.
+
+The detailed CTS matrix, unsupported-feature breakdown and exact known
+failures are recorded in [functional coverage](FUNCTIONAL_COVERAGE.md).
