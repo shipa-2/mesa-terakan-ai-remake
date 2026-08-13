@@ -102,6 +102,15 @@ cleanup_dxvk_links() {
   created_dxvk_links=()
 }
 
+terminate_child() {
+  local signal=$1 status=$2
+  trap - TERM INT
+  kill -s "$signal" -- "-$child_pid" 2>/dev/null || true
+  wait "$child_pid" 2>/dev/null || true
+  cleanup_dxvk_links
+  exit "$status"
+}
+
 stage_dxvk_for_command() {
   local argument game_executable=
   for argument in "$@"; do
@@ -244,10 +253,15 @@ if ((${#created_dxvk_links[@]} == 0)); then
 fi
 
 trap cleanup_dxvk_links EXIT
+child_pid=
+trap 'terminate_child TERM 143' TERM
+trap 'terminate_child INT 130' INT
 set +e
-"$terakan_runner" -- "$@"
+setsid "$terakan_runner" -- "$@" &
+child_pid=$!
+wait "$child_pid"
 status=$?
 set -e
 cleanup_dxvk_links
-trap - EXIT
+trap - EXIT TERM INT
 exit "$status"

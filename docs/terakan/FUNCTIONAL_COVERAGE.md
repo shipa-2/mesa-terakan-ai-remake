@@ -158,9 +158,9 @@ require one of the following:
 - a newer SPIR-V version.
 
 Terakan also intentionally leaves geometry and tessellation shaders,
-vertex-stage stores and atomics, extended storage-image formats, formatless
-storage-image reads, multisample storage images, image gather extensions,
-clip/cull distances, Int16/Int64/Float64, sparse
+vertex-stage stores and atomics, extended storage-image formats, multisample
+storage images, image gather extensions, clip/cull distances,
+Int16/Int64/Float64, sparse
 resources and depth bounds disabled. Vulkan 1.1 allows these feature bits to be
 false, but they do not have equal game impact:
 
@@ -174,13 +174,19 @@ false, but they do not have equal game impact:
 | FP16/Int16 storage and arithmetic | 2/5 | 4/5 |
 | FP64/Int64, sparse resources and depth bounds | 1/5 | 4-5/5 |
 
-Single-sample formatless storage-image writes are enabled separately. The
-focused CAICOS test uses SPIR-V `StorageImageWriteWithoutFormat`, performs an
-exact 17x13 `R32_UINT` readback, and verifies trailing guards.
+Single-sample formatless storage-image reads and writes are enabled separately.
+The focused CAICOS test uses both corresponding SPIR-V capabilities, compares
+transfer-initialized reads and independently generated writes against exact
+17x13 `R32_UINT` oracles, and verifies trailing guards.
 
 The 21 replicated-composite cases, maintenance5, custom resolve and specialized
 queue topology are not Vulkan 1.1 or ordinary D3D11 game blockers. They should
 not displace the shader, UAV, MSAA and control-flow work above.
+
+Internal attachment clears are synchronized before application draws resume.
+This is required even without an application barrier because a render-pass
+load clear is part of the render operation itself; on CAICOS, omitting the
+internal CB/DB and PS completion actions reproducibly lost the first two draws.
 
 ## Application evidence
 

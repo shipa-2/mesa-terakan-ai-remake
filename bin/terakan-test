@@ -55,7 +55,7 @@ gpu_tests=(
   terakan_formatless_image_store
   terakan_physical_device_properties
 )
-meson test -C "$build_dir" --print-errorlogs "${gpu_tests[@]}"
+meson test -C "$build_dir" --print-errorlogs --num-processes 1 "${gpu_tests[@]}"
 
 bc6_dir="$build_dir/src/amd/terascale/vulkan"
 set +e

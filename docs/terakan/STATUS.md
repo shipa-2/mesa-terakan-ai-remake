@@ -27,10 +27,17 @@ zero mismatches; the corrupted oracle must fail. Its few values that differ
 from Mesa's software decoder were cross-checked against the upstream r600
 OpenGL driver on the same CAICOS hardware.
 
-The formatless storage-image regression dispatches a compute shader containing
-the SPIR-V `StorageImageWriteWithoutFormat` capability, reads back a 17x13
-`R32_UINT` image exactly, and checks untouched buffer guards. Formatless reads
-and multisample storage images remain disabled.
+The formatless storage-image regression dispatches compute shaders containing
+the SPIR-V `StorageImageReadWithoutFormat` and
+`StorageImageWriteWithoutFormat` capabilities. A transfer-initialized read and
+an independently generated write both produce exact 17x13 `R32_UINT` results,
+with untouched buffer guards. Multisample storage images remain disabled.
+
+Attachment clears now leave an explicit deferred graphics barrier after their
+internal meta draw. This closes a real TeraScale race where the first one or
+two application draws after a depth clear could run before the clear/state
+transition had drained. The dynamic SSBO/depth-reuse regression is stable for
+50 consecutive CAICOS processes after the fix (previously exactly 25 failed).
 
 ## Still experimental
 
