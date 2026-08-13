@@ -852,4 +852,21 @@ terakan_CmdClearAttachments(VkCommandBuffer const commandBuffer, uint32_t const 
          }
       }
    }
+
+   /* ClearAttachments is implemented with internal draws. Their attachment writes must finish
+    * before the next application draw restores and uses application state; command order alone
+    * doesn't drain the asynchronous graphics pipeline on TeraScale.
+    */
+   if (depth_stencil_clear_aspects) {
+      command_writer->pending_barrier_actions |=
+         TERAKAN_BARRIER_ACTION_FLUSH_INV_DB_DATA |
+         TERAKAN_BARRIER_ACTION_FLUSH_INV_DB_META |
+         TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_PS;
+   }
+   if (color_clear_attachments) {
+      command_writer->pending_barrier_actions |=
+         TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RTV_DATA |
+         TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RTV_META |
+         TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_PS;
+   }
 }
