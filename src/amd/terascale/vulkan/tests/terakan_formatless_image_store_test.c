@@ -30,6 +30,10 @@ static const uint32_t formatless_store_spirv[] = {
 #include "terakan_formatless_image_store.spv.h"
 };
 
+static const uint32_t formatless_load_spirv[] = {
+#include "terakan_formatless_image_load.spv.h"
+};
+
 static uint32_t
 find_memory_type(VkPhysicalDevice physical_device, uint32_t memory_type_bits,
                  VkMemoryPropertyFlags required)
@@ -69,8 +73,9 @@ main(void)
 
    VkPhysicalDeviceFeatures features;
    vkGetPhysicalDeviceFeatures(physical_device, &features);
-   if (!features.shaderStorageImageWriteWithoutFormat) {
-      fprintf(stderr, "shaderStorageImageWriteWithoutFormat is not exposed\n");
+   if (!features.shaderStorageImageWriteWithoutFormat ||
+       !features.shaderStorageImageReadWithoutFormat) {
+      fprintf(stderr, "Formatless storage-image read/write features are not exposed\n");
       return 1;
    }
 
@@ -111,6 +116,7 @@ main(void)
       .pQueuePriorities = &queue_priority,
    };
    VkPhysicalDeviceFeatures const enabled_features = {
+      .shaderStorageImageReadWithoutFormat = VK_TRUE,
       .shaderStorageImageWriteWithoutFormat = VK_TRUE,
    };
    VkDeviceCreateInfo const device_info = {
@@ -171,12 +177,13 @@ main(void)
    VkImageView image_view;
    CHECK_VK(vkCreateImageView(device, &view_info, NULL, &image_view));
 
-   VkDeviceSize const output_size = TEXEL_COUNT * sizeof(uint32_t);
-   VkDeviceSize const buffer_size = output_size + GUARD_DWORDS * sizeof(uint32_t);
+   VkDeviceSize const region_size = TEXEL_COUNT * sizeof(uint32_t);
+   VkDeviceSize const buffer_size = 2 * region_size + GUARD_DWORDS * sizeof(uint32_t);
    VkBufferCreateInfo const buffer_info = {
       .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
       .size = buffer_size,
-      .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+      .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+               VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
       .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
    };
    VkBuffer buffer;
@@ -202,17 +209,27 @@ main(void)
    CHECK_VK(vkMapMemory(device, buffer_memory, 0, VK_WHOLE_SIZE, 0, (void **)&mapped));
    for (VkDeviceSize i = 0; i < buffer_requirements.size / sizeof(uint32_t); ++i)
       mapped[i] = GUARD_VALUE;
+   for (uint32_t i = 0; i < TEXEL_COUNT; ++i)
+      mapped[i] = 0x13570000u ^ (i * 0x45D9F3Bu);
 
-   VkDescriptorSetLayoutBinding const layout_binding = {
-      .binding = 0,
-      .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-      .descriptorCount = 1,
-      .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+   VkDescriptorSetLayoutBinding const layout_bindings[] = {
+      {
+         .binding = 0,
+         .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+         .descriptorCount = 1,
+         .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+      },
+      {
+         .binding = 1,
+         .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+         .descriptorCount = 1,
+         .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+      },
    };
    VkDescriptorSetLayoutCreateInfo const set_layout_info = {
       .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-      .bindingCount = 1,
-      .pBindings = &layout_binding,
+      .bindingCount = 2,
+      .pBindings = layout_bindings,
    };
    VkDescriptorSetLayout set_layout;
    CHECK_VK(vkCreateDescriptorSetLayout(device, &set_layout_info, NULL, &set_layout));
@@ -224,15 +241,21 @@ main(void)
    VkPipelineLayout pipeline_layout;
    CHECK_VK(vkCreatePipelineLayout(device, &pipeline_layout_info, NULL, &pipeline_layout));
 
-   VkDescriptorPoolSize const pool_size = {
-      .type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-      .descriptorCount = 1,
+   VkDescriptorPoolSize const pool_sizes[] = {
+      {
+         .type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+         .descriptorCount = 1,
+      },
+      {
+         .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+         .descriptorCount = 1,
+      },
    };
    VkDescriptorPoolCreateInfo const pool_info = {
       .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
       .maxSets = 1,
-      .poolSizeCount = 1,
-      .pPoolSizes = &pool_size,
+      .poolSizeCount = 2,
+      .pPoolSizes = pool_sizes,
    };
    VkDescriptorPool descriptor_pool;
    CHECK_VK(vkCreateDescriptorPool(device, &pool_info, NULL, &descriptor_pool));
@@ -248,35 +271,59 @@ main(void)
       .imageView = image_view,
       .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
    };
-   VkWriteDescriptorSet const descriptor_write = {
-      .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-      .dstSet = descriptor_set,
-      .dstBinding = 0,
-      .descriptorCount = 1,
-      .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-      .pImageInfo = &descriptor_image_info,
+   VkDescriptorBufferInfo const descriptor_buffer_info = {
+      .buffer = buffer,
+      .offset = region_size,
+      .range = region_size,
    };
-   vkUpdateDescriptorSets(device, 1, &descriptor_write, 0, NULL);
+   VkWriteDescriptorSet const descriptor_writes[] = {
+      {
+         .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+         .dstSet = descriptor_set,
+         .dstBinding = 0,
+         .descriptorCount = 1,
+         .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+         .pImageInfo = &descriptor_image_info,
+      },
+      {
+         .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+         .dstSet = descriptor_set,
+         .dstBinding = 1,
+         .descriptorCount = 1,
+         .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+         .pBufferInfo = &descriptor_buffer_info,
+      },
+   };
+   vkUpdateDescriptorSets(device, 2, descriptor_writes, 0, NULL);
 
-   VkShaderModuleCreateInfo const shader_info = {
+   VkShaderModuleCreateInfo shader_info = {
       .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
       .codeSize = sizeof(formatless_store_spirv),
       .pCode = formatless_store_spirv,
    };
-   VkShaderModule shader;
-   CHECK_VK(vkCreateShaderModule(device, &shader_info, NULL, &shader));
-   VkComputePipelineCreateInfo const pipeline_info = {
+   VkShaderModule store_shader;
+   CHECK_VK(vkCreateShaderModule(device, &shader_info, NULL, &store_shader));
+   shader_info.codeSize = sizeof(formatless_load_spirv);
+   shader_info.pCode = formatless_load_spirv;
+   VkShaderModule load_shader;
+   CHECK_VK(vkCreateShaderModule(device, &shader_info, NULL, &load_shader));
+   VkComputePipelineCreateInfo pipeline_info = {
       .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
       .stage = {
          .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
          .stage = VK_SHADER_STAGE_COMPUTE_BIT,
-         .module = shader,
+         .module = store_shader,
          .pName = "main",
       },
       .layout = pipeline_layout,
    };
-   VkPipeline pipeline;
-   CHECK_VK(vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipeline_info, NULL, &pipeline));
+   VkPipeline store_pipeline;
+   CHECK_VK(vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipeline_info, NULL,
+                                     &store_pipeline));
+   pipeline_info.stage.module = load_shader;
+   VkPipeline load_pipeline;
+   CHECK_VK(vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipeline_info, NULL,
+                                     &load_pipeline));
 
    VkCommandPoolCreateInfo const command_pool_info = {
       .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
@@ -299,7 +346,7 @@ main(void)
    VkImageMemoryBarrier image_barrier = {
       .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
       .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-      .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+      .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
       .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
       .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
       .image = image,
@@ -308,14 +355,50 @@ main(void)
          .levelCount = 1,
          .layerCount = 1,
       },
-      .dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+      .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
    };
    vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1, &image_barrier);
+   VkBufferMemoryBarrier buffer_barrier = {
+      .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+      .srcAccessMask = VK_ACCESS_HOST_WRITE_BIT,
+      .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+      .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+      .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+      .buffer = buffer,
+      .offset = 0,
+      .size = region_size,
+   };
+   vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_HOST_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 1, &buffer_barrier, 0, NULL);
+   VkBufferImageCopy copy_region = {
+      .imageSubresource = {
+         .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+         .layerCount = 1,
+      },
+      .imageExtent = { WIDTH, HEIGHT, 1 },
+   };
+   vkCmdCopyBufferToImage(command_buffer, buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
+                          &copy_region);
+   image_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+   image_barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+   image_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+   image_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+   vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, NULL, 0, NULL, 1,
                         &image_barrier);
-   vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
    vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_layout, 0, 1,
                            &descriptor_set, 0, NULL);
+   vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, load_pipeline);
+   vkCmdDispatch(command_buffer, WIDTH, HEIGHT, 1);
+   image_barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+   image_barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+   image_barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+   image_barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+   vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, NULL, 0, NULL, 1,
+                        &image_barrier);
+   vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, store_pipeline);
    vkCmdDispatch(command_buffer, WIDTH, HEIGHT, 1);
    image_barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
    image_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
@@ -324,27 +407,16 @@ main(void)
    vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                         VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1,
                         &image_barrier);
-   VkBufferImageCopy const copy_region = {
-      .imageSubresource = {
-         .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-         .layerCount = 1,
-      },
-      .imageExtent = { WIDTH, HEIGHT, 1 },
-   };
    vkCmdCopyImageToBuffer(command_buffer, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, buffer, 1,
                           &copy_region);
-   VkBufferMemoryBarrier const buffer_barrier = {
-      .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-      .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+   VkMemoryBarrier const host_barrier = {
+      .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+      .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_SHADER_WRITE_BIT,
       .dstAccessMask = VK_ACCESS_HOST_READ_BIT,
-      .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-      .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-      .buffer = buffer,
-      .offset = 0,
-      .size = output_size,
    };
-   vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                        VK_PIPELINE_STAGE_HOST_BIT, 0, 0, NULL, 1, &buffer_barrier, 0, NULL);
+   vkCmdPipelineBarrier(command_buffer,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                        VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &host_barrier, 0, NULL, 0, NULL);
    CHECK_VK(vkEndCommandBuffer(command_buffer));
 
    VkFenceCreateInfo const fence_info = { .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
@@ -366,22 +438,30 @@ main(void)
    for (uint32_t i = 0; i < TEXEL_COUNT; ++i) {
       uint32_t const expected = 0xC0000000u ^ (i * 0x9E3779B9u);
       if (mapped[i] != expected) {
-         fprintf(stderr, "texel[%u] = 0x%08X, expected 0x%08X\n", i, mapped[i], expected);
+         fprintf(stderr, "store[%u] = 0x%08X, expected 0x%08X\n", i, mapped[i], expected);
+         pass = false;
+      }
+      uint32_t const load_expected = 0x13570000u ^ (i * 0x45D9F3Bu);
+      if (mapped[TEXEL_COUNT + i] != load_expected) {
+         fprintf(stderr, "load[%u] = 0x%08X, expected 0x%08X\n", i,
+                 mapped[TEXEL_COUNT + i], load_expected);
          pass = false;
       }
    }
    for (uint32_t i = 0; i < GUARD_DWORDS; ++i) {
-      if (mapped[TEXEL_COUNT + i] != GUARD_VALUE) {
+      if (mapped[2 * TEXEL_COUNT + i] != GUARD_VALUE) {
          fprintf(stderr, "guard[%u] = 0x%08X, expected 0x%08X\n", i,
-                 mapped[TEXEL_COUNT + i], GUARD_VALUE);
+                 mapped[2 * TEXEL_COUNT + i], GUARD_VALUE);
          pass = false;
       }
    }
 
    vkDestroyFence(device, fence, NULL);
    vkDestroyCommandPool(device, command_pool, NULL);
-   vkDestroyPipeline(device, pipeline, NULL);
-   vkDestroyShaderModule(device, shader, NULL);
+   vkDestroyPipeline(device, load_pipeline, NULL);
+   vkDestroyPipeline(device, store_pipeline, NULL);
+   vkDestroyShaderModule(device, load_shader, NULL);
+   vkDestroyShaderModule(device, store_shader, NULL);
    vkDestroyDescriptorPool(device, descriptor_pool, NULL);
    vkDestroyPipelineLayout(device, pipeline_layout, NULL);
    vkDestroyDescriptorSetLayout(device, set_layout, NULL);
@@ -394,7 +474,7 @@ main(void)
    vkDestroyDevice(device, NULL);
    vkDestroyInstance(instance, NULL);
 
-   printf("%s: %ux%u formatless R32_UINT image store with intact guards\n",
+   printf("%s: %ux%u formatless R32_UINT image load/store with intact guards\n",
           pass ? "PASS" : "FAIL", WIDTH, HEIGHT);
    return pass ? 0 : 1;
 }

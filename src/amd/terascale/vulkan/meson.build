@@ -578,11 +578,22 @@ if with_tests
         ],
         depfile : 'terakan_formatless_image_store.spv.h.d',
       )
+      terakan_formatless_image_load_spv = custom_target(
+        'terakan_formatless_image_load.spv.h',
+        input : 'tests/terakan_formatless_image_load.comp',
+        output : 'terakan_formatless_image_load.spv.h',
+        command : [
+          prog_glslang, '-V', '-x', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_formatless_image_load.spv.h.d',
+      )
       terakan_formatless_image_store_test = executable(
         'terakan_formatless_image_store_test',
         [
           'tests/terakan_formatless_image_store_test.c',
           terakan_formatless_image_store_spv,
+          terakan_formatless_image_load_spv,
         ],
         dependencies : vulkan_loader_dep,
       )
