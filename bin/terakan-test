@@ -52,6 +52,7 @@ gpu_tests=(
   terakan_bc6_cube_single_level_views
   terakan_bc6_array_view
   terakan_compute_loop
+  terakan_formatless_image_store
   terakan_physical_device_properties
 )
 meson test -C "$build_dir" --print-errorlogs "${gpu_tests[@]}"

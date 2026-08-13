@@ -567,6 +567,36 @@ if with_tests
         },
         timeout : 5,
       )
+
+      terakan_formatless_image_store_spv = custom_target(
+        'terakan_formatless_image_store.spv.h',
+        input : 'tests/terakan_formatless_image_store.comp',
+        output : 'terakan_formatless_image_store.spv.h',
+        command : [
+          prog_glslang, '-V', '-x', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_formatless_image_store.spv.h.d',
+      )
+      terakan_formatless_image_store_test = executable(
+        'terakan_formatless_image_store_test',
+        [
+          'tests/terakan_formatless_image_store_test.c',
+          terakan_formatless_image_store_spv,
+        ],
+        dependencies : vulkan_loader_dep,
+      )
+      test(
+        'terakan_formatless_image_store',
+        terakan_formatless_image_store_test,
+        depends : [libvulkan_terascale, _dev_icd],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 5,
+      )
     endif
 
     terakan_physical_device_properties_test = executable(

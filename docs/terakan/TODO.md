@@ -24,7 +24,7 @@ accept the work. Both use a 1–5 scale.
 | Enable tessellation control/evaluation shaders | 4/5 | 5/5 | Hardware-supported | Tessellation limits are reported from tested hardware behavior and representative pipelines pass |
 | Complete stream output / transform feedback | 4/5 | 4/5 | Hardware-supported | SFN receives NIR stream-output metadata and D3D11 stream-output workloads pass readback tests |
 | Complete storage-image/UAV format and atomic coverage | 4/5 | 4/5 | Mostly implementable; limited by hardware binding counts and formats | Every advertised storage-image format passes load, store and applicable integer-atomic tests |
-| Implement formatless storage-image reads/writes and multisample storage images | 4/5 | 4/5 | Implementable with format-aware lowering and RAT validation | Typed and formatless UAV loads/stores pass for every exposed format, including multisample cases before the feature bits are enabled |
+| Implement formatless storage-image reads and multisample storage images | 4/5 | 4/5 | Implementable with format-aware lowering and RAT validation; single-sample formatless writes now work | Typed and formatless UAV loads plus multisample loads/stores pass for every exposed format before the remaining feature bits are enabled |
 | Implement shader clip/cull distances | 4/5 | 3/5 | Hardware-supported; requires stage-interface and SFN export plumbing | Focused vertex/fragment clip and cull distance tests pass before `shaderClipDistance` and `shaderCullDistance` are enabled |
 | Implement extended image gather | 4/5 | 3/5 | Likely implementable through Evergreen texture instructions plus lowering | Component selection and constant/dynamic offset gather tests pass for all advertised sampled formats |
 | Implement vertex-pipeline stores and atomics | 4/5 | 4/5 | Hardware-supported with stage-specific RAT synchronization work | VS/GS/TES storage writes and applicable atomics pass readback and cross-stage visibility tests before exposure |
@@ -76,6 +76,9 @@ These are useful, but Vulkan 1.1 permits the corresponding feature bits to be
   kernel-informed VRAM/GTT budgets.
 - SSBO runtime-array length, writable-SSBO returning reads, compute image
   hazards and graphics/compute cache transition coverage.
+- Single-sample formatless storage-image writes: `R32_UINT` compute writes pass
+  exact 17x13 readback with intact guards, and
+  `shaderStorageImageWriteWithoutFormat` is now exposed.
 
 ## Completion policy
 

@@ -468,7 +468,11 @@ terakan_physical_device_get_capabilities(
    features_out->fragmentStoresAndAtomics = true;
    /* TODO(Triang3l): shaderTessellationAndGeometryPointSize. */
    /* TODO(Triang3l): Possibly shaderImageGatherExtended. */
-   /* TODO(Triang3l): Shader storage image format features. */
+   /* Image stores are lowered to typed RAT stores. The view descriptor supplies
+    * the format when SPIR-V declares the storage image without one.
+    */
+   features_out->shaderStorageImageWriteWithoutFormat = true;
+   /* TODO(Triang3l): Remaining shader storage image format features. */
    /* Shader binding array dynamic indexing is implemented in `terakan_nir_lower_bindings`. */
    features_out->shaderUniformBufferArrayDynamicIndexing = true;
    features_out->shaderSampledImageArrayDynamicIndexing = true;

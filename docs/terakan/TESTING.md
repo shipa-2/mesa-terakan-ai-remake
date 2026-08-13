@@ -167,13 +167,21 @@ The launcher follows its symbolic link back to this repository, delegates ICD
 selection and implicit-layer filtering to `bin/terakan-run`, and preserves
 Steam/Proton arguments without shell re-evaluation. If a sibling
 `../DXVK-Sarek/x64` build is present, it also prepends that directory to
-`WINEDLLPATH` and requests native `d3d11`, `d3d10`, `d3d10core` and `dxgi`.
+`WINEDLLPATH`, requests native `d3d11`, `d3d10`, `d3d10core` and `dxgi`, and
+temporarily links the available Sarek DLLs next to the Windows game executable.
+The adjacent links are removed when Proton exits. This last step is necessary
+because Proton refreshes its own PE DXVK DLLs in the prefix after the launcher
+starts; `WINEDLLPATH` alone does not override those files.
 Override it with `TERAKAN_DXVK_DIR`, pass `--dxvk-sarek DIR`, or disable DLL
 selection for a Vulkan-native game with:
 
 ```text
 steam-terakan-run --no-dxvk-sarek %command%
 ```
+
+The launcher never replaces an existing adjacent DLL. It exits with an error
+if the game directory already contains `dxgi.dll`, `d3d11.dll`, or
+`d3d10core.dll` from another override, or if the directory is not writable.
 
 `--install` creates a link in `~/.local/bin` and, when the user-owned legacy
 Steam runtime is present, in its `game-bin` directory too. Desktop-launched
@@ -203,6 +211,11 @@ Current focused game evidence:
   after fixing mipmapped cube/array slice layout.
 - Disco Elysium: the tested in-game scene renders correctly after descriptor,
   shader, copy, and graphics/compute state fixes.
+- Green Hell: D3D11 FL 11_1 device creation and a 1920x1080 three-image
+  swapchain succeed. The earlier generic "DirectX 11" dialog was caused by
+  `shaderStorageImageWriteWithoutFormat` being rejected during `vkCreateDevice`,
+  not by a missing DirectX installation. This is startup evidence, not yet a
+  claim that gameplay rendering is correct.
 - SuperTuxKart: useful as an exploratory Vulkan workload, but its Vulkan
   renderer is not treated as a conformance oracle and driver behavior must be
   confirmed with focused tests.

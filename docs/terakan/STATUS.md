@@ -10,7 +10,7 @@ is also verified on PALM/Wrestler (R8xx).
 | Vulkan instance/device discovery | AMD CAICOS (R9xx) and PALM/Wrestler (R8xx) Terakan devices, API 1.1.318 |
 | Properties and driver identity | `VK_KHR_driver_properties`; Terakan/Mesa identity; non-conformant version reported honestly |
 | VRAM reporting | `VK_EXT_memory_budget`; per-process heap usage plus kernel-reported global VRAM/GTT pressure |
-| Focused regression suite | 4/4 CPU and 7/7 CAICOS GPU tests pass; all 48 executed safe basic-compute CTS cases pass identically on CAICOS and PALM |
+| Focused regression suite | 4/4 CPU and 8/8 CAICOS GPU tests pass; all 48 executed safe basic-compute CTS cases pass identically on CAICOS and PALM |
 | Compute and subgroup behavior | SSBO, atomics, shared memory, conditional workgroup barriers, image access and indirect dispatch pass on R8xx and R9xx |
 | Draw state | `firstInstance` plus dynamic SSBO offsets pass; graphics/compute transitions preserve descriptors and draw state |
 | Events and sparse property queries | implemented and CAICOS-tested |
@@ -18,7 +18,7 @@ is also verified on PALM/Wrestler (R8xx).
 | BC6H cube/array sampling | 6 faces x 8 mip levels pass through cube, single-level and 2D-array views |
 | Color MSAA resolve | 2x, 4x, and 8x; full/partial, layers, RGBA/BGRA passed |
 | vkQuake3 | Vulkan renderer works in a 640x480 window |
-| DXVK-Sarek | D3D11 FL 11_1; Katamari display settings and tested Disco Elysium gameplay scene render correctly |
+| DXVK-Sarek | D3D11 FL 11_1; Katamari and tested Disco Elysium scenes render; Green Hell creates a 1920x1080 swapchain with Sarek |
 | Godot workloads | Hangover Gallery and Fused 240 render correctly in user testing; Buckshot Roulette remains visually corrupted |
 
 The BC6H regression test validates 48 independently addressed samples and has
@@ -26,6 +26,11 @@ a negative control that corrupts one expected value. The normal run reports
 zero mismatches; the corrupted oracle must fail. Its few values that differ
 from Mesa's software decoder were cross-checked against the upstream r600
 OpenGL driver on the same CAICOS hardware.
+
+The formatless storage-image regression dispatches a compute shader containing
+the SPIR-V `StorageImageWriteWithoutFormat` capability, reads back a 17x13
+`R32_UINT` image exactly, and checks untouched buffer guards. Formatless reads
+and multisample storage images remain disabled.
 
 ## Still experimental
 
