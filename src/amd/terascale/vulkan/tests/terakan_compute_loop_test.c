@@ -324,8 +324,19 @@ main(void)
    uint32_t const iteration_count = ITERATION_COUNT;
    vkCmdPushConstants(command_buffer, pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0,
                       sizeof(iteration_count), &iteration_count);
-   for (uint32_t dispatch_index = 0; dispatch_index < DISPATCH_COUNT; ++dispatch_index)
+   VkMemoryBarrier const inter_dispatch_barrier = {
+      .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+      .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+      .dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+   };
+   for (uint32_t dispatch_index = 0; dispatch_index < DISPATCH_COUNT; ++dispatch_index) {
       vkCmdDispatch(command_buffer, (dispatch_index & 1) ? 1 : 5, 1, 1);
+      if (dispatch_index + 1 < DISPATCH_COUNT) {
+         vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                              VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1,
+                              &inter_dispatch_barrier, 0, NULL, 0, NULL);
+      }
+   }
    VkMemoryBarrier const memory_barrier = {
       .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
       .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,

@@ -1,16 +1,17 @@
 # Terakan status
 
-Last updated: 2026-08-09. Target hardware: AMD CAICOS.
+Last updated: 2026-08-13. Primary target: AMD CAICOS (R9xx). Compute coverage
+is also verified on PALM/Wrestler (R8xx).
 
 ## Verified in the current development cycle
 
 | Area | Result |
 |---|---|
-| Vulkan instance/device discovery | AMD R8xx (CAICOS) Terakan device, API 1.1.318 |
+| Vulkan instance/device discovery | AMD CAICOS (R9xx) and PALM/Wrestler (R8xx) Terakan devices, API 1.1.318 |
 | Properties and driver identity | `VK_KHR_driver_properties`; Terakan/Mesa identity; non-conformant version reported honestly |
 | VRAM reporting | `VK_EXT_memory_budget`; per-process heap usage plus kernel-reported global VRAM/GTT pressure |
-| Focused regression suite | 4/4 CPU and 6/7 CAICOS GPU tests pass; 47/48 executed safe basic-compute CTS cases pass |
-| Compute and subgroup behavior | SSBO, atomics, shared memory, ordinary barriers, image access and indirect dispatch pass; conditional workgroup barrier remains broken |
+| Focused regression suite | 4/4 CPU and 7/7 CAICOS GPU tests pass; all 48 executed safe basic-compute CTS cases pass identically on CAICOS and PALM |
+| Compute and subgroup behavior | SSBO, atomics, shared memory, conditional workgroup barriers, image access and indirect dispatch pass on R8xx and R9xx |
 | Draw state | `firstInstance` plus dynamic SSBO offsets pass; graphics/compute transitions preserve descriptors and draw state |
 | Events and sparse property queries | implemented and CAICOS-tested |
 | Image copy and layout | layered buffer/image copies pass; mipmapped array storage uses hardware-compatible power-of-two slice padding |
@@ -35,10 +36,7 @@ OpenGL driver on the same CAICOS hardware.
 - Remaining resolve fallbacks for unusual formats and subresources.
 - Long-session stability and untested scenes in DXVK-Sarek games.
 - Full Vulkan 1.1 feature coverage and conformance testing.
-- SFN workgroup barriers nested in control flow (`branch_past_barrier`).
 - Complete `vkCmdDispatchBase` and `gl_DeviceIndex` semantics.
-- Correct the repeated-dispatch compute test by adding the missing memory
-  dependency, then investigate the Terakan/RADV difference using a valid oracle.
 - Vulkan conformance: Terakan is not a conformant implementation.
 
 The prioritized implementation order, complexity estimates, hardware

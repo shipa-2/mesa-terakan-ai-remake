@@ -924,7 +924,10 @@ terakan_gfx_command_writer_emit_event_write_eop_discarding_data(
    struct terakan_bo const * const gfx_discard_bo =
       terakan_gfx_command_writer_device(command_writer)->gfx_discard_bo;
    *packet++ = PKT3(PKT3_EVENT_WRITE_EOP, 5 - 1, 0) |
-               (command_writer->barrier_compute_mode_override ? TERAKAN_PACKET3_COMPUTE : 0);
+               ((command_writer->barrier_compute_mode_override ||
+                 command_writer->hw_config_shared.is_compute_active_)
+                   ? TERAKAN_PACKET3_COMPUTE
+                   : 0);
    *packet++ = event;
    uint32_t const * const packet_address = packet;
    *packet++ = (uint32_t)gfx_discard_bo->va;      /* ADDRESS_LO */

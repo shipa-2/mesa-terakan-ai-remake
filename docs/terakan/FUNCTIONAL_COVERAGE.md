@@ -1,6 +1,7 @@
 # Terakan functional coverage
 
-Last updated: 2026-08-09. Hardware under test: AMD CAICOS (`1002:6779`).
+Last updated: 2026-08-13. Hardware under test: AMD CAICOS (`1002:6779`, R9xx)
+and PALM/Wrestler (`1002:9807`, R8xx).
 Reference device: AMD Radeon RX 6800 XT using RADV.
 
 This document records the focused tests used while investigating Godot and
@@ -34,6 +35,15 @@ The current development cycle adds or changes the following behavior:
   positions, indexed and non-indexed triangle draws, a depth prepass, depth
   reuse, intervening depth targets and transfer-to-uniform synchronization;
 - the image-copy regression includes `R32_UINT` and full-size HDR/R32 paths.
+- compute wave allocation uses the SQ quad-pipe count with the two-pipe
+  Evergreen minimum rather than deriving it solely from render backends;
+- a reset command writer explicitly starts in graphics mode, preventing stale
+  recycled state from skipping the first graphics-to-compute transition;
+- SFN places a workgroup barrier in separate scheduling blocks. LDS operations
+  are still pseudo-instructions while dependency chains are created, so this
+  prevents the scheduler from moving the barrier before a preceding LDS write
+  or after a following LDS read, including inside dynamically uniform control
+  flow.
 
 ## Focused results
 
@@ -48,7 +58,7 @@ terakan_descriptor_buffer
 terakan_vertex_input
 ```
 
-Six of the seven CAICOS GPU tests pass:
+All seven CAICOS GPU tests pass:
 
 ```text
 terakan_image_array_copy
@@ -56,17 +66,15 @@ terakan_instance_dynamic_ssbo
 terakan_bc6_cube
 terakan_bc6_cube_single_level_views
 terakan_bc6_array_view
+terakan_compute_loop
 terakan_physical_device_properties
 ```
 
-`terakan_compute_loop` currently fails, but it is not a valid driver verdict.
-The test submits 12 dispatches that read and overwrite the same storage-buffer
-range without an inter-dispatch memory dependency. Its CPU oracle assumes that
-every dispatch observes the preceding write. A repeat on RADV also fails: RADV
-produces one visible transformation while Terakan leaves the initial values
-unchanged. Add a shader-write-to-shader-read barrier between dispatches and
-establish a passing RADV oracle before using this difference to diagnose
-Terakan.
+`terakan_compute_loop` now inserts a compute shader-write to shader-read/write
+dependency between its 12 dispatches. Its iterative CPU oracle passes on the
+RX 6800 XT with RADV and on both CAICOS and PALM with Terakan; guard regions
+also remain intact. The earlier failure was caused by the test omitting the
+Vulkan dependency while assuming every dispatch observed the preceding write.
 
 ### Vulkan CTS basic compute
 
@@ -74,14 +82,22 @@ A safe list of 77 `dEQP-VK.compute.pipeline.basic` cases produced:
 
 | Result | Count | Meaning |
 |---|---:|---|
-| Pass | 47 | Correct readback or CTS result |
-| Fail | 1 | `branch_past_barrier` |
+| Pass | 48 | Correct readback or CTS result |
+| Fail | 0 | No failures in the safe list |
 | NotSupported | 29 | Feature or queue not advertised |
 
-Among tests that actually execute, 47 of 48 pass (97.9%). SSBO reads and
+All 48 tests that actually execute pass. SSBO reads and
 writes, runtime arrays, atomics, shared variables, ordinary workgroup and
 command barriers, image load/store, compute/image transitions and
 `indirect_after_base_dispatch` pass.
+
+The same current development build was copied without recompilation to an
+R8xx PALM/Wrestler system and produced the identical `48 Pass / 0 Fail / 29
+NotSupported` result. This includes SSBO and UBO access, LDS/shared variables,
+shared atomics, command and workgroup barriers, storage images, large
+image/SSBO copies and indirect dispatch. The older system-installed Terakan
+build on PALM failed these paths, so results from that package are not
+representative of the current tree.
 
 The previous failures `write_ssbo_array` and `webgl_spirv_loop` now pass.
 
@@ -106,12 +122,13 @@ unadvertised.
 
 ### Confirmed failures
 
-`dEQP-VK.compute.pipeline.basic.branch_past_barrier` fails consistently. The
-first 128 invocations take divergent branches that do not reach the barrier
-and write correctly. All 128 values from the second workgroup, whose branch is
-uniform and contains a shared-memory `barrier()`, remain zero. The likely fault
-is SFN control-flow or workgroup-barrier emission when an earlier workgroup has
-divergent control flow.
+The previous state-dependent `branch_past_barrier` failure was traced to SFN
+scheduling rather than cross-dispatch hardware state. Before LDS pseudo-ops
+were split into ALU instructions, the dependency builder could not connect a
+barrier to the preceding write; the scheduler consequently moved
+`GROUP_BARRIER` to the start of the trigger shader. Separate scheduling blocks
+now preserve `LDS_WRITE -> GROUP_BARRIER -> LDS_READ`. The formerly failing
+two-test trigger and the complete safe list pass on both R8xx and R9xx.
 
 `dEQP-VK.compute.pipeline.device_group.dispatch_base` still fails. Terascale's
 `VGT_COMPUTE_START` does not directly provide Vulkan `DispatchBase` semantics,

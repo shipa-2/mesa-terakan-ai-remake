@@ -530,16 +530,15 @@ terakan_hw_config_shared_draw_emit_modified(struct terakan_gfx_command_writer * 
    struct terakan_hw_config_shared * const config = &command_writer->hw_config_shared;
 
    if (config->is_compute_active_) {
-      config->is_compute_active_ = false;
-
-      terakan_hw_config_shared_set_common_modified_for_draw_compute_switch(config);
-
       /* Flush before changing hardware resource allocation registers, as well as LS-related ones.
        * This also makes it possible not to do compute partial flushes before switching to compute
        * again later.
        */
       terakan_barrier_emit_actions_unconditionally(command_writer,
                                                    TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CS);
+
+      config->is_compute_active_ = false;
+      terakan_hw_config_shared_set_common_modified_for_draw_compute_switch(config);
 
       if (!terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_r9xx) {
          terakan_hw_config_shared_emit_config_register(
@@ -605,16 +604,15 @@ terakan_hw_config_shared_compute_emit_modified(
    struct terakan_hw_config_shared * const config = &command_writer->hw_config_shared;
 
    if (!config->is_compute_active_) {
-      config->is_compute_active_ = true;
-
-      terakan_hw_config_shared_set_common_modified_for_draw_compute_switch(config);
-
       /* Flush before changing hardware resource allocation registers, as well as LS-related ones.
        * This also makes it possible not to do graphics partial flushes before switching to graphics
        * again later.
        */
       terakan_barrier_emit_actions_unconditionally(
          command_writer, TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_PS);
+
+      config->is_compute_active_ = true;
+      terakan_hw_config_shared_set_common_modified_for_draw_compute_switch(config);
 
       if (!terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_r9xx) {
          terakan_hw_config_shared_emit_config_register(
@@ -659,6 +657,13 @@ void
 terakan_hw_config_shared_reset(struct terakan_hw_config_shared * const config,
                                struct terakan_physical_device_chip_info const * const chip_info)
 {
+   /* A freshly reset command writer starts in graphics mode. This must not be
+    * inherited from recycled command-buffer memory: the first compute
+    * dispatch relies on the graphics-to-compute transition to flush prior
+    * work and configure the LS/LDS resource allocation.
+    */
+   config->is_compute_active_ = false;
+
    /* No active VK_QUERY_TYPE_PIPELINE_STATISTICS or VK_QUERY_TYPE_TRANSFORM_FEEDBACK_STREAM_EXT */
    config->pipelinestat_streamoutstats_enable_ = false;
 

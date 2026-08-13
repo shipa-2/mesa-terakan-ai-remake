@@ -1600,11 +1600,17 @@ Shader::emit_shader_clock(nir_intrinsic_instr *instr)
 bool
 Shader::emit_group_barrier(nir_intrinsic_instr *intr)
 {
-   assert(m_control_flow_depth == 0);
    (void)intr;
+   /* LDS operations are still pseudo-instructions when instruction dependencies are built and
+    * are split into ALU operations only by the scheduler. Keep a workgroup barrier in separate
+    * blocks so the scheduler can't move it before a preceding LDS write or after a following LDS
+    * read. This is also required when the barrier is nested in dynamically uniform control flow.
+    */
+   start_new_block(0);
    auto op = new AluInstr(op0_group_barrier, 0);
    op->set_alu_flag(alu_last_instr);
    emit_instruction(op);
+   start_new_block(0);
    return true;
 }
 

@@ -1,6 +1,6 @@
 # Terakan development TODO
 
-Last updated: 2026-08-09. Primary target: stable game rendering on AMD
+Last updated: 2026-08-13. Primary target: stable game rendering on AMD
 CAICOS with DXVK-Sarek.
 
 Importance measures the expected effect on real games. Complexity includes
@@ -11,8 +11,6 @@ accept the work. Both use a 1–5 scale.
 
 | Work item | Importance | Complexity | Feasibility | Acceptance criteria |
 |---|---:|---:|---|---|
-| Fix workgroup barriers under divergent control flow | 5/5 | 4/5 | Implementable in NIR/SFN control-flow lowering | `dEQP-VK.compute.pipeline.basic.branch_past_barrier` passes and existing shared-memory tests remain green |
-| Repair the repeated-dispatch compute regression | 5/5 | 2/5 | Test correction is straightforward; driver impact is not known until the test has a valid memory dependency | Insert an inter-dispatch shader-write dependency, establish a passing RADV oracle, then require identical CAICOS readback and intact guard regions |
 | Complete depth/stencil resolve and layout transitions | 5/5 | 5/5 | Implementable, potentially through a transient color-compatible surface and depth-export shader | Depth and stencil readbacks pass for partial regions, mip levels, array layers and every advertised sample count |
 | Implement and validate FMASK/CMASK allocation, identity initialization and sampled MSAA addressing | 5/5 | 5/5 | Implementable; requires Evergreen tiling research | Per-sample reads and resolved reads pass for 2x/4x/8x images without corrupting ordinary color targets |
 | Complete cache and barrier coherency | 5/5 | 4/5 | Implementable | Focused attachment, texture, storage, transfer, graphics/compute and query producer-consumer chains pass without application-specific waits |
@@ -58,6 +56,14 @@ These are useful, but Vulkan 1.1 permits the corresponding feature bits to be
 
 ## Completed and regression-covered
 
+- R8xx PALM basic compute parity with R9xx CAICOS: the same safe CTS list
+  produces 48/48 executed passes on both generations.
+- Workgroup barriers nested in dynamically uniform control flow: SFN keeps
+  barriers in separate scheduling blocks, and `branch_past_barrier` plus the
+  preceding shared-memory trigger pass on R8xx and R9xx.
+- Repeated compute dispatch: the regression now contains the required
+  shader-write dependency and its iterative oracle passes on RADV, R9xx and
+  R8xx with intact guard regions.
 - Ordinary compute dispatch, loop constants and non-barrier shader control flow.
 - Singleton subgroup `BASIC` and `ARITHMETIC` lowering.
 - Dynamic SSBO offsets, `firstInstance` and graphics/compute state restoration.

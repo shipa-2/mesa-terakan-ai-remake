@@ -48,7 +48,12 @@ terakan_vk_pipeline_compute_num_waves(
    uint32_t const block_size_y, uint32_t const block_size_z)
 {
    uint32_t const group_size = block_size_x * block_size_y * block_size_z;
-   uint32_t const num_pipes = MAX2(1u, 1u << chip_info->max_render_backends_log2);
+   /* SQ_LDS_ALLOC.NUM_WAVES uses the SQ quad-pipe count, not the number of
+    * render backends. Every Evergreen or newer chip has at least two quad
+    * pipes (including Caicos, which has only one render backend). This is the
+    * same lower bound used by the r600 winsys for RADEON_INFO_MAX_PIPES.
+    */
+   uint32_t const num_pipes = MAX2(2u, 1u << chip_info->max_render_backends_log2);
    uint32_t const wave_divisor = 16 * num_pipes;
    return DIV_ROUND_UP(group_size, wave_divisor);
 }

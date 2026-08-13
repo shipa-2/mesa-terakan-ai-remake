@@ -27,7 +27,7 @@ This prevents a passing result from accidentally coming from RADV, llvmpipe,
 or the system Vulkan driver.
 
 On the current CAICOS test system the hardware report must identify an AMD
-R8xx/CAICOS Terakan device and Vulkan API 1.1. A different device name means
+R9xx/CAICOS Terakan device and Vulkan API 1.1. A different device name means
 that the intended ICD was not tested.
 
 The report also validates `VK_KHR_driver_properties`. `driverName` must be
@@ -88,6 +88,23 @@ meson test -C build-vulkan --print-errorlogs \
   terakan_bc6_array_view \
   terakan_compute_loop
 ```
+
+## Safe basic-compute CTS parity
+
+Run the Vulkan CTS binary from its Vulkan module directory so its Amber
+resources resolve. The three maximum-local-size cases remain excluded because
+they can lock up or lose the device on current hardware:
+
+```bash
+./deqp-vk \
+  --deqp-case='dEQP-VK.compute.pipeline.basic.*' \
+  --deqp-exclude-case='dEQP-VK.compute.pipeline.basic.max_local_size_x,dEQP-VK.compute.pipeline.basic.max_local_size_y,dEQP-VK.compute.pipeline.basic.max_local_size_z'
+```
+
+The 2026-08-13 current build produces the same result on CAICOS/R9xx and
+PALM/Wrestler/R8xx: 48 passed, 0 failed, 29 not supported. This includes the
+stateful `shared_var_multiple_groups` then `branch_past_barrier` sequence that
+previously exposed SFN moving `GROUP_BARRIER` before an LDS write.
 
 The BC6H test covers six cube faces across eight mip levels. It uploads every
 subresource, samples through cube/array views, copies the result back, and

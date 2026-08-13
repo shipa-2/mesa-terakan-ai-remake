@@ -322,7 +322,10 @@ terakan_barrier_emit_event_write(struct terakan_gfx_command_writer * const comma
       return;
    }
    *packet++ = PKT3(PKT3_EVENT_WRITE, 0, 0) |
-               (command_writer->barrier_compute_mode_override ? TERAKAN_PACKET3_COMPUTE : 0);
+               ((command_writer->barrier_compute_mode_override ||
+                 command_writer->hw_config_shared.is_compute_active_)
+                   ? TERAKAN_PACKET3_COMPUTE
+                   : 0);
    *packet++ = event;
    terakan_gfx_command_writer_emit_done(command_writer, packet);
 }
@@ -459,10 +462,12 @@ terakan_barrier_emit_pending_actions(struct terakan_gfx_command_writer * const c
       if (unlikely(surface_sync_packet == NULL)) {
          return;
       }
-      *surface_sync_packet++ = PKT3(PKT3_SURFACE_SYNC, 4 - 1, 0) |
-                               (command_writer->barrier_compute_mode_override
-                                   ? TERAKAN_PACKET3_COMPUTE
-                                   : 0);
+      *surface_sync_packet++ =
+         PKT3(PKT3_SURFACE_SYNC, 4 - 1, 0) |
+         ((command_writer->barrier_compute_mode_override ||
+           command_writer->hw_config_shared.is_compute_active_)
+             ? TERAKAN_PACKET3_COMPUTE
+             : 0);
       *surface_sync_packet++ = cp_coher_cntl | TERAKAN_BARRIER_SURFACE_SYNC_ENGINE_ME;
       *surface_sync_packet++ = UINT32_MAX;
       *surface_sync_packet++ = 0;
