@@ -183,11 +183,6 @@ The 21 replicated-composite cases, maintenance5, custom resolve and specialized
 queue topology are not Vulkan 1.1 or ordinary D3D11 game blockers. They should
 not displace the shader, UAV, MSAA and control-flow work above.
 
-Internal attachment clears are synchronized before application draws resume.
-This is required even without an application barrier because a render-pass
-load clear is part of the render operation itself; on CAICOS, omitting the
-internal CB/DB and PS completion actions reproducibly lost the first two draws.
-
 ## Application evidence
 
 User-observed testing after the compute, descriptor and synchronization work:

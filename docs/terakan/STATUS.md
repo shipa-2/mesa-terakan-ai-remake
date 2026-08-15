@@ -33,12 +33,6 @@ the SPIR-V `StorageImageReadWithoutFormat` and
 an independently generated write both produce exact 17x13 `R32_UINT` results,
 with untouched buffer guards. Multisample storage images remain disabled.
 
-Attachment clears now leave an explicit deferred graphics barrier after their
-internal meta draw. This closes a real TeraScale race where the first one or
-two application draws after a depth clear could run before the clear/state
-transition had drained. The dynamic SSBO/depth-reuse regression is stable for
-50 consecutive CAICOS processes after the fix (previously exactly 25 failed).
-
 ## Still experimental
 
 - Complete depth/stencil resolve semantics and layout transitions.

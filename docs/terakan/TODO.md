@@ -79,9 +79,6 @@ These are useful, but Vulkan 1.1 permits the corresponding feature bits to be
 - Single-sample formatless storage-image reads and writes: transfer-initialized
   reads and independently generated writes pass exact 17x13 `R32_UINT`
   readback with intact guards. Both corresponding feature bits are exposed.
-- Meta attachment clear ordering: color/depth clear draws defer the matching
-  CB/DB flush plus a PS partial flush before application rendering resumes. The
-  depth-reuse regression passes 50 consecutive CAICOS process runs.
 
 ## Completion policy
 
