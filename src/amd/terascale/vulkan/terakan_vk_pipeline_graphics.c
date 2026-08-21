@@ -936,6 +936,17 @@ terakan_vk_pipeline_graphics_cmd_bind(struct vk_command_buffer * const command_b
    struct terakan_vk_pipeline_graphics const * const pipeline =
       container_of(pipeline_base, struct terakan_vk_pipeline_graphics const, vk);
 
+   if (getenv("TERAKAN_DEBUG_GRAPHICS") != NULL) {
+      fprintf(stderr,
+              "[TERAKAN_GRAPHICS] bind command=%p pipeline=%p stages=0x%x vs_dwords=%u "
+              "fs_dwords=%u\n",
+              (void *)command_buffer, (void *)pipeline, pipeline->shader_stages,
+              pipeline->shaders[MESA_SHADER_VERTEX].shader.bc.ndw,
+              (pipeline->shader_stages & VK_SHADER_STAGE_FRAGMENT_BIT)
+                 ? pipeline->shaders[MESA_SHADER_FRAGMENT].shader.bc.ndw
+                 : 0);
+   }
+
    terakan_app_config_compute_clear_binding(&command_writer->app_config_compute);
 
    BITSET_COPY(command_buffer->graphics_state_is_dynamic, pipeline->dynamic_state);
@@ -983,7 +994,9 @@ terakan_vk_pipeline_graphics_cmd_bind(struct vk_command_buffer * const command_b
    terakan_vk_pipeline_graphics_multisample_apply(command_writer, &pipeline->multisample);
 
    terakan_app_config_draw_set_sq_pgm_fragment(
-      &command_writer->app_config_draw, pipeline->shader_stages & VK_SHADER_STAGE_FRAGMENT_BIT
+      &command_writer->app_config_draw,
+      (pipeline->shader_stages & VK_SHADER_STAGE_FRAGMENT_BIT) &&
+            !pipeline->diagnostic_skip_fragment
                                            ? &pipeline->shaders[MESA_SHADER_FRAGMENT]
                                            : NULL);
    terakan_vk_pipeline_graphics_fragment_shading_apply(command_writer, &pipeline->fragment_shading);
@@ -1152,6 +1165,25 @@ terakan_vk_pipeline_graphics_create(struct terakan_device * const device,
          vk_to_mesa_shader_stage((VkShaderStageFlagBits)BITFIELD_BIT(shader_stage_vk_bit_index));
       struct shader_create_data const * const shader_data = &shaders_create_data[shader_stage];
 
+      if (shader_stage == MESA_SHADER_FRAGMENT) {
+         char const * const skip_fragment_hash =
+            getenv("TERAKAN_DEBUG_SKIP_FRAGMENT_BLAKE3");
+         if (skip_fragment_hash != NULL && strlen(skip_fragment_hash) == BLAKE3_HEX_LEN - 1) {
+            blake3_hash spirv_hash;
+            char spirv_hash_hex[BLAKE3_HEX_LEN];
+            _mesa_blake3_compute(shader_data->spirv, shader_data->spirv_size_bytes, spirv_hash);
+            _mesa_blake3_format(spirv_hash_hex, spirv_hash);
+            pipeline->diagnostic_skip_fragment =
+               strcmp(skip_fragment_hash, spirv_hash_hex) == 0;
+            if (pipeline->diagnostic_skip_fragment) {
+               fprintf(stderr,
+                       "[TERAKAN_GRAPHICS] diagnostic fragment skip armed for SPIR-V "
+                       "BLAKE3 %s\n",
+                       spirv_hash_hex);
+            }
+         }
+      }
+
       char const * const dump_spirv_directory = getenv("TERAKAN_DEBUG_DUMP_GRAPHICS_SPIRV_DIR");
       if (unlikely(dump_spirv_directory != NULL && dump_spirv_directory[0] != '\0')) {
          blake3_hash spirv_blake3;
@@ -1196,10 +1228,31 @@ terakan_vk_pipeline_graphics_create(struct terakan_device * const device,
          shader_key.ps.nr_cbufs = util_bitcount(shader->fs.rtv_dsb_uncompacted_exports);
       }
 
+      if (getenv("TERAKAN_DEBUG_GRAPHICS") != NULL) {
+         fprintf(stderr, "[TERAKAN_GRAPHICS] nir pipeline=%p stage=%u name=%s\n",
+                 (void *)pipeline, (unsigned)shader_stage,
+                 nir->info.name != NULL ? nir->info.name : "unnamed");
+      }
+
       result = terakan_shader_impl_compile(shader, device, &shader_key, nir, allocator);
       ralloc_free(nir);
       if (result != VK_SUCCESS) {
          goto fail_shaders;
+      }
+      if (getenv("TERAKAN_DEBUG_GRAPHICS") != NULL) {
+         blake3_hash spirv_hash, machine_hash;
+         char spirv_hash_hex[BLAKE3_HEX_LEN], machine_hash_hex[BLAKE3_HEX_LEN];
+         _mesa_blake3_compute(shader_data->spirv, shader_data->spirv_size_bytes, spirv_hash);
+         _mesa_blake3_format(spirv_hash_hex, spirv_hash);
+         _mesa_blake3_compute(shader->shader.bc.bytecode,
+                              shader->shader.bc.ndw * sizeof(uint32_t), machine_hash);
+         _mesa_blake3_format(machine_hash_hex, machine_hash);
+         fprintf(stderr,
+                 "[TERAKAN_GRAPHICS] create pipeline=%p stage=%u spirv_bytes=%zu "
+                 "spirv_blake3=%s shader_dwords=%u gprs=%u stack=%u machine_blake3=%s\n",
+                 (void *)pipeline, (unsigned)shader_stage, shader_data->spirv_size_bytes,
+                 spirv_hash_hex, shader->shader.bc.ndw, shader->shader.bc.ngpr,
+                 shader->shader.bc.nstack, machine_hash_hex);
       }
       compiled_shader_stages |= BITFIELD_BIT(shader_stage_vk_bit_index);
    }

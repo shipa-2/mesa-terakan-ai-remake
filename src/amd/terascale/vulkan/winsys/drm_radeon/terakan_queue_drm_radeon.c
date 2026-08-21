@@ -27,6 +27,7 @@
 
 #include "util/macros.h"
 #include "util/u_debug.h"
+#include "util/os_time.h"
 #include "c99_alloca.h"
 #include "vk_alloc.h"
 #include "vk_log.h"
@@ -190,8 +191,17 @@ terakan_queue_drm_radeon_submit(
       fflush(stderr);
    }
 
+   bool const debug_submit_timing = debug_get_bool_option("TERAKAN_DEBUG_SUBMIT_TIMING", false);
+   int64_t const submit_begin_ns = debug_submit_timing ? os_time_get_nano() : 0;
    int const cs_result = drmCommandWriteRead(device->render_node_fd, DRM_RADEON_CS, &cs_arguments,
                                              sizeof(cs_arguments));
+   if (debug_submit_timing) {
+      fprintf(stderr,
+              "terakan/drm_radeon: SUBMIT_TIMING dwords=%" PRIu32 " bos=%" PRIu32
+              " duration_us=%" PRIi64 " result=%d\n",
+              indirect_buffer_size_dwords, bo_reference_count,
+              (os_time_get_nano() - submit_begin_ns) / 1000, cs_result);
+   }
 
    if (cs_result != 0) {
       if (cs_result == -ENOMEM) {

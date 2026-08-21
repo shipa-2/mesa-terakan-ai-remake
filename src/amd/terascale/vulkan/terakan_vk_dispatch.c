@@ -91,10 +91,12 @@ terakan_vk_cmd_dispatch(VkCommandBuffer const commandBuffer, uint32_t const grou
    }
    if (getenv("TERAKAN_DEBUG_SKIP_COMPUTE") != NULL ||
        command_writer->app_config_compute.diagnostic_skip_dispatch_) {
-      fprintf(stderr,
-              "[TERAKAN_COMPUTE] dispatch skipped by %s diagnostic option, groups=%u,%u,%u\n",
-              command_writer->app_config_compute.diagnostic_skip_dispatch_ ? "targeted" : "global",
-              groupCountX, groupCountY, groupCountZ);
+      if (getenv("TERAKAN_DEBUG_SKIP_COMPUTE_QUIET") == NULL) {
+         fprintf(stderr,
+                 "[TERAKAN_COMPUTE] dispatch skipped by %s diagnostic option, groups=%u,%u,%u\n",
+                 command_writer->app_config_compute.diagnostic_skip_dispatch_ ? "targeted" : "global",
+                 groupCountX, groupCountY, groupCountZ);
+      }
       return;
    }
 
@@ -189,11 +191,13 @@ terakan_CmdDispatchIndirect(VkCommandBuffer const commandBuffer, VkBuffer const 
    }
    if (getenv("TERAKAN_DEBUG_SKIP_COMPUTE") != NULL ||
        command_writer->app_config_compute.diagnostic_skip_dispatch_) {
-      fprintf(stderr,
-              "[TERAKAN_COMPUTE] dispatch_indirect skipped by %s diagnostic option, "
-              "groups=%u,%u,%u\n",
-              command_writer->app_config_compute.diagnostic_skip_dispatch_ ? "targeted" : "global",
-              grid_x, grid_y, grid_z);
+      if (getenv("TERAKAN_DEBUG_SKIP_COMPUTE_QUIET") == NULL) {
+         fprintf(stderr,
+                 "[TERAKAN_COMPUTE] dispatch_indirect skipped by %s diagnostic option, "
+                 "groups=%u,%u,%u\n",
+                 command_writer->app_config_compute.diagnostic_skip_dispatch_ ? "targeted" : "global",
+                 grid_x, grid_y, grid_z);
+      }
       return;
    }
 

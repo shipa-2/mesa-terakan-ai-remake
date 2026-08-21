@@ -39,6 +39,7 @@
 #include "gallium/include/pipe/p_shader_tokens.h"
 #include "gallium/include/pipe/p_state.h"
 #include "util/macros.h"
+#include "util/mesa-blake3.h"
 #include "amd_family.h"
 #include "nir.h"
 #include "vk_log.h"
@@ -46,6 +47,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <mutex>
 
@@ -175,6 +177,29 @@ terakan_shader_impl_compile(terakan_shader_impl * const shader, terakan_device *
               nir->info.name != nullptr ? nir->info.name : "unnamed");
       r600_bytecode_disasm(&shader->shader.bc);
       fprintf(stderr, "===== END TERAKAN COMPUTE BYTECODE =====\n");
+   }
+   char const * const graphics_machine_hash =
+      getenv("TERAKAN_DEBUG_DUMP_GRAPHICS_MACHINE_BLAKE3");
+   if (unlikely(graphics_machine_hash != nullptr &&
+                strlen(graphics_machine_hash) == BLAKE3_HEX_LEN - 1 &&
+                nir->info.stage == MESA_SHADER_FRAGMENT)) {
+      blake3_hash bytecode_hash;
+      char bytecode_hash_hex[BLAKE3_HEX_LEN];
+      _mesa_blake3_compute(shader->shader.bc.bytecode,
+                           shader->shader.bc.ndw * sizeof(uint32_t), bytecode_hash);
+      _mesa_blake3_format(bytecode_hash_hex, bytecode_hash);
+      if (!strcmp(graphics_machine_hash, bytecode_hash_hex)) {
+         static std::mutex graphics_disasm_mutex;
+         static bool graphics_disassembled = false;
+         std::lock_guard<std::mutex> const disasm_lock(graphics_disasm_mutex);
+         if (!graphics_disassembled) {
+            graphics_disassembled = true;
+            fprintf(stderr, "\n===== TERAKAN GRAPHICS BYTECODE %s =====\n",
+                    bytecode_hash_hex);
+            r600_bytecode_disasm(&shader->shader.bc);
+            fprintf(stderr, "===== END TERAKAN GRAPHICS BYTECODE =====\n");
+         }
+      }
    }
    /* Fill shader registers and other info. */
 

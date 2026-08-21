@@ -193,6 +193,7 @@ struct terakan_vk_pipeline_graphics {
 
    struct terakan_bo * shader_bo;
    VkShaderStageFlags shader_stages;
+   bool diagnostic_skip_fragment;
    struct terakan_shader_impl shaders[MESA_SHADER_FRAGMENT + 1];
 
    struct terakan_vk_pipeline_graphics_vertex_input vertex_input;
