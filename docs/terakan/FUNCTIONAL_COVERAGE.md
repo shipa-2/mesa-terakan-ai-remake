@@ -50,32 +50,32 @@ The current development cycle adds or changes the following behavior:
 ### Expanded safe CTS matrix
 
 An expanded CAICOS run on Vulkan CTS 1.4.6.1 completed 1071 unattended-safe
-cases outside the original basic-compute list. A follow-up clear batch completed
-65 more cases and stopped immediately when its first 3D case lost the device:
+cases outside the original basic-compute list. Follow-up fixes and reruns also
+covered the selected clear and basic copy/blit matrices:
 
 | Batch | Pass | Fail | NotSupported | Warning |
 |---|---:|---:|---:|---:|
 | info, version, smoke, command buffers and descriptors | 90 | 3 | 78 | 0 |
 | object lifetime, multithreading, buffer fill/update and pipeline lifetime | 433 | 0 | 269 | 3 |
-| basic image copy and blit | 60 | 100 | 35 | 0 |
-| selected clear operations, stopped on first device loss | 64 | 1 | 0 | 0 |
+| basic image copy and blit, after typed/mirrored blit fixes | 104 | 56 | 35 | 0 |
+| selected clear operations, after 3D descriptor fix | 281 | 180 | 444 | 0 |
 
-The API/property failures expose four actionable Vulkan 1.1 reporting gaps:
+The API/property run exposed four Vulkan 1.1 reporting gaps. Three are fixed:
 
-- `minInterpolationOffset` is reported as zero, outside the required limit;
-- `subPixelInterpolationOffsetBits` is reported as zero, below the required
-  minimum;
-- `VK_KHR_swapchain_mutable_format` is advertised without its required
-  dependency;
-- `multiview` is not exposed even though CTS requires it for the reported
+- interpolation offset range and precision are now reported correctly;
+- `VK_KHR_image_format_list`, required by the advertised
+  `VK_KHR_swapchain_mutable_format`, is now exposed;
+- `multiview` remains unexposed even though CTS requires it for the reported
   Vulkan 1.1 API version.
 
 All 46 basic `image_to_image` cases, including partial, NPOT, linear, general,
-depth and stencil variants, pass. In contrast, 100 of the 149 executed basic
-blit cases fail readback. The failures cluster around `R32_SFLOAT`,
-`B8G8R8A8_UNORM`, mirrored coordinates and 3D blits.
+depth and stencil variants, pass. The typed and mirrored 2D blit failures were
+caused by using `CopyImage` for format-converting or mirrored operations and by
+discarding the sign of mirrored coordinate transforms. After fixing those
+paths, 58 of 149 blit cases pass, 56 fail and 35 are unsupported. The remaining
+failures are concentrated in 3D blits.
 
-The selected clear batch passed its first 64 1D and 2D color cases, then
+The initial selected clear batch passed its first 64 1D and 2D color cases, then
 `dEQP-VK.api.image_clearing.core.clear_color_image.3d.optimal.single_layer.r8g8b8a8_unorm`
 returned `VK_ERROR_DEVICE_LOST`. The kernel rejected the command stream with:
 
@@ -84,10 +84,11 @@ evergreen_cs_track_validate_texture: mipmap bo base 4793344 not aligned with 409
 [drm:radeon_cs_ioctl [radeon]] *ERROR* Invalid command stream !
 ```
 
-Do not include 3D clear/image cases in unattended matrices until Terakan aligns
-the 3D mip base and descriptor addresses accepted by the radeon kernel command
-stream validator. The device remained usable for the property regression after
-this rejection, but that does not make the case safe for repeated execution.
+The fix aligns the separately addressed 3D mip chain and uses each origin mip
+level's actual array mode in its resource descriptor. The formerly fatal case
+and the full selected color-clear matrix now pass without device loss. The 180
+remaining clear failures are depth/stencil subresource and partial-attachment
+semantics, not command-stream rejection.
 
 ### Local Terakan suite
 

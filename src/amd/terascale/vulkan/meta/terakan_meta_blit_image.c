@@ -260,30 +260,16 @@ terakan_meta_blit_region_scale_off(int32_t const src0, int32_t const src1, int32
                                    int32_t const dst1, float * const scale_out,
                                    float * const off_out)
 {
-   int32_t norm_src0 = src0;
-   int32_t norm_src1 = src1;
-   int32_t norm_dst0 = dst0;
-   int32_t norm_dst1 = dst1;
-
-   if (norm_dst0 > norm_dst1) {
-      norm_dst0 = dst1;
-      norm_dst1 = dst0;
-      norm_src0 = src1;
-      norm_src1 = src0;
-   } else if (norm_src0 > norm_src1) {
-      norm_src0 = src1;
-      norm_src1 = src0;
-   }
-
-   float const src_size = (float)(norm_src1 - norm_src0);
-   float const dst_size = (float)(norm_dst1 - norm_dst0);
+   float const src_size = (float)(src1 - src0);
+   float const dst_size = (float)(dst1 - dst0);
 
    *scale_out = src_size / dst_size;
-   *off_out = (float)norm_src0 - (float)norm_dst0 * (*scale_out);
+   *off_out = (float)src0 - (float)dst0 * (*scale_out);
 }
 
 static bool
-terakan_meta_blit_region_to_copy(VkImageBlit2 const * const blit, VkImageCopy2 * const copy_out)
+terakan_meta_blit_region_to_copy(VkImageBlit2 const * const blit, bool const formats_identical,
+                                 VkImageCopy2 * const copy_out)
 {
    int32_t const src_x0 = blit->srcOffsets[0].x;
    int32_t const src_x1 = blit->srcOffsets[1].x;
@@ -311,7 +297,17 @@ terakan_meta_blit_region_to_copy(VkImageBlit2 const * const blit, VkImageCopy2 *
       return false;
    }
 
-   if (src_width != dst_width || src_height != dst_height || src_depth != dst_depth) {
+   if (!formats_identical || src_width != dst_width || src_height != dst_height ||
+       src_depth != dst_depth) {
+      return false;
+   }
+
+   /* CopyImage cannot mirror. Preserve any reversed source or destination axis for the sampled
+    * blit path, where the signed coordinate transform performs the reflection.
+    */
+   if ((src_x1 - src_x0 < 0) != (dst_x1 - dst_x0 < 0) ||
+       (src_y1 - src_y0 < 0) != (dst_y1 - dst_y0 < 0) ||
+       (src_z1 - src_z0 < 0) != (dst_z1 - dst_z0 < 0)) {
       return false;
    }
 
@@ -370,17 +366,13 @@ terakan_meta_blit_image_region_draw(struct terakan_gfx_command_writer * const co
    u_foreach_bit (dst_vk_aspect_bit_index, region->dstSubresource.aspectMask) {
       dst_descriptor_create_info.image_aspect_index = terakan_format_aspect_index(
          dst_image->format_info.aspect_map, (VkImageAspectFlags)1 << dst_vk_aspect_bit_index, 0);
-      dst_descriptor_create_info.view_format = terakan_meta_transfer_image_block_format_info(
-         terascale_format_bytes_per_block
-            [dst_image->format_info.aspect_formats[dst_descriptor_create_info.image_aspect_index]
-                .format]);
+      dst_descriptor_create_info.view_format =
+         dst_image->format_info.aspect_formats[dst_descriptor_create_info.image_aspect_index];
       src_descriptor_create_info.image_aspect_index = terakan_format_aspect_index(
          src_image->format_info.aspect_map,
          (VkImageAspectFlags)1 << u_bit_scan(&src_vk_aspect_mask_remaining), 0);
-      src_descriptor_create_info.view_format = terakan_meta_transfer_image_block_format_info(
-         terascale_format_bytes_per_block
-            [src_image->format_info.aspect_formats[src_descriptor_create_info.image_aspect_index]
-                .format]);
+      src_descriptor_create_info.view_format =
+         src_image->format_info.aspect_formats[src_descriptor_create_info.image_aspect_index];
 
       dst_descriptor_create_info.subresource_range.base_mip_level = region->dstSubresource.mipLevel;
       dst_descriptor_create_info.subresource_range.max_level_count = 1;
@@ -491,6 +483,11 @@ terakan_CmdBlitImage2(VkCommandBuffer const commandBuffer,
 {
    struct terakan_gfx_command_writer * const command_writer =
       terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx;
+   struct terakan_image const * const src_image =
+      terakan_image_from_handle(pBlitImageInfo->srcImage);
+   struct terakan_image const * const dst_image =
+      terakan_image_from_handle(pBlitImageInfo->dstImage);
+   bool const formats_identical = src_image->vk.format == dst_image->vk.format;
 
    if (getenv("TERAKAN_DEBUG_IMAGE_OPS") != NULL) {
       static unsigned blit_call_count;
@@ -516,6 +513,7 @@ terakan_CmdBlitImage2(VkCommandBuffer const commandBuffer,
 
       for (uint32_t region_index = 0; region_index < pBlitImageInfo->regionCount; ++region_index) {
          if (terakan_meta_blit_region_to_copy(&pBlitImageInfo->pRegions[region_index],
+                                              formats_identical,
                                               &copies[copy_count])) {
             copy_count++;
          }
@@ -546,7 +544,7 @@ terakan_CmdBlitImage2(VkCommandBuffer const commandBuffer,
    for (uint32_t region_index = 0; region_index < pBlitImageInfo->regionCount; ++region_index) {
       VkImageBlit2 const * const region = &pBlitImageInfo->pRegions[region_index];
 
-      if (terakan_meta_blit_region_to_copy(region, &copies[copy_count])) {
+      if (terakan_meta_blit_region_to_copy(region, formats_identical, &copies[copy_count])) {
          copy_count++;
       } else {
          has_scaled_regions = true;
@@ -557,8 +555,6 @@ terakan_CmdBlitImage2(VkCommandBuffer const commandBuffer,
    }
 
    if (has_scaled_regions) {
-      struct terakan_image const * const src_image =
-         terakan_image_from_handle(pBlitImageInfo->srcImage);
       if (!command_writer->meta_blit_draw_session_active) {
          terakan_meta_blit_emit_pre_draw_barriers(command_writer, same_image_scaled);
 
@@ -579,7 +575,7 @@ terakan_CmdBlitImage2(VkCommandBuffer const commandBuffer,
       for (uint32_t region_index = 0; region_index < pBlitImageInfo->regionCount; ++region_index) {
          VkImageBlit2 const * const region = &pBlitImageInfo->pRegions[region_index];
 
-         if (terakan_meta_blit_region_to_copy(region, &copies[0])) {
+         if (terakan_meta_blit_region_to_copy(region, formats_identical, &copies[0])) {
             continue;
          }
 

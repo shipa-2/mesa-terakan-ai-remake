@@ -239,17 +239,10 @@ unsupported capability breakdown and known failing cases are maintained in
 the three `max_local_size_*` cases in unattended runs until their previous GPU
 lockup has been diagnosed.
 
-The expanded 2026-08-22 CAICOS matrix established an additional hard denylist
-entry:
-
-```text
-dEQP-VK.api.image_clearing.core.clear_color_image.3d.*
-```
-
-The first optimal `R8G8B8A8_UNORM` case was rejected by the radeon kernel
-command stream validator because its mipmap BO base was not 4096-byte aligned,
-and CTS reported `VK_ERROR_DEVICE_LOST`. Exclude all 3D clear/image variants
-from unattended runs until the image allocation and texture descriptor path is
-fixed. Use `--deqp-watchdog=enable`,
+The 2026-08-22 CAICOS run initially found that the first optimal 3D
+`R8G8B8A8_UNORM` clear was rejected by the radeon kernel because its mipmap BO
+base was not 4096-byte aligned. The image allocation and per-mip descriptor
+array-mode path has since been fixed; that case and the selected color-clear
+matrix now run without device loss. Keep using `--deqp-watchdog=enable`,
 `--deqp-terminate-on-device-lost=enable` and an external process timeout for
 every newly expanded batch.
