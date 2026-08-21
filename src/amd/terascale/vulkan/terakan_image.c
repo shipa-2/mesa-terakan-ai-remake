@@ -690,6 +690,14 @@ terakan_image_surface_aspect_compute(VkImageCreateInfo const * const image_creat
    for (uint32_t level_index = 0; level_index < image_create_info->mipLevels; ++level_index) {
       struct terakan_image_surface_level * const level = &surface_aspect_out->levels[level_index];
 
+      /* For 3D textures, SQ_RESOURCE_WORD3.MIP_ADDRESS points to level 1. DRM Radeon requires this
+       * independently addressed mip chain to start at a 4096-byte boundary.
+       */
+      if (image_create_info->imageType == VK_IMAGE_TYPE_3D && level_index == 1) {
+         level_offset_in_aspect_bytes_shr8 =
+            ALIGN_POT(level_offset_in_aspect_bytes_shr8, 4096u >> 8);
+      }
+
       /* Aspect offset in memory will be added later. */
       level->offset_in_memory_bytes_shr8 = level_offset_in_aspect_bytes_shr8;
 
@@ -823,6 +831,15 @@ terakan_image_surface_aspect_compute(VkImageCreateInfo const * const image_creat
 
       level_offset_in_aspect_bytes_shr8 +=
          level->slice_size_bytes_shr8 * level->aligned_extent_surfels[2];
+   }
+
+   /* DRM Radeon validates both the base and the mipmap address of 3D texture resources at the
+    * page granularity. A merely pipe-interleave-aligned memory binding can therefore make an
+    * otherwise valid descriptor fail evergreen_cs_track_validate_texture before execution.
+    */
+   if (image_create_info->imageType == VK_IMAGE_TYPE_3D) {
+      surface_aspect_out->alignment_bytes_shr8 =
+         MAX2(surface_aspect_out->alignment_bytes_shr8, 4096u >> 8);
    }
 
    uint32_t const aspect_offset_in_memory_bytes_shr8 =
@@ -1113,6 +1130,20 @@ terakan_BindImageMemory2(UNUSED VkDevice const device, uint32_t const bindInfoCo
       struct terakan_image * const image = terakan_image_from_handle(bind_info->image);
       image->bo = terakan_device_memory_from_handle(bind_info->memory)->bo;
       image->va = image->bo->va + bind_info->memoryOffset;
+      if (unlikely(getenv("TERAKAN_DEBUG_IMAGE_BIND") != NULL)) {
+         fprintf(stderr,
+                 "[TERAKAN_IMAGE] bind type=%u extent=%ux%ux%u levels=%u memory_offset=%" PRIu64
+                 " alignment=%u aspect_offset=%u level0_offset=%u level1_offset=%u\n",
+                 image->vk.image_type, image->vk.extent.width, image->vk.extent.height,
+                 image->vk.extent.depth, image->vk.mip_levels, bind_info->memoryOffset,
+                 image->surface.alignment_bytes_shr8 << 8,
+                 image->surface.aspects[0].offset_in_memory_bytes_shr8 << 8,
+                 image->surface.aspects[0].levels[0].offset_in_memory_bytes_shr8 << 8,
+                 image->surface.aspects[0]
+                       .levels[MIN2(image->vk.mip_levels - 1u, 1u)]
+                       .offset_in_memory_bytes_shr8
+                    << 8);
+      }
    }
 
    return VK_SUCCESS;
@@ -1451,7 +1482,7 @@ terakan_image_create_resource_descriptor(
       S_030000_PITCH(descriptor_pitch_texels / 8 - 1) | S_030000_TEX_WIDTH(descriptor_width - 1);
    descriptor_out->resource[1] = S_030004_TEX_HEIGHT(descriptor_height - 1) |
                                  S_030004_TEX_DEPTH(descriptor_depth_or_array_layers - 1) |
-                                 S_030004_ARRAY_MODE(surface_aspect->levels[0].array_mode);
+                                 S_030004_ARRAY_MODE(surface_origin_level->array_mode);
    descriptor_out->resource[2] = image_va_shr8 + surface_aspect->offset_in_memory_bytes_shr8;
    descriptor_out->resource[4] =
       S_030010_FORMAT_COMP_X(view_format.channels_signed & (1u << 0)
@@ -1546,6 +1577,15 @@ terakan_image_create_resource_descriptor(
        */
       descriptor_out->resource[6] |= S_030018_MAX_ANISO_RATIO(
          descriptor_create_info->subresource_range.max_level_count > 1 ? 4 : 0);
+   }
+   if (unlikely(getenv("TERAKAN_DEBUG_IMAGE_BIND") != NULL)) {
+      fprintf(stderr,
+              "[TERAKAN_IMAGE] resource type=%u desired_dim=%u hw_dim=%u base_level=%u levels=%u "
+              "word2=0x%08x word3=0x%08x\n",
+              image->vk.image_type, desired_dimensionality, hw_dimensionality,
+              descriptor_create_info->subresource_range.base_mip_level,
+              descriptor_create_info->subresource_range.max_level_count,
+              descriptor_out->resource[2], descriptor_out->resource[3]);
    }
    return true;
 }

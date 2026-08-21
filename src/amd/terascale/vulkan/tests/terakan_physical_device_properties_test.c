@@ -92,6 +92,7 @@ main(void)
    VkInstance instance = VK_NULL_HANDLE;
    VkDevice device = VK_NULL_HANDLE;
    VkDeviceMemory budget_test_memory = VK_NULL_HANDLE;
+   VkImage image_3d = VK_NULL_HANDLE;
    VkImage msaa_images[4] = {VK_NULL_HANDLE};
    VkDeviceMemory msaa_memory[4] = {VK_NULL_HANDLE};
    VkCommandPool command_pool = VK_NULL_HANDLE;
@@ -143,7 +144,11 @@ main(void)
 
    TEST_CHECK(VK_API_VERSION_MAJOR(legacy_properties.apiVersion) == 1);
    TEST_CHECK(VK_API_VERSION_MINOR(legacy_properties.apiVersion) >= 1);
+   TEST_CHECK(legacy_properties.limits.minInterpolationOffset == -0.5f);
+   TEST_CHECK(legacy_properties.limits.maxInterpolationOffset == 0.4375f);
+   TEST_CHECK(legacy_properties.limits.subPixelInterpolationOffsetBits == 4);
    TEST_CHECK(bytes_are_nonzero(legacy_properties.pipelineCacheUUID, VK_UUID_SIZE));
+   TEST_CHECK(has_device_extension(physical_device, VK_KHR_IMAGE_FORMAT_LIST_EXTENSION_NAME));
    TEST_CHECK(has_device_extension(physical_device, VK_KHR_MAINTENANCE_3_EXTENSION_NAME));
    TEST_CHECK(has_device_extension(physical_device, VK_KHR_DRIVER_PROPERTIES_EXTENSION_NAME));
    TEST_CHECK(has_device_extension(physical_device, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME));
@@ -344,6 +349,24 @@ main(void)
    };
    TEST_CHECK(vkCreateDevice(physical_device, &device_create_info, NULL, &device) == VK_SUCCESS);
 
+   VkImageCreateInfo const image_3d_create_info = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+      .imageType = VK_IMAGE_TYPE_3D,
+      .format = VK_FORMAT_R8G8B8A8_UNORM,
+      .extent = {64, 64, 8},
+      .mipLevels = 1,
+      .arrayLayers = 1,
+      .samples = VK_SAMPLE_COUNT_1_BIT,
+      .tiling = VK_IMAGE_TILING_OPTIMAL,
+      .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+      .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+      .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+   };
+   TEST_CHECK(vkCreateImage(device, &image_3d_create_info, NULL, &image_3d) == VK_SUCCESS);
+   VkMemoryRequirements image_3d_memory_requirements;
+   vkGetImageMemoryRequirements(device, image_3d, &image_3d_memory_requirements);
+   TEST_CHECK(image_3d_memory_requirements.alignment >= 4096);
+
    VkSampleCountFlagBits const sample_counts[] = {
       VK_SAMPLE_COUNT_1_BIT,
       VK_SAMPLE_COUNT_2_BIT,
@@ -500,6 +523,7 @@ main(void)
    printf("[PASS] 2x/4x/8x color images reserve FMASK/CMASK memory\n");
    printf("[PASS] 2x/4x/8x FMASK identity and CMASK initialization submission\n");
    printf("[PASS] incomplete depth/stencil resolve and dynamic rendering remain hidden\n");
+   printf("[PASS] 3D image memory bindings are page-aligned for radeon CS validation\n");
    printf("memoryBudget heap=%" PRIu32 " before=%" PRIu64 " allocated=%" PRIu64
           " freed=%" PRIu64 " budget=%" PRIu64 "\n",
           budget_test_heap, usage_before, memory_budget_allocated.heapUsage[budget_test_heap],
@@ -522,6 +546,8 @@ main(void)
 
 out:
    if (device != VK_NULL_HANDLE) {
+      if (image_3d != VK_NULL_HANDLE)
+         vkDestroyImage(device, image_3d, NULL);
       if (metadata_fence != VK_NULL_HANDLE)
          vkDestroyFence(device, metadata_fence, NULL);
       if (command_pool != VK_NULL_HANDLE)

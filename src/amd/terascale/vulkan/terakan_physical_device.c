@@ -754,7 +754,10 @@ terakan_physical_device_get_capabilities(
     * research the range given that the offsets come from a GPR vector).
     */
 
-   /* TODO(Triang3l): Interpolation offset properties when sample-rate shading is enabled. */
+   /* Evergreen interpolation offsets use 4 fractional bits in the range required by Vulkan. */
+   properties_out->minInterpolationOffset = -0.5f;
+   properties_out->maxInterpolationOffset = 0.4375f;
+   properties_out->subPixelInterpolationOffsetBits = 4;
 
    properties_out->maxFramebufferWidth = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT;
    properties_out->maxFramebufferHeight = TERAKAN_IMAGE_MAX_WIDTH_HEIGHT;
@@ -984,6 +987,10 @@ terakan_physical_device_get_capabilities(
 
    /* Mesa WSI. */
 #ifdef TERAKAN_USE_WSI_PLATFORM
+   /* Required by VK_KHR_swapchain_mutable_format. Image view compatibility is already handled by
+    * the common Vulkan image format list helpers and Terakan's format compatibility checks.
+    */
+   extensions_out->KHR_image_format_list = true;
    extensions_out->KHR_swapchain = true;
    extensions_out->KHR_swapchain_mutable_format = true;
 #endif
