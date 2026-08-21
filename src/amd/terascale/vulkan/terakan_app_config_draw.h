@@ -1369,7 +1369,8 @@ terakan_app_config_draw_set_cb_blend_constants(struct terakan_app_config_draw * 
 
 struct terakan_gfx_command_writer;
 
-void terakan_app_config_draw_apply_pending(struct terakan_gfx_command_writer * command_writer);
+void terakan_app_config_draw_apply_pending(struct terakan_gfx_command_writer * command_writer,
+                                           bool for_compute);
 
 void terakan_app_config_draw_restore_cb_state_after_compute(
    struct terakan_gfx_command_writer * command_writer);

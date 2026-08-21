@@ -98,34 +98,31 @@ terakan_vk_cmd_dispatch(VkCommandBuffer const commandBuffer, uint32_t const grou
       return;
    }
 
-   /* Flush CB UAV data and CS state before dispatch so compute shader can read previous writes. */
-   command_writer->barrier_compute_mode_override = true;
-   terakan_barrier_emit_actions_unconditionally(
-      command_writer,
-      TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_UAV | TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_PS |
-         TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CS);
-   command_writer->barrier_compute_mode_override = false;
+   if (getenv("TERAKAN_DEBUG_COMPUTE_SWITCH_ONLY") != NULL) {
+      terakan_gfx_command_writer_split_for_draw_compute_switch(command_writer, true);
+      terakan_hw_config_shared_compute_emit_modified(command_writer);
+      return;
+   }
 
    terakan_push_constants_set_num_workgroups(command_writer, groupCountX, groupCountY,
                                               groupCountZ);
    terakan_push_constants_set_base_workgroup(command_writer, baseGroupX, baseGroupY, baseGroupZ);
    terakan_gfx_command_writer_before_app_dispatch(command_writer);
+   /* Diagnostic: exercise the complete graphics-to-compute state transition and descriptor
+    * programming, but omit execution. Unlike TERAKAN_DEBUG_SKIP_COMPUTE this isolates transition
+    * corruption from shader execution and storage writes. */
+   if (getenv("TERAKAN_DEBUG_SKIP_COMPUTE_EXECUTE") != NULL) {
+      terakan_app_config_draw_restore_cb_state_after_compute(command_writer);
+      return;
+   }
    /* Vulkan base group coordinates are added by the shader from driver constants. Keep the
     * hardware start at zero because Terascale's START semantics don't implement DispatchBase.
     */
    terakan_vk_emit_dispatch_start(command_writer, 0, 0, 0);
    terakan_vk_emit_dispatch_direct(command_writer, groupCountX, groupCountY, groupCountZ);
 
-   /* Compute storage writes go through the CB UAV path. Before any later consumer
-    * reads them (notably vertex fetch after a skinning dispatch), wait for CS,
-    * write back and invalidate the UAV cache, and invalidate all shader/fetch
-    * read caches. Keep this pending so consecutive dispatches may coalesce it
-    * with the pre-dispatch barrier of the next dispatch.
-    */
-   command_writer->pending_barrier_actions |=
-      TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CS | TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_UAV |
-      TERAKAN_BARRIER_ACTION_INV_TC | TERAKAN_BARRIER_ACTION_INV_VC |
-      TERAKAN_BARRIER_ACTION_INV_SH;
+   /* Inter-dispatch visibility is requested by vkCmdPipelineBarrier. Switching back to graphics
+    * performs a conservative RAT flush in split_for_draw_compute_switch. */
    terakan_app_config_draw_restore_cb_state_after_compute(command_writer);
 }
 
@@ -200,28 +197,27 @@ terakan_CmdDispatchIndirect(VkCommandBuffer const commandBuffer, VkBuffer const 
       return;
    }
 
+
+   if (getenv("TERAKAN_DEBUG_COMPUTE_SWITCH_ONLY") != NULL) {
+      terakan_gfx_command_writer_split_for_draw_compute_switch(command_writer, true);
+      terakan_hw_config_shared_compute_emit_modified(command_writer);
+      return;
+   }
+
    if (grid_x == 0 || grid_y == 0 || grid_z == 0) {
       return;
    }
 
-   /* Flush CB UAV data and CS state before dispatch so compute shader can read previous writes. */
-   terakan_barrier_emit_actions_unconditionally(
-      command_writer,
-      TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_UAV | TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_PS |
-         TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CS);
-
    terakan_push_constants_set_num_workgroups(command_writer, grid_x, grid_y, grid_z);
    terakan_push_constants_set_base_workgroup(command_writer, 0, 0, 0);
    terakan_gfx_command_writer_before_app_dispatch(command_writer);
+   if (getenv("TERAKAN_DEBUG_SKIP_COMPUTE_EXECUTE") != NULL) {
+      terakan_app_config_draw_restore_cb_state_after_compute(command_writer);
+      return;
+   }
    terakan_vk_emit_dispatch_start(command_writer, 0, 0, 0);
    terakan_vk_emit_dispatch_direct(command_writer, grid_x, grid_y, grid_z);
 
-   /* See the direct-dispatch path above: make UAV writes available before a
-    * later shader or vertex-fetch consumer.
-    */
-   command_writer->pending_barrier_actions |=
-      TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CS | TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_UAV |
-      TERAKAN_BARRIER_ACTION_INV_TC | TERAKAN_BARRIER_ACTION_INV_VC |
-      TERAKAN_BARRIER_ACTION_INV_SH;
+   /* See the direct-dispatch path above for visibility handling. */
    terakan_app_config_draw_restore_cb_state_after_compute(command_writer);
 }

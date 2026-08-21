@@ -772,6 +772,7 @@ terakan_gfx_command_writer_emit_with_bo(struct terakan_gfx_command_writer * cons
       terakan_gfx_command_writer_emit_preamble(command_writer);
 
       command_writer->hw_config_draw_initialized_in_indirect_buffer = false;
+      command_writer->hw_config_compute_initialized_in_indirect_buffer = false;
       command_writer->hw_config_sqk_initialized_in_indirect_buffer = false;
 
       terakan_hw_config_shared_indirect_buffer_begun(command_writer);

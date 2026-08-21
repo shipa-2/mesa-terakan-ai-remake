@@ -33,13 +33,19 @@
 uint32_t
 terakan_vk_pipeline_compute_cb_target_mask(struct terakan_shader_impl const * const shader)
 {
-   uint32_t mask = 0;
+   unsigned uav_count = 0;
    unsigned uav_index;
    BITSET_FOREACH_SET (uav_index, shader->uavs_for_mutable_resources_needed,
                        TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_NON_PIXEL) {
-      mask |= 0xF << (4 * uav_index);
+      ++uav_count;
    }
-   return mask;
+
+   /* Mutable resources are compacted to consecutive RAT/CB color slots while
+    * lowering their bindings.  CB_TARGET_MASK must use those compacted slot
+    * numbers too, rather than the original mutable-resource indices. */
+   return uav_count == TERAKAN_COLOR_HW_RTV_AND_UAV_COUNT
+             ? UINT32_MAX
+             : ((1u << (4 * uav_count)) - 1u);
 }
 
 static uint32_t

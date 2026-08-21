@@ -93,10 +93,13 @@ main(int argc, char **argv)
 {
    bool const force_zero_first_instance =
       argc == 5 && std::strcmp(argv[4], "--force-zero-first-instance") == 0;
-   if (argc < 4 || argc > 5 || (argc == 5 && !force_zero_first_instance)) {
+   bool const rgba16f = argc == 5 && std::strcmp(argv[4], "--rgba16f") == 0;
+   bool const d24s8 = argc == 5 && std::strcmp(argv[4], "--d24s8") == 0;
+   if (argc < 4 || argc > 5 ||
+       (argc == 5 && !force_zero_first_instance && !rgba16f && !d24s8)) {
       std::fprintf(stderr,
                    "usage: %s COLOR_VERT_SPV DEPTH_VERT_SPV FRAG_SPV "
-                   "[--force-zero-first-instance]\n",
+                   "[--force-zero-first-instance|--rgba16f|--d24s8]\n",
                    argv[0]);
       return 2;
    }
@@ -214,9 +217,10 @@ main(int argc, char **argv)
    std::memcpy(uniform_upload.mapping, point_position.data(), sizeof(point_position));
 
    Buffer readback;
-   VK_CHECK(create_host_buffer(device, physical_device, 16 * sizeof(uint32_t),
+   VkDeviceSize const readback_pixel_size = rgba16f ? sizeof(uint64_t) : sizeof(uint32_t);
+   VK_CHECK(create_host_buffer(device, physical_device, 16 * readback_pixel_size,
                                VK_BUFFER_USAGE_TRANSFER_DST_BIT, readback));
-   std::memset(readback.mapping, 0xA5, 16 * sizeof(uint32_t));
+   std::memset(readback.mapping, 0xA5, 16 * readback_pixel_size);
 
    VkDeviceSize const index_buffer_offset = 16;
    Buffer index_buffer;
@@ -249,7 +253,7 @@ main(int argc, char **argv)
    VkImageCreateInfo const image_info = {
       .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
       .imageType = VK_IMAGE_TYPE_2D,
-      .format = VK_FORMAT_R8G8B8A8_UNORM,
+      .format = rgba16f ? VK_FORMAT_R16G16B16A16_SFLOAT : VK_FORMAT_R8G8B8A8_UNORM,
       .extent = {target_width, target_height, 1},
       .mipLevels = 1,
       .arrayLayers = 1,
@@ -283,14 +287,16 @@ main(int argc, char **argv)
       .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
       .image = image,
       .viewType = VK_IMAGE_VIEW_TYPE_2D,
-      .format = VK_FORMAT_R8G8B8A8_UNORM,
+      .format = image_info.format,
       .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
    };
    VK_CHECK(vkCreateImageView(device, &view_info, nullptr, &image_view));
 
    VkImage depth_image;
+   VkFormat const depth_format =
+      d24s8 ? VK_FORMAT_D24_UNORM_S8_UINT : VK_FORMAT_D32_SFLOAT_S8_UINT;
    VkImageCreateInfo depth_image_info = image_info;
-   depth_image_info.format = VK_FORMAT_D32_SFLOAT_S8_UINT;
+   depth_image_info.format = depth_format;
    depth_image_info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
    VK_CHECK(vkCreateImage(device, &depth_image_info, nullptr, &depth_image));
    VkMemoryRequirements depth_requirements;
@@ -306,7 +312,7 @@ main(int argc, char **argv)
    VK_CHECK(vkBindImageMemory(device, depth_image, depth_memory, 0));
    VkImageViewCreateInfo depth_view_info = view_info;
    depth_view_info.image = depth_image;
-   depth_view_info.format = VK_FORMAT_D32_SFLOAT_S8_UINT;
+   depth_view_info.format = depth_format;
    depth_view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
    VkImageView depth_view;
    VK_CHECK(vkCreateImageView(device, &depth_view_info, nullptr, &depth_view));
@@ -333,13 +339,13 @@ main(int argc, char **argv)
                               &intervening_depth_view));
 
    VkAttachmentDescription const attachments[] = {
-      {.format = VK_FORMAT_R8G8B8A8_UNORM, .samples = VK_SAMPLE_COUNT_1_BIT,
+      {.format = image_info.format, .samples = VK_SAMPLE_COUNT_1_BIT,
        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR, .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
        .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
        .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
        .finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
-      {.format = VK_FORMAT_D32_SFLOAT_S8_UINT, .samples = VK_SAMPLE_COUNT_1_BIT,
+      {.format = depth_format, .samples = VK_SAMPLE_COUNT_1_BIT,
        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR, .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
        .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
        .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
@@ -861,7 +867,7 @@ main(int argc, char **argv)
    VkBufferImageCopy copies[16];
    for (uint32_t i = 0; i < 16; ++i) {
       copies[i] = {
-         .bufferOffset = i * sizeof(uint32_t),
+         .bufferOffset = i * readback_pixel_size,
          .imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
          .imageOffset = {sample_positions[i].x, sample_positions[i].y, 0},
          .imageExtent = {1, 1, 1},
@@ -891,12 +897,29 @@ main(int argc, char **argv)
       0xFF172EB9u, 0xFF172EB9u, 0xFF172EB9u, 0xFF172EB9u,
       0xFF172EB9u, 0xFF172EB9u, 0xFF172EB9u, 0xFF172EB9u,
    };
-   uint32_t const *actual = reinterpret_cast<uint32_t const *>(readback.mapping);
    bool passed = true;
-   for (uint32_t i = 0; i < 16; ++i) {
-      std::printf("pixel[%u]=0x%08x expected=0x%08x %s\n", i, actual[i], expected[i],
-                  actual[i] == expected[i] ? "PASS" : "FAIL");
-      passed &= actual[i] == expected[i];
+   if (rgba16f) {
+      uint64_t const expected_rgba16f[] = {
+         0x3c0000003c000000ull, 0x3c003c0000000000ull,
+         0x3c0000003c003c00ull, 0x3c00000000003c00ull,
+         0x3c00000000003c00ull, 0x3c0000003c000000ull,
+         0x3c003c0000000000ull, 0x3c0000003c003c00ull,
+      };
+      uint64_t const *actual = reinterpret_cast<uint64_t const *>(readback.mapping);
+      for (uint32_t i = 0; i < 8; ++i) {
+         std::printf("pixel[%u]=0x%016llx expected=0x%016llx %s\n", i,
+                     static_cast<unsigned long long>(actual[i]),
+                     static_cast<unsigned long long>(expected_rgba16f[i]),
+                     actual[i] == expected_rgba16f[i] ? "PASS" : "FAIL");
+         passed &= actual[i] == expected_rgba16f[i];
+      }
+   } else {
+      uint32_t const *actual = reinterpret_cast<uint32_t const *>(readback.mapping);
+      for (uint32_t i = 0; i < 16; ++i) {
+         std::printf("pixel[%u]=0x%08x expected=0x%08x %s\n", i, actual[i], expected[i],
+                     actual[i] == expected[i] ? "PASS" : "FAIL");
+         passed &= actual[i] == expected[i];
+      }
    }
    std::printf("descriptor_offset=%llu dynamic_offset=%llu uniform_dynamic_offset=%llu "
                "record_stride=%llu\n",

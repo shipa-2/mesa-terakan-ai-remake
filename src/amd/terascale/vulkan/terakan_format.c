@@ -304,7 +304,6 @@ terakan_GetPhysicalDeviceFormatProperties2(UNUSED VkPhysicalDevice const physica
       buffer_features |=
          VK_FORMAT_FEATURE_2_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_2_TRANSFER_DST_BIT;
    }
-
    pFormatProperties->formatProperties.linearTilingFeatures =
       (VkFormatFeatureFlags)image_linear_tiling_features;
    pFormatProperties->formatProperties.optimalTilingFeatures =

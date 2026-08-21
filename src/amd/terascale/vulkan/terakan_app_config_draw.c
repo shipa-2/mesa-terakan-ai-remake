@@ -1154,7 +1154,7 @@ terakan_app_config_draw_apply_sq_pgm_fragment(
    /* Applying the graphics fragment entry is also part of the shared CB setup before dispatch.
     * Don't replace the compute UAV usage that prepare_dispatch installed for that operation.
     */
-   if (command_writer->app_config_compute.shader == NULL) {
+   if (!command_writer->app_config_draw_apply_for_compute) {
       static BITSET_WORD const
          uav_empty_bitset[BITSET_WORDS(TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL)];
       BITSET_WORD const * const uav_used =
@@ -1717,8 +1717,11 @@ terakan_app_config_draw_apply_cb_color_rtv_and_blend_control(
                 * format to more clearly specify that the destination data for those components
                 * isn't needed for write masking purposes.
                 */
+               /* Fragment exports and CB descriptors are compacted to hardware color-target
+                * indices. The target mask must follow that same numbering when Vulkan color
+                * attachment locations contain gaps. */
                hw_cb_target_mask |= (rtv_write_mask | (rtv_format_export_mask ^ 0xF))
-                                    << (4 * app_rtv_index);
+                                    << (4 * hw_rtv_count);
 
                uint32_t hw_blend_control = 0;
                if (!app_config->cb_color_rtv_and_blend_control_.from_apply_cb_rop3.blend_disable &&
@@ -1918,12 +1921,22 @@ terakan_app_config_draw_apply_cb_color_uav_and_unused_mrt(
    struct terakan_app_config_draw * const app_config = &command_writer->app_config_draw;
    struct terakan_hw_config_draw * const hw_config = &command_writer->hw_config_draw;
    struct terakan_device const * const device = terakan_gfx_command_writer_device(command_writer);
-   bool const is_compute = command_writer->app_config_compute.shader != NULL;
+   bool const is_compute = command_writer->app_config_draw_apply_for_compute;
 
+   /* Compute RAT indices are absolute CB color target indices. Graphics UAVs follow the compacted
+    * fragment color exports, but a compute shader's RAT0 must always be backed by CB_COLOR0.
+    * Reusing the graphics export count here made a dispatch following an MRT draw program its
+    * first UAV into CB_COLOR1 (or later), while the shader continued writing RAT0. This was mostly
+    * invisible in standalone compute tests because they start with zero fragment exports. */
    unsigned const uav_color_index_base =
-      app_config->cb_color_uav_and_unused_mrt_.from_apply_sq_pgm_fragment.rtv_dsb_export_count;
+      is_compute
+         ? 0
+         : app_config->cb_color_uav_and_unused_mrt_.from_apply_sq_pgm_fragment.rtv_dsb_export_count;
 
    unsigned uav_count = 0;
+   bool const debug_rat = getenv("TERAKAN_DEBUG_RAT") != NULL;
+   static unsigned debug_rat_apply_count;
+   unsigned const debug_rat_apply = debug_rat_apply_count++;
 
    unsigned uav_uncompacted_index;
    BITSET_FOREACH_SET (uav_uncompacted_index,
@@ -1944,6 +1957,16 @@ terakan_app_config_draw_apply_cb_color_uav_and_unused_mrt(
                       uav_uncompacted_index)) {
          struct terakan_app_config_draw_cb_color_uav const * const uav =
             &app_config->cb_color_uav_and_unused_mrt_.uav[uav_uncompacted_index];
+
+         if (debug_rat && debug_rat_apply < 4096) {
+            fprintf(stderr,
+                    "[TERAKAN_RAT] apply=%u compute=%u app=%u rat=%u cb=%u bo=%p "
+                    "base=%08x pitch=%08x slice=%08x view=%08x info=%08x "
+                    "attrib=%08x dim=%08x\n",
+                    debug_rat_apply, is_compute, uav_uncompacted_index, uav_count, color_index,
+                    (void *)uav->bo, uav->color.base, uav->color.pitch, uav->color.slice,
+                    uav->color.view, uav->color.info, uav->color.attrib, uav->color.dim);
+         }
 
          if (G_028C70_RESOURCE_TYPE(uav->color.info) == V_028C70_BUFFER) {
             uint32_t * const uav_base_granularity_offset_constant =
@@ -1977,6 +2000,11 @@ terakan_app_config_draw_apply_cb_color_uav_and_unused_mrt(
                                                   &uav_immediate_resource);
          }
       } else {
+         if (debug_rat && debug_rat_apply < 4096) {
+            fprintf(stderr,
+                    "[TERAKAN_RAT] apply=%u compute=%u app=%u rat=%u cb=%u unbound\n",
+                    debug_rat_apply, is_compute, uav_uncompacted_index, uav_count, color_index);
+         }
          terakan_hw_config_draw_set_cb_color_unbound(hw_config, color_index,
                                                      V_028C70_EXPORT_4C_16BPC);
 
@@ -2117,9 +2145,11 @@ static terakan_app_config_apply_function const
 };
 
 void
-terakan_app_config_draw_apply_pending(struct terakan_gfx_command_writer * const command_writer)
+terakan_app_config_draw_apply_pending(struct terakan_gfx_command_writer * const command_writer,
+                                      bool const for_compute)
 {
    struct terakan_app_config_draw * const config = &command_writer->app_config_draw;
+   command_writer->app_config_draw_apply_for_compute = for_compute;
    /* Because the applying functions may make dependent entries (which must have greater indices)
     * pending, `BITSET_FOREACH_SET` isn't used, rather always iterating the current pending entries.
     */

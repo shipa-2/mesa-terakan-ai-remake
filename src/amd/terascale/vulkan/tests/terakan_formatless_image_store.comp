@@ -1,12 +1,17 @@
 #version 450
 
-layout(local_size_x = 1, local_size_y = 1) in;
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(constant_id = 0) const uint test_width = 17u;
+layout(constant_id = 1) const uint test_height = 13u;
 layout(set = 0, binding = 0) writeonly uniform uimage2D destination;
 
 void main()
 {
    uvec2 position = gl_GlobalInvocationID.xy;
-   uint linear_index = position.y * 17u + position.x;
+   uvec2 size = uvec2(test_width, test_height);
+   if (any(greaterThanEqual(position, size)))
+      return;
+   uint linear_index = position.y * size.x + position.x;
    uint value = 0xC0000000u ^ (linear_index * 0x9E3779B9u);
    imageStore(destination, ivec2(position), uvec4(value, 0u, 0u, 0u));
 }

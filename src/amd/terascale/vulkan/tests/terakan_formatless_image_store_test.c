@@ -11,8 +11,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define WIDTH 17u
-#define HEIGHT 13u
+#define WIDTH width
+#define HEIGHT height
 #define TEXEL_COUNT (WIDTH * HEIGHT)
 #define GUARD_DWORDS 16u
 #define GUARD_VALUE 0xA55A3CC3u
@@ -34,6 +34,14 @@ static const uint32_t formatless_load_spirv[] = {
 #include "terakan_formatless_image_load.spv.h"
 };
 
+static const uint32_t rgba16f_store_spirv[] = {
+#include "terakan_rgba16f_image_store.spv.h"
+};
+
+static const uint32_t rgba16f_load_spirv[] = {
+#include "terakan_rgba16f_image_load.spv.h"
+};
+
 static uint32_t
 find_memory_type(VkPhysicalDevice physical_device, uint32_t memory_type_bits,
                  VkMemoryPropertyFlags required)
@@ -49,8 +57,33 @@ find_memory_type(VkPhysicalDevice physical_device, uint32_t memory_type_bits,
 }
 
 int
-main(void)
+main(int argc, char **argv)
 {
+   bool const rgba16f = argc == 2 && strcmp(argv[1], "--rgba16f") == 0;
+   bool const r8 = argc == 2 && strcmp(argv[1], "--r8") == 0;
+   bool const rg8 = argc == 2 && strcmp(argv[1], "--rg8") == 0;
+   bool const rgba8 = argc == 2 && strcmp(argv[1], "--rgba8") == 0;
+   bool const large_rgba8 = argc == 2 && strcmp(argv[1], "--large-rgba8") == 0;
+   bool const mip_rgba8 = argc == 2 && strcmp(argv[1], "--mip-rgba8") == 0;
+   bool const r16f = argc == 2 && strcmp(argv[1], "--r16f") == 0;
+   bool const rg16f = argc == 2 && strcmp(argv[1], "--rg16f") == 0;
+   bool const float_image = rgba16f || r8 || rg8 || rgba8 || large_rgba8 || mip_rgba8 || r16f || rg16f;
+   if (argc > 2 || (argc == 2 && !float_image)) {
+      fprintf(stderr, "Usage: %s [--rgba16f|--r8|--rg8|--rgba8|--large-rgba8|--mip-rgba8|--r16f|--rg16f]\n", argv[0]);
+      return 2;
+   }
+   uint32_t const width = large_rgba8 ? 960u : mip_rgba8 ? 120u : 17u;
+   uint32_t const height = large_rgba8 ? 544u : mip_rgba8 ? 68u : 13u;
+   uint32_t const image_width = mip_rgba8 ? 960u : width;
+   uint32_t const image_height = mip_rgba8 ? 544u : height;
+   uint32_t const image_mip_level = mip_rgba8 ? 3u : 0u;
+   VkFormat const image_format =
+      rgba16f ? VK_FORMAT_R16G16B16A16_SFLOAT
+              : r8 ? VK_FORMAT_R8_UNORM
+              : rg8 ? VK_FORMAT_R8G8_UNORM
+              : (rgba8 || large_rgba8 || mip_rgba8) ? VK_FORMAT_R8G8B8A8_UNORM
+              : r16f ? VK_FORMAT_R16_SFLOAT
+              : rg16f ? VK_FORMAT_R16G16_SFLOAT : VK_FORMAT_R32_UINT;
    VkApplicationInfo const application_info = {
       .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
       .pApplicationName = "terakan-formatless-image-store-test",
@@ -80,12 +113,12 @@ main(void)
    }
 
    VkFormatProperties format_properties;
-   vkGetPhysicalDeviceFormatProperties(physical_device, VK_FORMAT_R32_UINT, &format_properties);
+   vkGetPhysicalDeviceFormatProperties(physical_device, image_format, &format_properties);
    VkFormatFeatureFlags const required_format_features =
       VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT | VK_FORMAT_FEATURE_TRANSFER_SRC_BIT;
    if ((format_properties.optimalTilingFeatures & required_format_features) !=
        required_format_features) {
-      fprintf(stderr, "R32_UINT lacks storage-image or transfer-source support\n");
+      fprintf(stderr, "Format %u lacks storage-image or transfer-source support\n", image_format);
       return 1;
    }
 
@@ -133,9 +166,9 @@ main(void)
    VkImageCreateInfo const image_info = {
       .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
       .imageType = VK_IMAGE_TYPE_2D,
-      .format = VK_FORMAT_R32_UINT,
-      .extent = { WIDTH, HEIGHT, 1 },
-      .mipLevels = 1,
+      .format = image_format,
+      .extent = { image_width, image_height, 1 },
+      .mipLevels = image_mip_level + 1,
       .arrayLayers = 1,
       .samples = VK_SAMPLE_COUNT_1_BIT,
       .tiling = VK_IMAGE_TILING_OPTIMAL,
@@ -167,9 +200,10 @@ main(void)
       .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
       .image = image,
       .viewType = VK_IMAGE_VIEW_TYPE_2D,
-      .format = VK_FORMAT_R32_UINT,
+      .format = image_format,
       .subresourceRange = {
          .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+         .baseMipLevel = image_mip_level,
          .levelCount = 1,
          .layerCount = 1,
       },
@@ -177,8 +211,14 @@ main(void)
    VkImageView image_view;
    CHECK_VK(vkCreateImageView(device, &view_info, NULL, &image_view));
 
-   VkDeviceSize const region_size = TEXEL_COUNT * sizeof(uint32_t);
-   VkDeviceSize const buffer_size = 2 * region_size + GUARD_DWORDS * sizeof(uint32_t);
+   uint32_t const texel_bytes = rgba16f ? 8 : (rgba8 || large_rgba8 || mip_rgba8 || rg16f) ? 4 : (rg8 || r16f) ? 2 : r8 ? 1 : 4;
+   VkDeviceSize const image_payload_size = TEXEL_COUNT * texel_bytes;
+   VkDeviceSize const image_region_size =
+      (image_payload_size + 3) & ~((VkDeviceSize)3);
+   VkDeviceSize const load_region_size =
+      TEXEL_COUNT * (float_image ? 4 : 1) * sizeof(uint32_t);
+   VkDeviceSize const buffer_size =
+      image_region_size + load_region_size + GUARD_DWORDS * sizeof(uint32_t);
    VkBufferCreateInfo const buffer_info = {
       .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
       .size = buffer_size,
@@ -209,8 +249,29 @@ main(void)
    CHECK_VK(vkMapMemory(device, buffer_memory, 0, VK_WHOLE_SIZE, 0, (void **)&mapped));
    for (VkDeviceSize i = 0; i < buffer_requirements.size / sizeof(uint32_t); ++i)
       mapped[i] = GUARD_VALUE;
-   for (uint32_t i = 0; i < TEXEL_COUNT; ++i)
-      mapped[i] = 0x13570000u ^ (i * 0x45D9F3Bu);
+   for (uint32_t i = 0; i < TEXEL_COUNT; ++i) {
+      if (rgba16f) {
+         uint32_t const r = (i & 1u) ? 0x3c00u : 0u;
+         uint32_t const g = (i & 2u) ? 0x3c00u : 0u;
+         uint32_t const b = (i & 4u) ? 0x3c00u : 0u;
+         mapped[2 * i + 0] = r | (g << 16);
+         mapped[2 * i + 1] = b | (0x3c00u << 16);
+      } else if (r8 || rg8 || rgba8 || large_rgba8 || mip_rgba8) {
+         ((uint8_t *)mapped)[texel_bytes * i] = (i & 1u) ? 0xffu : 0u;
+         if (rg8 || rgba8 || large_rgba8 || mip_rgba8)
+            ((uint8_t *)mapped)[texel_bytes * i + 1] = (i & 2u) ? 0xffu : 0u;
+         if (rgba8 || large_rgba8 || mip_rgba8) {
+            ((uint8_t *)mapped)[texel_bytes * i + 2] = (i & 4u) ? 0xffu : 0u;
+            ((uint8_t *)mapped)[texel_bytes * i + 3] = 0xffu;
+         }
+      } else if (r16f || rg16f) {
+         ((uint16_t *)mapped)[(texel_bytes / 2) * i] = (i & 1u) ? 0x3c00u : 0u;
+         if (rg16f)
+            ((uint16_t *)mapped)[(texel_bytes / 2) * i + 1] = (i & 2u) ? 0x3c00u : 0u;
+      } else {
+         mapped[i] = 0x13570000u ^ (i * 0x45D9F3Bu);
+      }
+   }
 
    VkDescriptorSetLayoutBinding const layout_bindings[] = {
       {
@@ -273,8 +334,8 @@ main(void)
    };
    VkDescriptorBufferInfo const descriptor_buffer_info = {
       .buffer = buffer,
-      .offset = region_size,
-      .range = region_size,
+      .offset = image_region_size,
+      .range = load_region_size,
    };
    VkWriteDescriptorSet const descriptor_writes[] = {
       {
@@ -298,15 +359,28 @@ main(void)
 
    VkShaderModuleCreateInfo shader_info = {
       .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-      .codeSize = sizeof(formatless_store_spirv),
-      .pCode = formatless_store_spirv,
+      .codeSize = float_image ? sizeof(rgba16f_store_spirv)
+                              : sizeof(formatless_store_spirv),
+      .pCode = float_image ? rgba16f_store_spirv : formatless_store_spirv,
    };
    VkShaderModule store_shader;
    CHECK_VK(vkCreateShaderModule(device, &shader_info, NULL, &store_shader));
-   shader_info.codeSize = sizeof(formatless_load_spirv);
-   shader_info.pCode = formatless_load_spirv;
+   shader_info.codeSize = float_image ? sizeof(rgba16f_load_spirv)
+                                     : sizeof(formatless_load_spirv);
+   shader_info.pCode = float_image ? rgba16f_load_spirv : formatless_load_spirv;
    VkShaderModule load_shader;
    CHECK_VK(vkCreateShaderModule(device, &shader_info, NULL, &load_shader));
+   VkSpecializationMapEntry const specialization_entries[] = {
+      {.constantID = 0, .offset = 0, .size = sizeof(uint32_t)},
+      {.constantID = 1, .offset = sizeof(uint32_t), .size = sizeof(uint32_t)},
+   };
+   uint32_t const specialization_data[] = {width, height};
+   VkSpecializationInfo const specialization_info = {
+      .mapEntryCount = 2,
+      .pMapEntries = specialization_entries,
+      .dataSize = sizeof(specialization_data),
+      .pData = specialization_data,
+   };
    VkComputePipelineCreateInfo pipeline_info = {
       .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
       .stage = {
@@ -314,6 +388,7 @@ main(void)
          .stage = VK_SHADER_STAGE_COMPUTE_BIT,
          .module = store_shader,
          .pName = "main",
+         .pSpecializationInfo = &specialization_info,
       },
       .layout = pipeline_layout,
    };
@@ -352,6 +427,7 @@ main(void)
       .image = image,
       .subresourceRange = {
          .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+         .baseMipLevel = image_mip_level,
          .levelCount = 1,
          .layerCount = 1,
       },
@@ -367,13 +443,14 @@ main(void)
       .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
       .buffer = buffer,
       .offset = 0,
-      .size = region_size,
+      .size = image_region_size,
    };
    vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_HOST_BIT,
                         VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 1, &buffer_barrier, 0, NULL);
    VkBufferImageCopy copy_region = {
       .imageSubresource = {
          .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+         .mipLevel = image_mip_level,
          .layerCount = 1,
       },
       .imageExtent = { WIDTH, HEIGHT, 1 },
@@ -390,7 +467,7 @@ main(void)
    vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_layout, 0, 1,
                            &descriptor_set, 0, NULL);
    vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, load_pipeline);
-   vkCmdDispatch(command_buffer, WIDTH, HEIGHT, 1);
+   vkCmdDispatch(command_buffer, (WIDTH + 7) / 8, (HEIGHT + 7) / 8, 1);
    image_barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
    image_barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
    image_barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
@@ -399,7 +476,7 @@ main(void)
                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, NULL, 0, NULL, 1,
                         &image_barrier);
    vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, store_pipeline);
-   vkCmdDispatch(command_buffer, WIDTH, HEIGHT, 1);
+   vkCmdDispatch(command_buffer, (WIDTH + 7) / 8, (HEIGHT + 7) / 8, 1);
    image_barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
    image_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
    image_barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
@@ -436,22 +513,90 @@ main(void)
 
    bool pass = true;
    for (uint32_t i = 0; i < TEXEL_COUNT; ++i) {
-      uint32_t const expected = 0xC0000000u ^ (i * 0x9E3779B9u);
-      if (mapped[i] != expected) {
-         fprintf(stderr, "store[%u] = 0x%08X, expected 0x%08X\n", i, mapped[i], expected);
-         pass = false;
-      }
-      uint32_t const load_expected = 0x13570000u ^ (i * 0x45D9F3Bu);
-      if (mapped[TEXEL_COUNT + i] != load_expected) {
-         fprintf(stderr, "load[%u] = 0x%08X, expected 0x%08X\n", i,
-                 mapped[TEXEL_COUNT + i], load_expected);
-         pass = false;
+      if (rgba16f) {
+         uint32_t const r_half = (i & 1u) ? 0x3c00u : 0u;
+         uint32_t const g_half = (i & 2u) ? 0x3c00u : 0u;
+         uint32_t const b_half = (i & 4u) ? 0x3c00u : 0u;
+         uint32_t const store_expected[2] = {
+            r_half | (g_half << 16), b_half | (0x3c00u << 16),
+         };
+         for (uint32_t word = 0; word < 2; ++word) {
+            if (mapped[2 * i + word] != store_expected[word]) {
+               fprintf(stderr, "store[%u].word[%u] = 0x%08X, expected 0x%08X\n", i,
+                       word, mapped[2 * i + word], store_expected[word]);
+               pass = false;
+            }
+         }
+         uint32_t const load_expected[4] = {
+            (i & 1u) ? 0x3f800000u : 0u,
+            (i & 2u) ? 0x3f800000u : 0u,
+            (i & 4u) ? 0x3f800000u : 0u,
+            0x3f800000u,
+         };
+         uint32_t const load_base = (uint32_t)(image_region_size / sizeof(uint32_t)) + 4 * i;
+         for (uint32_t channel = 0; channel < 4; ++channel) {
+            if (mapped[load_base + channel] != load_expected[channel]) {
+               fprintf(stderr, "load[%u].channel[%u] = 0x%08X, expected 0x%08X\n", i,
+                       channel, mapped[load_base + channel], load_expected[channel]);
+               pass = false;
+            }
+         }
+      } else if (r8 || rg8 || rgba8 || large_rgba8 || mip_rgba8 || r16f || rg16f) {
+         uint32_t const stored_channels = (rgba8 || large_rgba8 || mip_rgba8) ? 4 : (rg8 || rg16f) ? 2 : 1;
+         for (uint32_t channel = 0; channel < stored_channels; ++channel) {
+            bool const one = channel == 3 || (i & (1u << channel));
+            if (r8 || rg8 || rgba8 || large_rgba8 || mip_rgba8) {
+               uint8_t const actual = ((uint8_t const *)mapped)[texel_bytes * i + channel];
+               uint8_t const expected = one ? 0xffu : 0u;
+               if (actual != expected) {
+                  fprintf(stderr, "store[%u].channel[%u] = 0x%02X, expected 0x%02X\n",
+                          i, channel, actual, expected);
+                  pass = false;
+               }
+            } else {
+               uint16_t const actual = ((uint16_t const *)mapped)[(texel_bytes / 2) * i + channel];
+               uint16_t const expected = one ? 0x3c00u : 0u;
+               if (actual != expected) {
+                  fprintf(stderr, "store[%u].channel[%u] = 0x%04X, expected 0x%04X\n",
+                          i, channel, actual, expected);
+                  pass = false;
+               }
+            }
+         }
+         uint32_t const load_expected[4] = {
+            (i & 1u) ? 0x3f800000u : 0u,
+            (stored_channels > 1 && (i & 2u)) ? 0x3f800000u : 0u,
+            (stored_channels > 2 && (i & 4u)) ? 0x3f800000u : 0u,
+            0x3f800000u,
+         };
+         uint32_t const load_base = (uint32_t)(image_region_size / sizeof(uint32_t)) + 4 * i;
+         for (uint32_t channel = 0; channel < 4; ++channel) {
+            if (mapped[load_base + channel] != load_expected[channel]) {
+               fprintf(stderr, "load[%u].channel[%u] = 0x%08X, expected 0x%08X\n", i,
+                       channel, mapped[load_base + channel], load_expected[channel]);
+               pass = false;
+            }
+         }
+      } else {
+         uint32_t const expected = 0xC0000000u ^ (i * 0x9E3779B9u);
+         if (mapped[i] != expected) {
+            fprintf(stderr, "store[%u] = 0x%08X, expected 0x%08X\n", i, mapped[i], expected);
+            pass = false;
+         }
+         uint32_t const load_expected = 0x13570000u ^ (i * 0x45D9F3Bu);
+         if (mapped[TEXEL_COUNT + i] != load_expected) {
+            fprintf(stderr, "load[%u] = 0x%08X, expected 0x%08X\n", i,
+                    mapped[TEXEL_COUNT + i], load_expected);
+            pass = false;
+         }
       }
    }
+   uint32_t const guard_base = (uint32_t)((image_region_size + load_region_size) /
+                                          sizeof(uint32_t));
    for (uint32_t i = 0; i < GUARD_DWORDS; ++i) {
-      if (mapped[2 * TEXEL_COUNT + i] != GUARD_VALUE) {
+      if (mapped[guard_base + i] != GUARD_VALUE) {
          fprintf(stderr, "guard[%u] = 0x%08X, expected 0x%08X\n", i,
-                 mapped[2 * TEXEL_COUNT + i], GUARD_VALUE);
+                 mapped[guard_base + i], GUARD_VALUE);
          pass = false;
       }
    }
@@ -474,7 +619,13 @@ main(void)
    vkDestroyDevice(device, NULL);
    vkDestroyInstance(instance, NULL);
 
-   printf("%s: %ux%u formatless R32_UINT image load/store with intact guards\n",
-          pass ? "PASS" : "FAIL", WIDTH, HEIGHT);
+   printf("%s: %ux%u %s image load/store with intact guards\n",
+          pass ? "PASS" : "FAIL", WIDTH, HEIGHT,
+          rgba16f ? "formatless R16G16B16A16_SFLOAT"
+                  : r8 ? "formatless R8_UNORM"
+                  : rg8 ? "formatless R8G8_UNORM"
+                  : (rgba8 || large_rgba8 || mip_rgba8) ? "formatless R8G8B8A8_UNORM"
+                  : r16f ? "formatless R16_SFLOAT"
+                  : rg16f ? "formatless R16G16_SFLOAT" : "formatless R32_UINT");
    return pass ? 0 : 1;
 }

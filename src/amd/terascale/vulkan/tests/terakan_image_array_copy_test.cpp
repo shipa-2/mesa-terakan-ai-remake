@@ -84,12 +84,28 @@ main(int argc, char **argv)
       argc == 2 && std::strcmp(argv[1], "--r32-full") == 0;
    bool const hdr_mode =
       argc == 2 && (std::strcmp(argv[1], "--hdr") == 0 ||
-                    std::strcmp(argv[1], "--hdr-full") == 0);
+                    std::strcmp(argv[1], "--hdr-full") == 0 ||
+                    std::strcmp(argv[1], "--hdr-clear") == 0);
    bool const hdr_full_mode =
       argc == 2 && std::strcmp(argv[1], "--hdr-full") == 0;
-   if (argc > 2 || (argc == 2 && !hdr_mode && !r32_mode)) {
+   bool const hdr_clear_mode =
+      argc == 2 && std::strcmp(argv[1], "--hdr-clear") == 0;
+   bool const rgba16f_mode =
+      argc == 2 && (std::strcmp(argv[1], "--rgba16f") == 0 ||
+                    std::strcmp(argv[1], "--rgba16f-clear") == 0 ||
+                    std::strcmp(argv[1], "--rgba16f-blit") == 0 ||
+                    std::strcmp(argv[1], "--rgba16f-blit-full") == 0);
+   bool const rgba16f_clear_mode =
+      argc == 2 && std::strcmp(argv[1], "--rgba16f-clear") == 0;
+   bool const rgba16f_blit_mode =
+      argc == 2 && (std::strcmp(argv[1], "--rgba16f-blit") == 0 ||
+                    std::strcmp(argv[1], "--rgba16f-blit-full") == 0);
+   bool const rgba16f_full_mode =
+      argc == 2 && std::strcmp(argv[1], "--rgba16f-blit-full") == 0;
+   if (argc > 2 || (argc == 2 && !hdr_mode && !r32_mode && !rgba16f_mode)) {
       std::fprintf(stderr,
-                   "Usage: %s [--hdr|--hdr-full|--r32|--r32-full]\n", argv[0]);
+                   "Usage: %s [--hdr|--hdr-full|--hdr-clear|--rgba16f|--rgba16f-clear|--rgba16f-blit|--rgba16f-blit-full|--r32|--r32-full]\n",
+                   argv[0]);
       return 2;
    }
 
@@ -153,12 +169,18 @@ main(int argc, char **argv)
    VkQueue queue;
    vkGetDeviceQueue(device, queue_family, 0, &queue);
 
-   uint32_t const image_width = hdr_full_mode ? 1920 : r32_full_mode ? 512 : r32_mode ? 64 : 136;
-   uint32_t const image_height = hdr_full_mode ? 1080 : r32_full_mode ? 512 : r32_mode ? 64 : 136;
+   uint32_t const image_width = hdr_full_mode ? 1920 : rgba16f_full_mode ? 960
+                                                              : r32_full_mode ? 512
+                                                              : r32_mode ? 64 : 136;
+   uint32_t const image_height = hdr_full_mode ? 1080 : rgba16f_full_mode ? 540
+                                                               : r32_full_mode ? 512
+                                                               : r32_mode ? 64 : 136;
    VkDeviceSize const payload_size =
-      (hdr_mode || r32_mode) ? image_width * image_height * sizeof(uint32_t) : 34 * 34 * 8;
+      rgba16f_mode ? image_width * image_height * 8
+                   : (hdr_mode || r32_mode) ? image_width * image_height * sizeof(uint32_t)
+                                            : 34 * 34 * 8;
    std::vector<uint32_t> const test_layers =
-      hdr_full_mode ? std::vector<uint32_t>{0}
+      (hdr_full_mode || rgba16f_full_mode) ? std::vector<uint32_t>{0}
                     : std::vector<uint32_t>{0, 1, 7, 8, 255, 480, 899};
    VkDeviceSize const slot_size = (payload_size + 255) & ~VkDeviceSize(255);
    VkDeviceSize const buffer_size = slot_size * (test_layers.size() + 1);
@@ -192,7 +214,12 @@ main(int argc, char **argv)
    uint8_t *mapping;
    VK_CHECK(vkMapMemory(device, buffer_memory, 0, buffer_size, 0,
                         reinterpret_cast<void **>(&mapping)));
-   if (hdr_mode || r32_mode) {
+   if (rgba16f_clear_mode) {
+      auto *pixels = reinterpret_cast<uint16_t *>(mapping);
+      std::fill(pixels, pixels + payload_size / sizeof(*pixels), uint16_t{0x3c00});
+   } else if (hdr_clear_mode) {
+      std::memset(mapping, 0, payload_size);
+   } else if (hdr_mode || r32_mode) {
       auto *pixels = reinterpret_cast<uint32_t *>(mapping);
       for (uint32_t y = 0; y < image_height; ++y) {
          for (uint32_t x = 0; x < image_width; ++x) {
@@ -217,15 +244,16 @@ main(int argc, char **argv)
    VkDeviceMemory source_memory, destination_memory;
    VkFormat const image_format =
       r32_mode ? VK_FORMAT_R32_UINT
+               : rgba16f_mode ? VK_FORMAT_R16G16B16A16_SFLOAT
                : hdr_mode ? VK_FORMAT_B10G11R11_UFLOAT_PACK32
                           : VK_FORMAT_BC1_RGBA_UNORM_BLOCK;
    VkImageUsageFlags const image_usage =
       (r32_mode ? 0 : VK_IMAGE_USAGE_TRANSFER_SRC_BIT) |
       VK_IMAGE_USAGE_TRANSFER_DST_BIT |
       (r32_mode ? 0 : VK_IMAGE_USAGE_SAMPLED_BIT) |
-      (hdr_mode ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT : 0) |
+      ((hdr_mode || rgba16f_mode) ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT : 0) |
       (r32_mode ? VK_IMAGE_USAGE_STORAGE_BIT : 0);
-   uint32_t const destination_layers = hdr_full_mode ? 1 : 900;
+   uint32_t const destination_layers = (hdr_full_mode || rgba16f_full_mode) ? 1 : 900;
    VK_CHECK(static_cast<VkResult>(
       create_image(device, physical_device, image_format, image_usage, image_width,
                    image_height, 1, &source, &source_memory)));
@@ -273,8 +301,23 @@ main(int argc, char **argv)
       .imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
       .imageExtent = {image_width, image_height, 1},
    };
-   vkCmdCopyBufferToImage(command_buffer, buffer, source,
-                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &upload);
+   if (hdr_clear_mode || rgba16f_clear_mode) {
+      VkClearColorValue clear_value = {};
+      if (rgba16f_clear_mode) {
+         clear_value.float32[0] = 1.0f;
+         clear_value.float32[1] = 1.0f;
+         clear_value.float32[2] = 1.0f;
+         clear_value.float32[3] = 1.0f;
+      }
+      VkImageSubresourceRange const clear_range = {
+         VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1,
+      };
+      vkCmdClearColorImage(command_buffer, source, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                           &clear_value, 1, &clear_range);
+   } else {
+      vkCmdCopyBufferToImage(command_buffer, buffer, source,
+                             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &upload);
+   }
    VkImageMemoryBarrier source_ready = {
       .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
       .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
@@ -291,13 +334,24 @@ main(int argc, char **argv)
                         &source_ready);
 
    for (uint32_t layer : test_layers) {
-      VkImageCopy copy = {
-         .srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
-         .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, layer, 1},
-         .extent = {image_width, image_height, 1},
-      };
-      vkCmdCopyImage(command_buffer, source, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, destination,
-                     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+      if (rgba16f_blit_mode) {
+         VkImageBlit blit = {
+            .srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
+            .srcOffsets = {{0, 0, 0}, {(int32_t)image_width, (int32_t)image_height, 1}},
+            .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, layer, 1},
+            .dstOffsets = {{0, 0, 0}, {(int32_t)image_width, (int32_t)image_height, 1}},
+         };
+         vkCmdBlitImage(command_buffer, source, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, destination,
+                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_NEAREST);
+      } else {
+         VkImageCopy copy = {
+            .srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
+            .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, layer, 1},
+            .extent = {image_width, image_height, 1},
+         };
+         vkCmdCopyImage(command_buffer, source, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, destination,
+                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+      }
    }
    VkImageMemoryBarrier destination_ready = {
       .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,

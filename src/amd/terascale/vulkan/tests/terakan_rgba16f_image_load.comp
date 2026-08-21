@@ -4,7 +4,7 @@
 layout(local_size_x = 8, local_size_y = 8) in;
 layout(constant_id = 0) const uint test_width = 17u;
 layout(constant_id = 1) const uint test_height = 13u;
-layout(set = 0, binding = 0) readonly uniform uimage2D source;
+layout(set = 0, binding = 0) readonly uniform image2D source;
 layout(set = 0, binding = 1, std430) writeonly buffer Output {
    uint values[];
 } output_data;
@@ -15,6 +15,10 @@ void main()
    uvec2 size = uvec2(test_width, test_height);
    if (any(greaterThanEqual(position, size)))
       return;
-   uint linear_index = position.y * size.x + position.x;
-   output_data.values[linear_index] = imageLoad(source, ivec2(position)).x;
+   uint i = position.y * size.x + position.x;
+   vec4 value = imageLoad(source, ivec2(position));
+   output_data.values[4u * i + 0u] = floatBitsToUint(value.r);
+   output_data.values[4u * i + 1u] = floatBitsToUint(value.g);
+   output_data.values[4u * i + 2u] = floatBitsToUint(value.b);
+   output_data.values[4u * i + 3u] = floatBitsToUint(value.a);
 }

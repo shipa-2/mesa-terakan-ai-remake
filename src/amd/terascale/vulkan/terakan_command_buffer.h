@@ -382,6 +382,7 @@ struct terakan_gfx_command_writer {
    bool hw_config_compute_initialized_in_indirect_buffer;
    bool hw_config_sqk_initialized_in_indirect_buffer;
    bool barrier_compute_mode_override;
+   bool app_config_draw_apply_for_compute;
 
    /* Scaled blit reuses one meta draw session per command buffer (STK: one vkCmdBlitImage per mip). */
    bool meta_blit_draw_session_active;
@@ -677,6 +678,15 @@ terakan_gfx_command_writer_split_for_draw_compute_switch(
        * however, must also execute after the new IB preamble has established the destination
        * graphics/compute context; otherwise the new mode may retain stale TC/VC/SH lines.
        */
+      if (!entering_compute) {
+         /* A dispatch may be followed by graphics without an intervening compute dispatch.
+          * Finish and publish its RAT writes while the old compute IB is still active. */
+         command_writer->pending_barrier_actions |=
+            TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CS |
+            TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_UAV |
+            TERAKAN_BARRIER_ACTION_INV_TC | TERAKAN_BARRIER_ACTION_INV_VC |
+            TERAKAN_BARRIER_ACTION_INV_SH;
+      }
       uint32_t const destination_cache_invalidations =
          command_writer->pending_barrier_actions &
          (TERAKAN_BARRIER_ACTION_INV_TC | TERAKAN_BARRIER_ACTION_INV_VC |
@@ -691,7 +701,7 @@ static inline void
 terakan_gfx_command_writer_before_app_draw(struct terakan_gfx_command_writer * const command_writer)
 {
    terakan_gfx_command_writer_split_for_draw_compute_switch(command_writer, false);
-   terakan_app_config_draw_apply_pending(command_writer);
+   terakan_app_config_draw_apply_pending(command_writer, false);
    terakan_hw_config_draw_set_db_render_control(
       &command_writer->hw_config_draw, TERAKAN_HW_CONFIG_DRAW_DEFAULT_DB_RENDER_CONTROL);
 
@@ -714,12 +724,21 @@ terakan_gfx_command_writer_before_app_dispatch(
    struct terakan_gfx_command_writer * const command_writer)
 {
    terakan_gfx_command_writer_split_for_draw_compute_switch(command_writer, true);
+
+   /* The previous dispatch must finish before its compute state and RAT descriptors are replaced.
+    * Cache visibility between dispatches, however, is governed by Vulkan barriers already tracked
+    * in pending_barrier_actions. Flushing the entire CB/RAT cache here unconditionally makes long
+    * independent compute chains fully synchronous. */
+   terakan_barrier_emit_actions_unconditionally(
+      command_writer, TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CS);
+   terakan_barrier_emit_pending_actions(command_writer, TERAKAN_BARRIER_ACTIONS_ALL);
+
    terakan_app_config_compute_prepare_dispatch(command_writer);
    terakan_app_config_compute_apply_pending(command_writer);
 
    /* Storage buffer UAVs for compute reuse CB/RAT state tracked in `app_config_draw`. */
    if (command_writer->app_config_compute.cb_target_mask_ != 0) {
-      terakan_app_config_draw_apply_pending(command_writer);
+      terakan_app_config_draw_apply_pending(command_writer, true);
    }
 
    /* app_config_draw derives CB_TARGET_MASK from graphics color attachments and may clear it when

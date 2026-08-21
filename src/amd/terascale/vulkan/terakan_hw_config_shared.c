@@ -296,7 +296,10 @@ terakan_hw_config_shared_compute_emit_sq_thread_stack_resource_mgmt(
    *packet++ = TERAKAN_CONFIG_REG_OFFSET(R_008C18_SQ_THREAD_RESOURCE_MGMT_1);
    /* Thread resource management. */
    *packet++ = 0;
-   *packet++ = S_008C1C_NUM_LS_THREADS(chip_info->sq_max_threads_shr3);
+   /* The register stores the actual thread count. sq_max_threads_shr3 is kept divided by eight
+    * only for allocation arithmetic, matching the graphics-path calculations above. Passing it
+    * directly limited Caicos compute to 24 rather than the intended 192 thread slots. */
+   *packet++ = S_008C1C_NUM_LS_THREADS(chip_info->sq_max_threads_shr3 << 3);
    /* Stack resource management. */
    *packet++ = 0;
    *packet++ = 0;

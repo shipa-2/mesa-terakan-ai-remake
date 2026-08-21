@@ -1,0 +1,16 @@
+#version 450
+
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(constant_id = 0) const uint test_width = 17u;
+layout(constant_id = 1) const uint test_height = 13u;
+
+layout(set = 0, binding = 0, rgba8) writeonly uniform image2D destination;
+layout(set = 0, binding = 2) uniform sampler2D source;
+
+void main()
+{
+   ivec2 position = ivec2(gl_GlobalInvocationID.xy);
+   if (any(greaterThanEqual(position, ivec2(test_width, test_height))))
+      return;
+   imageStore(destination, position, texelFetch(source, position, 0));
+}

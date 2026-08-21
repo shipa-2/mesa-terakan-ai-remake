@@ -317,6 +317,8 @@ terakan_queue_submit(struct vk_queue * const queue_base, struct vk_queue_submit 
    uint64_t await_internal_bo_timeline_value = 0;
 
    uint32_t shader_rings_bytes_needed_for_se_shr8[TERAKAN_SHADER_RING_INDEX_COUNT] = {};
+   uint32_t debug_indirect_buffer_count = 0;
+   uint64_t debug_indirect_buffer_dwords = 0;
    for (uint32_t command_buffer_index = 0; command_buffer_index < submit->command_buffer_count;
         ++command_buffer_index) {
       struct terakan_command_buffer const * const command_buffer = container_of(
@@ -469,6 +471,35 @@ terakan_queue_submit(struct vk_queue * const queue_base, struct vk_queue_submit 
 
    /* Submit the command buffers. */
 
+   if (submit->wait_count != 0) {
+      /* vk_queue waits for semaphore signal submission before calling the driver, while ordering
+       * on Terakan's single hardware queue waits for the producing commands themselves. Make the
+       * memory made available by those signals visible immediately before the consuming command
+       * buffers. A separate aligned IB keeps recorded command buffers immutable. */
+      uint32_t wait_indirect_buffer[TERAKAN_QUEUE_INDIRECT_BUFFER_SIZE_ALIGNMENT_DWORDS_GFX];
+      uint32_t *wait_packet = wait_indirect_buffer;
+      *wait_packet++ = PKT3(PKT3_CONTEXT_CONTROL, 1, 0);
+      *wait_packet++ = (uint32_t)1 << 31;
+      *wait_packet++ = (uint32_t)1 << 31;
+      *wait_packet++ = PKT3(PKT3_SURFACE_SYNC, 4 - 1, 0);
+      *wait_packet++ = S_0085F0_TC_ACTION_ENA(1) | S_0085F0_VC_ACTION_ENA(1) |
+                       S_0085F0_SH_ACTION_ENA(1) | TERAKAN_BARRIER_SURFACE_SYNC_ENGINE_ME;
+      *wait_packet++ = UINT32_MAX;
+      *wait_packet++ = 0;
+      *wait_packet++ = TERAKAN_BARRIER_SURFACE_SYNC_POLL_INTERVAL;
+      static_assert(ARRAY_SIZE(wait_indirect_buffer) == 8,
+                    "Wait visibility IB must be one GFX submission alignment unit");
+      VkResult const wait_visibility_submit_result = device->winsys_fn->queue->submit(
+         queue->submission_context, 0, NULL, ARRAY_SIZE(wait_indirect_buffer),
+         wait_indirect_buffer, 0, NULL);
+      if (wait_visibility_submit_result != VK_SUCCESS) {
+         vk_device_set_lost(&device->vk,
+                            "Wait visibility submission failed with result %s",
+                            vk_Result_to_str(wait_visibility_submit_result));
+         return VK_ERROR_DEVICE_LOST;
+      }
+   }
+
    for (uint32_t command_buffer_index = 0; command_buffer_index < submit->command_buffer_count;
         ++command_buffer_index) {
       struct terakan_command_buffer const * const command_buffer = container_of(
@@ -476,6 +507,9 @@ terakan_queue_submit(struct vk_queue * const queue_base, struct vk_queue_submit 
       list_for_each_entry (struct terakan_command_buffer_indirect_buffer const,
                            command_buffer_indirect_buffer, &command_buffer->indirect_buffers,
                            link) {
+         ++debug_indirect_buffer_count;
+         debug_indirect_buffer_dwords +=
+            command_buffer_indirect_buffer->indirect_buffer_size_dwords;
          /* The winsys may not support empty indirect buffers. */
          assert(command_buffer_indirect_buffer->indirect_buffer_size_dwords != 0);
          VkResult const command_buffer_submit_result = device->winsys_fn->queue->submit(
@@ -498,6 +532,11 @@ terakan_queue_submit(struct vk_queue * const queue_base, struct vk_queue_submit 
             return VK_ERROR_DEVICE_LOST;
          }
       }
+   }
+   if (getenv("TERAKAN_DEBUG_QUEUE_IBS") != NULL) {
+      fprintf(stderr, "[TERAKAN_QUEUE] command_buffers=%u ibs=%u dwords=%" PRIu64 "\n",
+              submit->command_buffer_count, debug_indirect_buffer_count,
+              debug_indirect_buffer_dwords);
    }
 
    /* If there are semaphores to signal from this submission, signal the fence BO to await the
@@ -662,6 +701,22 @@ terakan_queue_submit(struct vk_queue * const queue_base, struct vk_queue_submit 
       vk_device_set_lost(&device->vk,
                          "Submission completion fence signal submission failed with result %s",
                          vk_Result_to_str(completion_submission_submit_result));
+      mtx_lock(&device->completion_mutex);
+      list_splice(&completion_submission->signals, &queue->completion_signals_free);
+      list_inithead(&completion_submission->signals);
+      list_add(&completion_submission->link, &queue->completion_submissions_free);
+      device->completion_lost = true;
+      mtx_unlock(&device->completion_mutex);
+      cnd_broadcast(&device->completion_condition);
+      return VK_ERROR_DEVICE_LOST;
+   }
+
+   /* Diagnostic for submission-completion ordering. Keep the normal asynchronous completion
+    * thread path below intact, but optionally ensure the kernel fence BO is already idle before
+    * publishing semaphore values. */
+   if (getenv("TERAKAN_DEBUG_SYNC_SUBMIT") != NULL &&
+       !device->winsys_fn->queue->completion_submission_await(completion_submission)) {
+      vk_device_set_lost(&device->vk, "Synchronous diagnostic submission wait failed");
       mtx_lock(&device->completion_mutex);
       list_splice(&completion_submission->signals, &queue->completion_signals_free);
       list_inithead(&completion_submission->signals);
