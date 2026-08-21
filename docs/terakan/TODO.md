@@ -1,6 +1,6 @@
 # Terakan development TODO
 
-Last updated: 2026-08-13. Primary target: stable game rendering on AMD
+Last updated: 2026-08-22. Primary target: stable game rendering on AMD
 CAICOS with DXVK-Sarek.
 
 Importance measures the expected effect on real games. Complexity includes
@@ -15,6 +15,8 @@ accept the work. Both use a 1–5 scale.
 | Implement and validate FMASK/CMASK allocation, identity initialization and sampled MSAA addressing | 5/5 | 5/5 | Implementable; requires Evergreen tiling research | Per-sample reads and resolved reads pass for 2x/4x/8x images without corrupting ordinary color targets |
 | Complete cache and barrier coherency | 5/5 | 4/5 | Implementable | Focused attachment, texture, storage, transfer, graphics/compute and query producer-consumer chains pass without application-specific waits |
 | Cover remaining copy, blit and resolve format/subresource combinations | 5/5 | 4/5 | Implementable | Boundary tests cover non-zero offsets, partial extents, mip levels, array/3D layers and every advertised compatible format class |
+| Fix 3D image mip base alignment and descriptor addressing | 5/5 | 3/5 | Implementable; the radeon CS validator gives an exact 4096-byte alignment failure | The formerly device-losing 3D clear passes, adjacent mip/layer cases pass, and the kernel reports no invalid command stream |
+| Correct meta blit formats, mirrored coordinates and 3D slices | 5/5 | 4/5 | Implementable | All basic CTS blits pass for RGBA, BGRA, R32, reversed source/destination axes and 3D slices |
 
 ## P1 — broad DXVK and D3D11 compatibility
 
