@@ -1,6 +1,6 @@
 # Terakan functional coverage
 
-Last updated: 2026-08-22. Hardware under test: AMD CAICOS (`1002:6779`, R9xx)
+Last updated: 2026-08-23. Hardware under test: AMD CAICOS (`1002:6779`, R9xx)
 and PALM/Wrestler (`1002:9807`, R8xx).
 Reference device: AMD Radeon RX 6800 XT using RADV.
 
@@ -60,11 +60,14 @@ covered the selected clear and basic copy/blit matrices:
 | basic image copy and blit, after typed/mirrored blit fixes | 104 | 56 | 35 | 0 |
 | selected clear operations, after 3D descriptor fix | 281 | 180 | 444 | 0 |
 
-The API/property run exposed four Vulkan 1.1 reporting gaps. Three are fixed:
+The API/property run exposed four Vulkan 1.1 reporting gaps. Fixed:
 
 - interpolation offset range and precision are now reported correctly;
 - `VK_KHR_image_format_list`, required by the advertised
-  `VK_KHR_swapchain_mutable_format`, is now exposed;
+  `VK_KHR_swapchain_mutable_format`, is now exposed.
+
+Still open:
+
 - `multiview` remains unexposed even though CTS requires it for the reported
   Vulkan 1.1 API version.
 
@@ -101,7 +104,7 @@ terakan_descriptor_buffer
 terakan_vertex_input
 ```
 
-All seven CAICOS GPU tests pass:
+All nineteen CAICOS GPU tests pass:
 
 ```text
 terakan_image_array_copy
@@ -110,6 +113,18 @@ terakan_bc6_cube
 terakan_bc6_cube_single_level_views
 terakan_bc6_array_view
 terakan_compute_loop
+terakan_formatless_image_store
+terakan_dynamic_offset_bounds
+terakan_clip_distance
+terakan_depth_readback
+terakan_depth_msaa_fetch
+terakan_depth_resolve
+terakan_depth_stencil_resolve
+terakan_stencil_readback
+terakan_stencil_fetch
+terakan_stencil_msaa_fetch
+terakan_frame_chain
+terakan_frame_chain_compute
 terakan_physical_device_properties
 ```
 
@@ -160,8 +175,9 @@ All 13 selected single-queue producer/consumer hazards pass:
 
 Both Wayland swapchain rendering cases pass. Five CTS custom-resolve cases are
 `NotSupported` because `customResolve` is not advertised; this is not counted
-as a failed implementation. `VK_KHR_depth_stencil_resolve` also remains
-unadvertised.
+as a failed implementation. `VK_KHR_depth_stencil_resolve` is now advertised
+with `VK_RESOLVE_MODE_SAMPLE_ZERO_BIT` for depth and stencil, so those CTS
+cases are worth re-running.
 
 ### Confirmed failures
 
@@ -258,6 +274,20 @@ consistent with the still-open cache/barrier coherency item in
 (`TERAKAN_DEBUG_RENDER`/`TERAKAN_DEBUG_RAT`/`TERAKAN_DEBUG_QUEUE_IBS`)
 correlated against a screen recording rather than single-shot screenshots,
 which cannot reliably catch the bad frame.
+
+Since then `terakan_frame_chain` was added to test that shape directly:
+twenty-four frames of produce, sample, render and copy in one command buffer,
+with both a render pass and a compute producer. Both pass, so the hazard is
+narrower than the chain itself. What the application does that the test does
+not is run many distinct compute pipelines rather than one, use several render
+target sizes within a frame, and mix storage buffers with storage images.
+
+Buckshot Roulette has not been observed again since the stencil-aspect view
+swizzle and the multisample `MIP_ADDRESS` fixes landed. Neither fix is an
+obvious explanation for the strobe, since the corruption predates them and
+neither touches the colour path, but the run is cheap and worth repeating
+before more investigation. Only a person watching the screen can judge it:
+single screenshots repeatedly failed to catch a bad frame.
 
 ## Reproduction
 

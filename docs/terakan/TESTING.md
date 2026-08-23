@@ -11,17 +11,24 @@ It performs independently meaningful CPU, GPU, identity, and negative checks:
 1. builds the current working tree;
 2. runs the CPU-only shader lowering, loop-constant, descriptor-buffer, and
    vertex-input tests;
-3. runs seven tests against the generated local ICD: layered image copies,
+3. runs nineteen tests against the generated local ICD: layered image copies,
    instanced dynamic SSBO access, three BC6H cube/array view variants, compute
-   loops, and the physical-device report;
+   loops, formatless storage image writes, dynamic descriptor bounds, clip
+   distance, depth and stencil readback and per-sample fetch, depth and
+   depth/stencil resolve, the frame chain composition in both its render pass
+   and compute forms, and the physical-device report;
 4. corrupts one BC6H expected sample and requires the test to fail;
 5. runs `vulkaninfo --summary` and rejects the result unless a Terakan or
    CAICOS device is actually reported.
 
-The physical-device report also guards the current depth/stencil resolve
-boundary: `VK_KHR_depth_stencil_resolve` and `VK_KHR_dynamic_rendering` must
-remain unadvertised, with no supported resolve modes, until the staged
-DB-to-color and depth-export implementation passes readback coverage.
+The physical-device report also guards where the capability report currently
+stands. `VK_KHR_depth_stencil_resolve` and `VK_KHR_create_renderpass2` must be
+advertised with `VK_RESOLVE_MODE_SAMPLE_ZERO_BIT` for both aspects and
+`independentResolveNone`, while `VK_KHR_dynamic_rendering` must stay
+unadvertised. The point of the guard is that a capability is only advertised
+once a readback test proves it: when the resolve modes were still unproven the
+same check asserted the opposite, and it was flipped only after
+`terakan_depth_resolve` and `terakan_depth_stencil_resolve` passed.
 
 This prevents a passing result from accidentally coming from RADV, llvmpipe,
 or the system Vulkan driver.
@@ -89,6 +96,23 @@ meson test -C build-vulkan --print-errorlogs \
   terakan_compute_loop
 ```
 
+Some tests take arguments that select a variant, and running them directly is
+the quickest way to narrow a defect:
+
+```bash
+build-vulkan/src/amd/terascale/vulkan/terakan_depth_msaa_fetch_test --combined
+build-vulkan/src/amd/terascale/vulkan/terakan_depth_resolve_test --stencil
+```
+
+`terakan_stencil_msaa_fetch_test` carries diagnostics for the surface it reads,
+enabled by environment variables. `TERAKAN_PROBE_DUMP_SURFACE=1` allocates the
+image on host-visible memory when the image allows it and reports how much of
+each aspect was actually written, which separates a producer that never wrote
+from a consumer that reads the wrong place. `TERAKAN_PROBE_ADDRESS_MAP=1`
+additionally splits the work into two submissions so the host can rewrite the
+surface between them, which answers whether the fetch reads that allocation at
+all.
+
 ## Safe basic-compute CTS parity
 
 Run the Vulkan CTS binary from its Vulkan module directory so its Amber
@@ -147,6 +171,28 @@ Terakan ICD:
 
 Do not set `PROTON_USE_WINED3D=1`: that bypasses DXVK and therefore does not
 test the Vulkan driver. Do not force unsupported Mesa/OpenGL extensions.
+
+### terakan-wine
+
+`bin/terakan-wine` does the same thing without needing a prefix prepared by
+hand. It runs a Windows executable through system wine with the local ICD and
+DXVK-Sarek, defaulting to `~/.wine` and initialising it on first use:
+
+```bash
+./bin/terakan-wine --doctor
+./bin/terakan-wine /path/to/game.exe
+```
+
+It deliberately never borrows a Proton `compatdata` prefix. Pointing system
+wine at one makes `wineboot` try to reconcile two different sets of DLLs, which
+floods `setupapi` errors and hangs before the game starts; use
+`steam-terakan-run` below for Proton titles instead. `WINEPREFIX` still
+overrides the default when a separate prefix is wanted.
+
+DXVK-Sarek is staged as symbolic links next to the executable rather than
+through `WINEDLLPATH`, because native Windows DLL lookup checks the
+executable's own directory first, so a game launcher that resets the
+environment cannot deselect it. The links are removed when the run ends.
 
 ### Steam launch option
 

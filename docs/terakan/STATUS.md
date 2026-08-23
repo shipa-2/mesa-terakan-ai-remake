@@ -1,6 +1,6 @@
 # Terakan status
 
-Last updated: 2026-08-22. Primary target: AMD CAICOS (R9xx). Compute coverage
+Last updated: 2026-08-23. Primary target: AMD CAICOS (R9xx). Compute coverage
 is also verified on PALM/Wrestler (R8xx).
 
 ## Verified in the current development cycle
@@ -10,13 +10,18 @@ is also verified on PALM/Wrestler (R8xx).
 | Vulkan instance/device discovery | AMD CAICOS (R9xx) and PALM/Wrestler (R8xx) Terakan devices, API 1.1.318 |
 | Properties and driver identity | `VK_KHR_driver_properties`; Terakan/Mesa identity; non-conformant version reported honestly |
 | VRAM reporting | `VK_EXT_memory_budget`; per-process heap usage plus kernel-reported global VRAM/GTT pressure |
-| Focused regression suite | 4/4 CPU and 8/8 CAICOS GPU tests pass; all 48 executed safe basic-compute CTS cases pass identically on CAICOS and PALM; 1071 additional unattended-safe CTS cases plus 65 isolated clear cases completed on CAICOS |
+| Focused regression suite | 4/4 CPU and 19/19 CAICOS GPU tests pass; all 48 executed safe basic-compute CTS cases pass identically on CAICOS and PALM; 1071 additional unattended-safe CTS cases plus 65 isolated clear cases completed on CAICOS |
 | Compute and subgroup behavior | SSBO, atomics, shared memory, conditional workgroup barriers, image access and indirect dispatch pass on R8xx and R9xx |
 | Draw state | `firstInstance` plus dynamic SSBO offsets pass; graphics/compute transitions preserve descriptors and draw state |
 | Events and sparse property queries | implemented and CAICOS-tested |
 | Image copy and layout | layered buffer/image copies pass; mipmapped array storage uses hardware-compatible power-of-two slice padding |
 | BC6H cube/array sampling | 6 faces x 8 mip levels pass through cube, single-level and 2D-array views |
 | Color MSAA resolve | 2x, 4x, and 8x; full/partial, layers, RGBA/BGRA passed |
+| Depth/stencil resolve | `VK_KHR_depth_stencil_resolve` with `VK_RESOLVE_MODE_SAMPLE_ZERO_BIT` for both aspects, resolved through a `vkCreateRenderPass2` subpass and checked by readback |
+| Depth and stencil sampling | single-sample and multisample per-sample fetches of both aspects, including the stencil aspect of a combined format |
+| Shader clip/cull distance | `shaderClipDistance` and `shaderCullDistance` with all three combined limits at 8 |
+| Dynamic descriptor bounds | the hardware size field of `VK_DESCRIPTOR_TYPE_*_DYNAMIC` descriptors is reclamped for the dynamic offset, with a guard-region test and a negative control |
+| Barrier composition | twenty-four-frame produce, sample, render and copy chains in one command buffer, with a render pass and a compute producer |
 | vkQuake3 | Vulkan renderer works in a 640x480 window |
 | DXVK-Sarek | D3D11 FL 11_1; Katamari and tested Disco Elysium scenes render; Green Hell creates a 1920x1080 swapchain with Sarek |
 | Godot workloads | Hangover Gallery and Fused 240 render correctly in user testing; Buckshot Roulette remains visually corrupted |
@@ -27,6 +32,16 @@ zero mismatches; the corrupted oracle must fail. Its few values that differ
 from Mesa's software decoder were cross-checked against the upstream r600
 OpenGL driver on the same CAICOS hardware.
 
+Two defects found while implementing depth/stencil resolve are worth recording
+because both silently returned zeroes rather than failing. A view of the
+stencil aspect alone was given the combined format's swizzle, which places
+stencil in the second component, so sampling it read a constant zero; and
+`MIP_ADDRESS`, which doubles as the FMASK pointer for multisample textures, was
+left aliasing the base address instead of being zeroed, so the hardware treated
+depth and stencil data as FMASK. The second was settled by comparing against
+the r600 OpenGL driver on the same CAICOS, which fetches multisample stencil
+correctly and so proved the hardware supports it.
+
 The formatless storage-image regression dispatches compute shaders containing
 the SPIR-V `StorageImageReadWithoutFormat` and
 `StorageImageWriteWithoutFormat` capabilities. A transfer-initialized read and
@@ -35,17 +50,19 @@ with untouched buffer guards. Multisample storage images remain disabled.
 
 ## Still experimental
 
-- Complete depth/stencil resolve semantics and layout transitions.
+- Depth/stencil resolve beyond sample zero: the averaging and min/max depth
+  modes, partial regions, mip levels and array layers.
 - FMASK/CMASK allocation, initialization, and sampled MSAA behavior.
-- Cache and barrier synchronization across all game workloads; attachment to
-  texture coherency has focused coverage, not full application coverage.
+- Cache and barrier synchronization across all game workloads. Single-hazard
+  coverage and the frame chain composition test both pass, yet Buckshot
+  Roulette still strobes, so the remaining hazard is narrower than either.
 - Remaining resolve fallbacks for unusual formats and subresources.
 - Long-session stability and untested scenes in DXVK-Sarek games.
 - Full Vulkan 1.1 feature coverage and conformance testing.
-- Basic blit coverage: R32/BGRA, mirrored-coordinate and 3D variants currently
-  fail readback, while the corresponding basic image copies pass.
-- 3D image allocation/descriptor alignment: the first selected 3D clear is
-  rejected by the radeon kernel CS validator and returns device lost.
+- Blit coverage: typed and mirrored 2D blits are fixed, and the remaining
+  failures are concentrated in 3D blits.
+- Geometry and tessellation shaders: the hardware stage bindings and shader
+  keys exist, but both feature bits stay `VK_FALSE` until the rest lands.
 - Complete `vkCmdDispatchBase` and `gl_DeviceIndex` semantics.
 - Vulkan conformance: Terakan is not a conformant implementation.
 
