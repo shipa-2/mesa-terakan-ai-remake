@@ -76,10 +76,18 @@ These are useful, but Vulkan 1.1 permits the corresponding feature bits to be
   take changed nothing, so inheriting the depth aspect's tile split is not the
   cause, despite r600 and AddrLib keeping a separate `stencil_tile_split`. The
   base address, pitch, format and swizzle in the texture descriptor are all
-  correct. What remains to check is whether the aligned extent the stencil
-  aspect inherits from depth (both report 16x128 for an 8x8 image) is what SQ
-  disagrees with, since AddrLib derives that from bytes per pixel while DB
-  drives both aspects from one shared pitch.
+  correct. Dumping where the written bytes sit narrows it further: both aspects
+  are written contiguously from the start of their own surface. Depth occupies
+  offsets 0 to 511, visible as a non-zero byte every fourth byte because the
+  cleared value has three zero bytes, and stencil occupies offsets 0 to 127,
+  which is exactly one 8x8 micro tile of 64 pixels times 2 samples. So DB laid
+  both out the same way, and both descriptors carry the same array mode, tile
+  split and pitch, differing only in bytes per pixel, yet depth reads correctly
+  and stencil does not. That rules out the aligned extent too, and leaves the
+  bytes-per-pixel dependent part of the Evergreen 2D tiled address computation
+  as the thing to check against a reference, rather than by further guessing:
+  a 512-byte depth micro tile and a 128-byte stencil micro tile interact
+  differently with the 128-byte tile split.
 - Multisample stencil sampling was also isolated by probes on CAICOS.
   `terakan_stencil_readback` clears and reads single-sample stencil back
   correctly, and `terakan_depth_msaa_fetch --combined` fetches multisample

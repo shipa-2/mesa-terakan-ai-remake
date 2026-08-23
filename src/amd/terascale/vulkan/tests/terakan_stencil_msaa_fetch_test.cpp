@@ -481,6 +481,25 @@ main()
                    "surface dump: depth region nonzero=%u/16384, stencil region nonzero=%u/4096 "
                    "equal-to-clear=%u\n",
                    nonzero_before, nonzero_after, matching);
+      /* Where the written bytes sit reveals the layout DB actually used. */
+      std::fprintf(stderr, "written depth offsets:");
+      uint32_t depth_printed = 0;
+      for (uint32_t offset = 0; offset < 16384 && depth_printed < 16; ++offset) {
+         if (surface[offset] != 0) {
+            std::fprintf(stderr, " %u", offset);
+            ++depth_printed;
+         }
+      }
+      std::fprintf(stderr, "\n");
+      std::fprintf(stderr, "written stencil offsets (relative to the aspect):");
+      uint32_t printed = 0;
+      for (uint32_t offset = 16384; offset < 16384 + 4096 && printed < 40; ++offset) {
+         if (surface[offset] != 0) {
+            std::fprintf(stderr, " %u", offset - 16384);
+            ++printed;
+         }
+      }
+      std::fprintf(stderr, "\n");
       vkUnmapMemory(device, depth_memory);
    }
 
