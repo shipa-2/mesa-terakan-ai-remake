@@ -120,17 +120,37 @@ terakan_CmdBindDescriptorSets(VkCommandBuffer const commandBuffer,
                     * be undefined, the BO pointer must not be dereferenced here as it may be
                     * outdated.
                     */
-                   /* TODO(Triang3l): #MemoryIntegrity with an additional remaining size variable. */
+                   /* #MemoryIntegrity: the dynamic offset shifts the base address without the
+                    * static `range` this descriptor was written with accounting for it, so
+                    * `resource.resource[1]` (SIZE - 1) must be reclamped against the real
+                    * remaining extent of the bound VkBuffer from its static offset. Without this,
+                    * a dynamic offset near the end of the buffer would keep the original SIZE and
+                    * let the shader read past the buffer's allocation.
+                    */
                    if (set_resource->bo != NULL) {
                       assert(G_03001C_TYPE(resource.resource[7]) ==
                              V_03001C_SQ_TEX_VTX_VALID_BUFFER);
+                      uint32_t const dynamic_offset = range_dynamic_offsets[resource_index];
                       uint64_t const resource_address =
                          (resource.resource[0] |
                           ((uint64_t)G_030008_BASE_ADDRESS_HI(resource.resource[2]) << 32)) +
-                         range_dynamic_offsets[resource_index];
+                         dynamic_offset;
                       resource.resource[0] = (uint32_t)resource_address;
                       resource.resource[2] = (resource.resource[2] & C_030008_BASE_ADDRESS_HI) |
                                              S_030008_BASE_ADDRESS_HI(resource_address >> 32);
+                      uint64_t const existing_size_bytes = (uint64_t)resource.resource[1] + 1;
+                      uint64_t const remaining_after_offset =
+                         dynamic_offset < set_resource->dynamic_offset_remaining_bytes
+                            ? set_resource->dynamic_offset_remaining_bytes - dynamic_offset
+                            : 0;
+                      uint64_t const clamped_size_bytes =
+                         MIN2(existing_size_bytes, remaining_after_offset);
+                      /* SIZE is encoded as byte count minus one, so a fully out-of-bounds dynamic
+                       * offset is floored to a 1-byte window rather than 0 to avoid representing it
+                       * as UINT32_MAX via unsigned underflow.
+                       */
+                      resource.resource[1] =
+                         clamped_size_bytes != 0 ? (uint32_t)(clamped_size_bytes - 1) : 0;
                    }
                    sqk_set_functions->resource(&command_writer->hw_config_sqk,
                                                range_shader_base + resource_index, set_resource->bo,

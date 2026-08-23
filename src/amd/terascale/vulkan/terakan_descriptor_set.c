@@ -44,6 +44,23 @@
 #include <stdint.h>
 #include <string.h>
 
+/* #MemoryIntegrity: the number of bytes from `buffer_info->offset` to the end of the real bound
+ * VkBuffer, independent of `buffer_info->range`. A VK_DESCRIPTOR_TYPE_*_DYNAMIC descriptor's
+ * dynamic offset (applied in terakan_pipeline_layout.c) shifts the hardware descriptor's base
+ * address forward without knowledge of `range` at bind time, so clamping against this value there
+ * prevents a dynamic offset near the end of the buffer from exposing memory past its allocation.
+ */
+static uint32_t
+terakan_descriptor_set_dynamic_offset_remaining_bytes(
+   VkDescriptorBufferInfo const * const buffer_info)
+{
+   struct terakan_buffer const * const buffer = terakan_buffer_from_handle(buffer_info->buffer);
+   if (buffer == NULL || buffer_info->offset > buffer->vk.size) {
+      return 0;
+   }
+   return (uint32_t)MIN2(buffer->vk.size - buffer_info->offset, (VkDeviceSize)UINT32_MAX);
+}
+
 VKAPI_ATTR void VKAPI_CALL
 terakan_UpdateDescriptorSets(UNUSED VkDevice const device, uint32_t const descriptorWriteCount,
                              VkWriteDescriptorSet const * const pDescriptorWrites,
@@ -171,8 +188,15 @@ terakan_UpdateDescriptorSets(UNUSED VkDevice const device, uint32_t const descri
               ++descriptor_index) {
             struct terakan_descriptor_set_resource * const dst_resource =
                &dst_resources[descriptor_index];
-            dst_resource->bo = terakan_buffer_create_uniform_buffer_descriptor(
-               &descriptor_write->pBufferInfo[descriptor_index], &dst_resource->resource);
+            VkDescriptorBufferInfo const * const buffer_info =
+               &descriptor_write->pBufferInfo[descriptor_index];
+            dst_resource->bo =
+               terakan_buffer_create_uniform_buffer_descriptor(buffer_info, &dst_resource->resource);
+            /* #MemoryIntegrity: independent of `range`, so a dynamic offset applied later can clamp
+             * the hardware SIZE field to the buffer's real remaining extent.
+             */
+            dst_resource->dynamic_offset_remaining_bytes =
+               terakan_descriptor_set_dynamic_offset_remaining_bytes(buffer_info);
          }
       } break;
 
@@ -183,11 +207,15 @@ terakan_UpdateDescriptorSets(UNUSED VkDevice const device, uint32_t const descri
             struct terakan_descriptor_set_resource * const dst_resource =
                &dst_resources[descriptor_index];
             struct terakan_descriptor_set_uav * const dst_uav = &dst_uavs[descriptor_index];
+            VkDescriptorBufferInfo const * const buffer_info =
+               &descriptor_write->pBufferInfo[descriptor_index];
             struct terakan_bo const * const bo = terakan_buffer_create_storage_buffer_descriptor(
-               &descriptor_write->pBufferInfo[descriptor_index], &dst_resource->resource,
-               &dst_uav->color);
+               buffer_info, &dst_resource->resource, &dst_uav->color);
             dst_resource->bo = bo;
             dst_uav->bo = bo;
+            /* #MemoryIntegrity, see the UNIFORM_BUFFER_DYNAMIC case above. */
+            dst_resource->dynamic_offset_remaining_bytes =
+               terakan_descriptor_set_dynamic_offset_remaining_bytes(buffer_info);
          }
       } break;
 

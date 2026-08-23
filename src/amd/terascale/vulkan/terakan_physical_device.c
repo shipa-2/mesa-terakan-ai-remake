@@ -479,8 +479,12 @@ terakan_physical_device_get_capabilities(
    features_out->shaderSampledImageArrayDynamicIndexing = true;
    features_out->shaderStorageBufferArrayDynamicIndexing = true;
    features_out->shaderStorageImageArrayDynamicIndexing = true;
-   /* TODO(Triang3l): shaderClipDistance. */
-   /* TODO(Triang3l): shaderCullDistance. */
+   /* Vertex shader clip/cull distance export (PA_CL_VS_OUT_CNTL CCDIST0/1) is unconditionally
+    * wired from nir->info.clip/cull_distance_array_size in terakan_shader_sfn.cpp, shared with the
+    * r600 OpenGL driver's long-tested clip/cull distance handling.
+    */
+   features_out->shaderClipDistance = true;
+   features_out->shaderCullDistance = true;
    /* TODO(Triang3l): shaderFloat64. */
    /* TODO(Triang3l): shaderResourceMinLod. */
    /* TODO(Triang3l): variableMultisampleRate. */
@@ -797,7 +801,13 @@ terakan_physical_device_get_capabilities(
       properties_out->timestampPeriod = (float)(1e9 / (double)clock_crystal_frequency_hz);
    }
 
-   /* TODO(Triang3l): Maximum clip and cull distances when enabled. */
+   /* Clip and cull distances share a combined 8-slot hardware export (PA_CL_VS_OUT_CNTL
+    * CCDIST0/CCDIST1, 2 vec4 export slots), matching the Vulkan 1.1 minimum required limits
+    * exactly. See the `clip_cull_distances_enabled` computation in terakan_shader_sfn.cpp.
+    */
+   properties_out->maxClipDistances = 8;
+   properties_out->maxCullDistances = 8;
+   properties_out->maxCombinedClipAndCullDistances = 8;
 
    properties_out->discreteQueuePriorities = 2;
 

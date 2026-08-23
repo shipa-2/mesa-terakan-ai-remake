@@ -45,6 +45,13 @@ extern "C" {
 struct terakan_descriptor_set_resource {
    struct terakan_bo const * bo;
    struct terakan_resource_descriptor resource;
+   /* For VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC and VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC,
+    * the number of bytes remaining in the bound VkBuffer from this descriptor's static offset to
+    * the end of the buffer (independent of `range`), used to clamp `resource.resource[1]` (the
+    * hardware SIZE field) when a dynamic offset is applied in `terakan_pipeline_layout.c`. #MemoryIntegrity.
+    * Unused for non-dynamic descriptor types.
+    */
+   uint32_t dynamic_offset_remaining_bytes;
 };
 
 struct terakan_descriptor_set_sampler {

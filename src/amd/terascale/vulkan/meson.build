@@ -538,6 +538,49 @@ if with_tests
         timeout : 10,
       )
 
+      terakan_clip_distance_vertex_spv = custom_target(
+        'terakan_clip_distance.vert.spv',
+        input : 'tests/terakan_clip_distance.vert',
+        output : 'terakan_clip_distance.vert.spv',
+        command : [
+          prog_glslang, '-V', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_clip_distance.vert.spv.d',
+      )
+      terakan_clip_distance_fragment_spv = custom_target(
+        'terakan_clip_distance.frag.spv',
+        input : 'tests/terakan_clip_distance.frag',
+        output : 'terakan_clip_distance.frag.spv',
+        command : [
+          prog_glslang, '-V', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_clip_distance.frag.spv.d',
+      )
+      terakan_clip_distance_test = executable(
+        'terakan_clip_distance_test',
+        ['tests/terakan_clip_distance_test.cpp'],
+        dependencies : vulkan_loader_dep,
+      )
+      test(
+        'terakan_clip_distance',
+        terakan_clip_distance_test,
+        args : [terakan_clip_distance_vertex_spv, terakan_clip_distance_fragment_spv],
+        depends : [
+          libvulkan_terascale,
+          _dev_icd,
+          terakan_clip_distance_vertex_spv,
+          terakan_clip_distance_fragment_spv,
+        ],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 10,
+      )
+
       terakan_compute_loop_spv = custom_target(
         'terakan_compute_loop.spv.h',
         input : 'tests/terakan_compute_loop.comp',
@@ -559,6 +602,36 @@ if with_tests
       test(
         'terakan_compute_loop',
         terakan_compute_loop_test,
+        depends : [libvulkan_terascale, _dev_icd],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 5,
+      )
+
+      terakan_dynamic_offset_bounds_spv = custom_target(
+        'terakan_dynamic_offset_bounds.spv.h',
+        input : 'tests/terakan_dynamic_offset_bounds.comp',
+        output : 'terakan_dynamic_offset_bounds.spv.h',
+        command : [
+          prog_glslang, '-V', '-x', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_dynamic_offset_bounds.spv.h.d',
+      )
+      terakan_dynamic_offset_bounds_test = executable(
+        'terakan_dynamic_offset_bounds_test',
+        [
+          'tests/terakan_dynamic_offset_bounds_test.c',
+          terakan_dynamic_offset_bounds_spv,
+        ],
+        dependencies : vulkan_loader_dep,
+      )
+      test(
+        'terakan_dynamic_offset_bounds',
+        terakan_dynamic_offset_bounds_test,
         depends : [libvulkan_terascale, _dev_icd],
         env : {
           'VK_DRIVER_FILES' : _dev_icd.full_path(),

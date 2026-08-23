@@ -1,0 +1,25 @@
+#version 450
+
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+/* Bound as VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC with a static range of 64 bytes (16 dwords)
+ * covering the whole 64-byte buffer, and a dynamic offset applied at bind time that the C test
+ * deliberately pushes close to the end of the real buffer.
+ */
+layout(set = 0, binding = 0, std430) readonly buffer DynamicSource {
+   uint words[16];
+} dynamic_source;
+
+layout(set = 0, binding = 1, std430) writeonly buffer Output {
+   uint value;
+} output_buffer;
+
+void
+main()
+{
+   /* The last dword of the nominal 64-byte range. With the dynamic offset applied, this lands
+    * deep in the guard region past the end of the real buffer if the hardware SIZE field is not
+    * reclamped for the dynamic offset (#MemoryIntegrity).
+    */
+   output_buffer.value = dynamic_source.words[15];
+}
