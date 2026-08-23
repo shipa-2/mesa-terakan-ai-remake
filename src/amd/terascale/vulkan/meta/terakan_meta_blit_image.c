@@ -17,6 +17,7 @@
 #include "util/u_math.h"
 
 #include <assert.h>
+#include <math.h>
 #include <stdlib.h>
 
 enum {
@@ -267,6 +268,28 @@ terakan_meta_blit_region_scale_off(int32_t const src0, int32_t const src1, int32
    *off_out = (float)src0 - (float)dst0 * (*scale_out);
 }
 
+/* The depth axis of a blit region is scaled and signed like the other two, so a destination slice
+ * corresponds to a source slice rather than to the slice with the same index. Returns that source
+ * slice relative to the start of the sampled range.
+ *
+ * Both deltas carry their direction, so a reversed range mirrors without a special case. The source
+ * is sampled as a 2D array, which has no depth filter, so this is the nearest slice whichever
+ * filter the blit asked for.
+ */
+static uint32_t
+terakan_meta_blit_depth_source_slice(int32_t const src_begin, int32_t const src_end,
+                                     int32_t const dst_begin, int32_t const dst_end,
+                                     uint32_t const dst_slice, uint32_t const src_slice_count)
+{
+   assert(dst_begin != dst_end);
+
+   float const dst_center = (float)(MIN2(dst_begin, dst_end) + (int32_t)dst_slice) + 0.5F;
+   float const normalized = (dst_center - (float)dst_begin) / (float)(dst_end - dst_begin);
+   int32_t const source = src_begin + (int32_t)floorf(normalized * (float)(src_end - src_begin));
+
+   return (uint32_t)CLAMP(source - MIN2(src_begin, src_end), 0, (int32_t)src_slice_count - 1);
+}
+
 static bool
 terakan_meta_blit_region_to_copy(VkImageBlit2 const * const blit, bool const formats_identical,
                                  VkImageCopy2 * const copy_out)
@@ -359,6 +382,28 @@ terakan_meta_blit_image_region_draw(struct terakan_gfx_command_writer * const co
       return;
    }
 
+   /* A 3D image takes its depth range from the region's offsets, where it is scaled and signed like
+    * the other two axes. An array image takes it from the subresource layers, where Vulkan requires
+    * the two layer counts to match, so the mapping there is always one to one and ascending.
+    */
+   bool const src_is_3d = src_image->vk.image_type == VK_IMAGE_TYPE_3D;
+   bool const dst_is_3d = dst_image->vk.image_type == VK_IMAGE_TYPE_3D;
+   int32_t const src_z_begin =
+      src_is_3d ? region->srcOffsets[0].z : (int32_t)region->srcSubresource.baseArrayLayer;
+   int32_t const src_z_end =
+      src_is_3d ? region->srcOffsets[1].z
+                : (int32_t)(region->srcSubresource.baseArrayLayer +
+                            region->srcSubresource.layerCount);
+   int32_t const dst_z_begin =
+      dst_is_3d ? region->dstOffsets[0].z : (int32_t)region->dstSubresource.baseArrayLayer;
+   int32_t const dst_z_end =
+      dst_is_3d ? region->dstOffsets[1].z
+                : (int32_t)(region->dstSubresource.baseArrayLayer +
+                            region->dstSubresource.layerCount);
+   if (src_z_begin == src_z_end || dst_z_begin == dst_z_end) {
+      return;
+   }
+
    struct terakan_image_descriptor_create_info dst_descriptor_create_info = {.image = dst_image};
    struct terakan_image_descriptor_create_info src_descriptor_create_info = {.image = src_image};
 
@@ -379,23 +424,14 @@ terakan_meta_blit_image_region_draw(struct terakan_gfx_command_writer * const co
       src_descriptor_create_info.subresource_range.base_mip_level = region->srcSubresource.mipLevel;
       src_descriptor_create_info.subresource_range.max_level_count = 1;
 
-      if (src_image->vk.image_type == VK_IMAGE_TYPE_3D) {
-         src_descriptor_create_info.subresource_range.base_z_or_array_layer =
-            (uint32_t)MIN2(region->srcOffsets[0].z, region->srcOffsets[1].z);
-         src_descriptor_create_info.subresource_range.max_depth_or_layer_count =
-            (uint32_t)abs(region->srcOffsets[1].z - region->srcOffsets[0].z);
-      } else {
-         src_descriptor_create_info.subresource_range.base_z_or_array_layer =
-            region->srcSubresource.baseArrayLayer;
-         src_descriptor_create_info.subresource_range.max_depth_or_layer_count =
-            region->srcSubresource.layerCount;
-      }
+      src_descriptor_create_info.subresource_range.base_z_or_array_layer =
+         (uint32_t)MIN2(src_z_begin, src_z_end);
+      src_descriptor_create_info.subresource_range.max_depth_or_layer_count =
+         (uint32_t)abs(src_z_end - src_z_begin);
       dst_descriptor_create_info.subresource_range.base_z_or_array_layer =
-         dst_image->vk.image_type == VK_IMAGE_TYPE_3D
-            ? (uint32_t)MIN2(region->dstOffsets[0].z, region->dstOffsets[1].z)
-            : region->dstSubresource.baseArrayLayer;
+         (uint32_t)MIN2(dst_z_begin, dst_z_end);
       dst_descriptor_create_info.subresource_range.max_depth_or_layer_count =
-         src_descriptor_create_info.subresource_range.max_depth_or_layer_count;
+         (uint32_t)abs(dst_z_end - dst_z_begin);
 
       if (unlikely(!terakan_image_descriptor_subresource_range_sanitize(
                       dst_image, &dst_descriptor_create_info.subresource_range, false) ||
@@ -417,19 +453,40 @@ terakan_meta_blit_image_region_draw(struct terakan_gfx_command_writer * const co
          continue;
       }
 
-      src_descriptor_create_info.subresource_range.max_depth_or_layer_count =
-         MIN2(src_descriptor_create_info.subresource_range.max_depth_or_layer_count,
-              dst_descriptor_create_info.subresource_range.max_depth_or_layer_count);
-      dst_descriptor_create_info.subresource_range.max_depth_or_layer_count =
+      uint32_t const src_slice_count =
          src_descriptor_create_info.subresource_range.max_depth_or_layer_count;
+      uint32_t const dst_slice_count =
+         dst_descriptor_create_info.subresource_range.max_depth_or_layer_count;
+      if (src_slice_count == 0 || dst_slice_count == 0) {
+         continue;
+      }
+      uint32_t const src_descriptor_base_array = G_030014_BASE_ARRAY(src_descriptor.resource[5]);
+      uint32_t const dst_range_base_slice =
+         dst_descriptor_create_info.subresource_range.base_z_or_array_layer;
 
-      do {
+      /* One destination slice per draw. The pixel shader samples the source at a constant array
+       * layer, so a draw covering several destination slices would read the same source slice for
+       * all of them; the source slice is selected by re-basing its descriptor instead. That also
+       * makes an arbitrary depth mapping, scaled or reversed, cost nothing extra.
+       */
+      for (uint32_t dst_slice = 0; dst_slice < dst_slice_count; ++dst_slice) {
+         dst_descriptor_create_info.subresource_range.base_z_or_array_layer =
+            dst_range_base_slice + dst_slice;
+         dst_descriptor_create_info.subresource_range.max_depth_or_layer_count = 1;
+
          struct terakan_color_descriptor dst_descriptor;
          uint32_t const dst_descriptor_slices = terakan_image_create_color_descriptor(
             &dst_descriptor_create_info, V_028C70_TEXTURE2DARRAY, &dst_descriptor, NULL);
          if (unlikely(dst_descriptor_slices == 0)) {
             break;
          }
+
+         src_descriptor.resource[5] =
+            (src_descriptor.resource[5] & C_030014_BASE_ARRAY) |
+            S_030014_BASE_ARRAY(src_descriptor_base_array +
+                                terakan_meta_blit_depth_source_slice(src_z_begin, src_z_end,
+                                                                     dst_z_begin, dst_z_end,
+                                                                     dst_slice, src_slice_count));
 
          terakan_meta_config_draw_set_cb_rtvs_and_db_shader_control(
             command_writer, 0xF, &dst_image->bo, &dst_descriptor, NULL,
@@ -467,13 +524,7 @@ terakan_meta_blit_image_region_draw(struct terakan_gfx_command_writer * const co
             }
          }
 
-         dst_descriptor_create_info.subresource_range.base_z_or_array_layer += dst_descriptor_slices;
-         dst_descriptor_create_info.subresource_range.max_depth_or_layer_count -=
-            dst_descriptor_slices;
-         src_descriptor.resource[5] = (src_descriptor.resource[5] & C_030014_BASE_ARRAY) |
-                                      S_030014_BASE_ARRAY(G_030014_BASE_ARRAY(
-                                         src_descriptor.resource[5] + dst_descriptor_slices));
-      } while (dst_descriptor_create_info.subresource_range.max_depth_or_layer_count != 0);
+      }
    }
 }
 

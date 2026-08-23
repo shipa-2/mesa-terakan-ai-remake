@@ -76,7 +76,18 @@ depth and stencil variants, pass. The typed and mirrored 2D blit failures were
 caused by using `CopyImage` for format-converting or mirrored operations and by
 discarding the sign of mirrored coordinate transforms. After fixing those
 paths, 58 of 149 blit cases pass, 56 fail and 35 are unsupported. The remaining
-failures are concentrated in 3D blits.
+failures were concentrated in 3D blits.
+
+The CTS binary is no longer installed on the test machine, so the 3D blit work
+was driven from the driver code and a readback test instead. `terakan_blit_3d`
+blits a 3D image whose every slice holds a distinct colour and reports which
+source slice each destination slice received, for a minified, a magnified and a
+mirrored depth range, then blits a four-layer 2D array. Against the code before
+the fix all four groups fail: the minified and mirrored ranges hand every
+destination slice the source's first slice, the magnified range leaves six of
+its eight destination slices unwritten, and three of the four array layers
+receive layer zero. The CTS blit batch has not been rerun since, so the numbers
+above still describe the previous state.
 
 The initial selected clear batch passed its first 64 1D and 2D color cases, then
 `dEQP-VK.api.image_clearing.core.clear_color_image.3d.optimal.single_layer.r8g8b8a8_unorm`
@@ -127,6 +138,7 @@ terakan_frame_chain
 terakan_frame_chain_compute
 terakan_frame_chain_depth
 terakan_dynamic_rendering
+terakan_blit_3d
 terakan_physical_device_properties
 ```
 

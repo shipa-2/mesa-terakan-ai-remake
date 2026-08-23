@@ -730,6 +730,23 @@ if with_tests
         timeout : 30,
       )
 
+      terakan_blit_3d_test = executable(
+        'terakan_blit_3d_test',
+        ['tests/terakan_blit_3d_test.cpp'],
+        dependencies : vulkan_loader_dep,
+      )
+      test(
+        'terakan_blit_3d',
+        terakan_blit_3d_test,
+        depends : [libvulkan_terascale, _dev_icd],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 30,
+      )
+
       terakan_stencil_fetch_spv = custom_target(
         'terakan_stencil_fetch.spv.h',
         input : 'tests/terakan_stencil_fetch.comp',

@@ -23,6 +23,7 @@ is also verified on PALM/Wrestler (R8xx).
 | Dynamic descriptor bounds | the hardware size field of `VK_DESCRIPTOR_TYPE_*_DYNAMIC` descriptors is reclamped for the dynamic offset, with a guard-region test and a negative control |
 | Barrier composition | twenty-four-frame produce, sample, render and copy chains in one command buffer, with a render pass, a compute and a depth-only producer |
 | Dynamic rendering | `VK_KHR_dynamic_rendering`, the driver's native rendering path, including pipelines built without a render pass and suspend/resume splits |
+| Layered and 3D blits | destination slices select their source slice through the region's signed, scaled depth range; minified, magnified, mirrored and four-layer array blits are checked by readback |
 | vkQuake3 | Vulkan renderer works in a 640x480 window |
 | DXVK-Sarek | D3D11 FL 11_1; Katamari and tested Disco Elysium scenes render; Green Hell creates a 1920x1080 swapchain with Sarek |
 | Godot workloads | Hangover Gallery and Fused 240 render correctly in user testing; Buckshot Roulette now renders real graphics but flickers |
@@ -62,8 +63,9 @@ with untouched buffer guards. Multisample storage images remain disabled.
 - Remaining resolve fallbacks for unusual formats and subresources.
 - Long-session stability and untested scenes in DXVK-Sarek games.
 - Full Vulkan 1.1 feature coverage and conformance testing.
-- Blit coverage: typed and mirrored 2D blits are fixed, and the remaining
-  failures are concentrated in 3D blits.
+- Blit coverage: typed, mirrored and layered blits are fixed, including the
+  scaled and reversed depth ranges of 3D regions. What remains is the per-format
+  matrix.
 - Geometry and tessellation shaders: the hardware stage bindings and shader
   keys exist, but both feature bits stay `VK_FALSE` until the rest lands.
 - Complete `vkCmdDispatchBase` and `gl_DeviceIndex` semantics.

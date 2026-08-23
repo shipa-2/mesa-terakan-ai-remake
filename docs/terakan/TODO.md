@@ -15,7 +15,7 @@ accept the work. Both use a 1–5 scale.
 | Implement and validate FMASK/CMASK allocation, identity initialization and sampled MSAA addressing | 5/5 | 5/5 | Implementable; requires Evergreen tiling research | Per-sample reads and resolved reads pass for 2x/4x/8x images without corrupting ordinary color targets |
 | Complete cache and barrier coherency | 5/5 | 4/5 | Implementable. Composition coverage now exists (`terakan_frame_chain`, both the render-pass and the compute producer) and passes, so the remaining hazard is narrower than a repeated clear/dispatch, sample, render and copy chain | Focused attachment, texture, storage, transfer, graphics/compute and query producer-consumer chains pass without application-specific waits |
 | Cover remaining copy, blit and resolve format/subresource combinations | 5/5 | 4/5 | Implementable | Boundary tests cover non-zero offsets, partial extents, mip levels, array/3D layers and every advertised compatible format class |
-| Correct meta blit 3D slices | 5/5 | 3/5 | Implementable; the typed and mirrored 2D cases are fixed and the remaining failures are concentrated in 3D blits | All basic CTS blits pass for RGBA, BGRA, R32, reversed source/destination axes and 3D slices |
+| Correct meta blit format coverage | 5/5 | 3/5 | Implementable; the typed, mirrored and layered/3D-depth cases are fixed, leaving the per-format matrix | All basic CTS blits pass for RGBA, BGRA, R32, reversed source/destination axes and 3D slices |
 
 ## P1 — broad DXVK and D3D11 compatibility
 
@@ -79,9 +79,24 @@ These are useful, but Vulkan 1.1 permits the corresponding feature bits to be
   is used in its resource descriptor. The clear that previously returned
   `VK_ERROR_DEVICE_LOST` through the radeon CS validator, and the full selected
   color-clear matrix, now pass without device loss.
+- Layered and 3D blit slice selection: a blit covering more than one slice
+  wrote the wrong ones. Two defects combined. The destination slice count was
+  forced to equal the source slice count, so a 3D region whose two depth ranges
+  differ in size produced too few or too many slices, and the depth axis was
+  reduced with `MIN2`, which discards the sign a reversed range carries, so a
+  mirrored depth range was not mirrored. Separately, the r8xx pixel shader
+  samples the source at a constant array layer, while the loop drew several
+  destination slices per draw and advanced the source descriptor only between
+  draws, so every layer of a multi-layer array blit received the source's first
+  layer. The destination slice now selects its source slice through the
+  region's signed, scaled depth range, and one destination slice is drawn per
+  draw with the source descriptor re-based for it. `terakan_blit_3d` covers
+  minified, magnified and mirrored depth ranges plus a four-layer array blit;
+  against the previous code all four groups fail.
+
 - Typed and mirrored 2D blits: `CopyImage` is no longer used for
   format-converting or mirrored operations, and the sign of mirrored coordinate
-  transforms is preserved. 3D blits remain open and are tracked above.
+  transforms is preserved.
 - Stencil-aspect view swizzle: a view of the stencil aspect alone is a
   single-component image whose value the Vulkan specification requires in R,
   but the driver was applying the combined depth/stencil format's swizzle,
