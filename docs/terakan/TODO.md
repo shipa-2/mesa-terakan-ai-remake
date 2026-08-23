@@ -76,18 +76,31 @@ These are useful, but Vulkan 1.1 permits the corresponding feature bits to be
   take changed nothing, so inheriting the depth aspect's tile split is not the
   cause, despite r600 and AddrLib keeping a separate `stencil_tile_split`. The
   base address, pitch, format and swizzle in the texture descriptor are all
-  correct. Dumping where the written bytes sit narrows it further: both aspects
-  are written contiguously from the start of their own surface. Depth occupies
-  offsets 0 to 511, visible as a non-zero byte every fourth byte because the
-  cleared value has three zero bytes, and stencil occupies offsets 0 to 127,
-  which is exactly one 8x8 micro tile of 64 pixels times 2 samples. So DB laid
-  both out the same way, and both descriptors carry the same array mode, tile
-  split and pitch, differing only in bytes per pixel, yet depth reads correctly
-  and stencil does not. That rules out the aligned extent too, and leaves the
-  bytes-per-pixel dependent part of the Evergreen 2D tiled address computation
-  as the thing to check against a reference, rather than by further guessing:
-  a 512-byte depth micro tile and a 128-byte stencil micro tile interact
-  differently with the 128-byte tile split.
+  correct. Dumping where the written bytes sit shows both aspects written
+  contiguously from the start of their own surface: depth at offsets 0 to 511,
+  visible as a non-zero byte every fourth byte because the cleared float has
+  three zero bytes, and stencil at offsets 0 to 127, exactly one 8x8 micro tile
+  of 64 pixels times 2 samples.
+
+  Addressing is ruled out entirely. `TERAKAN_PROBE_ADDRESS_MAP` in the probe
+  splits the work into two submissions so the host can rewrite the surface
+  between the clear and the fetch. Filling every byte of the whole allocation
+  with a marker still makes the fetch return zeroes, so SQ is not reading this
+  allocation at all: the fetch itself does not happen, rather than happening at
+  the wrong offset. Splitting the submissions without touching memory changes
+  nothing either, so it is not a barrier between the depth/stencil write and
+  the texture read.
+
+  Computing the stencil aspect's own tiling instead of inheriting depth's, the
+  way r600 does for texturing the stencil aspect, also changed nothing.
+
+  What is left is the descriptor and format combination itself: an 8bpp
+  multisample texture fetch. Single-sample stencil fetches work with the same
+  format after the swizzle fix, and multisample depth fetches work with the
+  same tiling and sample count, so it is specifically 8 bits per pixel combined
+  with multisampling. Worth checking whether the hardware supports that fetch at
+  all before assuming the descriptor is merely mis-programmed, since
+  `sampledImageStencilSampleCounts` is currently advertised without evidence.
 - Multisample stencil sampling was also isolated by probes on CAICOS.
   `terakan_stencil_readback` clears and reads single-sample stencil back
   correctly, and `terakan_depth_msaa_fetch --combined` fetches multisample

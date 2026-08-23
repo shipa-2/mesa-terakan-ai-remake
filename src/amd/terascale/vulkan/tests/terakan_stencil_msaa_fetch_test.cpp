@@ -434,6 +434,54 @@ main()
                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1,
                         &depth_ready);
 
+   /* TERAKAN_PROBE_ADDRESS_MAP splits the work so the host can overwrite the stencil surface with
+    * a positional ramp between the clear and the fetch. Each value the shader then returns is the
+    * low byte of the offset SQ actually read, which reveals its addressing directly.
+    */
+   bool const address_map = std::getenv("TERAKAN_PROBE_ADDRESS_MAP") != nullptr &&
+                            depth_memory_is_mappable;
+   /* TERAKAN_PROBE_SPLIT_SUBMIT keeps the work in two submissions with a full idle between the
+    * clear and the fetch, without touching the surface. If that alone makes the values appear, the
+    * fault is the barrier between the depth/stencil write and the texture read, not addressing.
+    */
+   bool const split_submit = address_map || std::getenv("TERAKAN_PROBE_SPLIT_SUBMIT") != nullptr;
+   if (split_submit) {
+      VK_CHECK(vkEndCommandBuffer(command_buffer));
+      VkSubmitInfo const clear_submit = {
+         .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+         .commandBufferCount = 1,
+         .pCommandBuffers = &command_buffer,
+      };
+      VK_CHECK(vkQueueSubmit(queue, 1, &clear_submit, VK_NULL_HANDLE));
+      VK_CHECK(vkQueueWaitIdle(queue));
+
+      if (address_map) {
+         uint8_t * surface;
+         VK_CHECK(vkMapMemory(device, depth_memory, 0, VK_WHOLE_SIZE, 0,
+                              reinterpret_cast<void **>(&surface)));
+         if (std::getenv("TERAKAN_PROBE_MARK_ALL") != nullptr) {
+            /* If SQ still returns zero when every byte of the allocation is marked, it is not
+             * reading this allocation at all, which would point at the binding rather than the
+             * address computation.
+             */
+            for (uint32_t offset = 0; offset < depth_requirements.size; ++offset)
+               surface[offset] = 0xEE;
+         } else if (std::getenv("TERAKAN_PROBE_MARK_OUTSIDE") != nullptr) {
+            /* Leave what DB wrote alone and mark everything past it, so the returned value says
+             * whether SQ reads inside the written run or beyond it.
+             */
+            for (uint32_t offset = 128; offset < 4096; ++offset)
+               surface[16384 + offset] = 0xEE;
+         } else {
+            for (uint32_t offset = 0; offset < 4096; ++offset)
+               surface[16384 + offset] = static_cast<uint8_t>(offset);
+         }
+         vkUnmapMemory(device, depth_memory);
+      }
+
+      VK_CHECK(vkResetCommandPool(device, command_pool, 0));
+      VK_CHECK(vkBeginCommandBuffer(command_buffer, &begin_info));
+   }
    vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
    vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_layout, 0, 1,
                            &descriptor_set, 0, nullptr);
@@ -501,6 +549,16 @@ main()
       }
       std::fprintf(stderr, "\n");
       vkUnmapMemory(device, depth_memory);
+   }
+
+   if (address_map) {
+      std::fprintf(stderr, "SQ read offsets (low byte) for the first row, per sample:\n");
+      for (uint32_t x = 0; x < kWidth; ++x) {
+         std::fprintf(stderr, "  texel(%u,0): s0=%u s1=%u\n", x,
+                      output_mapping[x * kSampleCount + 0], output_mapping[x * kSampleCount + 1]);
+      }
+      std::fprintf(stderr, "  texel(0,1): s0=%u\n", output_mapping[kWidth * kSampleCount]);
+      return 0;
    }
 
    uint32_t mismatches = 0;
