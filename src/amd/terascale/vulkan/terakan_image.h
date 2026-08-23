@@ -318,6 +318,24 @@ uint32_t terakan_image_create_color_descriptor(
  *
  * `terakan_image_descriptor_subresource_range_sanitize` must be done before calling.
  */
+/* The aspect format tables describe where each aspect sits within the combined depth/stencil
+ * format, so the stencil aspect's value lands in the second component. Anything sampling the
+ * stencil aspect on its own sees a single-component image whose value must be the R component, and
+ * on R8xx that aspect has its own single-channel surface, so the value is in hardware channel X.
+ *
+ * Only sampling paths need this. Transfers use the aspect formats for the source and the
+ * destination alike, where any consistent placement works.
+ */
+static inline struct terascale_format_info
+terakan_image_stencil_aspect_sampled_format(struct terascale_format_info format)
+{
+   format.swizzle_r = TERASCALE_SWIZZLE_X;
+   format.swizzle_g = TERASCALE_SWIZZLE_0;
+   format.swizzle_b = TERASCALE_SWIZZLE_0;
+   format.swizzle_a = TERASCALE_SWIZZLE_1;
+   return format;
+}
+
 bool terakan_image_create_depth_stencil_descriptor(
    struct terakan_image const * image, enum terascale_r8xx_depth_format view_depth_format,
    bool view_may_have_stencil,

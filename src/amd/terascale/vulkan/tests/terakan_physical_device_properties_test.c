@@ -254,11 +254,12 @@ main(void)
    };
    properties_2.pNext = &depth_stencil_resolve;
    vkGetPhysicalDeviceProperties2(physical_device, &properties_2);
-   /* Sample zero only for depth, and no stencil resolve yet. That combination requires
-    * independentResolveNone, so depth can be resolved while stencil is left alone, but not full
-    * independentResolve, which would mean the two aspects can take different modes. */
+   /* Sample zero for both aspects. Either can be resolved while the other is left alone, which is
+    * independentResolveNone, but there is no pair of different modes they could take, which is
+    * what full independentResolve would additionally require. */
    TEST_CHECK(depth_stencil_resolve.supportedDepthResolveModes == VK_RESOLVE_MODE_SAMPLE_ZERO_BIT);
-   TEST_CHECK(depth_stencil_resolve.supportedStencilResolveModes == VK_RESOLVE_MODE_NONE);
+   TEST_CHECK(depth_stencil_resolve.supportedStencilResolveModes ==
+              VK_RESOLVE_MODE_SAMPLE_ZERO_BIT);
    TEST_CHECK(depth_stencil_resolve.independentResolveNone);
    TEST_CHECK(!depth_stencil_resolve.independentResolve);
 
@@ -527,8 +528,8 @@ main(void)
    printf("[PASS] VK_EXT_memory_budget allocation/free accounting\n");
    printf("[PASS] 2x/4x/8x color images reserve FMASK/CMASK memory\n");
    printf("[PASS] 2x/4x/8x FMASK identity and CMASK initialization submission\n");
-   printf("[PASS] sample-zero depth resolve is advertised, stencil resolve and dynamic "
-          "rendering remain hidden\n");
+   printf("[PASS] sample-zero depth and stencil resolve are advertised, dynamic "
+          "rendering remains hidden\n");
    printf("[PASS] 3D image memory bindings are page-aligned for radeon CS validation\n");
    printf("memoryBudget heap=%" PRIu32 " before=%" PRIu64 " allocated=%" PRIu64
           " freed=%" PRIu64 " budget=%" PRIu64 "\n",

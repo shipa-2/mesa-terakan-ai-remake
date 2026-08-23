@@ -368,9 +368,14 @@ terakan_meta_resolve_depth_stencil(struct terakan_gfx_command_writer * const com
       }
       unsigned const src_aspect_index =
          terakan_format_aspect_index(src_image->format_info.aspect_map, aspect, 0);
+      struct terascale_format_info src_view_format =
+         src_image->format_info.aspect_formats[src_aspect_index];
+      if (!aspect_is_depth) {
+         src_view_format = terakan_image_stencil_aspect_sampled_format(src_view_format);
+      }
       struct terakan_image_descriptor_create_info const src_descriptor_info = {
          .image = src_image,
-         .view_format = src_image->format_info.aspect_formats[src_aspect_index],
+         .view_format = src_view_format,
          .image_aspect_index = src_aspect_index,
          .subresource_range = src_range,
       };

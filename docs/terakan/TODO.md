@@ -11,8 +11,7 @@ accept the work. Both use a 1–5 scale.
 
 | Work item | Importance | Complexity | Feasibility | Acceptance criteria |
 |---|---:|---:|---|---|
-| Complete depth/stencil resolve and layout transitions | 5/5 | 3/5 | Sample-zero depth resolve is implemented, exposed and regression-covered. Stencil resolve is implemented but cannot be advertised: multisample stencil does not read back at all, which is a defect below the resolve and is tracked separately below. The averaging and min/max depth modes and partial region and mip/layer coverage also remain | Depth and stencil readbacks pass for partial regions, mip levels, array layers and every advertised sample count |
-| Fix multisample stencil sampling | 5/5 | 4/5 | Narrowed to multisample addressing. Single-sample stencil sampling was a swizzle bug and is fixed; the multisample case still reads zeroes with a correct swizzle, base address, pitch and format, so the remaining suspect is the tile split the stencil aspect inherits from depth. Blocks stencil resolve, and therefore dynamic rendering | `terakan_stencil_msaa_fetch` passes instead of being expected to fail |
+| Complete depth/stencil resolve and layout transitions | 5/5 | 2/5 | Sample-zero resolve is implemented, exposed and regression-covered for both depth and stencil. The averaging and min/max depth modes and partial region and mip/layer coverage remain | Depth and stencil readbacks pass for partial regions, mip levels, array layers and every advertised sample count |
 | Implement and validate FMASK/CMASK allocation, identity initialization and sampled MSAA addressing | 5/5 | 5/5 | Implementable; requires Evergreen tiling research | Per-sample reads and resolved reads pass for 2x/4x/8x images without corrupting ordinary color targets |
 | Complete cache and barrier coherency | 5/5 | 4/5 | Implementable | Focused attachment, texture, storage, transfer, graphics/compute and query producer-consumer chains pass without application-specific waits |
 | Cover remaining copy, blit and resolve format/subresource combinations | 5/5 | 4/5 | Implementable | Boundary tests cover non-zero offsets, partial extents, mip levels, array/3D layers and every advertised compatible format class |
@@ -40,7 +39,7 @@ These are useful, but Vulkan 1.1 permits the corresponding feature bits to be
 
 | Work item | Importance | Complexity | Feasibility | Notes |
 |---|---:|---:|---|---|
-| Expose dynamic rendering | 2/5 | 2/5 | Implementable; VK_KHR_depth_stencil_resolve is now exposed, so only stencil resolve is still missing from the dependency | Blocked only by stencil resolve now |
+| Expose dynamic rendering | 2/5 | 2/5 | Implementable; the VK_KHR_depth_stencil_resolve dependency is now satisfied for both aspects | No longer blocked by the resolve dependency |
 | Lower 64-bit buffer accesses and finish 64-bit shader coverage | 2/5 | 4/5 | Partly implementable through 32-bit lowering | Native performance will remain limited |
 | Add 16-bit storage support | 2/5 | 4/5 | Implementable through packing/lowering where necessary | Rare in the current DXVK-Sarek target set |
 | Add multiview | 1/5 | 3/5 | Implementable | Primarily useful for VR and Vulkan-native applications |
@@ -66,64 +65,25 @@ These are useful, but Vulkan 1.1 permits the corresponding feature bits to be
   left alone because transfers use them for source and destination alike, where
   any consistent placement works, which is why transfers never showed this.
   `terakan_stencil_fetch` covers it.
-- Multisample stencil sampling is still broken, and the write side is now ruled
-  out. `terakan_stencil_msaa_fetch` can allocate the image on host-visible
-  memory and dump the surface with `TERAKAN_PROBE_DUMP_SURFACE=1`: after the
-  render pass clear, the stencil region holds exactly 128 non-zero bytes, all
-  equal to the clear value, which is precisely 8x8 texels times 2 samples. So
-  DB writes multisample stencil correctly and completely, and SQ reads
-  elsewhere. Sweeping the stencil aspect's tile split across every value it can
-  take changed nothing, so inheriting the depth aspect's tile split is not the
-  cause, despite r600 and AddrLib keeping a separate `stencil_tile_split`. The
-  base address, pitch, format and swizzle in the texture descriptor are all
-  correct. Dumping where the written bytes sit shows both aspects written
-  contiguously from the start of their own surface: depth at offsets 0 to 511,
-  visible as a non-zero byte every fourth byte because the cleared float has
-  three zero bytes, and stencil at offsets 0 to 127, exactly one 8x8 micro tile
-  of 64 pixels times 2 samples.
-
-  Addressing is ruled out entirely. `TERAKAN_PROBE_ADDRESS_MAP` in the probe
-  splits the work into two submissions so the host can rewrite the surface
-  between the clear and the fetch. Filling every byte of the whole allocation
-  with a marker still makes the fetch return zeroes, so SQ is not reading this
-  allocation at all: the fetch itself does not happen, rather than happening at
-  the wrong offset. Splitting the submissions without touching memory changes
-  nothing either, so it is not a barrier between the depth/stencil write and
-  the texture read.
-
-  Computing the stencil aspect's own tiling instead of inheriting depth's, the
-  way r600 does for texturing the stencil aspect, also changed nothing.
-
-  What is left is the descriptor and format combination itself: an 8bpp
-  multisample texture fetch. Single-sample stencil fetches work with the same
-  format after the swizzle fix, and multisample depth fetches work with the
-  same tiling and sample count, so it is specifically 8 bits per pixel combined
-  with multisampling. Worth checking whether the hardware supports that fetch at
-  all before assuming the descriptor is merely mis-programmed, since
-  `sampledImageStencilSampleCounts` is currently advertised without evidence.
-- Multisample stencil sampling was also isolated by probes on CAICOS.
-  `terakan_stencil_readback` clears and reads single-sample stencil back
-  correctly, and `terakan_depth_msaa_fetch --combined` fetches multisample
-  depth correctly out of the same `D32_SFLOAT_S8_UINT` format, but
-  `terakan_stencil_msaa_fetch` reads zeroes for every sample of every texel.
-  So this is specific to the stencil aspect of a multisample image, not to
-  multisampling, not to the combined format, and not to stencil in general.
-  It is also independent of the FMASK/CMASK item, since depth and stencil
-  compression use HTILE. The descriptors are a lead: the stencil aspect of a
-  combined image deliberately reuses the depth aspect's tiling, and its texture
-  descriptor comes out with the same array mode, tile split and pitch as depth
-  while carrying an 8-bit format instead of a 32-bit one. The stencil resolve
-  shader and meta draw are implemented and wired, so only the fetch stands
-  between here and advertising `supportedStencilResolveModes`.
-- Sample-zero depth resolve: `VK_KHR_depth_stencil_resolve` and
+- Multisample depth and stencil texture fetch: `MIP_ADDRESS` doubles as the
+  FMASK pointer for multisample textures, and depth and stencil have no FMASK,
+  but the driver was leaving it aliasing the base address instead of zeroing
+  it, so the hardware treated the surface data itself as FMASK. r600 zeroes it
+  explicitly for multisample depth textures. Comparing against r600 running
+  OpenGL on the same CAICOS settled it after probes had ruled out addressing,
+  tiling, the barrier and the write side: r600 fetches multisample stencil
+  correctly there, which proved the hardware supports the fetch and the fault
+  was Terakan's. `terakan_stencil_msaa_fetch` covers it.
+- Sample-zero depth and stencil resolve: `VK_KHR_depth_stencil_resolve` and
   `VK_KHR_create_renderpass2` are exposed, advertising
-  `VK_RESOLVE_MODE_SAMPLE_ZERO_BIT` for depth, no stencil mode, and
+  `VK_RESOLVE_MODE_SAMPLE_ZERO_BIT` for both aspects and
   `independentResolveNone`. The resolve samples the multisample source and
-  exports depth from a meta pixel shader instead of decompressing through
-  DB-to-CB, which returned zero. `terakan_depth_resolve` clears a 2x depth
-  attachment, resolves it through a `vkCreateRenderPass2` subpass, and checks
-  the readback; the destination is pre-filled with a different value first, so
-  a resolve that never runs fails rather than passing on leftovers.
+  exports from a meta pixel shader, one draw per aspect, instead of
+  decompressing through DB-to-CB, which returned zero. `terakan_depth_resolve`
+  and `terakan_depth_stencil_resolve` clear a 2x attachment, resolve it through
+  a `vkCreateRenderPass2` subpass, and check the readback; the destination is
+  pre-filled with a different value first, so a resolve that never runs fails
+  rather than passing on leftovers.
 - Shader clip/cull distance: `shaderClipDistance`/`shaderCullDistance` and
   `maxClipDistances`/`maxCullDistances`/`maxCombinedClipAndCullDistances` (8,
   matching the combined PA_CL_VS_OUT_CNTL CCDIST0/CCDIST1 hardware export

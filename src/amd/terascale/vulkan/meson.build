@@ -633,13 +633,9 @@ if with_tests
         dependencies : vulkan_loader_dep,
       )
 
-      # Multisample stencil does not read back on this hardware yet, which blocks stencil resolve.
-      # Registered as expected to fail so the defect stays visible and so that fixing it reports an
-      # unexpected pass rather than silently going unnoticed.
       test(
         'terakan_stencil_msaa_fetch',
         terakan_stencil_msaa_fetch_test,
-        should_fail : true,
         depends : [libvulkan_terascale, _dev_icd],
         env : {
           'VK_DRIVER_FILES' : _dev_icd.full_path(),
@@ -653,6 +649,18 @@ if with_tests
         'terakan_depth_resolve_test',
         ['tests/terakan_depth_resolve_test.cpp'],
         dependencies : vulkan_loader_dep,
+      )
+      test(
+        'terakan_depth_stencil_resolve',
+        terakan_depth_resolve_test,
+        args : ['--stencil'],
+        depends : [libvulkan_terascale, _dev_icd],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 15,
       )
       test(
         'terakan_depth_resolve',

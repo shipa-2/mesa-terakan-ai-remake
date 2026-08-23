@@ -1540,10 +1540,15 @@ terakan_image_create_resource_descriptor(
       S_03001C_NUM_BANKS(physical_device->tiling_info.banks_log2 - 1) |
       S_03001C_TYPE(V_03001C_SQ_TEX_VTX_VALID_TEXTURE);
    if (is_multisampled) {
+      /* MIP_ADDRESS doubles as the FMASK pointer for multisample textures. Depth and stencil have
+       * no FMASK, and a non-zero pointer makes the hardware treat the surface data itself as
+       * FMASK, so it must be zeroed to disable the lookup rather than left aliasing the base
+       * address. This matches what r600 does for multisample depth textures.
+       */
       descriptor_out->resource[3] =
          terakan_image_surface_has_color_metadata(&image->surface)
             ? image_va_shr8 + image->surface.fmask.offset_in_memory_bytes_shr8
-            : descriptor_out->resource[2];
+            : 0;
       unsigned const samples_log2 = util_logbase2((uint32_t)image->vk.samples);
       if (physical_device->chip_info.is_r9xx) {
          descriptor_out->resource[4] |= S_030010_LOG2_NUM_FRAGMENTS(samples_log2);
@@ -2042,20 +2047,8 @@ terakan_CreateImageView(VkDevice const deviceHandle,
       view_format_info.aspect_formats[view_format_main_aspect_index];
    descriptor_create_info.image_aspect_index = image_format_main_aspect_index;
    if (view_is_stencil_only) {
-      /* The aspect format tables describe where each aspect sits within the combined
-       * depth/stencil format, so the stencil aspect's value is placed in the second component. A
-       * view of the stencil aspect alone is a single-component image though, and the Vulkan
-       * specification requires its value to be readable as the R component. On R8xx the stencil
-       * aspect has its own single-channel surface, so the value is in hardware channel X.
-       *
-       * Only the view descriptors are adjusted. The aspect format tables stay as they are because
-       * transfers use them for the source and the destination alike, where any consistent
-       * placement works.
-       */
-      descriptor_create_info.view_format.swizzle_r = TERASCALE_SWIZZLE_X;
-      descriptor_create_info.view_format.swizzle_g = TERASCALE_SWIZZLE_0;
-      descriptor_create_info.view_format.swizzle_b = TERASCALE_SWIZZLE_0;
-      descriptor_create_info.view_format.swizzle_a = TERASCALE_SWIZZLE_1;
+      descriptor_create_info.view_format =
+         terakan_image_stencil_aspect_sampled_format(descriptor_create_info.view_format);
    }
 
    uint32_t resource_dimensionality = V_030000_SQ_TEX_DIM_1D;
