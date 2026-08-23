@@ -140,6 +140,9 @@ terakan_frame_chain_depth
 terakan_dynamic_rendering
 terakan_blit_3d
 terakan_depth_resolve_subresource
+terakan_resolve_modes_2x
+terakan_resolve_modes_4x
+terakan_resolve_modes_8x
 terakan_physical_device_properties
 ```
 

@@ -11,7 +11,7 @@ accept the work. Both use a 1–5 scale.
 
 | Work item | Importance | Complexity | Feasibility | Acceptance criteria |
 |---|---:|---:|---|---|
-| Complete depth/stencil resolve modes | 5/5 | 3/5 | Sample-zero resolve is implemented, exposed and regression-covered for both aspects, now including partial render areas, mip levels and array layers. The averaging and min/max modes remain, and each needs a pixel shader that reads every sample | Depth and stencil readbacks pass for the averaging and min/max modes at every advertised sample count |
+| Finish the reducing resolve modes for stencil | 3/5 | 2/5 | Depth minimum and maximum are implemented, exposed and covered at 2x, 4x and 8x. The stencil programs differ only in the reducing opcode and the export slot, so what is left is the readback test that writes a different stencil value into each sample | Stencil readbacks pass for the minimum and maximum modes at every advertised sample count |
 | Implement and validate FMASK/CMASK allocation, identity initialization and sampled MSAA addressing | 5/5 | 5/5 | Implementable; requires Evergreen tiling research | Per-sample reads and resolved reads pass for 2x/4x/8x images without corrupting ordinary color targets |
 | Complete cache and barrier coherency | 5/5 | 4/5 | Implementable. Composition coverage now exists (`terakan_frame_chain`, both the render-pass and the compute producer) and passes, so the remaining hazard is narrower than a repeated clear/dispatch, sample, render and copy chain | Focused attachment, texture, storage, transfer, graphics/compute and query producer-consumer chains pass without application-specific waits |
 | Cover remaining copy, blit and resolve format/subresource combinations | 5/5 | 4/5 | Implementable | Boundary tests cover non-zero offsets, partial extents, mip levels, array/3D layers and every advertised compatible format class |
@@ -54,6 +54,27 @@ These are useful, but Vulkan 1.1 permits the corresponding feature bits to be
 | Native high-performance FP64 | 1/5 | CAICOS lacks the hardware needed for a useful implementation; software lowering may be used only where practical |
 
 ## Completed and regression-covered
+
+- Reducing depth resolve, `VK_RESOLVE_MODE_MIN_BIT` and `VK_RESOLVE_MODE_MAX_BIT`:
+  every sample is fetched and combined in the pixel shader, one program per
+  sample count, and `independentResolve` is now true because each aspect
+  resolves from its own draw and its own shader. `terakan_resolve_modes` gives
+  each sample of the attachment a different depth, by confining every draw to
+  one sample with the pipeline's sample mask, then resolves all three modes out
+  of that one attachment; the depths are picked so sample zero, the minimum and
+  the maximum are three different values at 4x and 8x.
+
+  Three things were learned the hard way and are worth not rediscovering. An
+  ALU clause's count is in eight-byte slots, so each pair of literal dwords
+  counts as a slot of its own alongside the instruction reading it -- counting
+  only instructions truncated the clause and silently dropped the last samples.
+  Push constants do not reach this shader: whatever it reads back is neither the
+  uploaded values nor zeroes, which is why the sample indices are literals and
+  the sample count selects the program instead of being clamped on the CPU.
+  Grouping ALU copies of different channels aliases one source channel onto
+  another, the same effect the image blit shader documents, so each copy is its
+  own group. Fetching a sample that does not exist returns zero, which a maximum
+  would survive but a minimum would not.
 
 - Depth/stencil rendering into a mip level other than zero: the depth/stencil
   descriptor took its base address from the aspect while taking its pitch and

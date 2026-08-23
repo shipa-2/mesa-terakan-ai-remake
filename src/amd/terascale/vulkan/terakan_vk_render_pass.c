@@ -281,7 +281,8 @@ terakan_CmdBeginRendering(VkCommandBuffer const commandBuffer,
       VkRenderingAttachmentInfo const * const attachment =
          resolvable_aspects[aspect_index].attachment;
       if (attachment_view == NULL || attachment == NULL ||
-          attachment->resolveMode != VK_RESOLVE_MODE_SAMPLE_ZERO_BIT ||
+          (attachment->resolveMode & (VK_RESOLVE_MODE_SAMPLE_ZERO_BIT | VK_RESOLVE_MODE_MIN_BIT |
+                                      VK_RESOLVE_MODE_MAX_BIT)) == 0 ||
           attachment->resolveImageView == VK_NULL_HANDLE) {
          continue;
       }
@@ -292,6 +293,11 @@ terakan_CmdBeginRendering(VkCommandBuffer const commandBuffer,
       }
       struct terakan_rendering_color_resolve * const resolve =
          &command_buffer->rendering_depth_resolve;
+      if (resolvable_aspects[aspect_index].aspect == VK_IMAGE_ASPECT_DEPTH_BIT) {
+         resolve->depth_mode = attachment->resolveMode;
+      } else {
+         resolve->stencil_mode = attachment->resolveMode;
+      }
       resolve->src_image = terakan_image_to_handle(
          container_of(attachment_view->vk.image, struct terakan_image, vk));
       resolve->dst_image = terakan_image_to_handle(
@@ -408,7 +414,8 @@ terakan_CmdEndRendering(VkCommandBuffer const commandBuffer)
             terakan_image_from_handle(depth_stencil_resolve->dst_image),
             &depth_stencil_resolve->src_subresource, &depth_stencil_resolve->dst_subresource,
             &command_buffer->rendering_resolve_area,
-            depth_stencil_resolve->src_subresource.aspectMask);
+            depth_stencil_resolve->src_subresource.aspectMask,
+            depth_stencil_resolve->depth_mode, depth_stencil_resolve->stencil_mode);
       }
    }
 

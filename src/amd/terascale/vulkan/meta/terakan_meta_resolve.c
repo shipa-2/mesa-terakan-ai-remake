@@ -200,6 +200,195 @@ static uint32_t const terakan_meta_resolve_stencil_sample_zero_ps_r8xx[] = {
       }},                                                                                          \
    }
 
+/* Depth and stencil resolve in the reducing modes: VK_RESOLVE_MODE_MIN_BIT and
+ * VK_RESOLVE_MODE_MAX_BIT. Every sample is fetched and the results are combined in the shader.
+ *
+ * The sample indices are literals rather than push constants, so there is one program per sample
+ * count. Reading them from the constant cache would have allowed a single program to serve every
+ * count by clamping the indices on the CPU, but constants do not reach this shader: whatever it
+ * reads back is neither the uploaded values nor zeroes, and the fetches then land on sample zero
+ * or out of range. Fetching out of range returns zero, which a maximum would survive but a minimum
+ * would not, so the counts are kept separate instead of over-fetching.
+ *
+ * The fetch takes x and y from the coordinate register, the array slice from the swizzle's
+ * constant zero, and the sample index from the register's W, matching how the r600 compiler lowers
+ * a multisample texel fetch. Each fetch writes a whole register of its own, and each ALU
+ * instruction is its own group: grouping copies of different channels aliases one source channel
+ * onto another on this hardware, the same effect the image blit shader documents for its position
+ * copy.
+ *
+ * An ALU clause's count is in eight-byte slots, not instructions, so each pair of literal dwords
+ * counts as one slot of its own alongside the instruction that reads it.
+ */
+#define TERAKAN_META_RESOLVE_REDUCE_COORDINATES(gpr, sample)                                       \
+   TERAKAN_SHADER_OP1(true, gpr, 'X', MOV, EG, 0, 'X', VEC_012),                                   \
+      TERAKAN_SHADER_OP1(true, gpr, 'Y', MOV, EG, 0, 'Y', VEC_012),                                \
+      TERAKAN_SHADER_OP1(true, gpr, 'W', MOV, EG, V_SQ_ALU_SRC_LITERAL, 'X', VEC_012), (sample), 0
+
+#define TERAKAN_META_RESOLVE_REDUCE_FETCH(gpr, destination_gpr)                                    \
+   S_SQ_TEX_WORD0_TEX_INST(SQ_TEX_INST_LD) |                                                       \
+         S_SQ_TEX_WORD0_RESOURCE_ID(TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META) |       \
+         S_SQ_TEX_WORD0_SRC_GPR(gpr),                                                              \
+      S_SQ_TEX_WORD1_DST_GPR(destination_gpr) |                                                    \
+         S_SQ_TEX_WORD1_DST_SEL_X(TERASCALE_SWIZZLE_X) |                                           \
+         S_SQ_TEX_WORD1_DST_SEL_Y(TERASCALE_SWIZZLE_Y) |                                           \
+         S_SQ_TEX_WORD1_DST_SEL_Z(TERASCALE_SWIZZLE_Z) |                                           \
+         S_SQ_TEX_WORD1_DST_SEL_W(TERASCALE_SWIZZLE_W),                                            \
+      S_SQ_TEX_WORD2_SRC_SEL_X(TERASCALE_SWIZZLE_X) |                                              \
+         S_SQ_TEX_WORD2_SRC_SEL_Y(TERASCALE_SWIZZLE_Y) |                                           \
+         S_SQ_TEX_WORD2_SRC_SEL_Z(TERASCALE_SWIZZLE_0) |                                           \
+         S_SQ_TEX_WORD2_SRC_SEL_W(TERASCALE_SWIZZLE_W),                                            \
+      0
+
+/* The export slot DB reads the aspect from, and the register the reduction leaves its result in.
+ */
+#define TERAKAN_META_RESOLVE_REDUCE_EXPORT(result_gpr, export_x, export_y)                         \
+   S_SQ_CF_ALLOC_EXPORT_WORD0_TYPE(V_SQ_CF_ALLOC_EXPORT_WORD0_SQ_EXPORT_PIXEL) |                   \
+         S_SQ_CF_ALLOC_EXPORT_WORD0_ARRAY_BASE(61) |                                               \
+         S_SQ_CF_ALLOC_EXPORT_WORD0_RW_GPR(result_gpr),                                            \
+      S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_X(TERASCALE_SWIZZLE_##export_x) |                        \
+         S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Y(TERASCALE_SWIZZLE_##export_y) |                     \
+         S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Z(TERASCALE_SWIZZLE_MASK) |                           \
+         S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_W(TERASCALE_SWIZZLE_MASK) |                           \
+         S_SQ_CF_ALLOC_EXPORT_WORD1_BARRIER(true) |                                                \
+         S_SQ_CF_ALLOC_EXPORT_WORD1_END_OF_PROGRAM(true) |                                         \
+         EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_EXPORT_DONE
+
+/* Two samples. Slots: 4 control flow (0-3), 6 ALU preparing coordinates (4-11, the literal of each
+ * sample index taking a slot of its own), 2 texture instructions (12-15), 1 ALU reducing (16).
+ */
+#define TERAKAN_META_RESOLVE_REDUCE_PS_PROGRAM_2X(inst, export_x, export_y)                        \
+   S_SQ_CF_WORD0_ADDR(4),                                                                          \
+      S_SQ_CF_ALU_WORD1_COUNT(7) | S_SQ_CF_ALU_WORD1_BARRIER(true) |                               \
+         EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,                                                      \
+      S_SQ_CF_WORD0_ADDR(12),                                                                      \
+      S_SQ_CF_WORD1_COUNT(1) | S_SQ_CF_WORD1_BARRIER(true) | EG_V_SQ_CF_WORD1_SQ_CF_INST_TEX,      \
+      S_SQ_CF_WORD0_ADDR(16),                                                                      \
+      S_SQ_CF_ALU_WORD1_COUNT(0) | S_SQ_CF_ALU_WORD1_BARRIER(true) |                               \
+         EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,                                                      \
+      TERAKAN_META_RESOLVE_REDUCE_EXPORT(3, export_x, export_y),                                   \
+                                                                                                   \
+      TERAKAN_META_RESOLVE_REDUCE_COORDINATES(1, 0),                                               \
+      TERAKAN_META_RESOLVE_REDUCE_COORDINATES(2, 1),                                               \
+                                                                                                   \
+      TERAKAN_META_RESOLVE_REDUCE_FETCH(1, 3),                                                     \
+      TERAKAN_META_RESOLVE_REDUCE_FETCH(2, 4),                                                     \
+                                                                                                   \
+      TERAKAN_SHADER_OP2(true, 3, 'X', inst, EG, 3, 'X', 4, 'X', VEC_012)
+
+/* Four samples. Slots: 4 control flow (0-3), 12 ALU (4-19), 4 texture (20-27), 3 ALU (28-30). */
+#define TERAKAN_META_RESOLVE_REDUCE_PS_PROGRAM_4X(inst, export_x, export_y)                        \
+   S_SQ_CF_WORD0_ADDR(4),                                                                          \
+      S_SQ_CF_ALU_WORD1_COUNT(15) | S_SQ_CF_ALU_WORD1_BARRIER(true) |                              \
+         EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,                                                      \
+      S_SQ_CF_WORD0_ADDR(20),                                                                      \
+      S_SQ_CF_WORD1_COUNT(3) | S_SQ_CF_WORD1_BARRIER(true) | EG_V_SQ_CF_WORD1_SQ_CF_INST_TEX,      \
+      S_SQ_CF_WORD0_ADDR(28),                                                                      \
+      S_SQ_CF_ALU_WORD1_COUNT(2) | S_SQ_CF_ALU_WORD1_BARRIER(true) |                               \
+         EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,                                                      \
+      TERAKAN_META_RESOLVE_REDUCE_EXPORT(5, export_x, export_y),                                   \
+                                                                                                   \
+      TERAKAN_META_RESOLVE_REDUCE_COORDINATES(1, 0),                                               \
+      TERAKAN_META_RESOLVE_REDUCE_COORDINATES(2, 1),                                               \
+      TERAKAN_META_RESOLVE_REDUCE_COORDINATES(3, 2),                                               \
+      TERAKAN_META_RESOLVE_REDUCE_COORDINATES(4, 3),                                               \
+                                                                                                   \
+      TERAKAN_META_RESOLVE_REDUCE_FETCH(1, 5),                                                     \
+      TERAKAN_META_RESOLVE_REDUCE_FETCH(2, 6),                                                     \
+      TERAKAN_META_RESOLVE_REDUCE_FETCH(3, 7),                                                     \
+      TERAKAN_META_RESOLVE_REDUCE_FETCH(4, 8),                                                     \
+                                                                                                   \
+      TERAKAN_SHADER_OP2(true, 5, 'X', inst, EG, 5, 'X', 6, 'X', VEC_012),                         \
+      TERAKAN_SHADER_OP2(true, 5, 'X', inst, EG, 5, 'X', 7, 'X', VEC_012),                         \
+      TERAKAN_SHADER_OP2(true, 5, 'X', inst, EG, 5, 'X', 8, 'X', VEC_012)
+
+/* Eight samples. Slots: 4 control flow (0-3), 24 ALU (4-35), 8 texture (36-51), 7 ALU (52-58). */
+#define TERAKAN_META_RESOLVE_REDUCE_PS_PROGRAM_8X(inst, export_x, export_y)                        \
+   S_SQ_CF_WORD0_ADDR(4),                                                                          \
+      S_SQ_CF_ALU_WORD1_COUNT(31) | S_SQ_CF_ALU_WORD1_BARRIER(true) |                              \
+         EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,                                                      \
+      S_SQ_CF_WORD0_ADDR(36),                                                                      \
+      S_SQ_CF_WORD1_COUNT(7) | S_SQ_CF_WORD1_BARRIER(true) | EG_V_SQ_CF_WORD1_SQ_CF_INST_TEX,      \
+      S_SQ_CF_WORD0_ADDR(52),                                                                      \
+      S_SQ_CF_ALU_WORD1_COUNT(6) | S_SQ_CF_ALU_WORD1_BARRIER(true) |                               \
+         EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,                                                      \
+      TERAKAN_META_RESOLVE_REDUCE_EXPORT(9, export_x, export_y),                                   \
+                                                                                                   \
+      TERAKAN_META_RESOLVE_REDUCE_COORDINATES(1, 0),                                               \
+      TERAKAN_META_RESOLVE_REDUCE_COORDINATES(2, 1),                                               \
+      TERAKAN_META_RESOLVE_REDUCE_COORDINATES(3, 2),                                               \
+      TERAKAN_META_RESOLVE_REDUCE_COORDINATES(4, 3),                                               \
+      TERAKAN_META_RESOLVE_REDUCE_COORDINATES(5, 4),                                               \
+      TERAKAN_META_RESOLVE_REDUCE_COORDINATES(6, 5),                                               \
+      TERAKAN_META_RESOLVE_REDUCE_COORDINATES(7, 6),                                               \
+      TERAKAN_META_RESOLVE_REDUCE_COORDINATES(8, 7),                                               \
+                                                                                                   \
+      TERAKAN_META_RESOLVE_REDUCE_FETCH(1, 9),                                                     \
+      TERAKAN_META_RESOLVE_REDUCE_FETCH(2, 10),                                                    \
+      TERAKAN_META_RESOLVE_REDUCE_FETCH(3, 11),                                                    \
+      TERAKAN_META_RESOLVE_REDUCE_FETCH(4, 12),                                                    \
+      TERAKAN_META_RESOLVE_REDUCE_FETCH(5, 13),                                                    \
+      TERAKAN_META_RESOLVE_REDUCE_FETCH(6, 14),                                                    \
+      TERAKAN_META_RESOLVE_REDUCE_FETCH(7, 15),                                                    \
+      TERAKAN_META_RESOLVE_REDUCE_FETCH(8, 16),                                                    \
+                                                                                                   \
+      TERAKAN_SHADER_OP2(true, 9, 'X', inst, EG, 9, 'X', 10, 'X', VEC_012),                        \
+      TERAKAN_SHADER_OP2(true, 9, 'X', inst, EG, 9, 'X', 11, 'X', VEC_012),                        \
+      TERAKAN_SHADER_OP2(true, 9, 'X', inst, EG, 9, 'X', 12, 'X', VEC_012),                        \
+      TERAKAN_SHADER_OP2(true, 9, 'X', inst, EG, 9, 'X', 13, 'X', VEC_012),                        \
+      TERAKAN_SHADER_OP2(true, 9, 'X', inst, EG, 9, 'X', 14, 'X', VEC_012),                        \
+      TERAKAN_SHADER_OP2(true, 9, 'X', inst, EG, 9, 'X', 15, 'X', VEC_012),                        \
+      TERAKAN_SHADER_OP2(true, 9, 'X', inst, EG, 9, 'X', 16, 'X', VEC_012)
+
+/* The interpolated position, one coordinate register per sample, and one result register per
+ * sample.
+ */
+#define TERAKAN_META_RESOLVE_REDUCE_PS_STATIC_REGISTERS(gpr_count)                                 \
+   {                                                                                               \
+      .sq_pgm_resources =                                                                          \
+         {                                                                                         \
+            S_028844_NUM_GPRS(gpr_count) | TERAKAN_META_SQ_PGM_RESOURCES_COMMON,                   \
+            TERAKAN_META_SQ_PGM_RESOURCES_2_COMMON,                                                \
+         },                                                                                        \
+      .stage = {.ps = {                                                                            \
+         .sq_pgm_exports_ps = S_02884C_EXPORT_Z(1),                                                \
+         .spi_ps_in_control =                                                                      \
+            {                                                                                      \
+               S_0286CC_NUM_INTERP(1) | S_0286CC_LINEAR_GRADIENT_ENA(1),                           \
+               S_0286D0_FIXED_PT_POSITION_ENA(1) | S_0286D0_FIXED_PT_POSITION_ADDR(0),             \
+            },                                                                                     \
+         .spi_baryc_cntl = S_0286E0_LINEAR_CENTER_ENA(1),                                          \
+         .cb_shader_mask = 0,                                                                      \
+      }},                                                                                          \
+   }
+
+#define TERAKAN_META_RESOLVE_REDUCE_SHADER(name, samples, gpr_count, inst, export_x, export_y)     \
+   static uint32_t const terakan_meta_resolve_##name##_ps_r8xx[] = {                               \
+      TERAKAN_META_RESOLVE_REDUCE_PS_PROGRAM_##samples(inst, export_x, export_y),                  \
+   };                                                                                              \
+   struct terakan_meta_shader const terakan_meta_resolve_##name##_ps = {                           \
+      .r8xx =                                                                                      \
+         {                                                                                         \
+            .program = terakan_meta_resolve_##name##_ps_r8xx,                                      \
+            .program_size_bytes = sizeof(terakan_meta_resolve_##name##_ps_r8xx),                   \
+            .static_registers = TERAKAN_META_RESOLVE_REDUCE_PS_STATIC_REGISTERS(gpr_count),        \
+         },                                                                                        \
+      .r9xx =                                                                                      \
+         {                                                                                         \
+            .program = terakan_meta_resolve_##name##_ps_r8xx,                                      \
+            .program_size_bytes = sizeof(terakan_meta_resolve_##name##_ps_r8xx),                   \
+            .static_registers = TERAKAN_META_RESOLVE_REDUCE_PS_STATIC_REGISTERS(gpr_count),        \
+         },                                                                                        \
+      .primary_meta_resource_used = true,                                                          \
+   }
+
+TERAKAN_META_RESOLVE_REDUCE_SHADER(depth_min_2x, 2X, 5, MIN_DX10, X, MASK);
+TERAKAN_META_RESOLVE_REDUCE_SHADER(depth_max_2x, 2X, 5, MAX_DX10, X, MASK);
+TERAKAN_META_RESOLVE_REDUCE_SHADER(depth_min_4x, 4X, 9, MIN_DX10, X, MASK);
+TERAKAN_META_RESOLVE_REDUCE_SHADER(depth_max_4x, 4X, 9, MAX_DX10, X, MASK);
+TERAKAN_META_RESOLVE_REDUCE_SHADER(depth_min_8x, 8X, 17, MIN_DX10, X, MASK);
+TERAKAN_META_RESOLVE_REDUCE_SHADER(depth_max_8x, 8X, 17, MAX_DX10, X, MASK);
+
 struct terakan_meta_shader const terakan_meta_resolve_stencil_sample_zero_ps = {
    .r8xx = {
       .program = terakan_meta_resolve_stencil_sample_zero_ps_r8xx,
@@ -277,11 +466,10 @@ terakan_meta_resolve_depth_stencil(struct terakan_gfx_command_writer * const com
                                    VkImageSubresourceLayers const * const src_subresource,
                                    VkImageSubresourceLayers const * const dst_subresource,
                                    VkRect2D const * const area,
-                                   VkImageAspectFlags const aspects)
+                                   VkImageAspectFlags const aspects,
+                                   VkResolveModeFlagBits const depth_mode,
+                                   VkResolveModeFlagBits const stencil_mode)
 {
-   /* Only VK_RESOLVE_MODE_SAMPLE_ZERO_BIT so far, which the specification requires whenever
-    * VK_KHR_depth_stencil_resolve is exposed at all.
-    */
    enum terascale_r8xx_depth_format dst_depth_format = TERASCALE_R8XX_DEPTH_FORMAT_INVALID;
    bool dst_has_stencil = false;
    if (unlikely(!terascale_get_r8xx_depth_stencil_format(
@@ -327,6 +515,11 @@ terakan_meta_resolve_depth_stencil(struct terakan_gfx_command_writer * const com
    uint32_t const layer_count =
       MIN2(src_subresource->layerCount, dst_subresource->layerCount);
 
+   /* Each reducing shader fetches exactly as many samples as the source has, so the sample count
+    * selects among three programs per aspect and mode.
+    */
+   unsigned const reduce_sample_count_index = util_logbase2((uint32_t)src_image->vk.samples) - 1u;
+
    /* One draw per aspect: they export through different slots and need different DB state. */
    u_foreach_bit (aspect_bit_index, resolved_aspects) {
    VkImageAspectFlags const aspect = (VkImageAspectFlags)1 << aspect_bit_index;
@@ -339,9 +532,30 @@ terakan_meta_resolve_depth_stencil(struct terakan_gfx_command_writer * const com
       command_writer, TERAKAN_SHADER_DB_SHADER_CONTROL_IDENTITY |
                          (aspect_is_depth ? S_02880C_Z_EXPORT_ENABLE(1)
                                           : S_02880C_STENCIL_EXPORT_ENABLE(1)));
-   terakan_meta_config_draw_set_sq_pgm_ps(
-      command_writer, aspect_is_depth ? TERAKAN_META_SHADER_RESOLVE_DEPTH_SAMPLE_ZERO_PS
-                                      : TERAKAN_META_SHADER_RESOLVE_STENCIL_SAMPLE_ZERO_PS);
+   /* Indexed by [mode is maximum][log2 of the sample count minus one]. The reducing modes are
+    * depth only for now: the stencil programs would differ from these solely in the reducing opcode
+    * and the export slot, but nothing advertises them until a readback test covers them, so they
+    * are not built.
+    */
+   static enum terakan_meta_shader_index const reduce_shaders[2][3] = {
+      {TERAKAN_META_SHADER_RESOLVE_DEPTH_MIN_2X_PS,
+       TERAKAN_META_SHADER_RESOLVE_DEPTH_MIN_4X_PS,
+       TERAKAN_META_SHADER_RESOLVE_DEPTH_MIN_8X_PS},
+      {TERAKAN_META_SHADER_RESOLVE_DEPTH_MAX_2X_PS,
+       TERAKAN_META_SHADER_RESOLVE_DEPTH_MAX_4X_PS,
+       TERAKAN_META_SHADER_RESOLVE_DEPTH_MAX_8X_PS},
+   };
+   VkResolveModeFlagBits const aspect_mode = aspect_is_depth ? depth_mode : stencil_mode;
+   bool const aspect_reduces =
+      aspect_is_depth &&
+      (aspect_mode & (VK_RESOLVE_MODE_MIN_BIT | VK_RESOLVE_MODE_MAX_BIT)) != 0 &&
+      reduce_sample_count_index < ARRAY_SIZE(reduce_shaders[0]);
+   enum terakan_meta_shader_index const aspect_shader =
+      aspect_reduces
+         ? reduce_shaders[aspect_mode == VK_RESOLVE_MODE_MAX_BIT][reduce_sample_count_index]
+         : (aspect_is_depth ? TERAKAN_META_SHADER_RESOLVE_DEPTH_SAMPLE_ZERO_PS
+                            : TERAKAN_META_SHADER_RESOLVE_STENCIL_SAMPLE_ZERO_PS);
+   terakan_meta_config_draw_set_sq_pgm_ps(command_writer, aspect_shader);
    /* Every resolved pixel must be written regardless of what the destination already holds, and
     * only the aspect being resolved may be touched.
     */

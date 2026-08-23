@@ -92,6 +92,12 @@ extern struct terakan_meta_shader const terakan_meta_blit_image_ps;
 extern struct terakan_meta_shader const terakan_meta_resolve_2x_ps;
 extern struct terakan_meta_shader const terakan_meta_resolve_depth_sample_zero_ps;
 extern struct terakan_meta_shader const terakan_meta_resolve_stencil_sample_zero_ps;
+extern struct terakan_meta_shader const terakan_meta_resolve_depth_min_2x_ps;
+extern struct terakan_meta_shader const terakan_meta_resolve_depth_min_4x_ps;
+extern struct terakan_meta_shader const terakan_meta_resolve_depth_min_8x_ps;
+extern struct terakan_meta_shader const terakan_meta_resolve_depth_max_2x_ps;
+extern struct terakan_meta_shader const terakan_meta_resolve_depth_max_4x_ps;
+extern struct terakan_meta_shader const terakan_meta_resolve_depth_max_8x_ps;
 
 extern struct terakan_meta_shader const terakan_meta_copy_expand_3x_ps;
 extern struct terakan_meta_shader const terakan_meta_query_accum_zpass_1_rb_vs;
@@ -125,7 +131,9 @@ void terakan_meta_resolve_depth_stencil(struct terakan_gfx_command_writer * comm
                                         struct terakan_image const * dst_image,
                                         VkImageSubresourceLayers const * src_subresource,
                                         VkImageSubresourceLayers const * dst_subresource,
-                                        VkRect2D const * area, VkImageAspectFlags aspects);
+                                        VkRect2D const * area, VkImageAspectFlags aspects,
+                                        VkResolveModeFlagBits depth_mode,
+                                        VkResolveModeFlagBits stencil_mode);
 
 /* `DB_SHADER_CONTROL` for use when the pixel shader exports to memory, with otherwise identity
  * parameters.

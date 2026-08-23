@@ -155,7 +155,10 @@ main(void)
    /* Depth and stencil resolve are implemented by sampling the multisample source, which
     * terakan_depth_resolve and terakan_depth_stencil_resolve cover with readback tests, so the
     * extension and its dependency are advertised. That in turn unblocks dynamic rendering, which
-    * is the driver's own rendering path and is covered by terakan_dynamic_rendering. */
+    * is the driver's own rendering path and is covered by terakan_dynamic_rendering.
+    *
+    * The reducing modes are depth only: terakan_resolve_modes covers them there at every sample
+    * count, and the stencil aspect has no such test yet. */
    TEST_CHECK(has_device_extension(physical_device,
                                    VK_KHR_DEPTH_STENCIL_RESOLVE_EXTENSION_NAME));
    TEST_CHECK(has_device_extension(physical_device,
@@ -255,14 +258,16 @@ main(void)
    };
    properties_2.pNext = &depth_stencil_resolve;
    vkGetPhysicalDeviceProperties2(physical_device, &properties_2);
-   /* Sample zero for both aspects. Either can be resolved while the other is left alone, which is
-    * independentResolveNone, but there is no pair of different modes they could take, which is
-    * what full independentResolve would additionally require. */
-   TEST_CHECK(depth_stencil_resolve.supportedDepthResolveModes == VK_RESOLVE_MODE_SAMPLE_ZERO_BIT);
+   /* Depth also reduces, stencil so far only reads sample zero. Since the two aspects can now be
+    * asked for different modes, each resolving from its own draw and its own shader, both
+    * independentResolveNone and full independentResolve hold. */
+   TEST_CHECK(depth_stencil_resolve.supportedDepthResolveModes ==
+              (VK_RESOLVE_MODE_SAMPLE_ZERO_BIT | VK_RESOLVE_MODE_MIN_BIT |
+               VK_RESOLVE_MODE_MAX_BIT));
    TEST_CHECK(depth_stencil_resolve.supportedStencilResolveModes ==
               VK_RESOLVE_MODE_SAMPLE_ZERO_BIT);
    TEST_CHECK(depth_stencil_resolve.independentResolveNone);
-   TEST_CHECK(!depth_stencil_resolve.independentResolve);
+   TEST_CHECK(depth_stencil_resolve.independentResolve);
 
    TEST_CHECK(maintenance_3.maxPerSetDescriptors != 0);
    TEST_CHECK(maintenance_3.maxMemoryAllocationSize != 0);

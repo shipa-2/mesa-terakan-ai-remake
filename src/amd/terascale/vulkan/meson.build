@@ -747,6 +747,83 @@ if with_tests
         timeout : 30,
       )
 
+      terakan_resolve_modes_vertex_spv = custom_target(
+        'terakan_resolve_modes.vert.spv',
+        input : 'tests/terakan_resolve_modes.vert',
+        output : 'terakan_resolve_modes.vert.spv',
+        command : [
+          prog_glslang, '-V', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_resolve_modes.vert.spv.d',
+      )
+      terakan_resolve_modes_fragment_spv = custom_target(
+        'terakan_resolve_modes.frag.spv',
+        input : 'tests/terakan_resolve_modes.frag',
+        output : 'terakan_resolve_modes.frag.spv',
+        command : [
+          prog_glslang, '-V', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_resolve_modes.frag.spv.d',
+      )
+      terakan_resolve_modes_test = executable(
+        'terakan_resolve_modes_test',
+        ['tests/terakan_resolve_modes_test.cpp'],
+        dependencies : vulkan_loader_dep,
+      )
+      test(
+        'terakan_resolve_modes_2x',
+        terakan_resolve_modes_test,
+        args : [
+          terakan_resolve_modes_vertex_spv, terakan_resolve_modes_fragment_spv, '2',
+        ],
+        depends : [
+          libvulkan_terascale, _dev_icd,
+          terakan_resolve_modes_vertex_spv, terakan_resolve_modes_fragment_spv,
+        ],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 30,
+      )
+      test(
+        'terakan_resolve_modes_4x',
+        terakan_resolve_modes_test,
+        args : [
+          terakan_resolve_modes_vertex_spv, terakan_resolve_modes_fragment_spv, '4',
+        ],
+        depends : [
+          libvulkan_terascale, _dev_icd,
+          terakan_resolve_modes_vertex_spv, terakan_resolve_modes_fragment_spv,
+        ],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 30,
+      )
+      test(
+        'terakan_resolve_modes_8x',
+        terakan_resolve_modes_test,
+        args : [
+          terakan_resolve_modes_vertex_spv, terakan_resolve_modes_fragment_spv, '8',
+        ],
+        depends : [
+          libvulkan_terascale, _dev_icd,
+          terakan_resolve_modes_vertex_spv, terakan_resolve_modes_fragment_spv,
+        ],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 30,
+      )
+
       terakan_blit_3d_test = executable(
         'terakan_blit_3d_test',
         ['tests/terakan_blit_3d_test.cpp'],

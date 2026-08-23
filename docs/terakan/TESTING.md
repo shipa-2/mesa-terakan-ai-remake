@@ -23,9 +23,9 @@ It performs independently meaningful CPU, GPU, identity, and negative checks:
 
 The physical-device report also guards where the capability report currently
 stands. `VK_KHR_depth_stencil_resolve` and `VK_KHR_create_renderpass2` must be
-advertised with `VK_RESOLVE_MODE_SAMPLE_ZERO_BIT` for both aspects and
-`independentResolveNone`, and `VK_KHR_dynamic_rendering` must be advertised as
-well. The point of the guard is that a capability is only advertised once a
+advertised, with the reducing modes for depth and sample zero for stencil, and
+both `independentResolveNone` and `independentResolve`; `VK_KHR_dynamic_rendering`
+must be advertised as well. The point of the guard is that a capability is only advertised once a
 readback test proves it: each of these checks once asserted the opposite, and
 was flipped only after the corresponding test passed — the resolve pair after
 `terakan_depth_resolve` and `terakan_depth_stencil_resolve`, dynamic rendering

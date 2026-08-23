@@ -25,6 +25,7 @@ is also verified on PALM/Wrestler (R8xx).
 | Dynamic rendering | `VK_KHR_dynamic_rendering`, the driver's native rendering path, including pipelines built without a render pass and suspend/resume splits |
 | Layered and 3D blits | destination slices select their source slice through the region's signed, scaled depth range; minified, magnified, mirrored and four-layer array blits are checked by readback |
 | Depth/stencil subresource targets | rendering, clearing and resolving reach mip levels above zero and array layers above zero, checked by resolving into level one, layer one through a partial render area |
+| Reducing depth resolve | `VK_RESOLVE_MODE_MIN_BIT` and `VK_RESOLVE_MODE_MAX_BIT` for depth at 2x, 4x and 8x, every sample fetched and combined in the pixel shader |
 | vkQuake3 | Vulkan renderer works in a 640x480 window |
 | DXVK-Sarek | D3D11 FL 11_1; Katamari and tested Disco Elysium scenes render; Green Hell creates a 1920x1080 swapchain with Sarek |
 | Godot workloads | Hangover Gallery and Fused 240 render correctly in user testing; Buckshot Roulette now renders real graphics but flickers |
@@ -53,8 +54,9 @@ with untouched buffer guards. Multisample storage images remain disabled.
 
 ## Still experimental
 
-- Depth/stencil resolve beyond sample zero: the averaging and min/max modes.
-  Partial render areas, mip levels and array layers are covered.
+- Depth/stencil resolve beyond sample zero: averaging for depth, and the
+  reducing modes for stencil. Depth minimum and maximum, partial render areas,
+  mip levels and array layers are covered.
 - FMASK/CMASK allocation, initialization, and sampled MSAA behavior.
 - Cache and barrier synchronization across all game workloads. Single-hazard
   coverage and all three frame chain composition producers pass, yet Buckshot

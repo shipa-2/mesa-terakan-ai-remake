@@ -200,6 +200,11 @@ struct terakan_rendering_color_resolve {
    VkImage dst_image;
    VkImageSubresourceLayers src_subresource;
    VkImageSubresourceLayers dst_subresource;
+   /* Depth/stencil only, where the two aspects share one entry but may be resolved with different
+    * modes. Unused by colour resolves, which have no mode to choose.
+    */
+   VkResolveModeFlagBits depth_mode;
+   VkResolveModeFlagBits stencil_mode;
 };
 
 struct terakan_command_buffer {
