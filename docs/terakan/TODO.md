@@ -191,6 +191,24 @@ next implementation should therefore either complete that metadata first or
 extract sample zero into a single-sample surface without binding a multisample
 color target.
 
+Reading depth back needs no decompression pass, which narrows the remaining
+problem considerably. The `terakan_depth_readback` probe clears a single-sample
+`D32_SFLOAT` image through a render pass, copies the depth aspect into a buffer
+and gets every texel back exactly, so the ordinary transfer path already reads
+depth through an SQ texture fetch. That is consistent with Terakan not
+implementing HTILE: depth is stored uncompressed, so there is nothing for the
+DB-to-CB copy to decompress.
+
+Together with the earlier finding that the R32-to-D32 pixel-shader depth export
+already writes its destination, both halves of a resolve exist without the
+DB-to-CB step that returned zero. The next implementation should therefore
+sample the source depth directly and export it, rather than reviving the
+`DEPTH_COPY_ENABLE` path at all. For multisampled sources this also matches the
+escape hatch recorded above, since sampling never binds a multisample color
+target: what still has to be proven is that a multisample depth image can be
+fetched per sample, which is a different question from the FMASK/CMASK work
+because depth compression uses HTILE rather than FMASK.
+
 FMASK/CMASK memory layout and deferred initialization are now implemented for
 2x/4x/8x color images. Memory-requirement checks and bounded CAICOS submissions
 for identity FMASK plus compressed-state CMASK initialization pass. This does

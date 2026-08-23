@@ -538,6 +538,23 @@ if with_tests
         timeout : 10,
       )
 
+      terakan_depth_readback_test = executable(
+        'terakan_depth_readback_test',
+        ['tests/terakan_depth_readback_test.cpp'],
+        dependencies : vulkan_loader_dep,
+      )
+      test(
+        'terakan_depth_readback',
+        terakan_depth_readback_test,
+        depends : [libvulkan_terascale, _dev_icd],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 10,
+      )
+
       terakan_clip_distance_vertex_spv = custom_target(
         'terakan_clip_distance.vert.spv',
         input : 'tests/terakan_clip_distance.vert',
