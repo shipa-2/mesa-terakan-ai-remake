@@ -90,6 +90,7 @@ extern struct terakan_meta_shader const terakan_meta_copy_image_to_buffer_ps;
 extern struct terakan_meta_shader const terakan_meta_copy_image_ps;
 extern struct terakan_meta_shader const terakan_meta_blit_image_ps;
 extern struct terakan_meta_shader const terakan_meta_resolve_2x_ps;
+extern struct terakan_meta_shader const terakan_meta_resolve_depth_sample_zero_ps;
 extern struct terakan_meta_shader const terakan_meta_copy_expand_3x_ps;
 extern struct terakan_meta_shader const terakan_meta_query_accum_zpass_1_rb_vs;
 extern struct terakan_meta_shader const terakan_meta_query_accum_zpass_2_rb_vs;

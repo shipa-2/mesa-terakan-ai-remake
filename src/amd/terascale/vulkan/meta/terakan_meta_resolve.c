@@ -75,6 +75,90 @@ static uint32_t const terakan_meta_resolve_2x_ps_r8xx[] = {
    TERAKAN_SHADER_OP2(true, 2, 'W', MUL_IEEE, EG, 2, 'W', V_SQ_ALU_SRC_0_5, 0, VEC_012),
 };
 
+/* Depth resolve in VK_RESOLVE_MODE_SAMPLE_ZERO_BIT. Fixed-point pixel coordinates arrive in R0.XY,
+ * the same way the color resolve above receives them. Fetch sample 0 of the multisample depth
+ * source into R1 and export it as the pixel depth.
+ *
+ * Depth is exported through an ordinary pixel export with array base 61, taking the value from the
+ * X component and masking the rest, matching what the shader compiler emits for
+ * `FRAG_RESULT_DEPTH`. Reading multisample depth needs no decompression: Terakan does not
+ * implement HTILE, so depth is stored uncompressed, and `terakan_depth_msaa_fetch` verifies the
+ * per-sample fetch on hardware.
+ *
+ * Layout, in dwords: 3 control flow instructions (0-5), 3 ALU instructions (6-11), then the
+ * texture instruction at 12, which keeps it on the required four-dword boundary. Control flow
+ * addresses count eight-byte slots, and the counts are one less than the instruction count.
+ */
+static uint32_t const terakan_meta_resolve_depth_sample_zero_ps_r8xx[] = {
+   S_SQ_CF_WORD0_ADDR(3),
+   S_SQ_CF_ALU_WORD1_COUNT(2) | S_SQ_CF_ALU_WORD1_BARRIER(true) |
+      EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
+
+   S_SQ_CF_WORD0_ADDR(6),
+   S_SQ_CF_WORD1_COUNT(0) | S_SQ_CF_WORD1_BARRIER(true) | EG_V_SQ_CF_WORD1_SQ_CF_INST_TEX,
+
+   S_SQ_CF_ALLOC_EXPORT_WORD0_TYPE(V_SQ_CF_ALLOC_EXPORT_WORD0_SQ_EXPORT_PIXEL) |
+      S_SQ_CF_ALLOC_EXPORT_WORD0_ARRAY_BASE(61) | S_SQ_CF_ALLOC_EXPORT_WORD0_RW_GPR(1),
+   S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_X(TERASCALE_SWIZZLE_X) |
+      S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Y(TERASCALE_SWIZZLE_MASK) |
+      S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Z(TERASCALE_SWIZZLE_MASK) |
+      S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_W(TERASCALE_SWIZZLE_MASK) |
+      S_SQ_CF_ALLOC_EXPORT_WORD1_BARRIER(true) | S_SQ_CF_ALLOC_EXPORT_WORD1_END_OF_PROGRAM(true) |
+      EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_EXPORT_DONE,
+
+   /* The fetch takes the array slice from Z and the sample index from W, so both must be zeroed
+    * rather than left holding whatever the interpolator produced. The third instruction only pads
+    * the block so the texture instruction stays four-dword aligned.
+    */
+   TERAKAN_SHADER_OP1(false, 0, 'Z', MOV, EG, V_SQ_ALU_SRC_0, 0, VEC_012),
+   TERAKAN_SHADER_OP1(true, 0, 'W', MOV, EG, V_SQ_ALU_SRC_0, 0, VEC_012),
+   TERAKAN_SHADER_OP1(true, 1, 'X', MOV, EG, V_SQ_ALU_SRC_0, 0, VEC_012),
+
+   S_SQ_TEX_WORD0_TEX_INST(SQ_TEX_INST_LD) |
+      S_SQ_TEX_WORD0_RESOURCE_ID(TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META) |
+      S_SQ_TEX_WORD0_SRC_GPR(0),
+   S_SQ_TEX_WORD1_DST_GPR(1) | S_SQ_TEX_WORD1_DST_SEL_X(TERASCALE_SWIZZLE_X) |
+      S_SQ_TEX_WORD1_DST_SEL_Y(TERASCALE_SWIZZLE_Y) |
+      S_SQ_TEX_WORD1_DST_SEL_Z(TERASCALE_SWIZZLE_Z) | S_SQ_TEX_WORD1_DST_SEL_W(TERASCALE_SWIZZLE_W),
+   S_SQ_TEX_WORD2_SRC_SEL_X(TERASCALE_SWIZZLE_X) | S_SQ_TEX_WORD2_SRC_SEL_Y(TERASCALE_SWIZZLE_Y) |
+      S_SQ_TEX_WORD2_SRC_SEL_Z(TERASCALE_SWIZZLE_Z) | S_SQ_TEX_WORD2_SRC_SEL_W(TERASCALE_SWIZZLE_W),
+   0,
+};
+
+#define TERAKAN_META_RESOLVE_DEPTH_SAMPLE_ZERO_PS_STATIC_REGISTERS                                 \
+   {                                                                                               \
+      .sq_pgm_resources =                                                                          \
+         {                                                                                         \
+            S_028844_NUM_GPRS(2) | TERAKAN_META_SQ_PGM_RESOURCES_COMMON,                           \
+            TERAKAN_META_SQ_PGM_RESOURCES_2_COMMON,                                                \
+         },                                                                                        \
+      .stage = {.ps = {                                                                            \
+         /* Depth only: no color is exported, so the target mask stays empty. */                   \
+         .sq_pgm_exports_ps = S_02884C_EXPORT_Z(1),                                                \
+         .spi_ps_in_control =                                                                      \
+            {                                                                                      \
+               S_0286CC_NUM_INTERP(1) | S_0286CC_LINEAR_GRADIENT_ENA(1),                           \
+               S_0286D0_FIXED_PT_POSITION_ENA(1) | S_0286D0_FIXED_PT_POSITION_ADDR(0),             \
+            },                                                                                     \
+         .spi_baryc_cntl = S_0286E0_LINEAR_CENTER_ENA(1),                                          \
+         .cb_shader_mask = 0,                                                                      \
+      }},                                                                                          \
+   }
+
+struct terakan_meta_shader const terakan_meta_resolve_depth_sample_zero_ps = {
+   .r8xx = {
+      .program = terakan_meta_resolve_depth_sample_zero_ps_r8xx,
+      .program_size_bytes = sizeof(terakan_meta_resolve_depth_sample_zero_ps_r8xx),
+      .static_registers = TERAKAN_META_RESOLVE_DEPTH_SAMPLE_ZERO_PS_STATIC_REGISTERS,
+   },
+   .r9xx = {
+      .program = terakan_meta_resolve_depth_sample_zero_ps_r8xx,
+      .program_size_bytes = sizeof(terakan_meta_resolve_depth_sample_zero_ps_r8xx),
+      .static_registers = TERAKAN_META_RESOLVE_DEPTH_SAMPLE_ZERO_PS_STATIC_REGISTERS,
+   },
+   .primary_meta_resource_used = true,
+};
+
 struct terakan_meta_shader const terakan_meta_resolve_2x_ps = {
    .r8xx = {
       .program = terakan_meta_resolve_2x_ps_r8xx,
