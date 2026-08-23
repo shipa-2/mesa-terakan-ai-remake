@@ -1887,7 +1887,14 @@ terakan_image_create_depth_stencil_descriptor(
       descriptor_out->z_info |=
          S_028040_TILE_SPLIT(surface_depth->tiling.attrib_tile_split) |
          S_028040_ZRANGE_PRECISION(view_depth_format != TERASCALE_R8XX_DEPTH_FORMAT_32_FLOAT);
-      descriptor_out->z_base = image_va_shr8 + surface_depth->offset_in_memory_bytes_shr8;
+      /* The level's own offset, which already includes the aspect's. Taking the aspect's here
+       * would leave the base on level zero while `size` and `slice` below describe the requested
+       * level, so any render or resolve into a level other than zero would land on level zero at
+       * the wrong dimensions.
+       */
+      descriptor_out->z_base =
+         image_va_shr8 +
+         surface_depth->levels[subresource_range->base_mip_level].offset_in_memory_bytes_shr8;
    } else {
       descriptor_out->z_base = image_va_shr8;
    }
@@ -1897,7 +1904,9 @@ terakan_image_create_depth_stencil_descriptor(
    if (view_may_have_stencil) {
       descriptor_out->stencil_info = S_028044_FORMAT(V_028044_STENCIL_8) |
                                      S_028044_TILE_SPLIT(surface_stencil->tiling.attrib_tile_split);
-      descriptor_out->stencil_base = image_va_shr8 + surface_stencil->offset_in_memory_bytes_shr8;
+      descriptor_out->stencil_base =
+         image_va_shr8 +
+         surface_stencil->levels[subresource_range->base_mip_level].offset_in_memory_bytes_shr8;
    } else {
       descriptor_out->stencil_info = S_028044_FORMAT(V_028044_STENCIL_INVALID);
       descriptor_out->stencil_base = image_va_shr8;

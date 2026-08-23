@@ -11,7 +11,7 @@ accept the work. Both use a 1–5 scale.
 
 | Work item | Importance | Complexity | Feasibility | Acceptance criteria |
 |---|---:|---:|---|---|
-| Complete depth/stencil resolve and layout transitions | 5/5 | 2/5 | Sample-zero resolve is implemented, exposed and regression-covered for both depth and stencil. The averaging and min/max depth modes and partial region and mip/layer coverage remain | Depth and stencil readbacks pass for partial regions, mip levels, array layers and every advertised sample count |
+| Complete depth/stencil resolve modes | 5/5 | 3/5 | Sample-zero resolve is implemented, exposed and regression-covered for both aspects, now including partial render areas, mip levels and array layers. The averaging and min/max modes remain, and each needs a pixel shader that reads every sample | Depth and stencil readbacks pass for the averaging and min/max modes at every advertised sample count |
 | Implement and validate FMASK/CMASK allocation, identity initialization and sampled MSAA addressing | 5/5 | 5/5 | Implementable; requires Evergreen tiling research | Per-sample reads and resolved reads pass for 2x/4x/8x images without corrupting ordinary color targets |
 | Complete cache and barrier coherency | 5/5 | 4/5 | Implementable. Composition coverage now exists (`terakan_frame_chain`, both the render-pass and the compute producer) and passes, so the remaining hazard is narrower than a repeated clear/dispatch, sample, render and copy chain | Focused attachment, texture, storage, transfer, graphics/compute and query producer-consumer chains pass without application-specific waits |
 | Cover remaining copy, blit and resolve format/subresource combinations | 5/5 | 4/5 | Implementable | Boundary tests cover non-zero offsets, partial extents, mip levels, array/3D layers and every advertised compatible format class |
@@ -54,6 +54,18 @@ These are useful, but Vulkan 1.1 permits the corresponding feature bits to be
 | Native high-performance FP64 | 1/5 | CAICOS lacks the hardware needed for a useful implementation; software lowering may be used only where practical |
 
 ## Completed and regression-covered
+
+- Depth/stencil rendering into a mip level other than zero: the depth/stencil
+  descriptor took its base address from the aspect while taking its pitch and
+  slice from the requested level, so anything rendering, clearing or resolving
+  into a level above zero wrote level zero's memory at another level's
+  dimensions. `vkCmdClearDepthStencilImage` goes through the same descriptor, so
+  a cleared level above zero was never actually cleared and read back as
+  uninitialized memory. The base now comes from the level, whose offset already
+  includes the aspect's. `terakan_depth_resolve_subresource` resolves into level
+  one, layer one of a two-level, two-layer destination through a partial render
+  area, which also covers the array layer and the render area offset reaching
+  the resolve; against the previous code every texel it reads is uninitialized.
 
 - Dynamic rendering: `VK_KHR_dynamic_rendering` is advertised. It is the
   driver's native rendering path rather than a new one — the common render pass
