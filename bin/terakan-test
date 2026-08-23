@@ -62,6 +62,8 @@ gpu_tests=(
   terakan_stencil_msaa_fetch
   terakan_frame_chain
   terakan_frame_chain_compute
+  terakan_frame_chain_depth
+  terakan_dynamic_rendering
   terakan_stencil_readback
   terakan_stencil_fetch
   terakan_physical_device_properties

@@ -152,14 +152,15 @@ main(void)
    TEST_CHECK(has_device_extension(physical_device, VK_KHR_MAINTENANCE_3_EXTENSION_NAME));
    TEST_CHECK(has_device_extension(physical_device, VK_KHR_DRIVER_PROPERTIES_EXTENSION_NAME));
    TEST_CHECK(has_device_extension(physical_device, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME));
-   /* Depth resolve is implemented by sampling the multisample source, which terakan_depth_resolve
-    * covers with a readback test, so the extension and its dependency are advertised. Dynamic
-    * rendering additionally needs stencil resolve, so it stays hidden. */
+   /* Depth and stencil resolve are implemented by sampling the multisample source, which
+    * terakan_depth_resolve and terakan_depth_stencil_resolve cover with readback tests, so the
+    * extension and its dependency are advertised. That in turn unblocks dynamic rendering, which
+    * is the driver's own rendering path and is covered by terakan_dynamic_rendering. */
    TEST_CHECK(has_device_extension(physical_device,
                                    VK_KHR_DEPTH_STENCIL_RESOLVE_EXTENSION_NAME));
    TEST_CHECK(has_device_extension(physical_device,
                                    VK_KHR_CREATE_RENDERPASS_2_EXTENSION_NAME));
-   TEST_CHECK(!has_device_extension(physical_device, VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME));
+   TEST_CHECK(has_device_extension(physical_device, VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME));
 
    VkPhysicalDeviceVulkan11Features vulkan_1_1_features = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,

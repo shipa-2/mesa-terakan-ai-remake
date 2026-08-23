@@ -21,10 +21,11 @@ is also verified on PALM/Wrestler (R8xx).
 | Depth and stencil sampling | single-sample and multisample per-sample fetches of both aspects, including the stencil aspect of a combined format |
 | Shader clip/cull distance | `shaderClipDistance` and `shaderCullDistance` with all three combined limits at 8 |
 | Dynamic descriptor bounds | the hardware size field of `VK_DESCRIPTOR_TYPE_*_DYNAMIC` descriptors is reclamped for the dynamic offset, with a guard-region test and a negative control |
-| Barrier composition | twenty-four-frame produce, sample, render and copy chains in one command buffer, with a render pass and a compute producer |
+| Barrier composition | twenty-four-frame produce, sample, render and copy chains in one command buffer, with a render pass, a compute and a depth-only producer |
+| Dynamic rendering | `VK_KHR_dynamic_rendering`, the driver's native rendering path, including pipelines built without a render pass and suspend/resume splits |
 | vkQuake3 | Vulkan renderer works in a 640x480 window |
 | DXVK-Sarek | D3D11 FL 11_1; Katamari and tested Disco Elysium scenes render; Green Hell creates a 1920x1080 swapchain with Sarek |
-| Godot workloads | Hangover Gallery and Fused 240 render correctly in user testing; Buckshot Roulette remains visually corrupted |
+| Godot workloads | Hangover Gallery and Fused 240 render correctly in user testing; Buckshot Roulette now renders real graphics but flickers |
 
 The BC6H regression test validates 48 independently addressed samples and has
 a negative control that corrupts one expected value. The normal run reports
@@ -54,8 +55,10 @@ with untouched buffer guards. Multisample storage images remain disabled.
   modes, partial regions, mip levels and array layers.
 - FMASK/CMASK allocation, initialization, and sampled MSAA behavior.
 - Cache and barrier synchronization across all game workloads. Single-hazard
-  coverage and the frame chain composition test both pass, yet Buckshot
-  Roulette still strobes, so the remaining hazard is narrower than either.
+  coverage and all three frame chain composition producers pass, yet Buckshot
+  Roulette still flickers, so the remaining hazard is narrower than any of
+  them. Its block corruption did clear when the sampling fixes landed; what is
+  left is a flicker between a black background and white with red dots.
 - Remaining resolve fallbacks for unusual formats and subresources.
 - Long-session stability and untested scenes in DXVK-Sarek games.
 - Full Vulkan 1.1 feature coverage and conformance testing.

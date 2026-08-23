@@ -830,10 +830,16 @@ terakan_physical_device_get_capabilities(
    extensions_out->KHR_sampler_mirror_clamp_to_edge = true;
    features_out->samplerMirrorClampToEdge = true;
 
-   /* VK_KHR_dynamic_rendering (#45, Vulkan 1.3) is used internally by the common render pass
-    * implementation, but must not be exposed until the depth/stencil resolve modes below cover
-    * everything the extension dependency requires.
+   /* VK_KHR_dynamic_rendering (#45, Vulkan 1.3).
+    *
+    * This is the driver's native rendering path: the common render pass implementation lowers
+    * VkRenderPass onto it, so every render pass already taken has gone through
+    * terakan_CmdBeginRendering, suspend and resume flags included. It was held back only by its
+    * dependency on VK_KHR_depth_stencil_resolve, which is exposed below.
     */
+   extensions_out->KHR_dynamic_rendering = true;
+   features_out->dynamicRendering = true;
+
 
    /* VK_KHR_create_renderpass2 (#110, Vulkan 1.2), entirely served by the common render pass
     * implementation. Exposed because VK_KHR_depth_stencil_resolve depends on it.

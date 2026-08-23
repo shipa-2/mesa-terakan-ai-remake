@@ -125,6 +125,8 @@ terakan_stencil_fetch
 terakan_stencil_msaa_fetch
 terakan_frame_chain
 terakan_frame_chain_compute
+terakan_frame_chain_depth
+terakan_dynamic_rendering
 terakan_physical_device_properties
 ```
 
@@ -276,18 +278,30 @@ correlated against a screen recording rather than single-shot screenshots,
 which cannot reliably catch the bad frame.
 
 Since then `terakan_frame_chain` was added to test that shape directly:
-twenty-four frames of produce, sample, render and copy in one command buffer,
-with both a render pass and a compute producer. Both pass, so the hazard is
-narrower than the chain itself. What the application does that the test does
-not is run many distinct compute pipelines rather than one, use several render
-target sizes within a frame, and mix storage buffers with storage images.
+twenty-four frames of produce, sample, render and copy in one command buffer.
+It now runs with three producers — a render pass, a compute dispatch, and
+(`--depth`) a depth-only render pass whose result is sampled the way a shadow
+map is. All three pass, so the hazard is narrower than the chain itself. What
+the application does that the test does not is run many distinct compute
+pipelines rather than one, use several render target sizes within a frame, and
+mix storage buffers with storage images.
 
-Buckshot Roulette has not been observed again since the stencil-aspect view
-swizzle and the multisample `MIP_ADDRESS` fixes landed. Neither fix is an
-obvious explanation for the strobe, since the corruption predates them and
-neither touches the colour path, but the run is cheap and worth repeating
-before more investigation. Only a person watching the screen can judge it:
-single screenshots repeatedly failed to catch a bad frame.
+Buckshot Roulette was retested after the stencil-aspect view swizzle and the
+multisample `MIP_ADDRESS` fixes landed, and the symptom changed: it now renders
+real graphics, where before the image was a grid of magenta and black blocks.
+What remains is a flicker between a black background and white with red dots.
+The block corruption is therefore explained by the sampling fixes; the flicker
+is not, and is still consistent with the open cache/barrier coherency item.
+
+A `TERAKAN_DEBUG_RENDER` trace of that run shows what its frames are made of,
+which is useful for aiming further work: per frame roughly seventeen depth-only
+passes (4096x4096, 512x512, 256x256 and 128x128 shadow maps plus a 960x540
+depth prepass), a three-attachment 960x540 pass, several single-attachment
+960x540 passes, and one 1920x1080 pass. Depth-only passes dominate by a wide
+margin, which is what prompted the `--depth` producer above.
+
+Only a person watching the screen can judge the flicker: single screenshots
+repeatedly failed to catch a bad frame.
 
 ## Reproduction
 

@@ -10,6 +10,11 @@
  * clear, sample, render and copy recorded into a single command buffer, with only the barriers a
  * correct application would issue.
  *
+ * --depth replaces the colour producer with a depth-only render pass, which is the shape a shadow
+ * map has and the one applications lean on hardest: the frame structure Buckshot Roulette records
+ * is dominated by depth-only passes that are then sampled. It exercises the DB-to-texture path that
+ * the colour chain never touches.
+ *
  * Each frame clears attachment A to a colour unique to that frame, transitions it to be sampled,
  * samples it into attachment B, transitions B for transfer, and copies B into its own slice of a
  * readback buffer. Any frame that observes a neighbouring frame's colour has seen through a
@@ -82,13 +87,13 @@ struct Image {
 };
 
 VkResult
-create_color_image(VkDevice device, VkPhysicalDevice physical_device, VkImageUsageFlags usage,
-                   Image & out)
+create_image(VkDevice device, VkPhysicalDevice physical_device, VkImageUsageFlags usage,
+             VkFormat format, VkImageAspectFlags aspect, Image & out)
 {
    VkImageCreateInfo const info = {
       .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
       .imageType = VK_IMAGE_TYPE_2D,
-      .format = VK_FORMAT_R8G8B8A8_UNORM,
+      .format = format,
       .extent = {kWidth, kHeight, 1},
       .mipLevels = 1,
       .arrayLayers = 1,
@@ -123,7 +128,7 @@ create_color_image(VkDevice device, VkPhysicalDevice physical_device, VkImageUsa
       .image = out.image,
       .viewType = VK_IMAGE_VIEW_TYPE_2D,
       .format = info.format,
-      .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
+      .subresourceRange = {aspect, 0, 1, 0, 1},
    };
    return vkCreateImageView(device, &view_info, nullptr, &out.view);
 }
@@ -138,12 +143,15 @@ main(int argc, char ** argv)
     * RAT coherency covers least.
     */
    bool const use_compute = argc == 5 && std::strcmp(argv[4], "--compute") == 0;
-   if (argc != 3 && !(argc == 5 && use_compute)) {
-      std::fprintf(stderr, "usage: %s VERT_SPV FRAG_SPV [COMP_SPV --compute]\n", argv[0]);
+   bool const use_depth = argc == 5 && std::strcmp(argv[4], "--depth") == 0;
+   if (argc != 3 && !(argc == 5 && (use_compute || use_depth))) {
+      std::fprintf(stderr, "usage: %s VERT_SPV FRAG_SPV [COMP_SPV --compute | DEPTH_FRAG_SPV --depth]\n",
+                   argv[0]);
       return 2;
    }
    std::vector<uint32_t> const vertex_spirv = read_spirv(argv[1]);
-   std::vector<uint32_t> const fragment_spirv = read_spirv(argv[2]);
+   /* In depth mode the second pass samples a depth texture, so it needs its own fragment shader. */
+   std::vector<uint32_t> const fragment_spirv = read_spirv(use_depth ? argv[3] : argv[2]);
    std::vector<uint32_t> const compute_spirv = use_compute ? read_spirv(argv[3])
                                                            : std::vector<uint32_t>{1};
    if (compute_spirv.empty()) {
@@ -217,15 +225,19 @@ main(int argc, char ** argv)
    vkGetDeviceQueue(device, queue_family, 0, &queue);
 
    Image source;
-   VK_CHECK(create_color_image(device, physical_device,
-                               VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
-                                  VK_IMAGE_USAGE_STORAGE_BIT,
-                               source));
+   VK_CHECK(create_image(device, physical_device,
+                         VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
+                            VK_IMAGE_USAGE_STORAGE_BIT,
+                         VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT, source));
    Image target;
-   VK_CHECK(create_color_image(device, physical_device,
-                               VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                                  VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
-                               target));
+   VK_CHECK(create_image(device, physical_device,
+                         VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+                         VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT, target));
+   /* The depth producer. Created unconditionally so the teardown stays uniform. */
+   Image depth;
+   VK_CHECK(create_image(device, physical_device,
+                         VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                         VK_FORMAT_D32_SFLOAT, VK_IMAGE_ASPECT_DEPTH_BIT, depth));
 
    VkDeviceSize const frame_bytes = kWidth * kHeight * 4;
    VkBufferCreateInfo const readback_info = {
@@ -302,6 +314,50 @@ main(int argc, char ** argv)
    framebuffer_info.pAttachments = &target.view;
    VK_CHECK(vkCreateFramebuffer(device, &framebuffer_info, nullptr, &target_framebuffer));
 
+   /* A depth-only pass with no colour attachments at all, matching what the shadow passes of a
+    * real frame look like to the driver.
+    */
+   VkRenderPass depth_render_pass = VK_NULL_HANDLE;
+   VkFramebuffer depth_framebuffer = VK_NULL_HANDLE;
+   if (use_depth) {
+      VkAttachmentDescription const depth_attachment = {
+         .format = VK_FORMAT_D32_SFLOAT,
+         .samples = VK_SAMPLE_COUNT_1_BIT,
+         .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+         .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+         .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+         .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+         .finalLayout = VK_IMAGE_LAYOUT_GENERAL,
+      };
+      VkAttachmentReference const depth_reference = {
+         .attachment = 0,
+         .layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+      };
+      VkSubpassDescription const depth_subpass = {
+         .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+         .pDepthStencilAttachment = &depth_reference,
+      };
+      VkRenderPassCreateInfo const depth_render_pass_info = {
+         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+         .attachmentCount = 1,
+         .pAttachments = &depth_attachment,
+         .subpassCount = 1,
+         .pSubpasses = &depth_subpass,
+      };
+      VK_CHECK(vkCreateRenderPass(device, &depth_render_pass_info, nullptr, &depth_render_pass));
+      VkFramebufferCreateInfo const depth_framebuffer_info = {
+         .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+         .renderPass = depth_render_pass,
+         .attachmentCount = 1,
+         .pAttachments = &depth.view,
+         .width = kWidth,
+         .height = kHeight,
+         .layers = 1,
+      };
+      VK_CHECK(vkCreateFramebuffer(device, &depth_framebuffer_info, nullptr, &depth_framebuffer));
+   }
+
    VkSamplerCreateInfo const sampler_info = {
       .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
       .magFilter = VK_FILTER_NEAREST,
@@ -357,7 +413,7 @@ main(int argc, char ** argv)
    VK_CHECK(vkAllocateDescriptorSets(device, &set_allocate_info, &descriptor_set));
    VkDescriptorImageInfo const image_descriptor = {
       .sampler = sampler,
-      .imageView = source.view,
+      .imageView = use_depth ? depth.view : source.view,
       .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
    };
    VkWriteDescriptorSet const descriptor_write = {
@@ -555,7 +611,22 @@ main(int argc, char ** argv)
          .clearValueCount = 1,
          .pClearValues = &clear,
       };
-      if (use_compute) {
+      if (use_depth) {
+         /* Exactly representable in UNORM8 after the sampling shader writes it back out. */
+         VkClearValue const depth_clear = {
+            .depthStencil = {.depth = frame_channel(frame, 0) / 255.0F},
+         };
+         VkRenderPassBeginInfo const depth_begin = {
+            .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+            .renderPass = depth_render_pass,
+            .framebuffer = depth_framebuffer,
+            .renderArea = {{0, 0}, {kWidth, kHeight}},
+            .clearValueCount = 1,
+            .pClearValues = &depth_clear,
+         };
+         vkCmdBeginRenderPass(command_buffer, &depth_begin, VK_SUBPASS_CONTENTS_INLINE);
+         vkCmdEndRenderPass(command_buffer);
+      } else if (use_compute) {
          vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute_pipeline);
          vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE,
                                  compute_pipeline_layout, 0, 1, &compute_descriptor_set, 0,
@@ -569,23 +640,29 @@ main(int argc, char ** argv)
          vkCmdEndRenderPass(command_buffer);
       }
 
+      VkAccessFlags producer_access = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+      VkPipelineStageFlags producer_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+      if (use_compute) {
+         producer_access = VK_ACCESS_SHADER_WRITE_BIT;
+         producer_stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+      } else if (use_depth) {
+         producer_access = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+         producer_stage = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+      }
       VkImageMemoryBarrier const source_to_sampled = {
          .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-         .srcAccessMask = use_compute ? VK_ACCESS_SHADER_WRITE_BIT
-                                      : VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+         .srcAccessMask = producer_access,
          .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
          .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
          .newLayout = VK_IMAGE_LAYOUT_GENERAL,
          .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
          .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-         .image = source.image,
-         .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
+         .image = use_depth ? depth.image : source.image,
+         .subresourceRange = {use_depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT,
+                              0, 1, 0, 1},
       };
-      vkCmdPipelineBarrier(command_buffer,
-                           use_compute ? VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
-                                       : VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-                           VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1,
-                           &source_to_sampled);
+      vkCmdPipelineBarrier(command_buffer, producer_stage, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                           0, 0, nullptr, 0, nullptr, 1, &source_to_sampled);
 
       /* Pass 2: sample it straight through into the target. */
       VkClearValue const target_clear = {.color = {.float32 = {0.0F, 0.0F, 0.0F, 0.0F}}};
@@ -625,11 +702,13 @@ main(int argc, char ** argv)
       VkMemoryBarrier const transfer_done = {
          .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
          .srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT,
-         .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+         .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_WRITE_BIT |
+                          VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
       };
       vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
                            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
-                              VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                              VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
+                              VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
                            0, 1, &transfer_done, 0, nullptr, 0, nullptr);
    }
 
@@ -657,6 +736,13 @@ main(int argc, char ** argv)
       return 1;
    }
 
+   /* The depth producer feeds one value through all three channels, the colour producer a
+    * different value per channel.
+    */
+   auto const expected_channel = [use_depth](uint32_t frame, uint32_t channel) {
+      return frame_channel(frame, use_depth ? 0 : channel);
+   };
+
    uint32_t bad_frames = 0;
    for (uint32_t frame = 0; frame < kFrameCount; ++frame) {
       uint8_t const * const pixels = readback_mapping + frame_bytes * frame;
@@ -666,7 +752,7 @@ main(int argc, char ** argv)
          uint8_t const * const pixel = pixels + texel * 4;
          bool matches = true;
          for (uint32_t channel = 0; channel < 3; ++channel)
-            matches &= pixel[channel] == frame_channel(frame, channel);
+            matches &= pixel[channel] == expected_channel(frame, channel);
          if (!matches) {
             if (mismatches == 0)
                std::memcpy(first_bad, pixel, 4);
@@ -679,9 +765,9 @@ main(int argc, char ** argv)
           */
          int seen_frame = -1;
          for (uint32_t candidate = 0; candidate < kFrameCount; ++candidate) {
-            if (first_bad[0] == frame_channel(candidate, 0) &&
-                first_bad[1] == frame_channel(candidate, 1) &&
-                first_bad[2] == frame_channel(candidate, 2)) {
+            if (first_bad[0] == expected_channel(candidate, 0) &&
+                first_bad[1] == expected_channel(candidate, 1) &&
+                first_bad[2] == expected_channel(candidate, 2)) {
                seen_frame = static_cast<int>(candidate);
                break;
             }
@@ -710,8 +796,10 @@ main(int argc, char ** argv)
    vkDestroySampler(device, sampler, nullptr);
    vkDestroyFramebuffer(device, source_framebuffer, nullptr);
    vkDestroyFramebuffer(device, target_framebuffer, nullptr);
+   vkDestroyFramebuffer(device, depth_framebuffer, nullptr);
    vkDestroyRenderPass(device, render_pass, nullptr);
-   for (Image const & image : {source, target}) {
+   vkDestroyRenderPass(device, depth_render_pass, nullptr);
+   for (Image const & image : {source, target, depth}) {
       vkDestroyImageView(device, image.view, nullptr);
       vkDestroyImage(device, image.image, nullptr);
       vkFreeMemory(device, image.memory, nullptr);

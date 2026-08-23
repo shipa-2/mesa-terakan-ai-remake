@@ -350,7 +350,6 @@ terakan_pipeline_layout_create(struct terakan_device * const device,
             &layout->shader_app_push_constants_extents_bytes[u_bit_scan(&remaining_stages)];
          *shader_app_push_constants_extent =
             MAX2(push_constant_range_extent, *shader_app_push_constants_extent);
-         remaining_stages &= remaining_stages - 1;
       }
    }
 

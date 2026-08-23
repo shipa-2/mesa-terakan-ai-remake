@@ -616,6 +616,16 @@ if with_tests
         ],
         depfile : 'terakan_frame_chain.comp.spv.d',
       )
+      terakan_frame_chain_depth_fragment_spv = custom_target(
+        'terakan_frame_chain_depth.frag.spv',
+        input : 'tests/terakan_frame_chain_depth.frag',
+        output : 'terakan_frame_chain_depth.frag.spv',
+        command : [
+          prog_glslang, '-V', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_frame_chain_depth.frag.spv.d',
+      )
       terakan_frame_chain_test = executable(
         'terakan_frame_chain_test',
         ['tests/terakan_frame_chain_test.cpp'],
@@ -648,6 +658,69 @@ if with_tests
           libvulkan_terascale, _dev_icd,
           terakan_frame_chain_vertex_spv, terakan_frame_chain_fragment_spv,
           terakan_frame_chain_compute_spv,
+        ],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 30,
+      )
+
+      test(
+        'terakan_frame_chain_depth',
+        terakan_frame_chain_test,
+        args : [
+          terakan_frame_chain_vertex_spv, terakan_frame_chain_fragment_spv,
+          terakan_frame_chain_depth_fragment_spv, '--depth',
+        ],
+        depends : [
+          libvulkan_terascale, _dev_icd,
+          terakan_frame_chain_vertex_spv, terakan_frame_chain_fragment_spv,
+          terakan_frame_chain_depth_fragment_spv,
+        ],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 30,
+      )
+
+      terakan_dynamic_rendering_vertex_spv = custom_target(
+        'terakan_dynamic_rendering.vert.spv',
+        input : 'tests/terakan_dynamic_rendering.vert',
+        output : 'terakan_dynamic_rendering.vert.spv',
+        command : [
+          prog_glslang, '-V', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_dynamic_rendering.vert.spv.d',
+      )
+      terakan_dynamic_rendering_fragment_spv = custom_target(
+        'terakan_dynamic_rendering.frag.spv',
+        input : 'tests/terakan_dynamic_rendering.frag',
+        output : 'terakan_dynamic_rendering.frag.spv',
+        command : [
+          prog_glslang, '-V', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_dynamic_rendering.frag.spv.d',
+      )
+      terakan_dynamic_rendering_test = executable(
+        'terakan_dynamic_rendering_test',
+        ['tests/terakan_dynamic_rendering_test.cpp'],
+        dependencies : vulkan_loader_dep,
+      )
+      test(
+        'terakan_dynamic_rendering',
+        terakan_dynamic_rendering_test,
+        args : [
+          terakan_dynamic_rendering_vertex_spv, terakan_dynamic_rendering_fragment_spv,
+        ],
+        depends : [
+          libvulkan_terascale, _dev_icd,
+          terakan_dynamic_rendering_vertex_spv, terakan_dynamic_rendering_fragment_spv,
         ],
         env : {
           'VK_DRIVER_FILES' : _dev_icd.full_path(),

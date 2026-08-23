@@ -24,11 +24,12 @@ It performs independently meaningful CPU, GPU, identity, and negative checks:
 The physical-device report also guards where the capability report currently
 stands. `VK_KHR_depth_stencil_resolve` and `VK_KHR_create_renderpass2` must be
 advertised with `VK_RESOLVE_MODE_SAMPLE_ZERO_BIT` for both aspects and
-`independentResolveNone`, while `VK_KHR_dynamic_rendering` must stay
-unadvertised. The point of the guard is that a capability is only advertised
-once a readback test proves it: when the resolve modes were still unproven the
-same check asserted the opposite, and it was flipped only after
-`terakan_depth_resolve` and `terakan_depth_stencil_resolve` passed.
+`independentResolveNone`, and `VK_KHR_dynamic_rendering` must be advertised as
+well. The point of the guard is that a capability is only advertised once a
+readback test proves it: each of these checks once asserted the opposite, and
+was flipped only after the corresponding test passed — the resolve pair after
+`terakan_depth_resolve` and `terakan_depth_stencil_resolve`, dynamic rendering
+after `terakan_dynamic_rendering`.
 
 This prevents a passing result from accidentally coming from RADV, llvmpipe,
 or the system Vulkan driver.

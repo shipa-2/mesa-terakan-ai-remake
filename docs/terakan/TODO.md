@@ -38,7 +38,6 @@ These are useful, but Vulkan 1.1 permits the corresponding feature bits to be
 
 | Work item | Importance | Complexity | Feasibility | Notes |
 |---|---:|---:|---|---|
-| Expose dynamic rendering | 2/5 | 2/5 | Implementable; the VK_KHR_depth_stencil_resolve dependency is now satisfied for both aspects | No longer blocked by the resolve dependency |
 | Lower 64-bit buffer accesses and finish 64-bit shader coverage | 2/5 | 4/5 | Partly implementable through 32-bit lowering | Native performance will remain limited |
 | Add 16-bit storage support | 2/5 | 4/5 | Implementable through packing/lowering where necessary | Rare in the current DXVK-Sarek target set |
 | Add multiview | 1/5 | 3/5 | Implementable | Primarily useful for VR and Vulkan-native applications |
@@ -55,6 +54,25 @@ These are useful, but Vulkan 1.1 permits the corresponding feature bits to be
 | Native high-performance FP64 | 1/5 | CAICOS lacks the hardware needed for a useful implementation; software lowering may be used only where practical |
 
 ## Completed and regression-covered
+
+- Dynamic rendering: `VK_KHR_dynamic_rendering` is advertised. It is the
+  driver's native rendering path rather than a new one — the common render pass
+  implementation lowers `VkRenderPass` onto `terakan_CmdBeginRendering`, suspend
+  and resume flags included — so exposing it was a matter of clearing its
+  `VK_KHR_depth_stencil_resolve` dependency. `terakan_dynamic_rendering` covers
+  the surface that render passes never reach: attachments described per
+  recording, a pipeline built from `VkPipelineRenderingCreateInfo` with no
+  render pass at all, and one render split across a suspending and a resuming
+  half.
+
+- Multi-stage push constant ranges: a `VkPushConstantRange` covering more than
+  one stage used to lose every other stage, because the loop distributing the
+  range's extent cleared the scanned bit twice — `u_bit_scan` already clears it,
+  and an extra `&= x - 1` cleared the next one too. The canonical
+  `VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT` range therefore
+  reached the vertex shader and left the fragment shader reading zeros. Found
+  while bringing up `terakan_dynamic_rendering`, which covers it: its fragment
+  shader takes its colour from a push constant shared with the vertex stage.
 
 - 3D image mip base alignment and descriptor addressing: the separately
   addressed 3D mip chain is aligned and each origin mip level's own array mode
