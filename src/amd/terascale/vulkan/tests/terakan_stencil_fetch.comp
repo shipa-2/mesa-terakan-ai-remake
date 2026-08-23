@@ -1,0 +1,29 @@
+#version 450
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+/* Single-sample counterpart of terakan_stencil_msaa_fetch, to tell stencil texture sampling in
+ * general apart from the multisample case specifically.
+ */
+layout(set = 0, binding = 0) uniform usampler2D source_stencil;
+
+layout(set = 0, binding = 1, std430) writeonly buffer Output {
+   uint values[];
+} output_buffer;
+
+layout(push_constant) uniform PushConstants {
+   uint width;
+   uint height;
+   uint sample_count;
+} push_constants;
+
+void
+main()
+{
+   uvec2 coordinate = gl_GlobalInvocationID.xy;
+   if (coordinate.x >= push_constants.width || coordinate.y >= push_constants.height)
+      return;
+
+   output_buffer.values[coordinate.y * push_constants.width + coordinate.x] =
+      texelFetch(source_stencil, ivec2(coordinate), 0).r;
+}

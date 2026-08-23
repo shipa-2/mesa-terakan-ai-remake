@@ -1582,7 +1582,7 @@ terakan_image_create_resource_descriptor(
       fprintf(stderr,
               "[TERAKAN_IMAGE] resource type=%u vkfmt=%u extent=%ux%u desired_dim=%u hw_dim=%u "
               "base_level=%u levels=%u array_mode=%u tile_split=%u data_format=%u pitch_tile_max=%u "
-              "word1=0x%08x word6=0x%08x word7=0x%08x\n",
+              "base_shr8=0x%08x swz=%u,%u,%u,%u word1=0x%08x word7=0x%08x\n",
               image->vk.image_type, descriptor_create_info->view_format.format,
               image->vk.extent.width,
               image->vk.extent.height, desired_dimensionality, hw_dimensionality,
@@ -1591,8 +1591,12 @@ terakan_image_create_resource_descriptor(
               G_030004_ARRAY_MODE(descriptor_out->resource[1]),
               (descriptor_out->resource[6] >> 29) & 0x7,
               G_03001C_DATA_FORMAT(descriptor_out->resource[7]),
-              G_030000_PITCH(descriptor_out->resource[0]), descriptor_out->resource[1],
-              descriptor_out->resource[6], descriptor_out->resource[7]);
+              G_030000_PITCH(descriptor_out->resource[0]), descriptor_out->resource[2],
+              descriptor_create_info->view_format.swizzle_r,
+              descriptor_create_info->view_format.swizzle_g,
+              descriptor_create_info->view_format.swizzle_b,
+              descriptor_create_info->view_format.swizzle_a, descriptor_out->resource[1],
+              descriptor_out->resource[7]);
    }
    return true;
 }
@@ -2021,8 +2025,10 @@ terakan_CreateImageView(VkDevice const deviceHandle,
     * so create depth-only resource and color descriptors unless only stencil is needed.
     */
    unsigned view_format_main_aspect_index = 0, image_format_main_aspect_index = 0;
-   if ((pCreateInfo->subresourceRange.aspectMask &
-        (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)) == VK_IMAGE_ASPECT_STENCIL_BIT) {
+   bool const view_is_stencil_only =
+      (pCreateInfo->subresourceRange.aspectMask &
+       (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)) == VK_IMAGE_ASPECT_STENCIL_BIT;
+   if (view_is_stencil_only) {
       view_format_main_aspect_index =
          terakan_format_aspect_index(view_format_info.aspect_map, VK_IMAGE_ASPECT_STENCIL_BIT, 0);
       image_format_main_aspect_index =
@@ -2035,6 +2041,22 @@ terakan_CreateImageView(VkDevice const deviceHandle,
    descriptor_create_info.view_format =
       view_format_info.aspect_formats[view_format_main_aspect_index];
    descriptor_create_info.image_aspect_index = image_format_main_aspect_index;
+   if (view_is_stencil_only) {
+      /* The aspect format tables describe where each aspect sits within the combined
+       * depth/stencil format, so the stencil aspect's value is placed in the second component. A
+       * view of the stencil aspect alone is a single-component image though, and the Vulkan
+       * specification requires its value to be readable as the R component. On R8xx the stencil
+       * aspect has its own single-channel surface, so the value is in hardware channel X.
+       *
+       * Only the view descriptors are adjusted. The aspect format tables stay as they are because
+       * transfers use them for the source and the destination alike, where any consistent
+       * placement works.
+       */
+      descriptor_create_info.view_format.swizzle_r = TERASCALE_SWIZZLE_X;
+      descriptor_create_info.view_format.swizzle_g = TERASCALE_SWIZZLE_0;
+      descriptor_create_info.view_format.swizzle_b = TERASCALE_SWIZZLE_0;
+      descriptor_create_info.view_format.swizzle_a = TERASCALE_SWIZZLE_1;
+   }
 
    uint32_t resource_dimensionality = V_030000_SQ_TEX_DIM_1D;
    uint32_t color_resource_type = V_028C70_TEXTURE1D;

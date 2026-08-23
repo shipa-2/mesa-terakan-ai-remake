@@ -38,8 +38,8 @@ constexpr uint32_t kWidth = 8;
 constexpr uint32_t kHeight = 8;
 constexpr uint32_t kClearStencil = 0x5Au;
 
-uint32_t const stencil_msaa_fetch_spirv[] = {
-#include "terakan_stencil_msaa_fetch.spv.h"
+uint32_t const stencil_fetch_spirv[] = {
+#include "terakan_stencil_fetch.spv.h"
 };
 
 struct PushConstants {
@@ -67,7 +67,7 @@ main()
 {
    VkApplicationInfo const application_info = {
       .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
-      .pApplicationName = "terakan-stencil-msaa-fetch-test",
+      .pApplicationName = "terakan-stencil-fetch-test",
       .apiVersion = VK_API_VERSION_1_1,
    };
    VkInstanceCreateInfo const instance_info = {
@@ -110,11 +110,8 @@ main()
    /* Only probe a sample count the implementation says it can sample depth at. */
    VkSampleCountFlags const depth_sample_counts =
       properties.limits.framebufferStencilSampleCounts & properties.limits.sampledImageStencilSampleCounts;
-   if (!(depth_sample_counts & VK_SAMPLE_COUNT_2_BIT)) {
-      std::fprintf(stderr, "2x stencil sampling is not advertised, nothing to probe\n");
-      return 77;
-   }
-   constexpr uint32_t kSampleCount = 2;
+
+   constexpr uint32_t kSampleCount = 1;
    std::fprintf(stderr, "device=%s queue_family=%u samples=%u\n", properties.deviceName,
                 queue_family, kSampleCount);
 
@@ -142,7 +139,7 @@ main()
       .extent = {kWidth, kHeight, 1},
       .mipLevels = 1,
       .arrayLayers = 1,
-      .samples = VK_SAMPLE_COUNT_2_BIT,
+      .samples = VK_SAMPLE_COUNT_1_BIT,
       .tiling = VK_IMAGE_TILING_OPTIMAL,
       .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
       .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
@@ -318,8 +315,8 @@ main()
 
    VkShaderModuleCreateInfo const module_info = {
       .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-      .codeSize = sizeof(stencil_msaa_fetch_spirv),
-      .pCode = stencil_msaa_fetch_spirv,
+      .codeSize = sizeof(stencil_fetch_spirv),
+      .pCode = stencil_fetch_spirv,
    };
    VkShaderModule shader_module;
    VK_CHECK(vkCreateShaderModule(device, &module_info, nullptr, &shader_module));
@@ -341,7 +338,7 @@ main()
    /* The render pass exists only to clear the multisample depth image to a known value. */
    VkAttachmentDescription const attachment = {
       .format = depth_info.format,
-      .samples = VK_SAMPLE_COUNT_2_BIT,
+      .samples = VK_SAMPLE_COUNT_1_BIT,
       .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
       .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
       .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
@@ -472,7 +469,7 @@ main()
          }
       }
    }
-   std::printf("stencil_msaa_fetch samples=%u values=%u mismatches=%u %s\n", kSampleCount,
+   std::printf("stencil_fetch samples=%u values=%u mismatches=%u %s\n", kSampleCount,
                output_count, mismatches, mismatches == 0 ? "PASS" : "FAIL");
 
    vkDeviceWaitIdle(device);

@@ -12,7 +12,7 @@ accept the work. Both use a 1–5 scale.
 | Work item | Importance | Complexity | Feasibility | Acceptance criteria |
 |---|---:|---:|---|---|
 | Complete depth/stencil resolve and layout transitions | 5/5 | 3/5 | Sample-zero depth resolve is implemented, exposed and regression-covered. Stencil resolve is implemented but cannot be advertised: multisample stencil does not read back at all, which is a defect below the resolve and is tracked separately below. The averaging and min/max depth modes and partial region and mip/layer coverage also remain | Depth and stencil readbacks pass for partial regions, mip levels, array layers and every advertised sample count |
-| Fix multisample stencil readback | 5/5 | 4/5 | Isolated but not diagnosed. Blocks stencil resolve, and therefore dynamic rendering | `terakan_stencil_msaa_fetch` passes instead of being expected to fail |
+| Fix multisample stencil sampling | 5/5 | 4/5 | Narrowed to multisample addressing. Single-sample stencil sampling was a swizzle bug and is fixed; the multisample case still reads zeroes with a correct swizzle, base address, pitch and format, so the remaining suspect is the tile split the stencil aspect inherits from depth. Blocks stencil resolve, and therefore dynamic rendering | `terakan_stencil_msaa_fetch` passes instead of being expected to fail |
 | Implement and validate FMASK/CMASK allocation, identity initialization and sampled MSAA addressing | 5/5 | 5/5 | Implementable; requires Evergreen tiling research | Per-sample reads and resolved reads pass for 2x/4x/8x images without corrupting ordinary color targets |
 | Complete cache and barrier coherency | 5/5 | 4/5 | Implementable | Focused attachment, texture, storage, transfer, graphics/compute and query producer-consumer chains pass without application-specific waits |
 | Cover remaining copy, blit and resolve format/subresource combinations | 5/5 | 4/5 | Implementable | Boundary tests cover non-zero offsets, partial extents, mip levels, array/3D layers and every advertised compatible format class |
@@ -58,7 +58,15 @@ These are useful, but Vulkan 1.1 permits the corresponding feature bits to be
 
 ## Completed and regression-covered
 
-- Multisample stencil readback is broken, isolated by three probes on CAICOS.
+- Stencil-aspect view swizzle: a view of the stencil aspect alone is a
+  single-component image whose value the Vulkan specification requires in R,
+  but the driver was applying the combined depth/stencil format's swizzle,
+  which places stencil in G, so sampling it returned a constant zero. View
+  descriptors now expose the stencil channel as R. The aspect format tables are
+  left alone because transfers use them for source and destination alike, where
+  any consistent placement works, which is why transfers never showed this.
+  `terakan_stencil_fetch` covers it.
+- Multisample stencil sampling is still broken, isolated by probes on CAICOS.
   `terakan_stencil_readback` clears and reads single-sample stencil back
   correctly, and `terakan_depth_msaa_fetch --combined` fetches multisample
   depth correctly out of the same `D32_SFLOAT_S8_UINT` format, but
