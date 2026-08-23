@@ -141,8 +141,19 @@ Still missing, in rough dependency order:
    derived from the control and evaluation shader NIR plus `patchControlPoints`
    from `VkPipelineTessellationStateCreateInfo`.
 2. An LDS info constant buffer carrying that layout, bound to the vertex,
-   control and evaluation stages. This is how the shaders find their patch data
-   in LDS, and it is the piece with no equivalent in Terakan today.
+   control and evaluation stages. **This collides with Terakan's push constants
+   and is the trap to plan for.** SFN's `emit_load_tcs_param_base` fetches two
+   vec4s from `R600_LDS_INFO_CONST_BUFFER` at byte offsets 0 and 16, and that
+   constant is 15 — the same kcache buffer Terakan already uses for push
+   constants, whose first 48 bytes are
+   `buffer_uav_base_granularity_offset[12]`. As it stands the tessellation
+   parameter bases would read UAV granularity offsets. Either the driver
+   constants have to move so bytes 0..31 can hold the eight-`uint32_t` layout
+   (`input_patch_size`, `input_vertex_size`, `num_tcs_input_cp`,
+   `num_tcs_output_cp`, `output_patch_size`, `output_vertex_size`,
+   `output_patch0_offset`, `perpatch_output_offset`, in that order, matching
+   `struct r600_lds_constant_buffer`), or `emit_load_tcs_param_base` has to be
+   redirected the way `emit_get_lds_info_uint` already was for Terakan.
 3. Dynamic `SQ_LDS_ALLOC` for the LS/HS pair, carrying the computed LDS size
    and the wave count, currently emitted as a constant zero on the draw path.
 4. Values for `VGT_LS_HS_CONFIG` (patch control point counts, patch count per
