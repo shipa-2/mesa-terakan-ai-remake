@@ -33,6 +33,7 @@
 #include "terakan_vk_state.h"
 
 #include "amd/terascale/common/terascale_format.h"
+#include "gallium/auxiliary/util/u_prim.h"
 #include "gallium/drivers/r600/evergreend.h"
 #include "gallium/drivers/r600/r600_asm.h"
 #include "util/bitscan.h"
@@ -1160,6 +1161,33 @@ terakan_vk_pipeline_graphics_create(struct terakan_device * const device,
       terakan_pipeline_layout_from_handle(create_info->layout);
    VkShaderStageFlags compiled_shader_stages = 0;
 
+   bool const pipeline_has_tessellation =
+      (pipeline->shader_stages & VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT) != 0;
+   bool const pipeline_has_geometry =
+      (pipeline->shader_stages & VK_SHADER_STAGE_GEOMETRY_BIT) != 0;
+
+   /* The tessellation control shader is lowered against the tessellator primitive mode, which is
+    * declared by the evaluation shader. Stages are compiled in ascending `gl_shader_stage` order,
+    * so the evaluation shader's NIR does not exist yet by the time the control shader is compiled.
+    * Translate the evaluation shader once up front just to read the mode; the redundant
+    * translation only happens while creating a tessellation pipeline.
+    */
+   enum mesa_prim tessellator_primitive_mode = MESA_PRIM_TRIANGLES;
+   if (pipeline_has_tessellation) {
+      struct shader_create_data const * const tess_eval_data =
+         &shaders_create_data[MESA_SHADER_TESS_EVAL];
+      nir_shader * const tess_eval_nir = terakan_shader_spirv_to_nir(
+         device, tess_eval_data->spirv_size_bytes, tess_eval_data->spirv, MESA_SHADER_TESS_EVAL,
+         tess_eval_data->info->pName, tess_eval_data->info->pSpecializationInfo);
+      if (tess_eval_nir == NULL) {
+         result = vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
+         goto fail_shaders;
+      }
+      tessellator_primitive_mode =
+         u_tess_prim_from_shader(tess_eval_nir->info.tess._primitive_mode);
+      ralloc_free(tess_eval_nir);
+   }
+
    u_foreach_bit (shader_stage_vk_bit_index, pipeline->shader_stages) {
       gl_shader_stage const shader_stage =
          vk_to_mesa_shader_stage((VkShaderStageFlagBits)BITFIELD_BIT(shader_stage_vk_bit_index));
@@ -1220,12 +1248,35 @@ terakan_vk_pipeline_graphics_create(struct terakan_device * const device,
          nir, pipeline_layout, &shader->sqk_usage, shader->uavs_for_mutable_resources_needed,
          &shader->push_constants_usage.driver_constants, &shader->fs.rtv_dsb_uncompacted_exports);
 
-      /* TODO(Triang3l): Construct the shader key from the NIR and, when available, the pipeline
-       * state.
+      /* TODO(Triang3l): Construct the remaining shader key fields from the NIR and, when
+       * available, the pipeline state.
        */
       union r600_shader_key shader_key = {};
-      if (shader_stage == MESA_SHADER_FRAGMENT) {
+      switch (shader_stage) {
+      case MESA_SHADER_FRAGMENT:
          shader_key.ps.nr_cbufs = util_bitcount(shader->fs.rtv_dsb_uncompacted_exports);
+         break;
+
+      /* Which hardware stage each software stage is compiled for depends on which other stages
+       * are present: the last stage before rasterization is compiled as the hardware VS, a stage
+       * feeding a geometry shader is compiled as the export shader, and the vertex shader feeding
+       * the tessellator is compiled as the local shader.
+       */
+      case MESA_SHADER_VERTEX:
+         shader_key.vs.as_ls = pipeline_has_tessellation;
+         shader_key.vs.as_es = !pipeline_has_tessellation && pipeline_has_geometry;
+         break;
+
+      case MESA_SHADER_TESS_CTRL:
+         shader_key.tcs.prim_mode = tessellator_primitive_mode;
+         break;
+
+      case MESA_SHADER_TESS_EVAL:
+         shader_key.tes.as_es = pipeline_has_geometry;
+         break;
+
+      default:
+         break;
       }
 
       if (getenv("TERAKAN_DEBUG_GRAPHICS") != NULL) {

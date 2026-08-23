@@ -650,6 +650,22 @@ terakan_hw_config_draw_emit_vgt_shader_stages_en(
 }
 
 static void
+terakan_hw_config_draw_emit_vgt_ls_hs_config(
+   struct terakan_gfx_command_writer * const command_writer)
+{
+   terakan_hw_config_draw_emit_context_register(
+      command_writer, R_028B58_VGT_LS_HS_CONFIG,
+      command_writer->hw_config_draw.vgt_ls_hs_config_);
+}
+
+static void
+terakan_hw_config_draw_emit_vgt_tf_param(struct terakan_gfx_command_writer * const command_writer)
+{
+   terakan_hw_config_draw_emit_context_register(command_writer, R_028B6C_VGT_TF_PARAM,
+                                                command_writer->hw_config_draw.vgt_tf_param_);
+}
+
+static void
 terakan_hw_config_draw_emit_sq_pgm_fs(struct terakan_gfx_command_writer * const command_writer)
 {
    uint32_t * packet = terakan_gfx_command_writer_emit_with_bo(
@@ -735,6 +751,96 @@ terakan_hw_config_draw_emit_sq_pgm_vs(struct terakan_gfx_command_writer * const 
    *packet++ = shader->stage.vs.pa_cl_vs_out_cntl;
 
    terakan_gfx_command_writer_emit_done(command_writer, packet);
+}
+
+/* Emits `SQ_PGM_START_*` plus the two consecutive `SQ_PGM_RESOURCES*_*` registers of one of the
+ * vertex pipeline stages preceding the hardware VS (LS, HS, ES, GS). They have no parameter export
+ * or clip/cull state of their own, so this is everything those stages need.
+ *
+ * These stages only execute when `VGT_SHADER_STAGES_EN` enables them, so an unbound shader emits
+ * nothing rather than substituting a dummy program.
+ */
+static void
+terakan_hw_config_draw_emit_sq_pgm_pre_vs_stage(
+   struct terakan_gfx_command_writer * const command_writer,
+   struct terakan_shader_static const * const shader, uint32_t const register_start,
+   uint32_t const patch_id)
+{
+   if (shader == NULL) {
+      return;
+   }
+
+   /* `SQ_PGM_START_*`, `SQ_PGM_RESOURCES_*` and `SQ_PGM_RESOURCES_2_*` are consecutive for every
+    * one of these stages, so all three are written by one `SET_CONTEXT_REG`.
+    */
+   static_assert(R_0288D4_SQ_PGM_RESOURCES_LS == R_0288D0_SQ_PGM_START_LS + sizeof(uint32_t) &&
+                    R_0288D8_SQ_PGM_RESOURCES_2_LS ==
+                       R_0288D0_SQ_PGM_START_LS + 2 * sizeof(uint32_t) &&
+                    R_0288BC_SQ_PGM_RESOURCES_HS == R_0288B8_SQ_PGM_START_HS + sizeof(uint32_t) &&
+                    R_0288C0_SQ_PGM_RESOURCES_2_HS ==
+                       R_0288B8_SQ_PGM_START_HS + 2 * sizeof(uint32_t) &&
+                    R_028890_SQ_PGM_RESOURCES_ES == R_02888C_SQ_PGM_START_ES + sizeof(uint32_t) &&
+                    R_028894_SQ_PGM_RESOURCES_2_ES ==
+                       R_02888C_SQ_PGM_START_ES + 2 * sizeof(uint32_t) &&
+                    R_028878_SQ_PGM_RESOURCES_GS == R_028874_SQ_PGM_START_GS + sizeof(uint32_t) &&
+                    R_02887C_SQ_PGM_RESOURCES_2_GS ==
+                       R_028874_SQ_PGM_START_GS + 2 * sizeof(uint32_t),
+                 "Pre-VS vertex pipeline stages must have consecutive SQ_PGM_START, "
+                 "SQ_PGM_RESOURCES and SQ_PGM_RESOURCES_2 registers");
+   uint32_t const register_count = 3;
+   uint32_t const packet_dwords = 2 + register_count;
+
+   uint32_t * packet = terakan_gfx_command_writer_emit_with_bo(
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG, packet_dwords, 1, 1, 0);
+   if (unlikely(packet == NULL)) {
+      return;
+   }
+
+   *packet++ = PKT3(PKT3_SET_CONTEXT_REG, register_count, 0);
+   *packet++ = TERAKAN_CONTEXT_REG_OFFSET(register_start);
+   uint32_t const * const packet_pgm_start = packet;
+   *packet++ = shader->program_va_shr8;
+   *packet++ = shader->sq_pgm_resources[0];
+   *packet++ = shader->sq_pgm_resources[1];
+   terakan_gfx_command_writer_add_relocation(
+      command_writer, &packet, packet_pgm_start, *packet_pgm_start, patch_id,
+      terakan_bo_reference_writer_add_reference(&command_writer->base.bo_reference_writer,
+                                                shader->program_bo, true, false,
+                                                TERAKAN_BO_PRIORITY_SHADER_BINARY));
+
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
+}
+
+static void
+terakan_hw_config_draw_emit_sq_pgm_ls(struct terakan_gfx_command_writer * const command_writer)
+{
+   terakan_hw_config_draw_emit_sq_pgm_pre_vs_stage(
+      command_writer, command_writer->hw_config_draw.sq_pgm_ls_, R_0288D0_SQ_PGM_START_LS,
+      TERASCALE_WDDM_PATCH_IDS_SQ_PGM_START_LS);
+}
+
+static void
+terakan_hw_config_draw_emit_sq_pgm_hs(struct terakan_gfx_command_writer * const command_writer)
+{
+   terakan_hw_config_draw_emit_sq_pgm_pre_vs_stage(
+      command_writer, command_writer->hw_config_draw.sq_pgm_hs_, R_0288B8_SQ_PGM_START_HS,
+      TERASCALE_WDDM_PATCH_IDS_SQ_PGM_START_HS);
+}
+
+static void
+terakan_hw_config_draw_emit_sq_pgm_es(struct terakan_gfx_command_writer * const command_writer)
+{
+   terakan_hw_config_draw_emit_sq_pgm_pre_vs_stage(
+      command_writer, command_writer->hw_config_draw.sq_pgm_es_, R_02888C_SQ_PGM_START_ES,
+      TERASCALE_WDDM_PATCH_IDS_SQ_PGM_START_ES);
+}
+
+static void
+terakan_hw_config_draw_emit_sq_pgm_gs(struct terakan_gfx_command_writer * const command_writer)
+{
+   terakan_hw_config_draw_emit_sq_pgm_pre_vs_stage(
+      command_writer, command_writer->hw_config_draw.sq_pgm_gs_, R_028874_SQ_PGM_START_GS,
+      TERASCALE_WDDM_PATCH_IDS_SQ_PGM_START_GS);
 }
 
 static void
@@ -1588,9 +1694,16 @@ static terakan_hw_config_draw_emit_function const
          terakan_hw_config_draw_emit_ia_multi_vgt_param,
       [TERAKAN_HW_CONFIG_DRAW_ENTRY_VGT_SHADER_STAGES_EN] =
          terakan_hw_config_draw_emit_vgt_shader_stages_en,
+      [TERAKAN_HW_CONFIG_DRAW_ENTRY_VGT_LS_HS_CONFIG] =
+         terakan_hw_config_draw_emit_vgt_ls_hs_config,
+      [TERAKAN_HW_CONFIG_DRAW_ENTRY_VGT_TF_PARAM] = terakan_hw_config_draw_emit_vgt_tf_param,
       [TERAKAN_HW_CONFIG_DRAW_ENTRY_SQ_PGM_FS] = terakan_hw_config_draw_emit_sq_pgm_fs,
       [TERAKAN_HW_CONFIG_DRAW_ENTRY_SQ_PGM_VS] = terakan_hw_config_draw_emit_sq_pgm_vs,
       [TERAKAN_HW_CONFIG_DRAW_ENTRY_SQ_PGM_PS] = terakan_hw_config_draw_emit_sq_pgm_ps,
+      [TERAKAN_HW_CONFIG_DRAW_ENTRY_SQ_PGM_LS] = terakan_hw_config_draw_emit_sq_pgm_ls,
+      [TERAKAN_HW_CONFIG_DRAW_ENTRY_SQ_PGM_HS] = terakan_hw_config_draw_emit_sq_pgm_hs,
+      [TERAKAN_HW_CONFIG_DRAW_ENTRY_SQ_PGM_ES] = terakan_hw_config_draw_emit_sq_pgm_es,
+      [TERAKAN_HW_CONFIG_DRAW_ENTRY_SQ_PGM_GS] = terakan_hw_config_draw_emit_sq_pgm_gs,
       [TERAKAN_HW_CONFIG_DRAW_ENTRY_SQ_RING_ITEMSIZE] =
          terakan_hw_config_draw_emit_sq_ring_itemsize,
       [TERAKAN_HW_CONFIG_DRAW_ENTRY_SQ_BOOL_CONST_VSES] =
@@ -1703,12 +1816,20 @@ terakan_hw_config_draw_reset(struct terakan_hw_config_draw * const config)
 
    config->vgt_shader_stages_en_ = TERAKAN_HW_CONFIG_DRAW_DEFAULT_VGT_SHADER_STAGES_EN;
 
+   config->vgt_ls_hs_config_ = TERAKAN_HW_CONFIG_DRAW_DEFAULT_VGT_LS_HS_CONFIG;
+   config->vgt_tf_param_ = TERAKAN_HW_CONFIG_DRAW_DEFAULT_VGT_TF_PARAM;
+
    config->sq_pgm_fs_.bo = NULL;
    config->sq_pgm_fs_.va_shr8 = 0;
 
    config->sq_pgm_vs_ = NULL;
 
    config->sq_pgm_ps_ = NULL;
+
+   config->sq_pgm_ls_ = NULL;
+   config->sq_pgm_hs_ = NULL;
+   config->sq_pgm_es_ = NULL;
+   config->sq_pgm_gs_ = NULL;
 
    memset(config->sq_ring_itemsize_.itemsize_dwords, 0,
           sizeof(config->sq_ring_itemsize_.itemsize_dwords));

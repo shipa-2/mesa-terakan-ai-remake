@@ -274,6 +274,12 @@ enum terakan_hw_config_draw_cb_color_control_rop3 : uint8_t {
  */
 #define TERAKAN_HW_CONFIG_DRAW_DEFAULT_VGT_SHADER_STAGES_EN S_028B54_VS_EN(V_028B54_VS_STAGE_REAL)
 
+/* Both are ignored while the LS and HS stages are disabled, so the reset value only needs to be
+ * something defined rather than a meaningful tessellator setup.
+ */
+#define TERAKAN_HW_CONFIG_DRAW_DEFAULT_VGT_LS_HS_CONFIG 0
+#define TERAKAN_HW_CONFIG_DRAW_DEFAULT_VGT_TF_PARAM 0
+
 /* No VkPipelineViewportDepthClipControlCreateInfoEXT
  * VkPipelineRasterizationStateCreateInfo:
  * - depthClampEnable = VK_FALSE
@@ -399,10 +405,23 @@ enum terakan_hw_config_draw_entry {
    TERAKAN_HW_CONFIG_DRAW_ENTRY_VGT_DMA_INDEX_TYPE,
    TERAKAN_HW_CONFIG_DRAW_ENTRY_IA_MULTI_VGT_PARAM,
    TERAKAN_HW_CONFIG_DRAW_ENTRY_VGT_SHADER_STAGES_EN,
+   /* Tessellator configuration. Only consulted by the hardware while `VGT_SHADER_STAGES_EN`
+    * enables the LS and HS stages.
+    */
+   TERAKAN_HW_CONFIG_DRAW_ENTRY_VGT_LS_HS_CONFIG,
+   TERAKAN_HW_CONFIG_DRAW_ENTRY_VGT_TF_PARAM,
 
    TERAKAN_HW_CONFIG_DRAW_ENTRY_SQ_PGM_FS,
    TERAKAN_HW_CONFIG_DRAW_ENTRY_SQ_PGM_VS,
    TERAKAN_HW_CONFIG_DRAW_ENTRY_SQ_PGM_PS,
+   /* Vertex pipeline stages preceding the hardware VS. Unlike the VS, these have no parameter
+    * export or clip/cull configuration of their own, so only the program address and the resource
+    * registers are emitted for them.
+    */
+   TERAKAN_HW_CONFIG_DRAW_ENTRY_SQ_PGM_LS,
+   TERAKAN_HW_CONFIG_DRAW_ENTRY_SQ_PGM_HS,
+   TERAKAN_HW_CONFIG_DRAW_ENTRY_SQ_PGM_ES,
+   TERAKAN_HW_CONFIG_DRAW_ENTRY_SQ_PGM_GS,
    TERAKAN_HW_CONFIG_DRAW_ENTRY_SQ_RING_ITEMSIZE,
    TERAKAN_HW_CONFIG_DRAW_ENTRY_SQ_BOOL_CONST_VSES,
    TERAKAN_HW_CONFIG_DRAW_ENTRY_SQ_BOOL_CONST_LS,
@@ -469,6 +488,9 @@ struct terakan_hw_config_draw {
 
    uint32_t vgt_shader_stages_en_;
 
+   uint32_t vgt_ls_hs_config_;
+   uint32_t vgt_tf_param_;
+
    /* Sequencer. */
 
    struct {
@@ -479,6 +501,11 @@ struct terakan_hw_config_draw {
    struct terakan_shader_static const * sq_pgm_vs_;
 
    struct terakan_shader_static const * sq_pgm_ps_;
+
+   struct terakan_shader_static const * sq_pgm_ls_;
+   struct terakan_shader_static const * sq_pgm_hs_;
+   struct terakan_shader_static const * sq_pgm_es_;
+   struct terakan_shader_static const * sq_pgm_gs_;
 
    struct {
       uint32_t modified_bits;
@@ -705,6 +732,22 @@ terakan_hw_config_draw_set_vgt_shader_stages_en(struct terakan_hw_config_draw * 
                                                &config->vgt_shader_stages_en_, value);
 }
 
+static inline void
+terakan_hw_config_draw_set_vgt_ls_hs_config(struct terakan_hw_config_draw * const config,
+                                            uint32_t const value)
+{
+   terakan_hw_config_draw_set_single_register_(
+      config, TERAKAN_HW_CONFIG_DRAW_ENTRY_VGT_LS_HS_CONFIG, &config->vgt_ls_hs_config_, value);
+}
+
+static inline void
+terakan_hw_config_draw_set_vgt_tf_param(struct terakan_hw_config_draw * const config,
+                                        uint32_t const value)
+{
+   terakan_hw_config_draw_set_single_register_(
+      config, TERAKAN_HW_CONFIG_DRAW_ENTRY_VGT_TF_PARAM, &config->vgt_tf_param_, value);
+}
+
 /* Binding a NULL BO causes a return-only shader to be used. */
 static inline void
 terakan_hw_config_draw_set_sq_pgm_fs(struct terakan_hw_config_draw * const config,
@@ -747,6 +790,42 @@ terakan_hw_config_draw_set_sq_pgm_ps(struct terakan_hw_config_draw * const confi
 {
    terakan_hw_config_draw_set_sq_pgm_(config, TERAKAN_HW_CONFIG_DRAW_ENTRY_SQ_PGM_PS,
                                       &config->sq_pgm_ps_, value);
+}
+
+/* The stages preceding the hardware VS are only run when `VGT_SHADER_STAGES_EN` enables them, so
+ * unlike the VS and the PS, a NULL shader is not substituted with a dummy: the registers simply
+ * keep whatever was last written while the stage is disabled.
+ */
+static inline void
+terakan_hw_config_draw_set_sq_pgm_ls(struct terakan_hw_config_draw * const config,
+                                     struct terakan_shader_static const * const value)
+{
+   terakan_hw_config_draw_set_sq_pgm_(config, TERAKAN_HW_CONFIG_DRAW_ENTRY_SQ_PGM_LS,
+                                      &config->sq_pgm_ls_, value);
+}
+
+static inline void
+terakan_hw_config_draw_set_sq_pgm_hs(struct terakan_hw_config_draw * const config,
+                                     struct terakan_shader_static const * const value)
+{
+   terakan_hw_config_draw_set_sq_pgm_(config, TERAKAN_HW_CONFIG_DRAW_ENTRY_SQ_PGM_HS,
+                                      &config->sq_pgm_hs_, value);
+}
+
+static inline void
+terakan_hw_config_draw_set_sq_pgm_es(struct terakan_hw_config_draw * const config,
+                                     struct terakan_shader_static const * const value)
+{
+   terakan_hw_config_draw_set_sq_pgm_(config, TERAKAN_HW_CONFIG_DRAW_ENTRY_SQ_PGM_ES,
+                                      &config->sq_pgm_es_, value);
+}
+
+static inline void
+terakan_hw_config_draw_set_sq_pgm_gs(struct terakan_hw_config_draw * const config,
+                                     struct terakan_shader_static const * const value)
+{
+   terakan_hw_config_draw_set_sq_pgm_(config, TERAKAN_HW_CONFIG_DRAW_ENTRY_SQ_PGM_GS,
+                                      &config->sq_pgm_gs_, value);
 }
 
 static inline void

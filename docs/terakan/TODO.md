@@ -22,15 +22,14 @@ accept the work. Both use a 1–5 scale.
 
 | Work item | Importance | Complexity | Feasibility | Acceptance criteria |
 |---|---:|---:|---|---|
-| Enable geometry shaders and complete vertex-pipeline stage plumbing | 4/5 | 5/5 | Hardware-supported | Focused GS tests pass and `geometryShader` is exposed only afterwards |
-| Enable tessellation control/evaluation shaders | 4/5 | 5/5 | Hardware-supported | Tessellation limits are reported from tested hardware behavior and representative pipelines pass |
+| Enable geometry shaders and complete vertex-pipeline stage plumbing | 4/5 | 5/5 | Hardware-supported; see the vertex pipeline stage survey below | Focused GS tests pass and `geometryShader` is exposed only afterwards |
+| Enable tessellation control/evaluation shaders | 4/5 | 5/5 | Hardware-supported; see the vertex pipeline stage survey below | Tessellation limits are reported from tested hardware behavior and representative pipelines pass |
 | Complete stream output / transform feedback | 4/5 | 4/5 | Hardware-supported | SFN receives NIR stream-output metadata and D3D11 stream-output workloads pass readback tests |
 | Complete storage-image/UAV format and atomic coverage | 4/5 | 4/5 | Mostly implementable; limited by hardware binding counts and formats | Every advertised storage-image format passes load, store and applicable integer-atomic tests |
 | Implement multisample storage images | 4/5 | 4/5 | Implementable with format-aware lowering, FMASK work and RAT validation; single-sample formatless reads/writes now work | Multisample UAV loads/stores pass for every exposed format before the remaining feature bit is enabled |
-| Implement shader clip/cull distances | 4/5 | 3/5 | Hardware-supported; requires stage-interface and SFN export plumbing | Focused vertex/fragment clip and cull distance tests pass before `shaderClipDistance` and `shaderCullDistance` are enabled |
 | Implement extended image gather | 4/5 | 3/5 | Likely implementable through Evergreen texture instructions plus lowering | Component selection and constant/dynamic offset gather tests pass for all advertised sampled formats |
 | Implement vertex-pipeline stores and atomics | 4/5 | 4/5 | Hardware-supported with stage-specific RAT synchronization work | VS/GS/TES storage writes and applicable atomics pass readback and cross-stage visibility tests before exposure |
-| Enforce robust buffer and image bounds everywhere | 4/5 | 4/5 | Implementable with lowering and descriptor bounds | Guard regions remain intact for misaligned, dynamic and end-of-range accesses |
+| Enforce robust buffer and image bounds everywhere | 4/5 | 4/5 | Implementable with lowering and descriptor bounds; dynamic UNIFORM/STORAGE_BUFFER_DYNAMIC descriptor SIZE reclamping (the `resource[1]` read path) is done and regression-covered, the STORAGE_BUFFER_DYNAMIC UAV/color (tiling pitch/slice-encoded) path is still open | Guard regions remain intact for misaligned, dynamic and end-of-range accesses |
 | Integrate query reset/copy/end synchronization with the common barrier machinery | 3/5 | 3/5 | Implementable | Occlusion, timestamp and pipeline-statistics queries pass reuse and cross-stage ordering tests |
 
 ## P2 — optional Vulkan functionality
@@ -58,6 +57,21 @@ These are useful, but Vulkan 1.1 permits the corresponding feature bits to be
 
 ## Completed and regression-covered
 
+- Shader clip/cull distance: `shaderClipDistance`/`shaderCullDistance` and
+  `maxClipDistances`/`maxCullDistances`/`maxCombinedClipAndCullDistances` (8,
+  matching the combined PA_CL_VS_OUT_CNTL CCDIST0/CCDIST1 hardware export
+  budget) are exposed. The `terakan_clip_distance` test draws a fullscreen
+  triangle with `gl_ClipDistance[0]` set from clip-space X and verifies on
+  CAICOS that the negative half is clipped to the clear color while the
+  non-negative half is rasterized normally.
+- Dynamic uniform/storage buffer descriptor bounds (`#MemoryIntegrity`): the
+  `resource[1]` (hardware SIZE) field for `VK_DESCRIPTOR_TYPE_*_DYNAMIC`
+  descriptors is reclamped against the real remaining `VkBuffer` extent when
+  a dynamic offset is applied, not just the static `range`. The
+  `terakan_dynamic_offset_bounds` test poisons a guard region past a small
+  buffer's declared size and confirms on CAICOS that a deliberately invalid
+  dynamic offset near the end of the buffer no longer exposes it (negative
+  control: reverting the clamp makes the test observe the poison pattern).
 - R8xx PALM basic compute parity with R9xx CAICOS: the same safe CTS list
   produces 48/48 executed passes on both generations.
 - Workgroup barriers nested in dynamically uniform control flow: SFN keeps
@@ -81,6 +95,63 @@ These are useful, but Vulkan 1.1 permits the corresponding feature bits to be
 - Single-sample formatless storage-image reads and writes: transfer-initialized
   reads and independently generated writes pass exact 17x13 `R32_UINT`
   readback with intact guards. Both corresponding feature bits are exposed.
+
+## Vertex pipeline stage survey (geometry and tessellation)
+
+Surveyed 2026-08-23 while starting the geometry and tessellation items. Both
+feature bits remain `VK_FALSE`, so no application can create a pipeline with
+these stages yet and everything below is inert until the whole chain lands.
+
+Already present before this survey: the pipeline layer routes all stages and
+picks the hardware stage mapping; `VGT_SHADER_STAGES_EN` covers every
+LS/HS/ES/GS/VS combination; thread and stack resource management and the
+LSTMP/HSTMP/ESTMP/GSTMP scratch ring sizing are implemented; the shared r600
+SFN backend already provides `TCSShader`, `TESShader` and `GeometryShader`
+plus `r600_lower_tess_io` and `r600_append_tcs_TF_emission`.
+
+Landed while surveying (regression-tested, inert until the feature bits flip):
+
+- `SQ_PGM_START/RESOURCES/RESOURCES_2` binding for the LS, HS, ES and GS
+  stages (`TERAKAN_HW_CONFIG_DRAW_ENTRY_SQ_PGM_{LS,HS,ES,GS}`), replacing the
+  "Bind all the shaders" TODO. A `static_assert` pins the assumption that the
+  three registers are consecutive for each of those stages.
+- Shader keys for the vertex pipeline stages: `vs.as_ls`, `vs.as_es`,
+  `tes.as_es` and `tcs.prim_mode`. The tessellator primitive mode is declared
+  by the evaluation shader but needed when compiling the control shader, which
+  is compiled first, so the evaluation shader is translated once up front just
+  to read it.
+
+- `VGT_LS_HS_CONFIG` and `VGT_TF_PARAM` as ordinary tracked draw config
+  entries with setters, emitters and reset defaults. Nothing computes their
+  values yet, so both stay at a defined zero; the hardware ignores them while
+  the LS and HS stages are disabled.
+
+Still missing, in rough dependency order:
+
+1. Tessellation factor ring: `VGT_TF_MEMORY_BASE` and the buffer object behind
+   it do not exist. The hardware tessellator reads the factors the HS writes to
+   this ring, so nothing tessellates before it exists. This is new memory
+   infrastructure, not a register write, and it is the first real blocker.
+2. Values for `VGT_LS_HS_CONFIG` (patch control point counts, patch count per
+   thread group) and `VGT_TF_PARAM` (partitioning, topology, spacing) derived
+   from `VkPipelineTessellationStateCreateInfo` and the evaluation shader NIR,
+   applied through `terakan_app_config_draw`.
+3. Dynamic `SQ_LDS_ALLOC` for the LS/HS pair: currently emitted as a constant
+   zero on the draw path, while tessellation passes per-patch data through LDS.
+4. Per-stage members of `terakan_shader_static.stage`, which only has `vs` and
+   `ps`, plus the matching cases in the `terakan_shader_sfn.cpp` stage switch,
+   which only handles `MESA_SHADER_VERTEX` and `MESA_SHADER_FRAGMENT`.
+5. Geometry shaders additionally need the copy shader that the hardware VS runs
+   in `VS_STAGE_COPY_SHADER` mode, plus the GSVS ring and `VGT_GS_MODE` /
+   `VGT_GS_OUT_PRIM_TYPE`. `generate_gs_copy_shader` in `r600_shader.c` builds
+   one directly with the bytecode builder, but it takes an `r600_context` and
+   would have to be adapted.
+6. Tessellation and geometry limits in `terakan_physical_device.c`, which are
+   still the two remaining TODOs there.
+
+Tessellation without a geometry shader is the cheaper of the two to finish
+first: the evaluation shader runs as the hardware VS (`VS_STAGE_DS`), which is
+already bound, so it needs no copy shader.
 
 ## Completion policy
 

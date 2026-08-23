@@ -297,7 +297,21 @@ terakan_app_config_draw_apply_sq_pgm_pre_rasterization(
    /* Set the shader code. */
    terakan_hw_config_draw_set_sq_pgm_vs(&command_writer->hw_config_draw,
                                         hw_vs ? &hw_vs->static_state : NULL);
-   /* TODO(Triang3l): Bind all the shaders. */
+   /* The stages preceding the hardware VS are only executed when `VGT_SHADER_STAGES_EN` above
+    * enables them, so leaving their registers untouched while they are disabled is harmless.
+    */
+   terakan_hw_config_draw_set_sq_pgm_ls(&command_writer->hw_config_draw,
+                                        hw_ls != NULL ? &hw_ls->static_state : NULL);
+   terakan_hw_config_draw_set_sq_pgm_hs(
+      &command_writer->hw_config_draw, tessellation_enable && sw_stages[MESA_SHADER_TESS_CTRL]
+                                          ? &sw_stages[MESA_SHADER_TESS_CTRL]->static_state
+                                          : NULL);
+   terakan_hw_config_draw_set_sq_pgm_es(&command_writer->hw_config_draw,
+                                        hw_es != NULL ? &hw_es->static_state : NULL);
+   terakan_hw_config_draw_set_sq_pgm_gs(&command_writer->hw_config_draw,
+                                        geometry_shader_enable
+                                           ? &sw_stages[MESA_SHADER_GEOMETRY]->static_state
+                                           : NULL);
 
    /* Configure the ring buffers.
     * 1 block in `SQ_THREAD_RESOURCE_MGMT` is 8 wavefronts.
