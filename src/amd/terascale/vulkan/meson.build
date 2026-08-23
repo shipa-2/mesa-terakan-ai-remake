@@ -568,6 +568,59 @@ if with_tests
         timeout : 15,
       )
 
+      terakan_stencil_readback_test = executable(
+        'terakan_stencil_readback_test',
+        ['tests/terakan_stencil_readback_test.cpp'],
+        dependencies : vulkan_loader_dep,
+      )
+
+      test(
+        'terakan_stencil_readback',
+        terakan_stencil_readback_test,
+        depends : [libvulkan_terascale, _dev_icd],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 10,
+      )
+
+      terakan_stencil_msaa_fetch_spv = custom_target(
+        'terakan_stencil_msaa_fetch.spv.h',
+        input : 'tests/terakan_stencil_msaa_fetch.comp',
+        output : 'terakan_stencil_msaa_fetch.spv.h',
+        command : [
+          prog_glslang, '-V', '-x', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_stencil_msaa_fetch.spv.h.d',
+      )
+      terakan_stencil_msaa_fetch_test = executable(
+        'terakan_stencil_msaa_fetch_test',
+        [
+          'tests/terakan_stencil_msaa_fetch_test.cpp',
+          terakan_stencil_msaa_fetch_spv,
+        ],
+        dependencies : vulkan_loader_dep,
+      )
+
+      # Multisample stencil does not read back on this hardware yet, which blocks stencil resolve.
+      # Registered as expected to fail so the defect stays visible and so that fixing it reports an
+      # unexpected pass rather than silently going unnoticed.
+      test(
+        'terakan_stencil_msaa_fetch',
+        terakan_stencil_msaa_fetch_test,
+        should_fail : true,
+        depends : [libvulkan_terascale, _dev_icd],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 15,
+      )
+
       terakan_depth_resolve_test = executable(
         'terakan_depth_resolve_test',
         ['tests/terakan_depth_resolve_test.cpp'],

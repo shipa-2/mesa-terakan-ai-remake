@@ -94,6 +94,7 @@ enum terakan_meta_shader_index {
    TERAKAN_META_SHADER_BLIT_IMAGE_PS,
    TERAKAN_META_SHADER_RESOLVE_2X_PS,
    TERAKAN_META_SHADER_RESOLVE_DEPTH_SAMPLE_ZERO_PS,
+   TERAKAN_META_SHADER_RESOLVE_STENCIL_SAMPLE_ZERO_PS,
    TERAKAN_META_SHADER_COPY_EXPAND_3X_PS,
 
    /* Z pass query accumulation shader indices for each render backend count must be consecutive. */

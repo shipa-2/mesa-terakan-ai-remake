@@ -1,0 +1,32 @@
+#version 450
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+/* The stencil aspect of a multisample depth/stencil image, bound as an unsigned multisample
+ * texture. Isolates whether the fetch itself works from whether the stencil export does.
+ */
+layout(set = 0, binding = 0) uniform usampler2DMS source_stencil;
+
+layout(set = 0, binding = 1, std430) writeonly buffer Output {
+   uint values[];
+} output_buffer;
+
+layout(push_constant) uniform PushConstants {
+   uint width;
+   uint height;
+   uint sample_count;
+} push_constants;
+
+void
+main()
+{
+   uvec2 coordinate = gl_GlobalInvocationID.xy;
+   if (coordinate.x >= push_constants.width || coordinate.y >= push_constants.height)
+      return;
+
+   uint base = (coordinate.y * push_constants.width + coordinate.x) * push_constants.sample_count;
+   for (uint sample_index = 0; sample_index < push_constants.sample_count; ++sample_index) {
+      output_buffer.values[base + sample_index] =
+         texelFetch(source_stencil, ivec2(coordinate), int(sample_index)).r;
+   }
+}

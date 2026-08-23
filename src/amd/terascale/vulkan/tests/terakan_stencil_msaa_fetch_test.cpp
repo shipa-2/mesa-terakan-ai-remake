@@ -36,10 +36,10 @@ namespace {
 
 constexpr uint32_t kWidth = 8;
 constexpr uint32_t kHeight = 8;
-constexpr float kClearDepth = 0.25F;
+constexpr uint32_t kClearStencil = 0x5Au;
 
-uint32_t const depth_msaa_fetch_spirv[] = {
-#include "terakan_depth_msaa_fetch.spv.h"
+uint32_t const stencil_msaa_fetch_spirv[] = {
+#include "terakan_stencil_msaa_fetch.spv.h"
 };
 
 struct PushConstants {
@@ -63,16 +63,11 @@ find_memory_type(VkPhysicalDevice physical_device, uint32_t bits, VkMemoryProper
 } // namespace
 
 int
-main(int argc, char ** argv)
+main()
 {
-   /* --combined uses a depth/stencil format instead of depth only, to tell a broken stencil aspect
-    * apart from a broken combined-format multisample surface.
-    */
-   bool const combined = argc == 2 && std::strcmp(argv[1], "--combined") == 0;
-   VkFormat const format = combined ? VK_FORMAT_D32_SFLOAT_S8_UINT : VK_FORMAT_D32_SFLOAT;
    VkApplicationInfo const application_info = {
       .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
-      .pApplicationName = "terakan-depth-msaa-fetch-test",
+      .pApplicationName = "terakan-stencil-msaa-fetch-test",
       .apiVersion = VK_API_VERSION_1_1,
    };
    VkInstanceCreateInfo const instance_info = {
@@ -114,9 +109,9 @@ main(int argc, char ** argv)
 
    /* Only probe a sample count the implementation says it can sample depth at. */
    VkSampleCountFlags const depth_sample_counts =
-      properties.limits.framebufferDepthSampleCounts & properties.limits.sampledImageDepthSampleCounts;
+      properties.limits.framebufferStencilSampleCounts & properties.limits.sampledImageStencilSampleCounts;
    if (!(depth_sample_counts & VK_SAMPLE_COUNT_2_BIT)) {
-      std::fprintf(stderr, "2x depth sampling is not advertised, nothing to probe\n");
+      std::fprintf(stderr, "2x stencil sampling is not advertised, nothing to probe\n");
       return 77;
    }
    constexpr uint32_t kSampleCount = 2;
@@ -143,7 +138,7 @@ main(int argc, char ** argv)
    VkImageCreateInfo const depth_info = {
       .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
       .imageType = VK_IMAGE_TYPE_2D,
-      .format = format,
+      .format = VK_FORMAT_D32_SFLOAT_S8_UINT,
       .extent = {kWidth, kHeight, 1},
       .mipLevels = 1,
       .arrayLayers = 1,
@@ -177,7 +172,7 @@ main(int argc, char ** argv)
       .image = depth_image,
       .viewType = VK_IMAGE_VIEW_TYPE_2D,
       .format = depth_info.format,
-      .subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1},
+      .subresourceRange = {VK_IMAGE_ASPECT_STENCIL_BIT, 0, 1, 0, 1},
    };
    VkImageView depth_view;
    VK_CHECK(vkCreateImageView(device, &depth_view_info, nullptr, &depth_view));
@@ -208,11 +203,11 @@ main(int argc, char ** argv)
    VkDeviceMemory output_memory;
    VK_CHECK(vkAllocateMemory(device, &output_allocation, nullptr, &output_memory));
    VK_CHECK(vkBindBufferMemory(device, output_buffer, output_memory, 0));
-   float * output_mapping;
+   uint32_t * output_mapping;
    VK_CHECK(vkMapMemory(device, output_memory, 0, VK_WHOLE_SIZE, 0,
                         reinterpret_cast<void **>(&output_mapping)));
    for (uint32_t i = 0; i < output_count; ++i)
-      output_mapping[i] = -1.0F;
+      output_mapping[i] = 0xFFFFFFFFu;
 
    VkSamplerCreateInfo const sampler_info = {
       .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -315,8 +310,8 @@ main(int argc, char ** argv)
 
    VkShaderModuleCreateInfo const module_info = {
       .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-      .codeSize = sizeof(depth_msaa_fetch_spirv),
-      .pCode = depth_msaa_fetch_spirv,
+      .codeSize = sizeof(stencil_msaa_fetch_spirv),
+      .pCode = stencil_msaa_fetch_spirv,
    };
    VkShaderModule shader_module;
    VK_CHECK(vkCreateShaderModule(device, &module_info, nullptr, &shader_module));
@@ -341,8 +336,8 @@ main(int argc, char ** argv)
       .samples = VK_SAMPLE_COUNT_2_BIT,
       .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
       .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-      .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-      .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+      .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+      .stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE,
       .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
       .finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
    };
@@ -394,7 +389,7 @@ main(int argc, char ** argv)
    };
    VK_CHECK(vkBeginCommandBuffer(command_buffer, &begin_info));
 
-   VkClearValue const clear = {.depthStencil = {kClearDepth, 0}};
+   VkClearValue const clear = {.depthStencil = {0.5F, kClearStencil}};
    VkRenderPassBeginInfo const render_begin = {
       .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
       .renderPass = render_pass,
@@ -415,7 +410,7 @@ main(int argc, char ** argv)
       .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
       .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
       .image = depth_image,
-      .subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1},
+      .subresourceRange = {VK_IMAGE_ASPECT_STENCIL_BIT, 0, 1, 0, 1},
    };
    vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1,
@@ -457,19 +452,19 @@ main(int argc, char ** argv)
    for (uint32_t y = 0; y < kHeight; ++y) {
       for (uint32_t x = 0; x < kWidth; ++x) {
          for (uint32_t sample_index = 0; sample_index < kSampleCount; ++sample_index) {
-            float const actual =
+            uint32_t const actual =
                output_mapping[(y * kWidth + x) * kSampleCount + sample_index];
-            if (!(std::fabs(actual - kClearDepth) <= 1.0e-6F)) {
+            if (actual != kClearStencil) {
                if (mismatches < 8) {
-                  std::fprintf(stderr, "depth(%u,%u) sample %u = %.7f, expected %.7f FAIL\n", x, y,
-                               sample_index, actual, kClearDepth);
+                  std::fprintf(stderr, "stencil(%u,%u) sample %u = 0x%08X, expected 0x%02X FAIL\n",
+                               x, y, sample_index, actual, kClearStencil);
                }
                ++mismatches;
             }
          }
       }
    }
-   std::printf("depth_msaa_fetch samples=%u values=%u mismatches=%u %s\n", kSampleCount,
+   std::printf("stencil_msaa_fetch samples=%u values=%u mismatches=%u %s\n", kSampleCount,
                output_count, mismatches, mismatches == 0 ? "PASS" : "FAIL");
 
    vkDeviceWaitIdle(device);

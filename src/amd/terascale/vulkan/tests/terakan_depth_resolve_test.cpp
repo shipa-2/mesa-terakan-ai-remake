@@ -36,6 +36,8 @@ constexpr uint32_t kWidth = 8;
 constexpr uint32_t kHeight = 8;
 constexpr float kClearDepth = 0.375F;
 constexpr float kDestinationInitialDepth = 0.875F;
+constexpr uint32_t kClearStencil = 0x5Au;
+constexpr uint32_t kDestinationInitialStencil = 0xA3u;
 
 uint32_t
 find_memory_type(VkPhysicalDevice physical_device, uint32_t bits, VkMemoryPropertyFlags flags)
@@ -57,12 +59,12 @@ struct Image {
 
 VkResult
 create_depth_image(VkDevice device, VkPhysicalDevice physical_device, VkSampleCountFlagBits samples,
-                   VkImageUsageFlags usage, Image & out)
+                   VkImageUsageFlags usage, VkFormat format, VkImageAspectFlags aspects, Image & out)
 {
    VkImageCreateInfo const info = {
       .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
       .imageType = VK_IMAGE_TYPE_2D,
-      .format = VK_FORMAT_D32_SFLOAT,
+      .format = format,
       .extent = {kWidth, kHeight, 1},
       .mipLevels = 1,
       .arrayLayers = 1,
@@ -97,7 +99,7 @@ create_depth_image(VkDevice device, VkPhysicalDevice physical_device, VkSampleCo
       .image = out.image,
       .viewType = VK_IMAGE_VIEW_TYPE_2D,
       .format = info.format,
-      .subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1},
+      .subresourceRange = {aspects, 0, 1, 0, 1},
    };
    return vkCreateImageView(device, &view_info, nullptr, &out.view);
 }
@@ -105,8 +107,18 @@ create_depth_image(VkDevice device, VkPhysicalDevice physical_device, VkSampleCo
 } // namespace
 
 int
-main()
+main(int argc, char ** argv)
 {
+   /* --stencil resolves a combined depth/stencil format and checks both aspects. */
+   bool const with_stencil = argc == 2 && std::strcmp(argv[1], "--stencil") == 0;
+   if (argc > 2 || (argc == 2 && !with_stencil)) {
+      std::fprintf(stderr, "usage: %s [--stencil]\n", argv[0]);
+      return 2;
+   }
+   VkFormat const format =
+      with_stencil ? VK_FORMAT_D32_SFLOAT_S8_UINT : VK_FORMAT_D32_SFLOAT;
+   VkImageAspectFlags const resolved_aspects =
+      VK_IMAGE_ASPECT_DEPTH_BIT | (with_stencil ? VK_IMAGE_ASPECT_STENCIL_BIT : 0);
    VkApplicationInfo const application_info = {
       .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
       .pApplicationName = "terakan-depth-resolve-test",
@@ -190,16 +202,16 @@ main()
    VK_CHECK(create_depth_image(device, physical_device, VK_SAMPLE_COUNT_2_BIT,
                                VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
                                   VK_IMAGE_USAGE_SAMPLED_BIT,
-                               multisample_depth));
+                               format, resolved_aspects, multisample_depth));
    Image resolved_depth;
    VK_CHECK(create_depth_image(device, physical_device, VK_SAMPLE_COUNT_1_BIT,
                                VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
                                   VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
-                               resolved_depth));
+                               format, resolved_aspects, resolved_depth));
 
    VkBufferCreateInfo const readback_info = {
       .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-      .size = kWidth * kHeight * sizeof(float),
+      .size = kWidth * kHeight * (sizeof(float) + 1),
       .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
       .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
    };
@@ -235,23 +247,23 @@ main()
    VkAttachmentDescription2 const attachments[] = {
       {
          .sType = VK_STRUCTURE_TYPE_ATTACHMENT_DESCRIPTION_2,
-         .format = VK_FORMAT_D32_SFLOAT,
+         .format = format,
          .samples = VK_SAMPLE_COUNT_2_BIT,
          .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
          .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-         .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-         .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+         .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+         .stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE,
          .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
          .finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
       },
       {
          .sType = VK_STRUCTURE_TYPE_ATTACHMENT_DESCRIPTION_2,
-         .format = VK_FORMAT_D32_SFLOAT,
+         .format = format,
          .samples = VK_SAMPLE_COUNT_1_BIT,
          .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
          .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-         .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-         .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+         .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+         .stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE,
          .initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
          .finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
       },
@@ -260,18 +272,19 @@ main()
       .sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2,
       .attachment = 0,
       .layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-      .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
+      .aspectMask = resolved_aspects,
    };
    VkAttachmentReference2 const resolve_reference = {
       .sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2,
       .attachment = 1,
       .layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-      .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
+      .aspectMask = resolved_aspects,
    };
    VkSubpassDescriptionDepthStencilResolve const depth_stencil_resolve = {
       .sType = VK_STRUCTURE_TYPE_SUBPASS_DESCRIPTION_DEPTH_STENCIL_RESOLVE,
       .depthResolveMode = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT,
-      .stencilResolveMode = VK_RESOLVE_MODE_NONE,
+      .stencilResolveMode =
+         with_stencil ? VK_RESOLVE_MODE_SAMPLE_ZERO_BIT : VK_RESOLVE_MODE_NONE,
       .pDepthStencilResolveAttachment = &resolve_reference,
    };
    VkSubpassDescription2 const subpass = {
@@ -342,13 +355,14 @@ main()
       .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
       .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
       .image = resolved_depth.image,
-      .subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1},
+      .subresourceRange = {resolved_aspects, 0, 1, 0, 1},
    };
    vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                         VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1,
                         &destination_to_clear);
-   VkClearDepthStencilValue const destination_initial = {kDestinationInitialDepth, 0};
-   VkImageSubresourceRange const destination_range = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
+   VkClearDepthStencilValue const destination_initial = {kDestinationInitialDepth,
+                                                        kDestinationInitialStencil};
+   VkImageSubresourceRange const destination_range = {resolved_aspects, 0, 1, 0, 1};
    vkCmdClearDepthStencilImage(command_buffer, resolved_depth.image,
                                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &destination_initial, 1,
                                &destination_range);
@@ -361,13 +375,13 @@ main()
       .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
       .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
       .image = resolved_depth.image,
-      .subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1},
+      .subresourceRange = {resolved_aspects, 0, 1, 0, 1},
    };
    vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
                         VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT, 0, 0, nullptr, 0, nullptr, 1,
                         &destination_to_attachment);
 
-   VkClearValue const clear = {.depthStencil = {kClearDepth, 0}};
+   VkClearValue const clear = {.depthStencil = {kClearDepth, kClearStencil}};
    VkRenderPassBeginInfo const render_begin = {
       .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
       .renderPass = render_pass,
@@ -388,7 +402,7 @@ main()
       .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
       .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
       .image = resolved_depth.image,
-      .subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1},
+      .subresourceRange = {resolved_aspects, 0, 1, 0, 1},
    };
    vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
                         VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1,
@@ -400,6 +414,17 @@ main()
    vkCmdCopyImageToBuffer(command_buffer, resolved_depth.image,
                           VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, readback_buffer, 1,
                           &readback_region);
+   if (with_stencil) {
+      /* The stencil aspect lands after the depth values in the same buffer, one byte per texel. */
+      VkBufferImageCopy const stencil_region = {
+         .bufferOffset = kWidth * kHeight * sizeof(float),
+         .imageSubresource = {VK_IMAGE_ASPECT_STENCIL_BIT, 0, 0, 1},
+         .imageExtent = {kWidth, kHeight, 1},
+      };
+      vkCmdCopyImageToBuffer(command_buffer, resolved_depth.image,
+                             VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, readback_buffer, 1,
+                             &stencil_region);
+   }
    VkMemoryBarrier const host_ready = {
       .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
       .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
@@ -443,7 +468,24 @@ main()
    if (untouched != 0) {
       std::fprintf(stderr, "%u texels still hold the destination's initial value\n", untouched);
    }
-   std::printf("depth_resolve texels=%u mismatches=%u %s\n", kWidth * kHeight, mismatches,
+   if (with_stencil) {
+      uint8_t const * const stencil_mapping =
+         reinterpret_cast<uint8_t const *>(readback_mapping) + kWidth * kHeight * sizeof(float);
+      for (uint32_t y = 0; y < kHeight; ++y) {
+         for (uint32_t x = 0; x < kWidth; ++x) {
+            uint32_t const actual = stencil_mapping[y * kWidth + x];
+            if (actual != kClearStencil) {
+               if (mismatches < 8) {
+                  std::fprintf(stderr, "resolved stencil(%u,%u) = 0x%02X, expected 0x%02X FAIL\n",
+                               x, y, actual, kClearStencil);
+               }
+               ++mismatches;
+            }
+         }
+      }
+   }
+   std::printf("depth_resolve aspects=%s texels=%u mismatches=%u %s\n",
+               with_stencil ? "depth+stencil" : "depth", kWidth * kHeight, mismatches,
                mismatches == 0 ? "PASS" : "FAIL");
 
    vkDeviceWaitIdle(device);

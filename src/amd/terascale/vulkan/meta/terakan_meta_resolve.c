@@ -145,6 +145,75 @@ static uint32_t const terakan_meta_resolve_depth_sample_zero_ps_r8xx[] = {
       }},                                                                                          \
    }
 
+/* Stencil resolve in VK_RESOLVE_MODE_SAMPLE_ZERO_BIT. Identical to the depth shader above except
+ * that the fetched value leaves through the export's Y slot rather than X, which is where DB
+ * expects stencil, matching the `FRAG_RESULT_STENCIL` swizzle in the shader compiler.
+ */
+static uint32_t const terakan_meta_resolve_stencil_sample_zero_ps_r8xx[] = {
+   S_SQ_CF_WORD0_ADDR(3),
+   S_SQ_CF_ALU_WORD1_COUNT(2) | S_SQ_CF_ALU_WORD1_BARRIER(true) |
+      EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU,
+
+   S_SQ_CF_WORD0_ADDR(6),
+   S_SQ_CF_WORD1_COUNT(0) | S_SQ_CF_WORD1_BARRIER(true) | EG_V_SQ_CF_WORD1_SQ_CF_INST_TEX,
+
+   S_SQ_CF_ALLOC_EXPORT_WORD0_TYPE(V_SQ_CF_ALLOC_EXPORT_WORD0_SQ_EXPORT_PIXEL) |
+      S_SQ_CF_ALLOC_EXPORT_WORD0_ARRAY_BASE(61) | S_SQ_CF_ALLOC_EXPORT_WORD0_RW_GPR(1),
+   S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_X(TERASCALE_SWIZZLE_MASK) |
+      S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Y(TERASCALE_SWIZZLE_X) |
+      S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_Z(TERASCALE_SWIZZLE_MASK) |
+      S_SQ_CF_ALLOC_EXPORT_WORD1_SWIZ_SEL_W(TERASCALE_SWIZZLE_MASK) |
+      S_SQ_CF_ALLOC_EXPORT_WORD1_BARRIER(true) | S_SQ_CF_ALLOC_EXPORT_WORD1_END_OF_PROGRAM(true) |
+      EG_V_SQ_CF_ALLOC_EXPORT_WORD1_SQ_CF_INST_EXPORT_DONE,
+
+   TERAKAN_SHADER_OP1(false, 0, 'Z', MOV, EG, V_SQ_ALU_SRC_0, 0, VEC_012),
+   TERAKAN_SHADER_OP1(true, 0, 'W', MOV, EG, V_SQ_ALU_SRC_0, 0, VEC_012),
+   TERAKAN_SHADER_OP1(true, 1, 'X', MOV, EG, V_SQ_ALU_SRC_0, 0, VEC_012),
+
+   S_SQ_TEX_WORD0_TEX_INST(SQ_TEX_INST_LD) |
+      S_SQ_TEX_WORD0_RESOURCE_ID(TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META) |
+      S_SQ_TEX_WORD0_SRC_GPR(0),
+   S_SQ_TEX_WORD1_DST_GPR(1) | S_SQ_TEX_WORD1_DST_SEL_X(TERASCALE_SWIZZLE_X) |
+      S_SQ_TEX_WORD1_DST_SEL_Y(TERASCALE_SWIZZLE_Y) |
+      S_SQ_TEX_WORD1_DST_SEL_Z(TERASCALE_SWIZZLE_Z) | S_SQ_TEX_WORD1_DST_SEL_W(TERASCALE_SWIZZLE_W),
+   S_SQ_TEX_WORD2_SRC_SEL_X(TERASCALE_SWIZZLE_X) | S_SQ_TEX_WORD2_SRC_SEL_Y(TERASCALE_SWIZZLE_Y) |
+      S_SQ_TEX_WORD2_SRC_SEL_Z(TERASCALE_SWIZZLE_Z) | S_SQ_TEX_WORD2_SRC_SEL_W(TERASCALE_SWIZZLE_W),
+   0,
+};
+
+#define TERAKAN_META_RESOLVE_STENCIL_SAMPLE_ZERO_PS_STATIC_REGISTERS                               \
+   {                                                                                               \
+      .sq_pgm_resources =                                                                          \
+         {                                                                                         \
+            S_028844_NUM_GPRS(2) | TERAKAN_META_SQ_PGM_RESOURCES_COMMON,                           \
+            TERAKAN_META_SQ_PGM_RESOURCES_2_COMMON,                                                \
+         },                                                                                        \
+      .stage = {.ps = {                                                                            \
+         .sq_pgm_exports_ps = S_02884C_EXPORT_Z(1),                                                \
+         .spi_ps_in_control =                                                                      \
+            {                                                                                      \
+               S_0286CC_NUM_INTERP(1) | S_0286CC_LINEAR_GRADIENT_ENA(1),                           \
+               S_0286D0_FIXED_PT_POSITION_ENA(1) | S_0286D0_FIXED_PT_POSITION_ADDR(0),             \
+            },                                                                                     \
+         .spi_baryc_cntl = S_0286E0_LINEAR_CENTER_ENA(1),                                          \
+         .cb_shader_mask = 0,                                                                      \
+      }},                                                                                          \
+   }
+
+struct terakan_meta_shader const terakan_meta_resolve_stencil_sample_zero_ps = {
+   .r8xx = {
+      .program = terakan_meta_resolve_stencil_sample_zero_ps_r8xx,
+      .program_size_bytes = sizeof(terakan_meta_resolve_stencil_sample_zero_ps_r8xx),
+      .static_registers = TERAKAN_META_RESOLVE_STENCIL_SAMPLE_ZERO_PS_STATIC_REGISTERS,
+   },
+   .r9xx = {
+      .program = terakan_meta_resolve_stencil_sample_zero_ps_r8xx,
+      .program_size_bytes = sizeof(terakan_meta_resolve_stencil_sample_zero_ps_r8xx),
+      .static_registers = TERAKAN_META_RESOLVE_STENCIL_SAMPLE_ZERO_PS_STATIC_REGISTERS,
+   },
+   .primary_meta_resource_used = true,
+};
+
 struct terakan_meta_shader const terakan_meta_resolve_depth_sample_zero_ps = {
    .r8xx = {
       .program = terakan_meta_resolve_depth_sample_zero_ps_r8xx,
@@ -202,12 +271,13 @@ struct terakan_meta_shader const terakan_meta_resolve_2x_ps = {
 };
 
 void
-terakan_meta_resolve_depth(struct terakan_gfx_command_writer * const command_writer,
-                           struct terakan_image const * const src_image,
-                           struct terakan_image const * const dst_image,
-                           VkImageSubresourceLayers const * const src_subresource,
-                           VkImageSubresourceLayers const * const dst_subresource,
-                           VkRect2D const * const area)
+terakan_meta_resolve_depth_stencil(struct terakan_gfx_command_writer * const command_writer,
+                                   struct terakan_image const * const src_image,
+                                   struct terakan_image const * const dst_image,
+                                   VkImageSubresourceLayers const * const src_subresource,
+                                   VkImageSubresourceLayers const * const dst_subresource,
+                                   VkRect2D const * const area,
+                                   VkImageAspectFlags const aspects)
 {
    /* Only VK_RESOLVE_MODE_SAMPLE_ZERO_BIT so far, which the specification requires whenever
     * VK_KHR_depth_stencil_resolve is exposed at all.
@@ -219,6 +289,12 @@ terakan_meta_resolve_depth(struct terakan_gfx_command_writer * const command_wri
       return;
    }
    if (unlikely(area->extent.width == 0 || area->extent.height == 0)) {
+      return;
+   }
+   VkImageAspectFlags const resolved_aspects =
+      aspects & (VK_IMAGE_ASPECT_DEPTH_BIT |
+                 (dst_has_stencil ? VK_IMAGE_ASPECT_STENCIL_BIT : 0));
+   if (unlikely(resolved_aspects == 0)) {
       return;
    }
 
@@ -239,24 +315,46 @@ terakan_meta_resolve_depth(struct terakan_gfx_command_writer * const command_wri
          },
    };
    terakan_meta_config_draw_begin(command_writer, &begin_options);
-   /* The pixel shader exports depth, so DB must expect a Z export from it. Everything else matches
-    * the identity control the other depth-writing meta draws use.
-    */
-   terakan_meta_config_draw_set_db_shader_control(
-      command_writer, TERAKAN_SHADER_DB_SHADER_CONTROL_IDENTITY | S_02880C_Z_EXPORT_ENABLE(1));
    terakan_meta_config_draw_set_cb_color_control_for_mode(command_writer, V_028808_CB_DISABLE);
    terakan_meta_config_draw_set_sq_pgm_vs(command_writer,
                                           TERAKAN_META_SHADER_POSITION_AND_LAYER_FROM_INDEX_VS);
-   terakan_meta_config_draw_set_sq_pgm_ps(command_writer,
-                                          TERAKAN_META_SHADER_RESOLVE_DEPTH_SAMPLE_ZERO_PS);
-   /* Every resolved pixel must be written regardless of what the destination already holds. */
-   terakan_meta_config_draw_set_db_depth_control(command_writer,
-                                                 S_028800_Z_ENABLE(true) |
-                                                    S_028800_Z_WRITE_ENABLE(true) |
-                                                    S_028800_ZFUNC(V_028800_STENCILFUNC_ALWAYS));
+   /* The stencil reference is what a REPLACE operation writes, but with STENCIL_EXPORT_ENABLE the
+    * shader's exported value takes its place, so only the write mask matters here.
+    */
+   terakan_meta_config_draw_set_db_stencilrefmask(command_writer, false,
+                                                  S_028430_STENCILWRITEMASK(0xFF));
 
    uint32_t const layer_count =
       MIN2(src_subresource->layerCount, dst_subresource->layerCount);
+
+   /* One draw per aspect: they export through different slots and need different DB state. */
+   u_foreach_bit (aspect_bit_index, resolved_aspects) {
+   VkImageAspectFlags const aspect = (VkImageAspectFlags)1 << aspect_bit_index;
+   bool const aspect_is_depth = aspect == VK_IMAGE_ASPECT_DEPTH_BIT;
+
+   /* DB must expect the matching export from the pixel shader. Everything else matches the
+    * identity control the other depth-writing meta draws use.
+    */
+   terakan_meta_config_draw_set_db_shader_control(
+      command_writer, TERAKAN_SHADER_DB_SHADER_CONTROL_IDENTITY |
+                         (aspect_is_depth ? S_02880C_Z_EXPORT_ENABLE(1)
+                                          : S_02880C_STENCIL_EXPORT_ENABLE(1)));
+   terakan_meta_config_draw_set_sq_pgm_ps(
+      command_writer, aspect_is_depth ? TERAKAN_META_SHADER_RESOLVE_DEPTH_SAMPLE_ZERO_PS
+                                      : TERAKAN_META_SHADER_RESOLVE_STENCIL_SAMPLE_ZERO_PS);
+   /* Every resolved pixel must be written regardless of what the destination already holds, and
+    * only the aspect being resolved may be touched.
+    */
+   terakan_meta_config_draw_set_db_depth_control(
+      command_writer,
+      aspect_is_depth ? (S_028800_Z_ENABLE(true) | S_028800_Z_WRITE_ENABLE(true) |
+                         S_028800_ZFUNC(V_028800_STENCILFUNC_ALWAYS))
+                      : (S_028800_STENCIL_ENABLE(1) |
+                         S_028800_STENCILFUNC(V_028800_STENCILFUNC_ALWAYS) |
+                         S_028800_STENCILFAIL(V_028800_STENCIL_REPLACE) |
+                         S_028800_STENCILZPASS(V_028800_STENCIL_REPLACE) |
+                         S_028800_STENCILZFAIL(V_028800_STENCIL_REPLACE)));
+
    for (uint32_t layer_index = 0; layer_index < layer_count; ++layer_index) {
       struct terakan_image_descriptor_subresource_range src_range = {
          .base_mip_level = src_subresource->mipLevel,
@@ -268,8 +366,8 @@ terakan_meta_resolve_depth(struct terakan_gfx_command_writer * const command_wri
              !terakan_image_descriptor_subresource_range_sanitize(src_image, &src_range, false))) {
          continue;
       }
-      unsigned const src_aspect_index = terakan_format_aspect_index(
-         src_image->format_info.aspect_map, VK_IMAGE_ASPECT_DEPTH_BIT, 0);
+      unsigned const src_aspect_index =
+         terakan_format_aspect_index(src_image->format_info.aspect_map, aspect, 0);
       struct terakan_image_descriptor_create_info const src_descriptor_info = {
          .image = src_image,
          .view_format = src_image->format_info.aspect_formats[src_aspect_index],
@@ -314,6 +412,7 @@ terakan_meta_resolve_depth(struct terakan_gfx_command_writer * const command_wri
       };
       terakan_meta_draw_rect(command_writer,
                              terakan_vk_rect_to_screen_rect(*area, screen_bounds), 1);
+   }
    }
 
    /* The resolved depth is normally sampled or transferred right after the render pass ends. */

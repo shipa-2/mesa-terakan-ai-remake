@@ -47,6 +47,8 @@ struct terakan_meta_shader const * const terakan_meta_shaders[TERAKAN_META_SHADE
    [TERAKAN_META_SHADER_RESOLVE_2X_PS] = &terakan_meta_resolve_2x_ps,
    [TERAKAN_META_SHADER_RESOLVE_DEPTH_SAMPLE_ZERO_PS] =
       &terakan_meta_resolve_depth_sample_zero_ps,
+   [TERAKAN_META_SHADER_RESOLVE_STENCIL_SAMPLE_ZERO_PS] =
+      &terakan_meta_resolve_stencil_sample_zero_ps,
    [TERAKAN_META_SHADER_COPY_EXPAND_3X_PS] = &terakan_meta_copy_expand_3x_ps,
    [TERAKAN_META_SHADER_QUERY_ACCUM_ZPASS_1_RB_VS] = &terakan_meta_query_accum_zpass_1_rb_vs,
    [TERAKAN_META_SHADER_QUERY_ACCUM_ZPASS_2_RB_VS] = &terakan_meta_query_accum_zpass_2_rb_vs,

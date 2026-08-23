@@ -58,6 +58,7 @@ gpu_tests=(
   terakan_depth_readback
   terakan_depth_msaa_fetch
   terakan_depth_resolve
+  terakan_stencil_readback
   terakan_physical_device_properties
 )
 meson test -C "$build_dir" --print-errorlogs --num-processes 1 "${gpu_tests[@]}"

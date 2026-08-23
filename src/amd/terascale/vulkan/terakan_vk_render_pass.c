@@ -263,34 +263,52 @@ terakan_CmdBeginRendering(VkCommandBuffer const commandBuffer,
       }
    }
 
-   /* Depth resolve, currently only VK_RESOLVE_MODE_SAMPLE_ZERO_BIT. Recorded here and performed
-    * when rendering ends, the same way color resolves are.
+   /* Depth and stencil resolve, currently only VK_RESOLVE_MODE_SAMPLE_ZERO_BIT. Recorded here and
+    * performed when rendering ends, the same way color resolves are. Both aspects share one
+    * attachment and one resolve destination, so the requested aspects are collected into a single
+    * entry whose aspect mask drives which draws run.
     */
-   if (depth_attachment_view != NULL &&
-       pRenderingInfo->pDepthAttachment->resolveMode == VK_RESOLVE_MODE_SAMPLE_ZERO_BIT &&
-       pRenderingInfo->pDepthAttachment->resolveImageView != VK_NULL_HANDLE) {
-      struct terakan_image_view const * const depth_resolve_view =
-         terakan_image_view_from_handle(pRenderingInfo->pDepthAttachment->resolveImageView);
-      if (depth_resolve_view != NULL) {
-         struct terakan_rendering_color_resolve * const resolve =
-            &command_buffer->rendering_depth_resolve;
-         resolve->src_image = terakan_image_to_handle(
-            container_of(depth_attachment_view->vk.image, struct terakan_image, vk));
-         resolve->dst_image = terakan_image_to_handle(
-            container_of(depth_resolve_view->vk.image, struct terakan_image, vk));
-         resolve->src_subresource = (VkImageSubresourceLayers){
-            .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
-            .mipLevel = depth_attachment_view->vk.base_mip_level,
-            .baseArrayLayer = depth_attachment_view->vk.base_array_layer,
-            .layerCount = layer_count_minus_1 + 1,
-         };
-         resolve->dst_subresource = (VkImageSubresourceLayers){
-            .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
-            .mipLevel = depth_resolve_view->vk.base_mip_level,
-            .baseArrayLayer = depth_resolve_view->vk.base_array_layer,
-            .layerCount = MIN2(layer_count_minus_1 + 1, depth_resolve_view->vk.layer_count),
-         };
+   struct {
+      VkRenderingAttachmentInfo const * attachment;
+      struct terakan_image_view const * view;
+      VkImageAspectFlagBits aspect;
+   } const resolvable_aspects[] = {
+      {pRenderingInfo->pDepthAttachment, depth_attachment_view, VK_IMAGE_ASPECT_DEPTH_BIT},
+      {pRenderingInfo->pStencilAttachment, stencil_attachment_view, VK_IMAGE_ASPECT_STENCIL_BIT},
+   };
+   for (unsigned aspect_index = 0; aspect_index < ARRAY_SIZE(resolvable_aspects); ++aspect_index) {
+      struct terakan_image_view const * const attachment_view = resolvable_aspects[aspect_index].view;
+      VkRenderingAttachmentInfo const * const attachment =
+         resolvable_aspects[aspect_index].attachment;
+      if (attachment_view == NULL || attachment == NULL ||
+          attachment->resolveMode != VK_RESOLVE_MODE_SAMPLE_ZERO_BIT ||
+          attachment->resolveImageView == VK_NULL_HANDLE) {
+         continue;
       }
+      struct terakan_image_view const * const resolve_view =
+         terakan_image_view_from_handle(attachment->resolveImageView);
+      if (resolve_view == NULL) {
+         continue;
+      }
+      struct terakan_rendering_color_resolve * const resolve =
+         &command_buffer->rendering_depth_resolve;
+      resolve->src_image = terakan_image_to_handle(
+         container_of(attachment_view->vk.image, struct terakan_image, vk));
+      resolve->dst_image = terakan_image_to_handle(
+         container_of(resolve_view->vk.image, struct terakan_image, vk));
+      resolve->src_subresource = (VkImageSubresourceLayers){
+         .aspectMask = resolve->src_subresource.aspectMask |
+                       resolvable_aspects[aspect_index].aspect,
+         .mipLevel = attachment_view->vk.base_mip_level,
+         .baseArrayLayer = attachment_view->vk.base_array_layer,
+         .layerCount = layer_count_minus_1 + 1,
+      };
+      resolve->dst_subresource = (VkImageSubresourceLayers){
+         .aspectMask = resolve->src_subresource.aspectMask,
+         .mipLevel = resolve_view->vk.base_mip_level,
+         .baseArrayLayer = resolve_view->vk.base_array_layer,
+         .layerCount = MIN2(layer_count_minus_1 + 1, resolve_view->vk.layer_count),
+      };
    }
 
    u_foreach_bit (color_attachment_index,
@@ -377,19 +395,20 @@ terakan_CmdEndRendering(VkCommandBuffer const commandBuffer)
          terakan_CmdResolveImage2(commandBuffer, &resolve_info);
       }
 
-      struct terakan_rendering_color_resolve const * const depth_resolve =
+      struct terakan_rendering_color_resolve const * const depth_stencil_resolve =
          &command_buffer->rendering_depth_resolve;
-      if (depth_resolve->src_image != VK_NULL_HANDLE &&
-          depth_resolve->dst_image != VK_NULL_HANDLE) {
+      if (depth_stencil_resolve->src_image != VK_NULL_HANDLE &&
+          depth_stencil_resolve->dst_image != VK_NULL_HANDLE) {
          /* Not routed through vkCmdResolveImage2, which the specification defines for color
           * images only.
           */
-         terakan_meta_resolve_depth(command_buffer->command_writer.gfx,
-                                    terakan_image_from_handle(depth_resolve->src_image),
-                                    terakan_image_from_handle(depth_resolve->dst_image),
-                                    &depth_resolve->src_subresource,
-                                    &depth_resolve->dst_subresource,
-                                    &command_buffer->rendering_resolve_area);
+         terakan_meta_resolve_depth_stencil(
+            command_buffer->command_writer.gfx,
+            terakan_image_from_handle(depth_stencil_resolve->src_image),
+            terakan_image_from_handle(depth_stencil_resolve->dst_image),
+            &depth_stencil_resolve->src_subresource, &depth_stencil_resolve->dst_subresource,
+            &command_buffer->rendering_resolve_area,
+            depth_stencil_resolve->src_subresource.aspectMask);
       }
    }
 

@@ -91,17 +91,8 @@ extern struct terakan_meta_shader const terakan_meta_copy_image_ps;
 extern struct terakan_meta_shader const terakan_meta_blit_image_ps;
 extern struct terakan_meta_shader const terakan_meta_resolve_2x_ps;
 extern struct terakan_meta_shader const terakan_meta_resolve_depth_sample_zero_ps;
+extern struct terakan_meta_shader const terakan_meta_resolve_stencil_sample_zero_ps;
 
-/* Resolves the depth aspect of a multisample image into a single-sample one in
- * VK_RESOLVE_MODE_SAMPLE_ZERO_BIT, by sampling the source rather than decompressing it: Terakan
- * does not implement HTILE, so multisample depth is stored uncompressed and fetches per sample.
- */
-void terakan_meta_resolve_depth(struct terakan_gfx_command_writer * command_writer,
-                                struct terakan_image const * src_image,
-                                struct terakan_image const * dst_image,
-                                VkImageSubresourceLayers const * src_subresource,
-                                VkImageSubresourceLayers const * dst_subresource,
-                                VkRect2D const * area);
 extern struct terakan_meta_shader const terakan_meta_copy_expand_3x_ps;
 extern struct terakan_meta_shader const terakan_meta_query_accum_zpass_1_rb_vs;
 extern struct terakan_meta_shader const terakan_meta_query_accum_zpass_2_rb_vs;
@@ -123,6 +114,18 @@ extern struct terakan_meta_shader const terakan_meta_query_copy_timestamp_32_bit
 extern struct terakan_meta_shader const terakan_meta_query_copy_timestamp_64_bit_vs;
 extern struct terakan_meta_shader const terakan_meta_query_copy_streamoutstats_32_bit_vs;
 extern struct terakan_meta_shader const terakan_meta_query_copy_streamoutstats_64_bit_vs;
+
+/* Resolves the requested aspects of a multisample depth/stencil image into a single-sample one in
+ * VK_RESOLVE_MODE_SAMPLE_ZERO_BIT, by sampling the source rather than decompressing it: Terakan
+ * does not implement HTILE, so multisample depth is stored uncompressed and fetches per sample.
+ * Each aspect is a separate draw, because they need different DB state and export slots.
+ */
+void terakan_meta_resolve_depth_stencil(struct terakan_gfx_command_writer * command_writer,
+                                        struct terakan_image const * src_image,
+                                        struct terakan_image const * dst_image,
+                                        VkImageSubresourceLayers const * src_subresource,
+                                        VkImageSubresourceLayers const * dst_subresource,
+                                        VkRect2D const * area, VkImageAspectFlags aspects);
 
 /* `DB_SHADER_CONTROL` for use when the pixel shader exports to memory, with otherwise identity
  * parameters.

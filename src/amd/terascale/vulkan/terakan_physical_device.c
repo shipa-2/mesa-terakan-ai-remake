@@ -846,9 +846,14 @@ terakan_physical_device_get_capabilities(
     * supported whenever any depth resolve mode is. The resolve samples the multisample source
     * rather than decompressing it, which needs no HTILE and no multisample color target.
     *
-    * Stencil resolve is not implemented yet, so no stencil mode is advertised. That combination
-    * requires independentResolveNone, since an application must be able to resolve depth while
-    * leaving stencil alone; full independentResolve additionally needs the two aspects to take
+    * Stencil resolve is implemented but not advertised: multisample stencil does not read back at
+    * all on this hardware yet, which `terakan_stencil_msaa_fetch` isolates below the resolve, so
+    * the shader has nothing correct to resolve from. Multisample depth in the same combined format
+    * reads fine, and single-sample stencil reads fine, so this is specific to the stencil aspect of
+    * a multisample image.
+    *
+    * With only depth advertised, independentResolveNone says depth can be resolved while stencil is
+    * left alone; full independentResolve would additionally require the two aspects to take
     * different modes, which cannot happen while stencil supports none.
     */
    extensions_out->KHR_depth_stencil_resolve = true;
