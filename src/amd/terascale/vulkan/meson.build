@@ -568,6 +568,23 @@ if with_tests
         timeout : 15,
       )
 
+      terakan_depth_resolve_test = executable(
+        'terakan_depth_resolve_test',
+        ['tests/terakan_depth_resolve_test.cpp'],
+        dependencies : vulkan_loader_dep,
+      )
+      test(
+        'terakan_depth_resolve',
+        terakan_depth_resolve_test,
+        depends : [libvulkan_terascale, _dev_icd],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 15,
+      )
+
       terakan_depth_readback_test = executable(
         'terakan_depth_readback_test',
         ['tests/terakan_depth_readback_test.cpp'],

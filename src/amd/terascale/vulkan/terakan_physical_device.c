@@ -831,9 +831,31 @@ terakan_physical_device_get_capabilities(
    features_out->samplerMirrorClampToEdge = true;
 
    /* VK_KHR_dynamic_rendering (#45, Vulkan 1.3) is used internally by the common render pass
-    * implementation, but must not be exposed until VK_KHR_depth_stencil_resolve and dynamic
-    * depth/stencil resolves are implemented as required by the extension dependency.
+    * implementation, but must not be exposed until the depth/stencil resolve modes below cover
+    * everything the extension dependency requires.
     */
+
+   /* VK_KHR_create_renderpass2 (#110, Vulkan 1.2), entirely served by the common render pass
+    * implementation. Exposed because VK_KHR_depth_stencil_resolve depends on it.
+    */
+   extensions_out->KHR_create_renderpass2 = true;
+
+   /* VK_KHR_depth_stencil_resolve (#200, Vulkan 1.2).
+    *
+    * Only VK_RESOLVE_MODE_SAMPLE_ZERO_BIT for depth, which the specification requires to be
+    * supported whenever any depth resolve mode is. The resolve samples the multisample source
+    * rather than decompressing it, which needs no HTILE and no multisample color target.
+    *
+    * Stencil resolve is not implemented yet, so no stencil mode is advertised. That combination
+    * requires independentResolveNone, since an application must be able to resolve depth while
+    * leaving stencil alone; full independentResolve additionally needs the two aspects to take
+    * different modes, which cannot happen while stencil supports none.
+    */
+   extensions_out->KHR_depth_stencil_resolve = true;
+   properties_out->supportedDepthResolveModes = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT;
+   properties_out->supportedStencilResolveModes = VK_RESOLVE_MODE_NONE;
+   properties_out->independentResolveNone = true;
+   properties_out->independentResolve = false;
 
    /* VK_KHR_external_memory_capabilities (#72, Vulkan 1.1, instance). */
    static char const driver_id[] = "Terakan " PACKAGE_VERSION MESA_GIT_SHA1;

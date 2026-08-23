@@ -152,11 +152,13 @@ main(void)
    TEST_CHECK(has_device_extension(physical_device, VK_KHR_MAINTENANCE_3_EXTENSION_NAME));
    TEST_CHECK(has_device_extension(physical_device, VK_KHR_DRIVER_PROPERTIES_EXTENSION_NAME));
    TEST_CHECK(has_device_extension(physical_device, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME));
-   /* Dynamic rendering depends on depth/stencil resolve. Keep both hidden until the staged
-    * DB-to-color and depth-export path has passed its readback tests. This prevents the old
-    * direct DB-to-depth experiment from being accidentally advertised again. */
-   TEST_CHECK(!has_device_extension(physical_device,
-                                    VK_KHR_DEPTH_STENCIL_RESOLVE_EXTENSION_NAME));
+   /* Depth resolve is implemented by sampling the multisample source, which terakan_depth_resolve
+    * covers with a readback test, so the extension and its dependency are advertised. Dynamic
+    * rendering additionally needs stencil resolve, so it stays hidden. */
+   TEST_CHECK(has_device_extension(physical_device,
+                                   VK_KHR_DEPTH_STENCIL_RESOLVE_EXTENSION_NAME));
+   TEST_CHECK(has_device_extension(physical_device,
+                                   VK_KHR_CREATE_RENDERPASS_2_EXTENSION_NAME));
    TEST_CHECK(!has_device_extension(physical_device, VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME));
 
    VkPhysicalDeviceVulkan11Features vulkan_1_1_features = {
@@ -252,9 +254,12 @@ main(void)
    };
    properties_2.pNext = &depth_stencil_resolve;
    vkGetPhysicalDeviceProperties2(physical_device, &properties_2);
-   TEST_CHECK(depth_stencil_resolve.supportedDepthResolveModes == VK_RESOLVE_MODE_NONE);
+   /* Sample zero only for depth, and no stencil resolve yet. That combination requires
+    * independentResolveNone, so depth can be resolved while stencil is left alone, but not full
+    * independentResolve, which would mean the two aspects can take different modes. */
+   TEST_CHECK(depth_stencil_resolve.supportedDepthResolveModes == VK_RESOLVE_MODE_SAMPLE_ZERO_BIT);
    TEST_CHECK(depth_stencil_resolve.supportedStencilResolveModes == VK_RESOLVE_MODE_NONE);
-   TEST_CHECK(!depth_stencil_resolve.independentResolveNone);
+   TEST_CHECK(depth_stencil_resolve.independentResolveNone);
    TEST_CHECK(!depth_stencil_resolve.independentResolve);
 
    TEST_CHECK(maintenance_3.maxPerSetDescriptors != 0);
@@ -522,7 +527,8 @@ main(void)
    printf("[PASS] VK_EXT_memory_budget allocation/free accounting\n");
    printf("[PASS] 2x/4x/8x color images reserve FMASK/CMASK memory\n");
    printf("[PASS] 2x/4x/8x FMASK identity and CMASK initialization submission\n");
-   printf("[PASS] incomplete depth/stencil resolve and dynamic rendering remain hidden\n");
+   printf("[PASS] sample-zero depth resolve is advertised, stencil resolve and dynamic "
+          "rendering remain hidden\n");
    printf("[PASS] 3D image memory bindings are page-aligned for radeon CS validation\n");
    printf("memoryBudget heap=%" PRIu32 " before=%" PRIu64 " allocated=%" PRIu64
           " freed=%" PRIu64 " budget=%" PRIu64 "\n",

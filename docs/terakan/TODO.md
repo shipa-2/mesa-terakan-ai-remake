@@ -11,7 +11,7 @@ accept the work. Both use a 1–5 scale.
 
 | Work item | Importance | Complexity | Feasibility | Acceptance criteria |
 |---|---:|---:|---|---|
-| Complete depth/stencil resolve and layout transitions | 5/5 | 5/5 | Implementable, potentially through a transient color-compatible surface and depth-export shader | Depth and stencil readbacks pass for partial regions, mip levels, array layers and every advertised sample count |
+| Complete depth/stencil resolve and layout transitions | 5/5 | 3/5 | Sample-zero depth resolve is implemented and regression-covered; stencil resolve, the averaging and min/max depth modes, and partial region and mip/layer coverage remain | Depth and stencil readbacks pass for partial regions, mip levels, array layers and every advertised sample count |
 | Implement and validate FMASK/CMASK allocation, identity initialization and sampled MSAA addressing | 5/5 | 5/5 | Implementable; requires Evergreen tiling research | Per-sample reads and resolved reads pass for 2x/4x/8x images without corrupting ordinary color targets |
 | Complete cache and barrier coherency | 5/5 | 4/5 | Implementable | Focused attachment, texture, storage, transfer, graphics/compute and query producer-consumer chains pass without application-specific waits |
 | Cover remaining copy, blit and resolve format/subresource combinations | 5/5 | 4/5 | Implementable | Boundary tests cover non-zero offsets, partial extents, mip levels, array/3D layers and every advertised compatible format class |
@@ -39,7 +39,7 @@ These are useful, but Vulkan 1.1 permits the corresponding feature bits to be
 
 | Work item | Importance | Complexity | Feasibility | Notes |
 |---|---:|---:|---|---|
-| Expose dynamic rendering | 2/5 | 3/5 after P0 | Implementable | Currently blocked by the depth/stencil resolve extension dependency |
+| Expose dynamic rendering | 2/5 | 2/5 | Implementable; VK_KHR_depth_stencil_resolve is now exposed, so only stencil resolve is still missing from the dependency | Blocked only by stencil resolve now |
 | Lower 64-bit buffer accesses and finish 64-bit shader coverage | 2/5 | 4/5 | Partly implementable through 32-bit lowering | Native performance will remain limited |
 | Add 16-bit storage support | 2/5 | 4/5 | Implementable through packing/lowering where necessary | Rare in the current DXVK-Sarek target set |
 | Add multiview | 1/5 | 3/5 | Implementable | Primarily useful for VR and Vulkan-native applications |
@@ -57,6 +57,15 @@ These are useful, but Vulkan 1.1 permits the corresponding feature bits to be
 
 ## Completed and regression-covered
 
+- Sample-zero depth resolve: `VK_KHR_depth_stencil_resolve` and
+  `VK_KHR_create_renderpass2` are exposed, advertising
+  `VK_RESOLVE_MODE_SAMPLE_ZERO_BIT` for depth, no stencil mode, and
+  `independentResolveNone`. The resolve samples the multisample source and
+  exports depth from a meta pixel shader instead of decompressing through
+  DB-to-CB, which returned zero. `terakan_depth_resolve` clears a 2x depth
+  attachment, resolves it through a `vkCreateRenderPass2` subpass, and checks
+  the readback; the destination is pre-filled with a different value first, so
+  a resolve that never runs fails rather than passing on leftovers.
 - Shader clip/cull distance: `shaderClipDistance`/`shaderCullDistance` and
   `maxClipDistances`/`maxCullDistances`/`maxCombinedClipAndCullDistances` (8,
   matching the combined PA_CL_VS_OUT_CNTL CCDIST0/CCDIST1 hardware export
