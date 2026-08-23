@@ -66,7 +66,21 @@ These are useful, but Vulkan 1.1 permits the corresponding feature bits to be
   left alone because transfers use them for source and destination alike, where
   any consistent placement works, which is why transfers never showed this.
   `terakan_stencil_fetch` covers it.
-- Multisample stencil sampling is still broken, isolated by probes on CAICOS.
+- Multisample stencil sampling is still broken, and the write side is now ruled
+  out. `terakan_stencil_msaa_fetch` can allocate the image on host-visible
+  memory and dump the surface with `TERAKAN_PROBE_DUMP_SURFACE=1`: after the
+  render pass clear, the stencil region holds exactly 128 non-zero bytes, all
+  equal to the clear value, which is precisely 8x8 texels times 2 samples. So
+  DB writes multisample stencil correctly and completely, and SQ reads
+  elsewhere. Sweeping the stencil aspect's tile split across every value it can
+  take changed nothing, so inheriting the depth aspect's tile split is not the
+  cause, despite r600 and AddrLib keeping a separate `stencil_tile_split`. The
+  base address, pitch, format and swizzle in the texture descriptor are all
+  correct. What remains to check is whether the aligned extent the stencil
+  aspect inherits from depth (both report 16x128 for an 8x8 image) is what SQ
+  disagrees with, since AddrLib derives that from bytes per pixel while DB
+  drives both aspects from one shared pitch.
+- Multisample stencil sampling was also isolated by probes on CAICOS.
   `terakan_stencil_readback` clears and reads single-sample stencil back
   correctly, and `terakan_depth_msaa_fetch --combined` fetches multisample
   depth correctly out of the same `D32_SFLOAT_S8_UINT` format, but

@@ -20,6 +20,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <vector>
 
@@ -152,8 +153,17 @@ main()
    VK_CHECK(vkCreateImage(device, &depth_info, nullptr, &depth_image));
    VkMemoryRequirements depth_requirements;
    vkGetImageMemoryRequirements(device, depth_image, &depth_requirements);
-   uint32_t const depth_memory_type = find_memory_type(
-      physical_device, depth_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+   /* Prefer host-visible memory when the image allows it, so the surface can be inspected
+    * directly to tell "DB never wrote the stencil" apart from "the fetch reads the wrong place".
+    */
+   uint32_t depth_memory_type = find_memory_type(
+      physical_device, depth_requirements.memoryTypeBits,
+      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+   bool const depth_memory_is_mappable = depth_memory_type != UINT32_MAX;
+   if (!depth_memory_is_mappable) {
+      depth_memory_type = find_memory_type(
+         physical_device, depth_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+   }
    if (depth_memory_type == UINT32_MAX) {
       std::fprintf(stderr, "No device-local memory for the depth image\n");
       return 1;
@@ -454,6 +464,24 @@ main()
    if (wait_result != VK_SUCCESS) {
       std::fprintf(stderr, "Fence wait failed with VkResult %d\n", wait_result);
       return 1;
+   }
+
+   if (depth_memory_is_mappable && std::getenv("TERAKAN_PROBE_DUMP_SURFACE") != nullptr) {
+      uint8_t * surface;
+      VK_CHECK(vkMapMemory(device, depth_memory, 0, VK_WHOLE_SIZE, 0,
+                           reinterpret_cast<void **>(&surface)));
+      uint32_t nonzero_before = 0, nonzero_after = 0, matching = 0;
+      for (uint32_t offset = 0; offset < 16384; ++offset)
+         nonzero_before += surface[offset] != 0;
+      for (uint32_t offset = 16384; offset < 16384 + 4096; ++offset) {
+         nonzero_after += surface[offset] != 0;
+         matching += surface[offset] == kClearStencil;
+      }
+      std::fprintf(stderr,
+                   "surface dump: depth region nonzero=%u/16384, stencil region nonzero=%u/4096 "
+                   "equal-to-clear=%u\n",
+                   nonzero_before, nonzero_after, matching);
+      vkUnmapMemory(device, depth_memory);
    }
 
    uint32_t mismatches = 0;
