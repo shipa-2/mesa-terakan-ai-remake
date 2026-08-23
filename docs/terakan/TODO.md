@@ -199,15 +199,24 @@ depth through an SQ texture fetch. That is consistent with Terakan not
 implementing HTILE: depth is stored uncompressed, so there is nothing for the
 DB-to-CB copy to decompress.
 
-Together with the earlier finding that the R32-to-D32 pixel-shader depth export
-already writes its destination, both halves of a resolve exist without the
-DB-to-CB step that returned zero. The next implementation should therefore
-sample the source depth directly and export it, rather than reviving the
-`DEPTH_COPY_ENABLE` path at all. For multisampled sources this also matches the
-escape hatch recorded above, since sampling never binds a multisample color
-target: what still has to be proven is that a multisample depth image can be
-fetched per sample, which is a different question from the FMASK/CMASK work
-because depth compression uses HTILE rather than FMASK.
+Multisample depth fetches per sample as well. The `terakan_depth_msaa_fetch`
+probe clears a 2x `D32_SFLOAT` image, reads every sample of every texel with
+`texelFetch` on a `sampler2DMS` from a compute shader, and gets all 128 values
+back exactly, with no hang and no FMASK-style metadata involved. It never binds
+a multisample color target, which is what previously timed out the submission
+fence, so this is the escape hatch recorded above rather than a retry of the
+path that failed. Depth compression uses HTILE, which Terakan does not
+implement, so this is independent of the FMASK/CMASK item.
+
+Both halves of a resolve therefore exist, and neither needs the DB-to-CB step
+that returned zero: sample the source depth per sample, and write the
+destination with the pixel-shader depth export the earlier experiment already
+confirmed. `DEPTH_COPY_ENABLE` should not be revived at all. That reduces the
+remaining work to a meta draw that binds the source as a multisample texture
+and the destination as DB, with a pixel shader applying the requested
+`VkResolveModeFlagBits` across the samples and exporting `gl_FragDepth`, plus
+the stencil equivalent, the render pass plumbing for
+`VK_KHR_depth_stencil_resolve`, and the readback tests that gate exposing it.
 
 FMASK/CMASK memory layout and deferred initialization are now implemented for
 2x/4x/8x color images. Memory-requirement checks and bounded CAICOS submissions

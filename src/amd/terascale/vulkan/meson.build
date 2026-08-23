@@ -538,6 +538,36 @@ if with_tests
         timeout : 10,
       )
 
+      terakan_depth_msaa_fetch_spv = custom_target(
+        'terakan_depth_msaa_fetch.spv.h',
+        input : 'tests/terakan_depth_msaa_fetch.comp',
+        output : 'terakan_depth_msaa_fetch.spv.h',
+        command : [
+          prog_glslang, '-V', '-x', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_depth_msaa_fetch.spv.h.d',
+      )
+      terakan_depth_msaa_fetch_test = executable(
+        'terakan_depth_msaa_fetch_test',
+        [
+          'tests/terakan_depth_msaa_fetch_test.cpp',
+          terakan_depth_msaa_fetch_spv,
+        ],
+        dependencies : vulkan_loader_dep,
+      )
+      test(
+        'terakan_depth_msaa_fetch',
+        terakan_depth_msaa_fetch_test,
+        depends : [libvulkan_terascale, _dev_icd],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 15,
+      )
+
       terakan_depth_readback_test = executable(
         'terakan_depth_readback_test',
         ['tests/terakan_depth_readback_test.cpp'],
