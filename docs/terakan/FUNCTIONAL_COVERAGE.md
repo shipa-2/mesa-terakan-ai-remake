@@ -240,6 +240,25 @@ more likely to be in uncovered graphics shader/control-flow, blending,
 render-pass dependency, descriptor update or format behavior than in the
 already tested basic image barriers.
 
+Session findings (2026-08-23, CAICOS): the strobing main-menu background is
+not cross-process VRAM reuse — content stayed a consistent magenta/black/white
+block pattern regardless of what ran on the GPU immediately before (tested
+against both vkcube and a fresh Fused 240 run, neither of which resembles the
+corruption). The large (988x1156 and similar non-power-of-two) decoration
+images upload through `terakan_CmdCopyBufferToImage2` as ~300 separate 64x64
+RTV draws per image; forcing an unconditional `PARTIAL_FLUSH_CP_THROUGH_PS` +
+`FLUSH_INV_CB_RTV_DATA` + `INV_TC` barrier after every chunk draw removed the
+block-grid corruption pattern from a single captured frame, but the live
+strobe was unchanged, meaning the fault recurs every frame rather than once at
+upload time. This points away from the one-time buffer-to-image upload path
+and toward a per-frame hazard (most likely a compute-driven screen/background
+effect racing its CB or RAT cache visibility with a later sampled read),
+consistent with the still-open cache/barrier coherency item in
+[TODO.md](TODO.md). Not yet root-caused; needs a frame-by-frame trace
+(`TERAKAN_DEBUG_RENDER`/`TERAKAN_DEBUG_RAT`/`TERAKAN_DEBUG_QUEUE_IBS`)
+correlated against a screen recording rather than single-shot screenshots,
+which cannot reliably catch the bad frame.
+
 ## Reproduction
 
 Use the development ICD explicitly and disable implicit layers:

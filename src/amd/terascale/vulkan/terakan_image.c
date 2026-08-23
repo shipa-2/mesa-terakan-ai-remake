@@ -1580,12 +1580,19 @@ terakan_image_create_resource_descriptor(
    }
    if (unlikely(getenv("TERAKAN_DEBUG_IMAGE_BIND") != NULL)) {
       fprintf(stderr,
-              "[TERAKAN_IMAGE] resource type=%u desired_dim=%u hw_dim=%u base_level=%u levels=%u "
-              "word2=0x%08x word3=0x%08x\n",
-              image->vk.image_type, desired_dimensionality, hw_dimensionality,
+              "[TERAKAN_IMAGE] resource type=%u vkfmt=%u extent=%ux%u desired_dim=%u hw_dim=%u "
+              "base_level=%u levels=%u array_mode=%u tile_split=%u data_format=%u pitch_tile_max=%u "
+              "word1=0x%08x word6=0x%08x word7=0x%08x\n",
+              image->vk.image_type, descriptor_create_info->view_format.format,
+              image->vk.extent.width,
+              image->vk.extent.height, desired_dimensionality, hw_dimensionality,
               descriptor_create_info->subresource_range.base_mip_level,
               descriptor_create_info->subresource_range.max_level_count,
-              descriptor_out->resource[2], descriptor_out->resource[3]);
+              G_030004_ARRAY_MODE(descriptor_out->resource[1]),
+              (descriptor_out->resource[6] >> 29) & 0x7,
+              G_03001C_DATA_FORMAT(descriptor_out->resource[7]),
+              G_030000_PITCH(descriptor_out->resource[0]), descriptor_out->resource[1],
+              descriptor_out->resource[6], descriptor_out->resource[7]);
    }
    return true;
 }

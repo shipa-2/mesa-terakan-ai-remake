@@ -670,6 +670,20 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
          continue;
       }
 
+      if (unlikely(getenv("TERAKAN_DEBUG_IMAGE_OPS") != NULL)) {
+         fprintf(stderr,
+                 "[TERAKAN_UPLOAD] image=%p extent=%ux%ux%u array_mode=%u vkfmt=%u "
+                 "rect_blocks=(%u,%u)-(%u,%u) buffer_y_pitch_blocks=%u buffer_z_pitch_blocks=%" PRIu64
+                 " buffer_offset=%" PRIu64 " buffer_row_length=%u buffer_image_height=%u\n",
+                 (void *)image, image->vk.extent.width, image->vk.extent.height,
+                 image->vk.extent.depth, image->surface.aspects[0].levels[0].array_mode,
+                 region_image.image_descriptor_create_info.view_format.format,
+                 region_image.rect_blocks.bounds[0][0], region_image.rect_blocks.bounds[0][1],
+                 region_image.rect_blocks.bounds[1][0], region_image.rect_blocks.bounds[1][1],
+                 region_image.buffer_y_pitch_blocks, region_image.buffer_z_pitch_blocks,
+                 region->bufferOffset, region->bufferRowLength, region->bufferImageHeight);
+      }
+
       buffer_descriptor.resource[3] =
          S_03000C_DST_SEL_X(region_image.image_descriptor_create_info.view_format.swizzle_r) |
          S_03000C_DST_SEL_Y(region_image.image_descriptor_create_info.view_format.swizzle_g) |

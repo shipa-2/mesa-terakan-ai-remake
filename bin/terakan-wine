@@ -1,0 +1,234 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+source_path=$(readlink -f -- "${BASH_SOURCE[0]}")
+repo_root=$(cd -- "$(dirname -- "$source_path")/.." && pwd -P)
+terakan_runner="$repo_root/bin/terakan-run"
+dxvk_dir=${TERAKAN_DXVK_DIR:-}
+use_dxvk=true
+created_dxvk_links=()
+
+wine_prefix=${WINEPREFIX:-${TERAKAN_WINEPREFIX:-"$HOME/.wine"}}
+wine_arch=${WINEARCH:-${TERAKAN_WINEARCH:-win64}}
+
+usage() {
+  cat <<'EOF'
+usage: bin/terakan-wine [OPTIONS] COMMAND.exe [ARG ...]
+       bin/terakan-wine --doctor
+
+Run a Windows COMMAND through system wine with the local Terakan Vulkan ICD
+and (by default) DXVK-Sarek, using a dedicated wine prefix that is never
+shared with a Proton compatdata prefix. Mixing system wine with a Proton
+prefix corrupts the prefix (wineboot tries to reconcile mismatched DLL
+sets); this wrapper avoids that by defaulting to its own prefix and
+initializing it on first use.
+
+Options:
+  --dxvk-sarek DIR  use 64-bit DXVK-Sarek DLLs from DIR
+  --no-dxvk-sarek   don't stage DXVK-Sarek or alter WINEDLLPATH/OVERRIDES
+  --doctor          print resolved paths and validate the local build
+  -h, --help        show this help
+
+Environment:
+  TERAKAN_BUILD_DIR    override the Mesa build directory (used by terakan-run)
+  TERAKAN_DXVK_DIR     override the DXVK-Sarek x64 directory
+  WINEPREFIX           use this prefix instead of the default
+  TERAKAN_WINEPREFIX   default prefix when WINEPREFIX is unset (default: ~/.wine)
+  WINEARCH             wine prefix architecture (default: win64)
+EOF
+}
+
+resolve_dxvk() {
+  if [[ -z "$dxvk_dir" ]]; then
+    local sibling_dxvk="$repo_root/../DXVK-Sarek/x64"
+    if [[ -r "$sibling_dxvk/dxgi.dll" && -r "$sibling_dxvk/d3d11.dll" ]]; then
+      dxvk_dir=$(cd -- "$sibling_dxvk" && pwd -P)
+    fi
+  else
+    dxvk_dir=$(cd -- "$dxvk_dir" 2>/dev/null && pwd -P) || {
+      echo "terakan-wine: DXVK-Sarek directory does not exist: $dxvk_dir" >&2
+      exit 1
+    }
+    if [[ ! -r "$dxvk_dir/dxgi.dll" || ! -r "$dxvk_dir/d3d11.dll" ]]; then
+      echo "terakan-wine: dxgi.dll and d3d11.dll are required in $dxvk_dir" >&2
+      exit 1
+    fi
+  fi
+}
+
+cleanup_dxvk_links() {
+  local link
+  for link in "${created_dxvk_links[@]}"; do
+    if [[ -L "$link" ]]; then
+      local resolved
+      resolved=$(readlink -f -- "$link" 2>/dev/null || true)
+      case "$resolved" in
+        "$dxvk_dir"/*) rm -f -- "$link" ;;
+      esac
+    fi
+  done
+  created_dxvk_links=()
+}
+
+terminate_child() {
+  local signal=$1 status=$2
+  trap - TERM INT
+  kill -s "$signal" -- "-$child_pid" 2>/dev/null || true
+  wait "$child_pid" 2>/dev/null || true
+  cleanup_dxvk_links
+  exit "$status"
+}
+
+stage_dxvk_for_command() {
+  local argument game_executable=
+  for argument in "$@"; do
+    case "$argument" in
+      *.[eE][xX][eE])
+        if [[ -f "$argument" ]]; then
+          game_executable=$(readlink -f -- "$argument")
+        fi
+        ;;
+    esac
+  done
+
+  # Native Windows DLL lookup checks the executable directory before the wine DLL search path, so
+  # a symlink next to the target reliably selects DXVK-Sarek even if a game's own launcher resets
+  # WINEDLLPATH/WINEDLLOVERRIDES.
+  if [[ -z "$game_executable" ]]; then
+    return
+  fi
+
+  local game_dir=${game_executable%/*}
+  local dll source destination resolved
+  for dll in dxgi.dll d3d11.dll d3d10core.dll; do
+    source="$dxvk_dir/$dll"
+    [[ -r "$source" ]] || continue
+    destination="$game_dir/$dll"
+    if [[ -e "$destination" || -L "$destination" ]]; then
+      resolved=$(readlink -f -- "$destination" 2>/dev/null || true)
+      if [[ "$resolved" != "$source" ]]; then
+        echo "terakan-wine: refusing to replace existing $destination" >&2
+        cleanup_dxvk_links
+        return 1
+      fi
+      continue
+    fi
+    if ! ln -s -- "$source" "$destination"; then
+      echo "terakan-wine: cannot stage DXVK-Sarek next to $game_executable" >&2
+      cleanup_dxvk_links
+      return 1
+    fi
+    created_dxvk_links+=("$destination")
+  done
+}
+
+doctor=false
+while (($#)); do
+  case "$1" in
+    --dxvk-sarek)
+      if (($# < 2)); then
+        echo "terakan-wine: --dxvk-sarek requires a directory" >&2
+        exit 2
+      fi
+      dxvk_dir=$2
+      use_dxvk=true
+      shift 2
+      ;;
+    --dxvk-sarek=*)
+      dxvk_dir=${1#*=}
+      use_dxvk=true
+      shift
+      ;;
+    --no-dxvk-sarek)
+      use_dxvk=false
+      shift
+      ;;
+    --doctor)
+      doctor=true
+      shift
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+if [[ ! -x "$terakan_runner" ]]; then
+  echo "terakan-wine: missing executable $terakan_runner" >&2
+  exit 1
+fi
+
+if $use_dxvk; then
+  resolve_dxvk
+fi
+
+if $doctor; then
+  build_dir=${TERAKAN_BUILD_DIR:-"$repo_root/build-vulkan"}
+  icd_dir="$build_dir/src/amd/terascale/vulkan"
+  driver="$icd_dir/libvulkan_terascale.so"
+
+  printf 'repository:   %s\n' "$repo_root"
+  printf 'runner:       %s\n' "$terakan_runner"
+  printf 'driver:       %s%s\n' "$driver" "$([[ -r "$driver" ]] && printf ' [ok]' || printf ' [missing]')"
+  printf 'wine prefix:  %s%s\n' "$wine_prefix" \
+    "$([[ -f "$wine_prefix/system.reg" ]] && printf ' [initialized]' || printf ' [will be created]')"
+  printf 'wine arch:    %s\n' "$wine_arch"
+  if $use_dxvk && [[ -n "$dxvk_dir" ]]; then
+    printf 'DXVK-Sarek:   %s [ok]\n' "$dxvk_dir"
+  elif $use_dxvk; then
+    printf 'DXVK-Sarek:   not found [optional]\n'
+  else
+    printf 'DXVK-Sarek:   disabled\n'
+  fi
+  [[ -r "$driver" ]]
+  exit
+fi
+
+if (($# == 0)); then
+  usage >&2
+  exit 2
+fi
+
+export WINEPREFIX="$wine_prefix"
+export WINEARCH="$wine_arch"
+
+if [[ ! -f "$wine_prefix/system.reg" ]]; then
+  mkdir -p -- "$wine_prefix"
+  echo "terakan-wine: initializing wine prefix at $wine_prefix" >&2
+  wineboot --init >/dev/null 2>&1 || {
+    echo "terakan-wine: wineboot --init failed for $wine_prefix" >&2
+    exit 1
+  }
+fi
+
+if $use_dxvk && [[ -n "$dxvk_dir" ]]; then
+  export WINEDLLPATH="$dxvk_dir${WINEDLLPATH:+:$WINEDLLPATH}"
+  native_overrides='d3d11=n;d3d10=n;d3d10core=n;dxgi=n'
+  export WINEDLLOVERRIDES="$native_overrides${WINEDLLOVERRIDES:+;$WINEDLLOVERRIDES}"
+  stage_dxvk_for_command "$@"
+fi
+
+if ((${#created_dxvk_links[@]} == 0)); then
+  exec "$terakan_runner" -- wine "$@"
+fi
+
+trap cleanup_dxvk_links EXIT
+child_pid=
+trap 'terminate_child TERM 143' TERM
+trap 'terminate_child INT 130' INT
+set +e
+setsid "$terakan_runner" -- wine "$@" &
+child_pid=$!
+wait "$child_pid"
+status=$?
+set -e
+cleanup_dxvk_links
+exit "$status"
