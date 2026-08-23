@@ -126,27 +126,37 @@ Landed while surveying (regression-tested, inert until the feature bits flip):
   values yet, so both stay at a defined zero; the hardware ignores them while
   the LS and HS stages are disabled.
 
+Evergreen tessellation is on-chip through LDS, not an off-chip factor ring.
+There is deliberately no `VGT_TF_MEMORY_BASE` anywhere in the tree: SFN takes
+the factor base from a pinned `R0.w` that the hardware supplies, and
+`store_tf_r600` lowers to the dedicated `WriteTFInstr` bytecode instruction.
+So no new buffer object is needed, which makes this cheaper than a ring would
+have been. `evergreen_setup_tess_constants` in `evergreen_state.c` is the
+reference implementation of everything below.
+
 Still missing, in rough dependency order:
 
-1. Tessellation factor ring: `VGT_TF_MEMORY_BASE` and the buffer object behind
-   it do not exist. The hardware tessellator reads the factors the HS writes to
-   this ring, so nothing tessellates before it exists. This is new memory
-   infrastructure, not a register write, and it is the first real blocker.
-2. Values for `VGT_LS_HS_CONFIG` (patch control point counts, patch count per
+1. The LDS patch layout: input/output vertex and patch sizes, the patch count
+   per thread group, `output_patch0_offset` and `perpatch_output_offset`,
+   derived from the control and evaluation shader NIR plus `patchControlPoints`
+   from `VkPipelineTessellationStateCreateInfo`.
+2. An LDS info constant buffer carrying that layout, bound to the vertex,
+   control and evaluation stages. This is how the shaders find their patch data
+   in LDS, and it is the piece with no equivalent in Terakan today.
+3. Dynamic `SQ_LDS_ALLOC` for the LS/HS pair, carrying the computed LDS size
+   and the wave count, currently emitted as a constant zero on the draw path.
+4. Values for `VGT_LS_HS_CONFIG` (patch control point counts, patch count per
    thread group) and `VGT_TF_PARAM` (partitioning, topology, spacing) derived
-   from `VkPipelineTessellationStateCreateInfo` and the evaluation shader NIR,
-   applied through `terakan_app_config_draw`.
-3. Dynamic `SQ_LDS_ALLOC` for the LS/HS pair: currently emitted as a constant
-   zero on the draw path, while tessellation passes per-patch data through LDS.
-4. Per-stage members of `terakan_shader_static.stage`, which only has `vs` and
+   from the same state, applied through `terakan_app_config_draw`.
+5. Per-stage members of `terakan_shader_static.stage`, which only has `vs` and
    `ps`, plus the matching cases in the `terakan_shader_sfn.cpp` stage switch,
    which only handles `MESA_SHADER_VERTEX` and `MESA_SHADER_FRAGMENT`.
-5. Geometry shaders additionally need the copy shader that the hardware VS runs
+6. Geometry shaders additionally need the copy shader that the hardware VS runs
    in `VS_STAGE_COPY_SHADER` mode, plus the GSVS ring and `VGT_GS_MODE` /
    `VGT_GS_OUT_PRIM_TYPE`. `generate_gs_copy_shader` in `r600_shader.c` builds
    one directly with the bytecode builder, but it takes an `r600_context` and
    would have to be adapted.
-6. Tessellation and geometry limits in `terakan_physical_device.c`, which are
+7. Tessellation and geometry limits in `terakan_physical_device.c`, which are
    still the two remaining TODOs there.
 
 Tessellation without a geometry shader is the cheaper of the two to finish
