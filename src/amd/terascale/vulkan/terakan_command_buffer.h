@@ -224,6 +224,10 @@ struct terakan_command_buffer {
    VkRect2D rendering_resolve_area;
    struct terakan_rendering_color_resolve
       rendering_color_resolves[MESA_VK_MAX_COLOR_ATTACHMENTS];
+   /* Depth aspect only so far, in VK_RESOLVE_MODE_SAMPLE_ZERO_BIT. Reuses the color resolve
+    * structure because a depth resolve needs exactly the same source and destination description.
+    */
+   struct terakan_rendering_color_resolve rendering_depth_resolve;
 
    union {
       struct terakan_gfx_command_writer * gfx;

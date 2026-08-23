@@ -27,6 +27,8 @@
 #include "terakan_image.h"
 #include "terakan_vk_state.h"
 
+#include "meta/terakan_meta_impl.h"
+
 #include "util/bitscan.h"
 #include "util/macros.h"
 #include "util/u_math.h"
@@ -81,6 +83,7 @@ terakan_CmdBeginRendering(VkCommandBuffer const commandBuffer,
       command_buffer->rendering_color_resolves[color_attachment_index] =
          (struct terakan_rendering_color_resolve){};
    }
+   command_buffer->rendering_depth_resolve = (struct terakan_rendering_color_resolve){};
 
    VkSampleCountFlagBits db_eqaa_ps_iter_least_fragments_r9xx = VK_SAMPLE_COUNT_16_BIT;
 
@@ -260,6 +263,36 @@ terakan_CmdBeginRendering(VkCommandBuffer const commandBuffer,
       }
    }
 
+   /* Depth resolve, currently only VK_RESOLVE_MODE_SAMPLE_ZERO_BIT. Recorded here and performed
+    * when rendering ends, the same way color resolves are.
+    */
+   if (depth_attachment_view != NULL &&
+       pRenderingInfo->pDepthAttachment->resolveMode == VK_RESOLVE_MODE_SAMPLE_ZERO_BIT &&
+       pRenderingInfo->pDepthAttachment->resolveImageView != VK_NULL_HANDLE) {
+      struct terakan_image_view const * const depth_resolve_view =
+         terakan_image_view_from_handle(pRenderingInfo->pDepthAttachment->resolveImageView);
+      if (depth_resolve_view != NULL) {
+         struct terakan_rendering_color_resolve * const resolve =
+            &command_buffer->rendering_depth_resolve;
+         resolve->src_image = terakan_image_to_handle(
+            container_of(depth_attachment_view->vk.image, struct terakan_image, vk));
+         resolve->dst_image = terakan_image_to_handle(
+            container_of(depth_resolve_view->vk.image, struct terakan_image, vk));
+         resolve->src_subresource = (VkImageSubresourceLayers){
+            .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
+            .mipLevel = depth_attachment_view->vk.base_mip_level,
+            .baseArrayLayer = depth_attachment_view->vk.base_array_layer,
+            .layerCount = layer_count_minus_1 + 1,
+         };
+         resolve->dst_subresource = (VkImageSubresourceLayers){
+            .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
+            .mipLevel = depth_resolve_view->vk.base_mip_level,
+            .baseArrayLayer = depth_resolve_view->vk.base_array_layer,
+            .layerCount = MIN2(layer_count_minus_1 + 1, depth_resolve_view->vk.layer_count),
+         };
+      }
+   }
+
    u_foreach_bit (color_attachment_index,
                   color_attachments_bound ^ BITFIELD_MASK(TERAKAN_VK_STATE_MAX_COLOR_ATTACHMENTS)) {
       terakan_app_config_draw_set_cb_color_rtv(config, color_attachment_index, NULL, NULL, NULL);
@@ -342,6 +375,21 @@ terakan_CmdEndRendering(VkCommandBuffer const commandBuffer)
             .pRegions = &region,
          };
          terakan_CmdResolveImage2(commandBuffer, &resolve_info);
+      }
+
+      struct terakan_rendering_color_resolve const * const depth_resolve =
+         &command_buffer->rendering_depth_resolve;
+      if (depth_resolve->src_image != VK_NULL_HANDLE &&
+          depth_resolve->dst_image != VK_NULL_HANDLE) {
+         /* Not routed through vkCmdResolveImage2, which the specification defines for color
+          * images only.
+          */
+         terakan_meta_resolve_depth(command_buffer->command_writer.gfx,
+                                    terakan_image_from_handle(depth_resolve->src_image),
+                                    terakan_image_from_handle(depth_resolve->dst_image),
+                                    &depth_resolve->src_subresource,
+                                    &depth_resolve->dst_subresource,
+                                    &command_buffer->rendering_resolve_area);
       }
    }
 

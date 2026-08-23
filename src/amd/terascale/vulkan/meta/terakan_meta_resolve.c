@@ -201,6 +201,129 @@ struct terakan_meta_shader const terakan_meta_resolve_2x_ps = {
    .primary_meta_resource_used = true,
 };
 
+void
+terakan_meta_resolve_depth(struct terakan_gfx_command_writer * const command_writer,
+                           struct terakan_image const * const src_image,
+                           struct terakan_image const * const dst_image,
+                           VkImageSubresourceLayers const * const src_subresource,
+                           VkImageSubresourceLayers const * const dst_subresource,
+                           VkRect2D const * const area)
+{
+   /* Only VK_RESOLVE_MODE_SAMPLE_ZERO_BIT so far, which the specification requires whenever
+    * VK_KHR_depth_stencil_resolve is exposed at all.
+    */
+   enum terascale_r8xx_depth_format dst_depth_format = TERASCALE_R8XX_DEPTH_FORMAT_INVALID;
+   bool dst_has_stencil = false;
+   if (unlikely(!terascale_get_r8xx_depth_stencil_format(
+          vk_format_to_pipe_format(dst_image->vk.format), &dst_depth_format, &dst_has_stencil))) {
+      return;
+   }
+   if (unlikely(area->extent.width == 0 || area->extent.height == 0)) {
+      return;
+   }
+
+   /* The source was just written as a depth attachment and is about to be read as a texture. */
+   terakan_barrier_emit_actions_unconditionally(
+      command_writer, TERAKAN_BARRIER_ACTION_FLUSH_INV_DB_DATA |
+                         TERAKAN_BARRIER_ACTION_FLUSH_INV_DB_META |
+                         TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_PS |
+                         TERAKAN_BARRIER_ACTION_INV_TC);
+
+   struct terakan_meta_config_draw_begin_options const begin_options = {
+      .vgt_primitive_type = V_008958_DI_PT_RECTLIST,
+      .cb_and_db_shader_control_mode = TERAKAN_META_CONFIG_DRAW_BEGIN_CB_MODE_DYNAMIC,
+      .rasterization =
+         {
+            .enable = true,
+            .db_explicit = true,
+         },
+   };
+   terakan_meta_config_draw_begin(command_writer, &begin_options);
+   /* The pixel shader exports depth, so DB must expect a Z export from it. Everything else matches
+    * the identity control the other depth-writing meta draws use.
+    */
+   terakan_meta_config_draw_set_db_shader_control(
+      command_writer, TERAKAN_SHADER_DB_SHADER_CONTROL_IDENTITY | S_02880C_Z_EXPORT_ENABLE(1));
+   terakan_meta_config_draw_set_cb_color_control_for_mode(command_writer, V_028808_CB_DISABLE);
+   terakan_meta_config_draw_set_sq_pgm_vs(command_writer,
+                                          TERAKAN_META_SHADER_POSITION_AND_LAYER_FROM_INDEX_VS);
+   terakan_meta_config_draw_set_sq_pgm_ps(command_writer,
+                                          TERAKAN_META_SHADER_RESOLVE_DEPTH_SAMPLE_ZERO_PS);
+   /* Every resolved pixel must be written regardless of what the destination already holds. */
+   terakan_meta_config_draw_set_db_depth_control(command_writer,
+                                                 S_028800_Z_ENABLE(true) |
+                                                    S_028800_Z_WRITE_ENABLE(true) |
+                                                    S_028800_ZFUNC(V_028800_STENCILFUNC_ALWAYS));
+
+   uint32_t const layer_count =
+      MIN2(src_subresource->layerCount, dst_subresource->layerCount);
+   for (uint32_t layer_index = 0; layer_index < layer_count; ++layer_index) {
+      struct terakan_image_descriptor_subresource_range src_range = {
+         .base_mip_level = src_subresource->mipLevel,
+         .max_level_count = 1,
+         .base_z_or_array_layer = src_subresource->baseArrayLayer + layer_index,
+         .max_depth_or_layer_count = 1,
+      };
+      if (unlikely(
+             !terakan_image_descriptor_subresource_range_sanitize(src_image, &src_range, false))) {
+         continue;
+      }
+      unsigned const src_aspect_index = terakan_format_aspect_index(
+         src_image->format_info.aspect_map, VK_IMAGE_ASPECT_DEPTH_BIT, 0);
+      struct terakan_image_descriptor_create_info const src_descriptor_info = {
+         .image = src_image,
+         .view_format = src_image->format_info.aspect_formats[src_aspect_index],
+         .image_aspect_index = src_aspect_index,
+         .subresource_range = src_range,
+      };
+      struct terakan_resource_descriptor src_resource;
+      if (unlikely(!terakan_image_create_resource_descriptor(
+             &src_descriptor_info, V_030000_SQ_TEX_DIM_2D_ARRAY_MSAA, NULL, &src_resource))) {
+         continue;
+      }
+
+      struct terakan_image_descriptor_subresource_range dst_range = {
+         .base_mip_level = dst_subresource->mipLevel,
+         .max_level_count = 1,
+         .base_z_or_array_layer = dst_subresource->baseArrayLayer + layer_index,
+         .max_depth_or_layer_count = 1,
+      };
+      if (unlikely(
+             !terakan_image_descriptor_subresource_range_sanitize(dst_image, &dst_range, false))) {
+         continue;
+      }
+      struct terakan_depth_stencil_descriptor dst_descriptor;
+      if (unlikely(!terakan_image_create_depth_stencil_descriptor(
+             dst_image, dst_depth_format, dst_has_stencil, &dst_range, &dst_descriptor))) {
+         continue;
+      }
+
+      terakan_hw_config_sqk_set_resource_fs(&command_writer->hw_config_sqk,
+                                            TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META,
+                                            src_image->bo, &src_resource);
+      terakan_meta_config_draw_set_db_depth_stencil_buffer(command_writer, dst_image->bo,
+                                                           &dst_descriptor);
+
+      struct terakan_screen_rect const screen_bounds = {
+         .bounds = {
+            [1] = {
+               u_minify(dst_image->vk.extent.width, dst_range.base_mip_level),
+               u_minify(dst_image->vk.extent.height, dst_range.base_mip_level),
+            },
+         },
+      };
+      terakan_meta_draw_rect(command_writer,
+                             terakan_vk_rect_to_screen_rect(*area, screen_bounds), 1);
+   }
+
+   /* The resolved depth is normally sampled or transferred right after the render pass ends. */
+   terakan_barrier_emit_actions_unconditionally(
+      command_writer, TERAKAN_BARRIER_ACTION_FLUSH_INV_DB_DATA |
+                         TERAKAN_BARRIER_ACTION_FLUSH_INV_DB_META |
+                         TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_PS |
+                         TERAKAN_BARRIER_ACTION_INV_TC);
+}
+
 static bool
 terakan_meta_resolve_region_is_fixed_function_compatible(
    struct terakan_image const * const src_image, struct terakan_image const * const dst_image,
