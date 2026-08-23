@@ -586,6 +586,77 @@ if with_tests
         timeout : 10,
       )
 
+      terakan_frame_chain_vertex_spv = custom_target(
+        'terakan_frame_chain.vert.spv',
+        input : 'tests/terakan_frame_chain.vert',
+        output : 'terakan_frame_chain.vert.spv',
+        command : [
+          prog_glslang, '-V', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_frame_chain.vert.spv.d',
+      )
+      terakan_frame_chain_fragment_spv = custom_target(
+        'terakan_frame_chain.frag.spv',
+        input : 'tests/terakan_frame_chain.frag',
+        output : 'terakan_frame_chain.frag.spv',
+        command : [
+          prog_glslang, '-V', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_frame_chain.frag.spv.d',
+      )
+      terakan_frame_chain_compute_spv = custom_target(
+        'terakan_frame_chain.comp.spv',
+        input : 'tests/terakan_frame_chain.comp',
+        output : 'terakan_frame_chain.comp.spv',
+        command : [
+          prog_glslang, '-V', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_frame_chain.comp.spv.d',
+      )
+      terakan_frame_chain_test = executable(
+        'terakan_frame_chain_test',
+        ['tests/terakan_frame_chain_test.cpp'],
+        dependencies : vulkan_loader_dep,
+      )
+
+      test(
+        'terakan_frame_chain',
+        terakan_frame_chain_test,
+        args : [terakan_frame_chain_vertex_spv, terakan_frame_chain_fragment_spv],
+        depends : [
+          libvulkan_terascale, _dev_icd,
+          terakan_frame_chain_vertex_spv, terakan_frame_chain_fragment_spv,
+        ],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 30,
+      )
+      test(
+        'terakan_frame_chain_compute',
+        terakan_frame_chain_test,
+        args : [
+          terakan_frame_chain_vertex_spv, terakan_frame_chain_fragment_spv,
+          terakan_frame_chain_compute_spv, '--compute',
+        ],
+        depends : [
+          libvulkan_terascale, _dev_icd,
+          terakan_frame_chain_vertex_spv, terakan_frame_chain_fragment_spv,
+          terakan_frame_chain_compute_spv,
+        ],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 30,
+      )
+
       terakan_stencil_fetch_spv = custom_target(
         'terakan_stencil_fetch.spv.h',
         input : 'tests/terakan_stencil_fetch.comp',

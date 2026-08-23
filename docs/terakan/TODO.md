@@ -13,7 +13,7 @@ accept the work. Both use a 1–5 scale.
 |---|---:|---:|---|---|
 | Complete depth/stencil resolve and layout transitions | 5/5 | 2/5 | Sample-zero resolve is implemented, exposed and regression-covered for both depth and stencil. The averaging and min/max depth modes and partial region and mip/layer coverage remain | Depth and stencil readbacks pass for partial regions, mip levels, array layers and every advertised sample count |
 | Implement and validate FMASK/CMASK allocation, identity initialization and sampled MSAA addressing | 5/5 | 5/5 | Implementable; requires Evergreen tiling research | Per-sample reads and resolved reads pass for 2x/4x/8x images without corrupting ordinary color targets |
-| Complete cache and barrier coherency | 5/5 | 4/5 | Implementable | Focused attachment, texture, storage, transfer, graphics/compute and query producer-consumer chains pass without application-specific waits |
+| Complete cache and barrier coherency | 5/5 | 4/5 | Implementable. Composition coverage now exists (`terakan_frame_chain`, both the render-pass and the compute producer) and passes, so the remaining hazard is narrower than a repeated clear/dispatch, sample, render and copy chain | Focused attachment, texture, storage, transfer, graphics/compute and query producer-consumer chains pass without application-specific waits |
 | Cover remaining copy, blit and resolve format/subresource combinations | 5/5 | 4/5 | Implementable | Boundary tests cover non-zero offsets, partial extents, mip levels, array/3D layers and every advertised compatible format class |
 | Fix 3D image mip base alignment and descriptor addressing | 5/5 | 3/5 | Implementable; the radeon CS validator gives an exact 4096-byte alignment failure | The formerly device-losing 3D clear passes, adjacent mip/layer cases pass, and the kernel reports no invalid command stream |
 | Correct meta blit formats, mirrored coordinates and 3D slices | 5/5 | 4/5 | Implementable | All basic CTS blits pass for RGBA, BGRA, R32, reversed source/destination axes and 3D slices |
@@ -122,6 +122,25 @@ These are useful, but Vulkan 1.1 permits the corresponding feature bits to be
 - Single-sample formatless storage-image reads and writes: transfer-initialized
   reads and independently generated writes pass exact 17x13 `R32_UINT`
   readback with intact guards. Both corresponding feature bits are exposed.
+
+## Cache and barrier coherency: what is covered so far
+
+The single-hazard tests all pass while applications still show frame-to-frame
+corruption, so `terakan_frame_chain` tests the composition instead: twenty-four
+frames recorded into one command buffer, each producing a colour unique to that
+frame, transitioning it to be sampled, sampling it into a second attachment,
+transitioning that for transfer and copying it into its own slice of a readback
+buffer, with only the barriers a correct application would issue. A frame that
+observes a neighbour's colour has seen through a barrier, and the failure names
+the frame whose colour it actually saw.
+
+Both producers pass on CAICOS: a render pass clear, and a compute shader
+writing a storage image, the latter chosen because the application that
+strobes issues thousands of dispatches per second and the driver's compute RAT
+coherency is the least covered path. So whatever the application hits is
+narrower than this shape. Things it does that the test does not yet: many
+distinct compute pipelines rather than one, several render target sizes in the
+same frame, and storage buffers alongside storage images.
 
 ## Vertex pipeline stage survey (geometry and tessellation)
 
