@@ -27,6 +27,8 @@
 
 #include "terakan_physical_device.h"
 
+#include "terakan_physical_device_backend_count.h"
+
 #include "terakan_descriptor.h"
 #include "terakan_entrypoints.h"
 #include "terakan_hw_config_draw.h"
@@ -144,7 +146,8 @@ terakan_physical_device_chip_family_name(enum radeon_family const chip_family)
 
 void
 terakan_physical_device_chip_info_init(
-   uint32_t const pci_device_id, struct terakan_physical_device_chip_info * const chip_info_out)
+   uint32_t const pci_device_id, uint32_t const terascale_1_num_backends,
+   struct terakan_physical_device_chip_info * const chip_info_out)
 {
    enum radeon_family const chip_family = terakan_physical_device_get_chip_family(pci_device_id);
    assert(terakan_physical_device_is_chip_family_supported(chip_family));
@@ -285,13 +288,21 @@ terakan_physical_device_chip_info_init(
        */
       chip_info_out->wave_lanes_log2 = 6;
 
-      /* Not yet determined for this hardware -- see the comment on chip_info->terascale_1. Zero
-       * rather than a guessed nonzero value, so that anything that starts consuming this before it
-       * is actually implemented fails loudly (a zero backend/thread count is a very visible bug)
-       * instead of silently addressing memory as though there were more backends than the hardware
-       * actually has.
+      /* Sourced from the RADEON_INFO_NUM_BACKENDS kernel query, passed in by the caller (see the
+       * comment on chip_info_init's terascale_1_num_backends parameter and on
+       * max_render_backends_log2 in the header) -- there is no per-family static table for this on
+       * TeraScale 1 the way there is below for R8xx/R9xx.
+       *
+       * If the caller could not query it (terascale_1_num_backends == 0, e.g. an old kernel, or a
+       * caller -- such as a unit test -- that never had a DRM device to query in the first place),
+       * this stays at the deliberate zero placeholder: anything that starts consuming it before this
+       * is actually populated fails loudly (a zero backend count is a very visible bug) instead of
+       * silently addressing memory as though there were more backends than the hardware has.
        */
-      chip_info_out->max_render_backends_log2 = 0;
+      chip_info_out->max_render_backends_log2 =
+         terascale_1_num_backends == 0
+            ? 0
+            : terakan_physical_device_backend_count_to_log2(terascale_1_num_backends);
       chip_info_out->sq_max_threads_shr3 = 0;
       chip_info_out->sq_max_stack_entries = 0;
       chip_info_out->sq_pstmp_ring_bytes_per_item_dword_shr8 = 0;
@@ -1441,7 +1452,7 @@ terakan_physical_device_init(
    VkDeviceSize const max_memory_allocation_size, VkDeviceSize const min_memory_map_alignment,
    struct terakan_physical_device_tiling_info const * const tiling_info,
    struct terakan_physical_device_submission_info_gfx const * const submission_info_gfx,
-   uint32_t const clock_crystal_frequency_hz,
+   uint32_t const clock_crystal_frequency_hz, uint32_t const terascale_1_num_backends,
    struct vk_sync_type const * const * const supported_sync_types_static)
 {
    VkResult result;
@@ -1455,7 +1466,8 @@ terakan_physical_device_init(
       p_atomic_set(&device->memory_heap_usage[i], 0);
    }
 
-   terakan_physical_device_chip_info_init(pci_device_id, &device->chip_info);
+   terakan_physical_device_chip_info_init(pci_device_id, terascale_1_num_backends,
+                                          &device->chip_info);
 
    device->max_memory_allocation_size = max_memory_allocation_size;
 

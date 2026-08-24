@@ -138,6 +138,8 @@ libterakan_files = files(
   'terakan_limits.h',
   'terakan_physical_device.c',
   'terakan_physical_device.h',
+  'terakan_physical_device_backend_count.c',
+  'terakan_physical_device_backend_count.h',
   'terakan_physical_device_tiling_config.c',
   'terakan_physical_device_tiling_config.h',
   'terakan_pipeline_layout.c',
@@ -392,6 +394,20 @@ if with_tests
     c_args : c_msvc_compat_args,
   )
   test('terakan_physical_device_tiling_config', terakan_physical_device_tiling_config_test)
+
+  terakan_physical_device_backend_count_test = executable(
+    'terakan_physical_device_backend_count_test',
+    [
+      'terakan_physical_device_backend_count.c',
+      'tests/terakan_physical_device_backend_count_test.c',
+    ],
+    include_directories : [
+      inc_include,
+      inc_src,
+    ],
+    c_args : c_msvc_compat_args,
+  )
+  test('terakan_physical_device_backend_count', terakan_physical_device_backend_count_test)
 
   terakan_descriptor_buffer_test = executable(
     'terakan_descriptor_buffer_test',

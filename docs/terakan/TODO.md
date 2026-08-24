@@ -68,7 +68,7 @@ classic Gallium R600 driver that has supported this hardware for years).
 
 | Work item | Importance | Complexity | Feasibility | Acceptance criteria |
 |---|---:|---:|---|---|
-| Determine real per-family render backend counts (or query `RADEON_INFO_NUM_BACKENDS` from the kernel, as the classic R600 driver does) | 5/5 | 2/5 | `max_render_backends_log2` is a placeholder 0 for TeraScale 1 today, deliberately, so anything that starts consuming it before this is done fails loudly rather than addressing memory as though there were more backends than the hardware has | A real value backs `max_render_backends_log2` for every recognized TeraScale 1 chip family, sourced from kernel query or documented per-family reference, not guessed |
+| ~~Determine real per-family render backend counts~~ | 5/5 | 2/5 | Done: `max_render_backends_log2` is now populated from `RADEON_INFO_NUM_BACKENDS`, queried by the drm_radeon winsys for TeraScale 1 devices and required to succeed, matching the classic R600 driver's own unconditional query-and-fail-if-missing behavior. Confirmed on real RV710 hardware (ioctl reports 1 backend). R8xx/R9xx keep their existing static table, untouched | A real value backs `max_render_backends_log2` for every recognized TeraScale 1 chip family, sourced from kernel query or documented per-family reference, not guessed |
 | Wire the TeraScale 1 register-emission helpers into command buffer recording, keep surveying and porting per-draw CB/DB state, and build command stream submission | 5/5 | 5/5 | The begin-command-buffer atom is fully written and tested against real RV710 reference values. Two per-draw registers are also written and tested (`terakan_hw_config_draw_terascale_1_write_db_depth_control`/`_write_cb_target_mask`), chosen because their field layout (or, for CB_TARGET_MASK, complete absence of one) is confirmed identical to R8xx/R9xx, so Terakan's existing value-computation logic for them needs no TeraScale 1 equivalent, only the register offset does. None of this is called from anywhere yet. Most of CB/DB per-draw state remains unsurveyed, and where it is surveyed it is not uniformly compatible -- CB_COLOR_CONTROL at 0x028808, for instance, has a 3-bit field at the same bit position (4) that means SPECIAL_OP on R600/R700 and MODE on Evergreen-and-later, an incompatible field with no shared meaning, so each register needs checking against both `r600d.h` and `evergreend.h` before assuming either compatibility or divergence. CB_COLOR*_BASE/INFO/SIZE (the actual render target binding) is blocked on tiling/surface addressing, the item below, since it needs surface pitch/slice tile counts that do not exist for TeraScale 1 yet | `vkCreateDevice` succeeds on a TeraScale 1 physical device and a trivial compute dispatch completes |
 | Research TeraScale 1 tiling/surface addressing (bank/pipe swizzle, macro-tile layout) | 5/5 | 5/5 | Not yet started; this is the highest-risk area, since a wrong tiling computation corrupts memory silently rather than failing loudly | A buffer/image round trip through the tiled surface layout matches, the same class of check `terakan_image.c` already does for R8xx/R9xx |
 | Port the hand-written meta shader bytecode (blit/resolve/clear/copy/query, all of `src/amd/terascale/vulkan/meta/`) to the R6xx/R7xx CF/ALU/TEX instruction encoding | 4/5 | 5/5 | The NIR-to-bytecode compiler (SFN, `src/gallium/drivers/r600/sfn/`) already accepts `amd_gfx_level` including `R600`/`R700` distinct from `EVERGREEN`, since the classic Gallium R600 driver already uses it for this hardware -- shaders reaching the driver through NIR may need only the right `gfx_level` threaded through, but the meta shaders are hand-written Evergreen-only bytecode and need real per-generation variants | Each meta operation this driver depends on (at minimum blit and clear) passes its existing readback test on TeraScale 1 hardware |
@@ -193,6 +193,38 @@ classic Gallium R600 driver that has supported this hardware for years).
   and bank-swizzle math for TeraScale 1 in `terakan_image.c` has not been
   started; see the tiling/surface addressing row in the P0-equivalent table
   above.
+
+- TeraScale 1 (R600/R700) render backend count:
+  `max_render_backends_log2` is now populated for TeraScale 1 instead of
+  staying at its deliberate zero placeholder. Unlike R8xx/R9xx, which use a
+  per-family static table in `terakan_physical_device_chip_info_init`, there
+  is no such table for TeraScale 1 in this driver -- and the classic Gallium
+  R600 driver does not use one either: `radeon_drm_winsys.c` queries
+  `RADEON_INFO_NUM_BACKENDS` from the kernel unconditionally for every R600+
+  chip and treats a failed query as fatal. Terakan does the same, but only
+  for TeraScale 1: the drm_radeon winsys
+  (`terakan_physical_device_drm_radeon.c`) queries it only when the chip is
+  TeraScale 1, and refuses the physical device
+  (`VK_ERROR_INCOMPATIBLE_DRIVER`, the same error already used for the
+  tiling config and GEM info queries) if the query fails or returns 0.
+  R8xx/R9xx are entirely unaffected -- the ioctl is not issued for them, so
+  they gain no new kernel-version dependency.
+  `terakan_physical_device_chip_info_init` gained a `terascale_1_num_backends`
+  parameter carrying this value through to `max_render_backends_log2`;
+  passing 0 (the WDDM winsys does this today, since TeraScale 1 is not
+  brought up there yet) leaves the old placeholder behavior unchanged. The
+  raw count-to-log2 conversion is `terakan_physical_device_backend_count_to_log2()`
+  (`terakan_physical_device_backend_count.c`), pulled into its own file and
+  unit-tested the same way the tiling config decode was, since
+  `chip_info_init` itself cannot be linked into a lightweight standalone test
+  binary (it pulls in the same driver-wide Vulkan/NIR machinery as the rest
+  of `terakan_physical_device.c` -- confirmed by trying that first and
+  hitting undefined references at link time before extracting this
+  function). It rounds up rather than down so a real backend count is never
+  underrepresented, though every publicly documented R600/R700 backend count
+  is a power of two anyway (1, 2, or 4), confirmed on real hardware: the RV710
+  in the dual-GPU test machine reports exactly 1 backend via a standalone
+  ioctl probe, matching its known single-render-backend spec.
 
 - Reducing stencil resolve, `VK_RESOLVE_MODE_MIN_BIT` and
   `VK_RESOLVE_MODE_MAX_BIT`: the same shaders and dispatch as the depth reducing

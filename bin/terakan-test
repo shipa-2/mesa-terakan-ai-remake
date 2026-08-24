@@ -35,6 +35,7 @@ cpu_tests=(
   terakan_hw_config_shared_terascale_1
   terakan_hw_config_draw_terascale_1
   terakan_physical_device_tiling_config
+  terakan_physical_device_backend_count
   terakan_descriptor_buffer
   terakan_vertex_input
 )

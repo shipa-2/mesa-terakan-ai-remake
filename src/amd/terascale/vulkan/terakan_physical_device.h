@@ -106,6 +106,14 @@ struct terakan_physical_device_chip_info {
    /* Lanes * waves * shader engines. */
    uint32_t uav_immediate_size_elements;
 
+   /* For R8xx/R9xx, sourced from a per-chip-family static table, like everything else in this
+    * function. For TeraScale 1, there is no such table in this driver -- the classic Gallium R600
+    * driver itself does not use one either, it queries RADEON_INFO_NUM_BACKENDS from the kernel
+    * unconditionally for every R600+ chip (see radeon_drm_winsys.c) and treats a failed query as
+    * fatal -- so this is populated from that same kernel query, passed in via
+    * chip_info_init's terascale_1_num_backends parameter, rather than guessed or left at the
+    * deliberate zero placeholder chip_info_init used before this was wired up.
+    */
    unsigned max_render_backends_log2;
 
    /* TeraScale 1 (R600/R700) only; see is_terascale_1 above. One flat set of GPR/thread/stack-entry
@@ -114,11 +122,10 @@ struct terakan_physical_device_chip_info {
     * src/gallium/drivers/r600/r600_state.c, the classic Gallium R600 driver that has supported this
     * hardware for years and is the authoritative reference here, not a guess.
     *
-    * max_render_backends_log2 above is NOT yet populated correctly for TeraScale 1 (see
-    * chip_info_init) and reading/writing through this hardware is not implemented: only physical
-    * device enumeration and property reporting use this struct so far. terakan_CreateDevice refuses
-    * TeraScale 1 physical devices explicitly rather than attempting to submit command streams built
-    * from incomplete state.
+    * Reading/writing through this hardware is not implemented: only physical device enumeration and
+    * property reporting use this struct so far. terakan_CreateDevice refuses TeraScale 1 physical
+    * devices explicitly rather than attempting to submit command streams built from incomplete
+    * state.
     */
    struct {
       uint32_t num_ps_gprs, num_vs_gprs, num_temp_gprs, num_gs_gprs, num_es_gprs;
@@ -128,8 +135,14 @@ struct terakan_physical_device_chip_info {
    } terascale_1;
 };
 
+/* terascale_1_num_backends is the raw render backend count from the RADEON_INFO_NUM_BACKENDS DRM
+ * ioctl, or 0 if not queried/available. It is ignored for R8xx/R9xx, which use a per-family static
+ * table instead (see max_render_backends_log2's comment). It is required to get a real
+ * max_render_backends_log2 for TeraScale 1, which has no such table in this driver: passing 0
+ * leaves the deliberate zero placeholder described there.
+ */
 void
-terakan_physical_device_chip_info_init(uint32_t pci_device_id,
+terakan_physical_device_chip_info_init(uint32_t pci_device_id, uint32_t terascale_1_num_backends,
                                        struct terakan_physical_device_chip_info * chip_info_out);
 
 struct terakan_physical_device_tiling_info {
@@ -257,6 +270,7 @@ void terakan_physical_device_destroy(struct vk_physical_device * device);
 /* vram_visible is included in vram_size.
  * clock_crystal_frequency_hz can be 0 if not available, in this case timestamp queries will be
  * disabled.
+ * terascale_1_num_backends is forwarded to chip_info_init -- see its comment there.
  */
 VkResult terakan_physical_device_init(
    struct terakan_physical_device * device, struct terakan_instance * instance,
@@ -266,7 +280,7 @@ VkResult terakan_physical_device_init(
    VkDeviceSize min_memory_map_alignment,
    struct terakan_physical_device_tiling_info const * tiling_info,
    struct terakan_physical_device_submission_info_gfx const * submission_info_gfx,
-   uint32_t clock_crystal_frequency_hz,
+   uint32_t clock_crystal_frequency_hz, uint32_t terascale_1_num_backends,
    struct vk_sync_type const * const * supported_sync_types_static);
 
 #ifdef __cplusplus

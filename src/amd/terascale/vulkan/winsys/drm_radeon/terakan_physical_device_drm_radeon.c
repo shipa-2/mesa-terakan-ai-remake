@@ -248,11 +248,10 @@ terakan_physical_device_drm_radeon_try_create(struct vk_instance * const instanc
          render_node_path, tiling_config_info_result);
       goto fail_render_node_fd;
    }
+   bool const is_terascale_1 = terakan_physical_device_chip_family_is_terascale_1(
+      terakan_physical_device_get_chip_family(drm_device->deviceinfo.pci->device_id));
    struct terakan_physical_device_tiling_config_info const tiling_config_info =
-      terakan_physical_device_decode_tiling_config(
-         tiling_config, terakan_physical_device_chip_family_is_terascale_1(
-                           terakan_physical_device_get_chip_family(
-                              drm_device->deviceinfo.pci->device_id)));
+      terakan_physical_device_decode_tiling_config(tiling_config, is_terascale_1);
    struct terakan_physical_device_tiling_info const tiling_info = {
       .pipes_log2 = tiling_config_info.pipes_log2,
       .banks_log2 = tiling_config_info.banks_log2,
@@ -270,6 +269,31 @@ terakan_physical_device_drm_radeon_try_create(struct vk_instance * const instanc
                            sizeof(clock_crystal_frequency_info_arguments)) != 0) {
       /* Disable timestamp queries in case of failure. */
       clock_crystal_frequency_khz = 0;
+   }
+
+   /* TeraScale 1 has no per-family static table for the render backend count in this driver, unlike
+    * R8xx/R9xx below -- see terakan_physical_device_chip_info_init's terascale_1_num_backends
+    * parameter. Queried only for TeraScale 1 chips, matching the classic Gallium R600 driver, which
+    * queries this unconditionally for every R600+ chip and treats a failed query as fatal
+    * (radeon_drm_winsys.c); R8xx/R9xx keep using their existing static table unchanged rather than
+    * gaining a new kernel-version dependency for a value they don't need.
+    */
+   __u32 terascale_1_num_backends = 0;
+   if (is_terascale_1) {
+      struct drm_radeon_info num_backends_info_arguments = {
+         .request = RADEON_INFO_NUM_BACKENDS,
+         .value = (__u64)(uintptr_t)&terascale_1_num_backends,
+      };
+      int const num_backends_info_result =
+         drmCommandWriteRead(render_node_fd, DRM_RADEON_INFO, &num_backends_info_arguments,
+                             sizeof(num_backends_info_arguments));
+      if (num_backends_info_result != 0 || terascale_1_num_backends == 0) {
+         result = vk_errorf(
+            instance, VK_ERROR_INCOMPATIBLE_DRIVER,
+            "Failed to get the render backend count for the DRM device '%s', error number %d",
+            render_node_path, num_backends_info_result);
+         goto fail_render_node_fd;
+      }
    }
 
    /* Initialize the physical device object. */
@@ -339,7 +363,7 @@ terakan_physical_device_drm_radeon_try_create(struct vk_instance * const instanc
       drm_device->deviceinfo.pci->device_id, page_size, (VkDeviceSize)gem_info.gart_size,
       (VkDeviceSize)gem_info.vram_size, (VkDeviceSize)gem_info.vram_visible,
       UINT32_MAX & ~(page_size - 1), page_size, &tiling_info, &submission_info_gfx,
-      1000 * clock_crystal_frequency_khz, device->sync_types);
+      1000 * clock_crystal_frequency_khz, terascale_1_num_backends, device->sync_types);
    if (result != VK_SUCCESS) {
       goto fail_render_node_path;
    }

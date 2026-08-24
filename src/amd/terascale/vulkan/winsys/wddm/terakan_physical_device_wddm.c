@@ -276,7 +276,10 @@ terakan_physical_device_wddm_try_create(struct terakan_instance_wddm * const ins
       system_info.dwAllocationGranularity, (VkDeviceSize)adapter_desc->SharedSystemMemory,
       vram_bytes, vram_host_visible_bytes, UINT32_MAX & ~(system_info.dwAllocationGranularity - 1),
       system_info.dwAllocationGranularity, &tiling_info, &submission_info_gfx,
-      clock_crystal_frequency_hz, device->sync_types);
+      clock_crystal_frequency_hz,
+      /* Not queried on WDDM -- TeraScale 1 is not brought up on this winsys yet, and R8xx/R9xx
+       * ignore this parameter. See terakan_physical_device_chip_info_init's comment. */
+      0, device->sync_types);
    if (result != VK_SUCCESS) {
       goto fail_d3dkmt_adapter;
    }
