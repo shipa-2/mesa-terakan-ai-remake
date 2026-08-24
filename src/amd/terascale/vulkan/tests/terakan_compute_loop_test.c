@@ -8,6 +8,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 #include <stdlib.h>
 
 #define OUTPUT_COUNT 16
@@ -75,11 +76,37 @@ main(void)
    VkInstance instance;
    CHECK_VK(vkCreateInstance(&instance_create_info, NULL, &instance));
 
-   uint32_t physical_device_count = 1;
-   VkPhysicalDevice physical_device;
-   CHECK_VK(vkEnumeratePhysicalDevices(instance, &physical_device_count, &physical_device));
-   if (physical_device_count != 1) {
-      fprintf(stderr, "Expected exactly one physical device, got %u\n", physical_device_count);
+   /* More than one physical device can enumerate as "(Terakan)" now that TeraScale 1 (R600/R700)
+    * devices are recognized: they enumerate and report properties, but cannot yet create a device
+    * (see terakan_physical_device_chip_info::is_terascale_1 and terakan_CreateDevice). Look through
+    * every enumerated device for one this driver can actually create, rather than assuming there is
+    * exactly one Terakan-capable device or that the first one enumerated is usable.
+    */
+   uint32_t physical_device_count = 0;
+   CHECK_VK(vkEnumeratePhysicalDevices(instance, &physical_device_count, NULL));
+   VkPhysicalDevice physical_devices[8];
+   if (physical_device_count > 8) {
+      physical_device_count = 8;
+   }
+   CHECK_VK(vkEnumeratePhysicalDevices(instance, &physical_device_count, physical_devices));
+   VkPhysicalDevice physical_device = VK_NULL_HANDLE;
+   for (uint32_t device_index = 0; device_index < physical_device_count; ++device_index) {
+      VkPhysicalDeviceProperties properties;
+      vkGetPhysicalDeviceProperties(physical_devices[device_index], &properties);
+      /* TeraScale 1 (R600/R700) devices are also named "... (Terakan)" now that they enumerate,
+       * but cannot create a device yet (see the comment above), so they are excluded by their
+       * "TeraScale 1" name prefix rather than picked and failed on below.
+       */
+      if (strstr(properties.deviceName, "(Terakan)") == NULL ||
+          strstr(properties.deviceName, "TeraScale 1") != NULL) {
+         continue;
+      }
+      physical_device = physical_devices[device_index];
+      break;
+   }
+   if (physical_device == VK_NULL_HANDLE) {
+      fprintf(stderr, "No usable Terakan physical device found among %u enumerated\n",
+              physical_device_count);
       return 1;
    }
 

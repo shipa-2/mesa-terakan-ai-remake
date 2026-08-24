@@ -83,6 +83,30 @@ char const *
 terakan_physical_device_chip_family_name(enum radeon_family const chip_family)
 {
    switch (chip_family) {
+   case CHIP_R600:
+      return "R600";
+   case CHIP_RV610:
+      return "RV610";
+   case CHIP_RV630:
+      return "RV630";
+   case CHIP_RV670:
+      return "RV670";
+   case CHIP_RV620:
+      return "RV620";
+   case CHIP_RV635:
+      return "RV635";
+   case CHIP_RS780:
+      return "RS780";
+   case CHIP_RS880:
+      return "RS880";
+   case CHIP_RV770:
+      return "RV770";
+   case CHIP_RV730:
+      return "RV730";
+   case CHIP_RV710:
+      return "RV710";
+   case CHIP_RV740:
+      return "RV740";
    case CHIP_CEDAR:
       return "Cedar";
    case CHIP_REDWOOD:
@@ -127,7 +151,9 @@ terakan_physical_device_chip_info_init(
 
    chip_info_out->pci_device_id = pci_device_id;
    chip_info_out->chip_family = chip_family;
-   bool const is_r9xx = chip_family >= CHIP_CAYMAN;
+   bool const is_terascale_1 = terakan_physical_device_chip_family_is_terascale_1(chip_family);
+   chip_info_out->is_terascale_1 = is_terascale_1;
+   bool const is_r9xx = !is_terascale_1 && chip_family >= CHIP_CAYMAN;
    chip_info_out->is_r9xx = is_r9xx;
 
    switch (chip_family) {
@@ -135,6 +161,9 @@ terakan_physical_device_chip_info_init(
    case CHIP_SUMO:
    case CHIP_SUMO2:
    case CHIP_ARUBA:
+   /* Integrated TeraScale 1: the 780G/HD3200 and 880G/HD4250 chipsets. */
+   case CHIP_RS780:
+   case CHIP_RS880:
       chip_info_out->has_dedicated_vram = false;
       break;
    default:
@@ -147,6 +176,16 @@ terakan_physical_device_chip_info_init(
    case CHIP_SUMO:
    case CHIP_SUMO2:
    case CHIP_CAICOS:
+      chip_info_out->has_vertex_cache = false;
+      break;
+   /* SQ_CONFIG.VC_ENABLE, per the per-family switch in r600_init_atom_start_cs()
+    * (src/gallium/drivers/r600/r600_state.c): 0 for these, 1 for every other TeraScale 1 chip.
+    */
+   case CHIP_RV610:
+   case CHIP_RV620:
+   case CHIP_RS780:
+   case CHIP_RS880:
+   case CHIP_RV710:
       chip_info_out->has_vertex_cache = false;
       break;
    default:
@@ -164,7 +203,102 @@ terakan_physical_device_chip_info_init(
       chip_info_out->two_shader_engines_max = true;
       break;
    default:
+      /* No TeraScale 1 chip has more than one shader engine either; multi-SE started with
+       * Cypress/Barts/Cayman above.
+       */
       chip_info_out->two_shader_engines_max = false;
+   }
+
+   if (is_terascale_1) {
+      /* Per-family GPR/thread/stack-entry counts, transcribed from the switch in
+       * r600_init_atom_start_cs() (src/gallium/drivers/r600/r600_state.c) -- see the comment on
+       * chip_info->terascale_1 for why that function is the reference here. None of the R8xx/R9xx
+       * fields below this point are populated; they do not apply to this hardware.
+       */
+      switch (chip_family) {
+      case CHIP_R600:
+         chip_info_out->terascale_1 = (__typeof__(chip_info_out->terascale_1)){
+            .num_ps_gprs = 192, .num_vs_gprs = 56, .num_temp_gprs = 4, .num_gs_gprs = 0,
+            .num_es_gprs = 0, .num_ps_threads = 136, .num_vs_threads = 48, .num_gs_threads = 4,
+            .num_es_threads = 4, .num_ps_stack_entries = 128, .num_vs_stack_entries = 128,
+            .num_gs_stack_entries = 0, .num_es_stack_entries = 0,
+         };
+         break;
+      case CHIP_RV630:
+      case CHIP_RV635:
+         chip_info_out->terascale_1 = (__typeof__(chip_info_out->terascale_1)){
+            .num_ps_gprs = 84, .num_vs_gprs = 36, .num_temp_gprs = 4, .num_gs_gprs = 0,
+            .num_es_gprs = 0, .num_ps_threads = 144, .num_vs_threads = 40, .num_gs_threads = 4,
+            .num_es_threads = 4, .num_ps_stack_entries = 40, .num_vs_stack_entries = 40,
+            .num_gs_stack_entries = 32, .num_es_stack_entries = 16,
+         };
+         break;
+      case CHIP_RV670:
+         chip_info_out->terascale_1 = (__typeof__(chip_info_out->terascale_1)){
+            .num_ps_gprs = 144, .num_vs_gprs = 40, .num_temp_gprs = 4, .num_gs_gprs = 0,
+            .num_es_gprs = 0, .num_ps_threads = 136, .num_vs_threads = 48, .num_gs_threads = 4,
+            .num_es_threads = 4, .num_ps_stack_entries = 40, .num_vs_stack_entries = 40,
+            .num_gs_stack_entries = 32, .num_es_stack_entries = 16,
+         };
+         break;
+      case CHIP_RV770:
+         chip_info_out->terascale_1 = (__typeof__(chip_info_out->terascale_1)){
+            .num_ps_gprs = 130, .num_vs_gprs = 56, .num_temp_gprs = 4, .num_gs_gprs = 31,
+            .num_es_gprs = 31, .num_ps_threads = 180, .num_vs_threads = 60, .num_gs_threads = 4,
+            .num_es_threads = 4, .num_ps_stack_entries = 128, .num_vs_stack_entries = 128,
+            .num_gs_stack_entries = 128, .num_es_stack_entries = 128,
+         };
+         break;
+      case CHIP_RV730:
+      case CHIP_RV740:
+         chip_info_out->terascale_1 = (__typeof__(chip_info_out->terascale_1)){
+            .num_ps_gprs = 84, .num_vs_gprs = 36, .num_temp_gprs = 4, .num_gs_gprs = 0,
+            .num_es_gprs = 0, .num_ps_threads = 180, .num_vs_threads = 60, .num_gs_threads = 4,
+            .num_es_threads = 4, .num_ps_stack_entries = 128, .num_vs_stack_entries = 128,
+            .num_gs_stack_entries = 0, .num_es_stack_entries = 0,
+         };
+         break;
+      case CHIP_RV710:
+         chip_info_out->terascale_1 = (__typeof__(chip_info_out->terascale_1)){
+            .num_ps_gprs = 192, .num_vs_gprs = 56, .num_temp_gprs = 4, .num_gs_gprs = 0,
+            .num_es_gprs = 0, .num_ps_threads = 136, .num_vs_threads = 48, .num_gs_threads = 4,
+            .num_es_threads = 4, .num_ps_stack_entries = 128, .num_vs_stack_entries = 128,
+            .num_gs_stack_entries = 0, .num_es_stack_entries = 0,
+         };
+         break;
+      case CHIP_RV610:
+      case CHIP_RV620:
+      case CHIP_RS780:
+      case CHIP_RS880:
+      default:
+         chip_info_out->terascale_1 = (__typeof__(chip_info_out->terascale_1)){
+            .num_ps_gprs = 84, .num_vs_gprs = 36, .num_temp_gprs = 4, .num_gs_gprs = 0,
+            .num_es_gprs = 0, .num_ps_threads = 120, .num_vs_threads = 40, .num_gs_threads = 16,
+            .num_es_threads = 16, .num_ps_stack_entries = 40, .num_vs_stack_entries = 40,
+            .num_gs_stack_entries = 32, .num_es_stack_entries = 16,
+         };
+         break;
+      }
+
+      /* TeraScale 1 always uses 64-lane wavefronts; the 32-lane option Cedar/Palm use below was
+       * added with Evergreen.
+       */
+      chip_info_out->wave_lanes_log2 = 6;
+
+      /* Not yet determined for this hardware -- see the comment on chip_info->terascale_1. Zero
+       * rather than a guessed nonzero value, so that anything that starts consuming this before it
+       * is actually implemented fails loudly (a zero backend/thread count is a very visible bug)
+       * instead of silently addressing memory as though there were more backends than the hardware
+       * actually has.
+       */
+      chip_info_out->max_render_backends_log2 = 0;
+      chip_info_out->sq_max_threads_shr3 = 0;
+      chip_info_out->sq_max_stack_entries = 0;
+      chip_info_out->sq_pstmp_ring_bytes_per_item_dword_shr8 = 0;
+      chip_info_out->uav_immediate_size_elements = 0;
+      memset(&chip_info_out->sq_thread_resource_mgmt_ts_gs_r8xx, 0,
+             sizeof(chip_info_out->sq_thread_resource_mgmt_ts_gs_r8xx));
+      return;
    }
 
    /* Thread allocation granularity is 8 according to the Evergreen 3D Register Reference Guide. */
@@ -500,9 +634,15 @@ terakan_physical_device_get_capabilities(
    properties_out->deviceType = chip_info->has_dedicated_vram
                                    ? VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU
                                    : VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
-   snprintf(properties_out->deviceName, sizeof(properties_out->deviceName),
-            "AMD R%cxx %s (Terakan)", chip_info->is_r9xx ? '9' : '8',
-            terakan_physical_device_chip_family_name(chip_info->chip_family));
+   if (chip_info->is_terascale_1) {
+      snprintf(properties_out->deviceName, sizeof(properties_out->deviceName),
+               "AMD TeraScale 1 %s (Terakan)",
+               terakan_physical_device_chip_family_name(chip_info->chip_family));
+   } else {
+      snprintf(properties_out->deviceName, sizeof(properties_out->deviceName),
+               "AMD R%cxx %s (Terakan)", chip_info->is_r9xx ? '9' : '8',
+               terakan_physical_device_chip_family_name(chip_info->chip_family));
+   }
 
    /* Conservatively invalidate imported pipeline cache data whenever either the driver build or
     * the target PCI device changes. The generic Vulkan runtime currently stores no

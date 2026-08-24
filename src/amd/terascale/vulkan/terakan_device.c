@@ -376,6 +376,19 @@ terakan_CreateDevice(VkPhysicalDevice const physicalDevice,
    struct terakan_physical_device * const physical_device =
       terakan_physical_device_from_handle(physicalDevice);
 
+   /* TeraScale 1 (R600/R700) enumerates and reports properties correctly, but nothing past that:
+    * the hardware register configuration (SQ/CB/DB state setup, command stream building) for it
+    * does not exist yet, only the R8xx/Evergreen-and-later one does. Refuse cleanly here rather
+    * than building and submitting a command stream from state that was never actually computed for
+    * this generation -- see the comment on terakan_physical_device_chip_info::terascale_1.
+    */
+   if (physical_device->chip_info.is_terascale_1) {
+      return vk_errorf(physical_device->vk.instance, VK_ERROR_INITIALIZATION_FAILED,
+                       "TeraScale 1 (%s) is recognized but device creation is not implemented yet; "
+                       "only enumeration and property reporting work so far",
+                       terakan_physical_device_chip_family_name(physical_device->chip_info.chip_family));
+   }
+
    struct terakan_device * device;
    VkResult const result =
       physical_device->winsys_fn->create_device(physical_device, pCreateInfo, pAllocator, &device);

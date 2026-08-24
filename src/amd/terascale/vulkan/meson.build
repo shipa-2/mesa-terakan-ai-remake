@@ -1238,5 +1238,21 @@ if with_tests
         'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
       },
     )
+
+    terakan_terascale_1_enumeration_test = executable(
+      'terakan_terascale_1_enumeration_test',
+      'tests/terakan_terascale_1_enumeration_test.c',
+      dependencies : vulkan_loader_dep,
+    )
+    test(
+      'terakan_terascale_1_enumeration',
+      terakan_terascale_1_enumeration_test,
+      depends : [libvulkan_terascale, _dev_icd],
+      env : {
+        'VK_DRIVER_FILES' : _dev_icd.full_path(),
+        'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+        'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+      },
+    )
   endif
 endif

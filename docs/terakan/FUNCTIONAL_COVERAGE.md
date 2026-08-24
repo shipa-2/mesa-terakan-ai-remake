@@ -147,6 +147,7 @@ terakan_stencil_resolve_modes_2x
 terakan_stencil_resolve_modes_4x
 terakan_stencil_resolve_modes_8x
 terakan_physical_device_properties
+terakan_terascale_1_enumeration
 ```
 
 `terakan_compute_loop` now inserts a compute shader-write to shader-read/write

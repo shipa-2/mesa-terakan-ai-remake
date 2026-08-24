@@ -53,7 +53,62 @@ These are useful, but Vulkan 1.1 permits the corresponding feature bits to be
 | Protected memory | 0/5 | The required protected execution and allocation model is unavailable with this hardware and the `radeon` kernel interface |
 | Native high-performance FP64 | 1/5 | CAICOS lacks the hardware needed for a useful implementation; software lowering may be used only where practical |
 
+## TeraScale 1 (R600/R700) port
+
+A separate, secondary target from the CAICOS-focused P0-P2 lists above: real
+R700 (RV710) hardware is now available for testing alongside CAICOS. TeraScale
+1 needs a genuinely separate code path throughout, not just different register
+values plugged into the R8xx/R9xx ones -- it has no tessellator, a fixed
+64-lane wavefront, and a differently-shaped `SQ_THREAD_RESOURCE_MGMT`/
+`SQ_GPR_RESOURCE_MGMT` register set. See the `terascale_1` member of
+`terakan_physical_device_chip_info` for what is already ported (physical
+device enumeration and property reporting) and its reference source
+(`r600_init_atom_start_cs()` in `src/gallium/drivers/r600/r600_state.c`, the
+classic Gallium R600 driver that has supported this hardware for years).
+
+| Work item | Importance | Complexity | Feasibility | Acceptance criteria |
+|---|---:|---:|---|---|
+| Determine real per-family render backend counts (or query `RADEON_INFO_NUM_BACKENDS` from the kernel, as the classic R600 driver does) | 5/5 | 2/5 | `max_render_backends_log2` is a placeholder 0 for TeraScale 1 today, deliberately, so anything that starts consuming it before this is done fails loudly rather than addressing memory as though there were more backends than the hardware has | A real value backs `max_render_backends_log2` for every recognized TeraScale 1 chip family, sourced from kernel query or documented per-family reference, not guessed |
+| Build the TeraScale 1 hardware register configuration (SQ_CONFIG, SQ_GPR_RESOURCE_MGMT_1/2, SQ_THREAD_RESOURCE_MGMT, SQ_STACK_RESOURCE_MGMT_1/2, CB/DB state) and command stream building | 5/5 | 5/5 | The chip_info fields these need (`chip_info->terascale_1`) are already populated correctly; this is genuinely new code, parallel to `terakan_hw_config_draw.c`/`terakan_hw_config_compute.c`/`terakan_hw_config_sqk.c`, not an extension of them | `vkCreateDevice` succeeds on a TeraScale 1 physical device and a trivial compute dispatch completes |
+| Research TeraScale 1 tiling/surface addressing (bank/pipe swizzle, macro-tile layout) | 5/5 | 5/5 | Not yet started; this is the highest-risk area, since a wrong tiling computation corrupts memory silently rather than failing loudly | A buffer/image round trip through the tiled surface layout matches, the same class of check `terakan_image.c` already does for R8xx/R9xx |
+| Port the hand-written meta shader bytecode (blit/resolve/clear/copy/query, all of `src/amd/terascale/vulkan/meta/`) to the R6xx/R7xx CF/ALU/TEX instruction encoding | 4/5 | 5/5 | The NIR-to-bytecode compiler (SFN, `src/gallium/drivers/r600/sfn/`) already accepts `amd_gfx_level` including `R600`/`R700` distinct from `EVERGREEN`, since the classic Gallium R600 driver already uses it for this hardware -- shaders reaching the driver through NIR may need only the right `gfx_level` threaded through, but the meta shaders are hand-written Evergreen-only bytecode and need real per-generation variants | Each meta operation this driver depends on (at minimum blit and clear) passes its existing readback test on TeraScale 1 hardware |
+| Recognize R600/R700 PCI IDs and correctly plumb `gfx_level` through the NIR shader path for real application shaders | 3/5 | 2/5 | The `is_chip_family_supported`/`chip_info_init` work above already recognizes the full R600..RV740 range; what remains is confirming no Evergreen-specific assumption leaks into `terakan_nir_*` lowering | A real application vertex/fragment shader compiles and renders correctly on TeraScale 1 |
+
 ## Completed and regression-covered
+
+- TeraScale 1 (R600/R700) physical device enumeration and property reporting:
+  chip family recognition now covers `CHIP_R600`..`CHIP_RV740`, not just
+  `CHIP_CEDAR`..`CHIP_ARUBA`. `terakan_physical_device_chip_info` gained a
+  `terascale_1` member with the real per-family GPR/thread/stack-entry counts
+  (transcribed from `r600_init_atom_start_cs()` in
+  `src/gallium/drivers/r600/r600_state.c`, not guessed), since TeraScale 1 has
+  no tessellator, a fixed 64-lane wavefront, and a flat, single-variant
+  register set where R8xx/R9xx has a tessellation-stage-indexed one --
+  populating that struct needed a genuinely separate code path through
+  `terakan_physical_device_chip_info_init`, not new switch cases plugged into
+  the existing one. `terakan_CreateDevice` explicitly and cleanly refuses
+  TeraScale 1 physical devices (`VK_ERROR_INITIALIZATION_FAILED`) rather than
+  building and submitting a command stream from hardware state that was never
+  actually computed for this generation, since that configuration and command
+  building do not exist yet (see the section above). Verified on real RV710
+  (R700) hardware installed alongside a Cedar (R8xx) card on the same machine;
+  `terakan_terascale_1_enumeration` covers it and passes trivially (nothing to
+  check) on machines with no TeraScale 1 hardware installed.
+
+  Getting there exposed a device-selection bug in three other tests
+  (`terakan_compute_loop`, `terakan_dynamic_offset_bounds`,
+  `terakan_formatless_image_store`) and in `bin/terakan-test`'s own trailing
+  `vulkaninfo` sanity check: all of them assumed exactly one Terakan-capable
+  device would ever be enumerated, which a machine with both a working card
+  and a TeraScale 1 one now violates. The three tests now loop through
+  enumerated devices and pick one whose name does not start with "TeraScale
+  1" rather than assuming there is only one candidate or that the first
+  match is usable; `vulkaninfo`'s own device-selection flags (`--json=N`)
+  turned out not to help, since it creates a device for every physical
+  device it finds regardless of which one is asked to be reported on, so
+  `bin/terakan-test` instead falls back to the GPU test suite's own log
+  when `vulkaninfo`'s summary aborts on the unusable device before printing
+  anything useful.
 
 - Reducing stencil resolve, `VK_RESOLVE_MODE_MIN_BIT` and
   `VK_RESOLVE_MODE_MAX_BIT`: the same shaders and dispatch as the depth reducing

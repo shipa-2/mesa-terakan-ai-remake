@@ -50,7 +50,20 @@ enum radeon_family terakan_physical_device_get_chip_family(uint32_t pci_device_i
 static inline bool
 terakan_physical_device_is_chip_family_supported(enum radeon_family const chip_family)
 {
-   return chip_family >= CHIP_CEDAR && chip_family <= CHIP_ARUBA;
+   return chip_family >= CHIP_R600 && chip_family <= CHIP_ARUBA;
+}
+
+/* TeraScale 1 (R600 and R700, the CHIP_R600..CHIP_RV740 block of the enum) has no tessellator, a
+ * fixed 64-lane wavefront, and a flat, single-variant `SQ_THREAD_RESOURCE_MGMT`/
+ * `SQ_GPR_RESOURCE_MGMT`/`SQ_STACK_RESOURCE_MGMT` register set rather than TeraScale 2/3's
+ * tessellation-stage-indexed one, so it takes a genuinely different code path through
+ * `terakan_physical_device_chip_info_init` and a genuinely different set of `chip_info` fields
+ * (the `terascale_1` member below), not just different constants plugged into the R8xx/R9xx ones.
+ */
+static inline bool
+terakan_physical_device_chip_family_is_terascale_1(enum radeon_family const chip_family)
+{
+   return chip_family >= CHIP_R600 && chip_family <= CHIP_RV740;
 }
 
 char const * terakan_physical_device_chip_family_name(enum radeon_family chip_family);
@@ -61,6 +74,11 @@ struct terakan_physical_device_chip_info {
    enum radeon_family chip_family;
 
    bool is_r9xx;
+   /* See terakan_physical_device_chip_family_is_terascale_1(). When true, none of the R8xx/R9xx
+    * fields below (everything up to and including `terascale_1`) are meaningful; `terascale_1` is
+    * populated instead. `is_r9xx` is left false, since none of the code it gates applies either.
+    */
+   bool is_terascale_1;
 
    bool has_dedicated_vram;
 
@@ -89,6 +107,25 @@ struct terakan_physical_device_chip_info {
    uint32_t uav_immediate_size_elements;
 
    unsigned max_render_backends_log2;
+
+   /* TeraScale 1 (R600/R700) only; see is_terascale_1 above. One flat set of GPR/thread/stack-entry
+    * counts per shader stage, unlike R8xx/R9xx's tessellation-indexed sq_thread_resource_mgmt.
+    * Sourced from the per-chip-family switch in r600_init_atom_start_cs() in
+    * src/gallium/drivers/r600/r600_state.c, the classic Gallium R600 driver that has supported this
+    * hardware for years and is the authoritative reference here, not a guess.
+    *
+    * max_render_backends_log2 above is NOT yet populated correctly for TeraScale 1 (see
+    * chip_info_init) and reading/writing through this hardware is not implemented: only physical
+    * device enumeration and property reporting use this struct so far. terakan_CreateDevice refuses
+    * TeraScale 1 physical devices explicitly rather than attempting to submit command streams built
+    * from incomplete state.
+    */
+   struct {
+      uint32_t num_ps_gprs, num_vs_gprs, num_temp_gprs, num_gs_gprs, num_es_gprs;
+      uint32_t num_ps_threads, num_vs_threads, num_gs_threads, num_es_threads;
+      uint32_t num_ps_stack_entries, num_vs_stack_entries, num_gs_stack_entries,
+         num_es_stack_entries;
+   } terascale_1;
 };
 
 void

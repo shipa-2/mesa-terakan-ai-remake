@@ -8,6 +8,7 @@ is also verified on PALM/Wrestler (R8xx).
 | Area | Result |
 |---|---|
 | Vulkan instance/device discovery | AMD CAICOS (R9xx) and PALM/Wrestler (R8xx) Terakan devices, API 1.1.318 |
+| TeraScale 1 (R600/R700) enumeration | recognized, correctly named, and properties reported; `vkCreateDevice` refuses cleanly rather than submitting incomplete state -- verified on a real RV710 (R700) alongside a Cedar (R8xx) on the same machine |
 | Properties and driver identity | `VK_KHR_driver_properties`; Terakan/Mesa identity; non-conformant version reported honestly |
 | VRAM reporting | `VK_EXT_memory_budget`; per-process heap usage plus kernel-reported global VRAM/GTT pressure |
 | Focused regression suite | 4/4 CPU and 19/19 CAICOS GPU tests pass; all 48 executed safe basic-compute CTS cases pass identically on CAICOS and PALM; 1071 additional unattended-safe CTS cases plus 65 isolated clear cases completed on CAICOS |
@@ -54,6 +55,14 @@ with untouched buffer guards. Multisample storage images remain disabled.
 
 ## Still experimental
 
+- TeraScale 1 (R600/R700) device creation and rendering: only enumeration and
+  property reporting are done. The hardware register configuration for this
+  generation (SQ/CB/DB state setup, command stream building), the tiling and
+  surface addressing math, and every hand-written meta shader are all
+  R8xx/Evergreen-and-later only so far and do not carry over -- R600/R700 has
+  no tessellator, a fixed 64-lane wavefront, and a differently-shaped
+  `SQ_THREAD_RESOURCE_MGMT`/`SQ_GPR_RESOURCE_MGMT` register set, not just
+  different register values. See TODO.md.
 - Depth/stencil resolve beyond sample zero: averaging, for both aspects.
   Minimum and maximum, partial render areas, mip levels and array layers are
   covered for both aspects.
