@@ -69,7 +69,7 @@ classic Gallium R600 driver that has supported this hardware for years).
 | Work item | Importance | Complexity | Feasibility | Acceptance criteria |
 |---|---:|---:|---|---|
 | Determine real per-family render backend counts (or query `RADEON_INFO_NUM_BACKENDS` from the kernel, as the classic R600 driver does) | 5/5 | 2/5 | `max_render_backends_log2` is a placeholder 0 for TeraScale 1 today, deliberately, so anything that starts consuming it before this is done fails loudly rather than addressing memory as though there were more backends than the hardware has | A real value backs `max_render_backends_log2` for every recognized TeraScale 1 chip family, sourced from kernel query or documented per-family reference, not guessed |
-| Wire the TeraScale 1 SQ_CONFIG registers into command buffer recording, and build the rest of the "begin command buffer" register atom (SQ_DYN_GPR_CNTL, SPI_CONFIG_CNTL, PA_CL_ENHANCE, loop constants, LDS resource mgmt where applicable) plus CB/DB state and command stream building | 5/5 | 5/5 | `terakan_hw_config_shared_terascale_1_write_sq_config()` (SQ_CONFIG/SQ_GPR_RESOURCE_MGMT_2/SQ_THREAD_RESOURCE_MGMT/SQ_STACK_RESOURCE_MGMT_1-2) is written and regression-tested against real RV710 reference values, but not yet called from `terakan_hw_config_shared_indirect_buffer_begun`: the rest of that function's register atom is still Evergreen-only, and wiring in only the SQ_CONFIG piece would record an incomplete, incorrect command stream if it were ever reached (it currently is not, since `vkCreateDevice` still refuses TeraScale 1). SQ_GPR_RESOURCE_MGMT_1 (NUM_PS_GPRS/NUM_VS_GPRS/NUM_CLAUSE_TEMP_GPRS) is dynamic per shader binding on this hardware, not part of this atom -- see `r600_update_gpr_alloc()` in `r600_state.c` -- and is not covered yet either | `vkCreateDevice` succeeds on a TeraScale 1 physical device and a trivial compute dispatch completes |
+| Wire the TeraScale 1 "begin command buffer" register atom into command buffer recording, plus CB/DB per-draw state and command stream building | 5/5 | 5/5 | The atom itself is fully written and regression-tested against real RV710 reference values (`terakan_hw_config_shared_terascale_1_write_sq_config()` and `_write_context_defaults()`, covering everything `r600_init_atom_start_cs()` in `r600_state.c` does), but not yet called from `terakan_hw_config_shared_indirect_buffer_begun`, and CB/DB per-draw state (the actual point of "SQ/CB/DB register configuration") has not been started at all. SQ_GPR_RESOURCE_MGMT_1 (NUM_PS_GPRS/NUM_VS_GPRS/NUM_CLAUSE_TEMP_GPRS) is dynamic per shader binding on this hardware, not part of the begin-command-buffer atom -- see `r600_update_gpr_alloc()` in `r600_state.c` -- and is not covered yet either. Streaming output is out of scope until TODO.md's existing R8xx/R9xx P1 item for it lands, so the reference function's streamout-conditional registers are not written | `vkCreateDevice` succeeds on a TeraScale 1 physical device and a trivial compute dispatch completes |
 | Research TeraScale 1 tiling/surface addressing (bank/pipe swizzle, macro-tile layout) | 5/5 | 5/5 | Not yet started; this is the highest-risk area, since a wrong tiling computation corrupts memory silently rather than failing loudly | A buffer/image round trip through the tiled surface layout matches, the same class of check `terakan_image.c` already does for R8xx/R9xx |
 | Port the hand-written meta shader bytecode (blit/resolve/clear/copy/query, all of `src/amd/terascale/vulkan/meta/`) to the R6xx/R7xx CF/ALU/TEX instruction encoding | 4/5 | 5/5 | The NIR-to-bytecode compiler (SFN, `src/gallium/drivers/r600/sfn/`) already accepts `amd_gfx_level` including `R600`/`R700` distinct from `EVERGREEN`, since the classic Gallium R600 driver already uses it for this hardware -- shaders reaching the driver through NIR may need only the right `gfx_level` threaded through, but the meta shaders are hand-written Evergreen-only bytecode and need real per-generation variants | Each meta operation this driver depends on (at minimum blit and clear) passes its existing readback test on TeraScale 1 hardware |
 | Recognize R600/R700 PCI IDs and correctly plumb `gfx_level` through the NIR shader path for real application shaders | 3/5 | 2/5 | The `is_chip_family_supported`/`chip_info_init` work above already recognizes the full R600..RV740 range; what remains is confirming no Evergreen-specific assumption leaks into `terakan_nir_*` lowering | A real application vertex/fragment shader compiles and renders correctly on TeraScale 1 |
@@ -110,14 +110,24 @@ classic Gallium R600 driver that has supported this hardware for years).
   when `vulkaninfo`'s summary aborts on the unusable device before printing
   anything useful.
 
-- TeraScale 1 (R600/R700) SQ_CONFIG register block:
-  `terakan_hw_config_shared_terascale_1_write_sq_config()` writes
-  `SQ_CONFIG`/`SQ_GPR_RESOURCE_MGMT_2`/`SQ_THREAD_RESOURCE_MGMT`/
-  `SQ_STACK_RESOURCE_MGMT_1`/`SQ_STACK_RESOURCE_MGMT_2`, the once-per-command-
-  buffer register block that `chip_info->terascale_1`'s fields feed, kept in
-  its own translation unit including only `r600d.h`/`r600d_common.h` and never
-  `evergreend.h`. The two headers give the *same offset* a different meaning
-  on this generation (`0x8C0C` is `SQ_THREAD_RESOURCE_MGMT` here,
+- TeraScale 1 (R600/R700) "begin command buffer" register atom: the whole of
+  `r600_init_atom_start_cs()` (`src/gallium/drivers/r600/r600_state.c`), split
+  across two functions. `terakan_hw_config_shared_terascale_1_write_sq_config()`
+  writes `SQ_CONFIG`/`SQ_GPR_RESOURCE_MGMT_2`/`SQ_THREAD_RESOURCE_MGMT`/
+  `SQ_STACK_RESOURCE_MGMT_1`/`SQ_STACK_RESOURCE_MGMT_2`, the block
+  `chip_info->terascale_1`'s fields feed directly.
+  `terakan_hw_config_shared_terascale_1_write_context_defaults()` writes
+  everything else the reference function does: `VC_ENHANCE`, the R700-vs-R600
+  branch (`VGT_ENHANCE`/`SQ_DYN_GPR_CNTL_PS_FLUSH_REQ`/`DB_DEBUG`/
+  `DB_WATERMARKS`/`SPI_THREAD_GROUPING`), the `SQ_*_RING_ITEMSIZE`,
+  `ALU_CONST_BUFFER_SIZE_*` and `VGT_OUTPUT_PATH_CNTL` zero-initialization
+  blocks, a long run of individual VGT/PA/SPI/DB/CB/SQ context and ctl_const
+  registers, and the three initial `SQ_LOOP_CONST` values -- R700 writes 3
+  registers (`VGT_ENHANCE`, `PA_SC_EDGERULE`, `SX_MISC`) that R600 has no
+  equivalent for at all, which the `is_r700` parameter selects. Both kept in
+  the same translation unit, including only `r600d.h`/`r600d_common.h` and
+  never `evergreend.h`. The two headers give the *same offset* a different
+  meaning on this generation (`0x8C0C` is `SQ_THREAD_RESOURCE_MGMT` here,
   `SQ_GPR_RESOURCE_MGMT_3` -- an entirely different register -- on
   Evergreen-and-later), and while the handful of field macros this file
   actually uses happen to be bit-identical between the two headers where
@@ -125,9 +135,13 @@ classic Gallium R600 driver that has supported this hardware for years).
   to bet real hardware state on; the classic Gallium R600 driver keeps the
   same split between `r600_state.c` and `evergreen_state.c`.
   `terakan_hw_config_shared_terascale_1_test` checks the exact packet bytes
-  against RV710's real reference values (`r600_state.c`) rather than the
-  driver's own logic reproduced back at itself. Not yet called from anywhere
-  -- see the P0-equivalent item above for what wiring it in still needs.
+  against RV710's real reference values (`r600_state.c`) for the R700 path,
+  dword for dword, plus the R600 branch's distinct values and total length,
+  rather than the driver's own logic reproduced back at itself. Streaming
+  output is out of scope (see TODO.md's existing R8xx/R9xx item for it), so
+  the reference function's streamout-conditional stores are not written.
+  Neither function is called from anywhere yet -- see the P0-equivalent item
+  above for what wiring them in still needs.
 
 - Reducing stencil resolve, `VK_RESOLVE_MODE_MIN_BIT` and
   `VK_RESOLVE_MODE_MAX_BIT`: the same shaders and dispatch as the depth reducing
