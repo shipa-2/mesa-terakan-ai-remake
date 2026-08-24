@@ -381,6 +381,55 @@ classic Gallium R600 driver that has supported this hardware for years).
   `SQ_LDS_RESOURCE_MGMT` (for the same-offset-different-register cases)
   before any of this code becomes reachable.
 
+- TeraScale 1 (R600/R700) DB render-control/override and depth-view, and
+  guards for the whole dangerous DB block found by the audit above:
+  `terakan_hw_config_draw_terascale_1_write_db_render_control_override()`
+  writes `R_028D0C_DB_RENDER_CONTROL`/`R_028D10_DB_RENDER_OVERRIDE`
+  together (confirmed against `r600_state.c`'s
+  `r600_emit_db_misc_state()`: R600/R700 has no `DB_RENDER_OVERRIDE2`
+  register at all, so unlike R8xx/R9xx this is two registers in one
+  packet, not three across two), and
+  `terakan_hw_config_draw_terascale_1_write_db_depth_view()` writes
+  `R_028004_DB_DEPTH_VIEW`, confirmed field-for-field identical
+  (`SLICE_START`/`SLICE_MAX`, both 11 bits) to R8xx/R9xx's own
+  `DB_DEPTH_VIEW` at a different offset (`R_028008`) -- so, like
+  `DB_DEPTH_CONTROL`/`CB_TARGET_MASK` before it, needs no new
+  value-computation logic, only the offset-isolating wrapper. Every
+  current caller of the R8xx/R9xx equivalents only ever passes the
+  all-zero default for render-control/override (this driver has no
+  dynamic per-draw logic for either register on either generation yet),
+  so the TeraScale 1 port needs nothing beyond that same baseline.
+  `terakan_hw_config_draw_emit_db_render_control()` now emits both
+  registers together for TeraScale 1 (one PKT3, so the two
+  independently-dirty-tracked R8xx/R9xx entries don't each try to emit
+  half a pair); `_emit_db_render_override()` becomes a no-op for
+  TeraScale 1 since the other entry already covered it.
+
+  Also guarded, not ported -- these are the exact registers the audit
+  flagged as colliding with unrelated R600/R700 registers at the same
+  offset, and were confirmed to have no `is_r9xx`/`is_terascale_1` guard
+  at all before this pass, the same latent-bug class already found once
+  for `SQ_THREAD_RESOURCE_MGMT_1`/`SQ_LDS_RESOURCE_MGMT`:
+  `terakan_hw_config_draw_emit_db_render_override2()` (no R600/R700
+  equivalent exists at all -- confirmed against `r600_state.c`, not
+  assumed from the header alone -- and its offset is `DB_DEPTH_INFO`
+  there), `_emit_db_count_control()` (its offset is `DB_DEPTH_VIEW` on
+  R600/R700, and no `DB_COUNT_CONTROL`-equivalent occlusion-query-hazard
+  register was found in `r600_state.c` to replace it with -- not yet
+  researched, not guessed), and `_emit_db_depth_stencil_buffer()` --
+  the single most dangerous one, since its whole
+  `R_028040_DB_Z_INFO..R_02805C_DB_DEPTH_SLICE` range is
+  `R_028040_CB_COLOR0_BASE..R_02805C_CB_COLOR7_BASE` (render target
+  *addresses*) on R600/R700. This last one is not merely unguarded but
+  genuinely not portable yet regardless: R600/R700 binds depth and
+  stencil through one combined surface and base address
+  (`R_02800C_DB_DEPTH_BASE`, no separate stencil base at all, unlike
+  R8xx/R9xx's four independent read/write Z/stencil base registers), and
+  `DB_DEPTH_INFO`'s `ARRAY_MODE` field needs real tiling information this
+  driver doesn't have for TeraScale 1 yet (`terakan_image.c`'s
+  surface/macro-tile address math, still not started -- see the
+  tiling/surface addressing row in the P0-equivalent table above).
+
 - Reducing stencil resolve, `VK_RESOLVE_MODE_MIN_BIT` and
   `VK_RESOLVE_MODE_MAX_BIT`: the same shaders and dispatch as the depth reducing
   modes, differing only in the reducing opcode (an unsigned integer comparison)

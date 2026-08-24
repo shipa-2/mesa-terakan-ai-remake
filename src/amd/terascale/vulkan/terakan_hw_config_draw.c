@@ -25,6 +25,7 @@
 
 #include "terakan_command_buffer.h"
 #include "terakan_device.h"
+#include "terakan_hw_config_draw_terascale_1.h"
 #include "terakan_image.h"
 #include "terakan_physical_device.h"
 
@@ -1266,6 +1267,27 @@ static void
 terakan_hw_config_draw_emit_db_render_control(
    struct terakan_gfx_command_writer * const command_writer)
 {
+   /* R_028000_DB_RENDER_CONTROL on R8xx/R9xx is R_028040_CB_COLOR0_BASE on R600/R700 -- a render
+    * target address, not depth/stencil control bits -- see the TeraScale 1 CB/DB/PA/SPI/SQ register
+    * compatibility audit in TODO.md. R600/R700's real DB_RENDER_CONTROL lives at R_028D0C, paired
+    * with DB_RENDER_OVERRIDE in a single write; this entry owns emitting both for TeraScale 1 so the
+    * two independently-dirty-tracked R8xx/R9xx entries below don't each try to emit half a packet
+    * pair. Every current caller leaves both values at their all-zero default (this driver has no
+    * dynamic per-draw DB_RENDER_CONTROL/DB_RENDER_OVERRIDE logic yet, for either generation), so
+    * this only needs to carry those two tracked values through, not compute anything new.
+    */
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
+      uint32_t * packet = terakan_gfx_command_writer_emit(
+         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG, 2 + 2);
+      if (unlikely(packet == NULL)) {
+         return;
+      }
+      packet = terakan_hw_config_draw_terascale_1_write_db_render_control_override(
+         packet, command_writer->hw_config_draw.db_render_control_,
+         command_writer->hw_config_draw.db_render_override_);
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
+      return;
+   }
    terakan_hw_config_draw_emit_context_register(command_writer, R_028000_DB_RENDER_CONTROL,
                                                 command_writer->hw_config_draw.db_render_control_);
 }
@@ -1274,6 +1296,15 @@ static void
 terakan_hw_config_draw_emit_db_count_control(
    struct terakan_gfx_command_writer * const command_writer)
 {
+   /* R_028004_DB_COUNT_CONTROL on R8xx/R9xx is R_028004_DB_DEPTH_VIEW on R600/R700 -- occlusion
+    * query zpass-increment control versus a depth array-slice range, unrelated features that happen
+    * to share this offset. r600_state.c has no DB_COUNT_CONTROL equivalent at all (occlusion query
+    * hazard handling is not surfaced through this register there), so this is not yet researched
+    * rather than guessed at; skipped for TeraScale 1 until it is.
+    */
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
+      return;
+   }
    terakan_hw_config_draw_emit_context_register(command_writer, R_028004_DB_COUNT_CONTROL,
                                                 command_writer->hw_config_draw.db_count_control_);
 }
@@ -1282,6 +1313,15 @@ static void
 terakan_hw_config_draw_emit_db_render_override(
    struct terakan_gfx_command_writer * const command_writer)
 {
+   /* See terakan_hw_config_draw_emit_db_render_control() above: that entry emits both
+    * DB_RENDER_CONTROL and DB_RENDER_OVERRIDE together for TeraScale 1, so this entry has nothing
+    * left to do whenever it is. R_02800C_DB_RENDER_OVERRIDE on R8xx/R9xx is R_02800C_DB_DEPTH_BASE
+    * (a depth surface address) on R600/R700, so this must never fall through to the code below for
+    * TeraScale 1 regardless.
+    */
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
+      return;
+   }
    terakan_hw_config_draw_emit_context_register(command_writer, R_02800C_DB_RENDER_OVERRIDE,
                                                 command_writer->hw_config_draw.db_render_override_);
 }
@@ -1290,6 +1330,16 @@ static void
 terakan_hw_config_draw_emit_db_render_override2(
    struct terakan_gfx_command_writer * const command_writer)
 {
+   /* No DB_RENDER_OVERRIDE2 equivalent exists on R600/R700 at all -- r600d.h defines no such
+    * register, and r600_state.c's r600_emit_db_misc_state() never emits a third register alongside
+    * DB_RENDER_CONTROL/DB_RENDER_OVERRIDE -- confirmed against the reference, not assumed from its
+    * absence in the header alone. R_028010_DB_RENDER_OVERRIDE2 on R8xx/R9xx is
+    * R_028010_DB_DEPTH_INFO (a depth surface format/tiling register) on R600/R700, so this must
+    * never fall through to the code below for TeraScale 1.
+    */
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
+      return;
+   }
    terakan_hw_config_draw_emit_context_register(
       command_writer, R_028010_DB_RENDER_OVERRIDE2,
       command_writer->hw_config_draw.db_render_override2_);
@@ -1299,6 +1349,20 @@ static void
 terakan_hw_config_draw_emit_db_depth_stencil_buffer(
    struct terakan_gfx_command_writer * const command_writer)
 {
+   /* The whole R_028040_DB_Z_INFO..R_02805C_DB_DEPTH_SLICE range this function writes is
+    * R_028040_CB_COLOR0_BASE..R_02805C_CB_COLOR7_BASE (render target addresses) on R600/R700 -- the
+    * single most dangerous offset collision found in the TeraScale 1 CB/DB/PA/SPI/SQ register
+    * compatibility audit (TODO.md). R600/R700 also binds depth and stencil through one combined
+    * surface and base address (R_02800C_DB_DEPTH_BASE) rather than R8xx/R9xx's four independent
+    * read/write Z/stencil base registers, and DB_DEPTH_INFO's ARRAY_MODE field needs real tiling
+    * information this driver doesn't have for TeraScale 1 yet (terakan_image.c's surface/macro-tile
+    * address math -- see TODO.md), so this is not yet portable at all, not merely unguarded. Must
+    * never fall through to the code below for TeraScale 1.
+    */
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
+      return;
+   }
+
    uint32_t * packet;
 
    struct terakan_bo const * const bo = command_writer->hw_config_draw.db_depth_stencil_buffer_.bo;
