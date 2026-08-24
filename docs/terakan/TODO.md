@@ -264,6 +264,123 @@ classic Gallium R600 driver that has supported this hardware for years).
   compute dispatch would currently run with no compute thread/stack
   configuration whatsoever -- tracked here rather than guessed at.
 
+- TeraScale 1 (R600/R700) CB/DB/PA/SPI/SQ register compatibility audit:
+  every `R_XXXXXX_*` register `terakan_hw_config_draw.c` and
+  `terakan_hw_config_shared.c` reference was checked mechanically against
+  both `r600d.h` and `evergreend.h` -- offset presence, field-macro name
+  sets, and field-macro bit-shift/mask formulas (comment and whitespace
+  differences normalized out, so this isn't textual diffing) -- extending
+  the DB_DEPTH_CONTROL/CB_TARGET_MASK/tiling-config-offset-base findings
+  from earlier passes into a full survey rather than a couple of one-off
+  checks. Findings, most important first:
+
+  - **Same offset, entirely different register on R600/R700 -- never reuse
+    R8xx/R9xx emission code for these without a real TeraScale 1 port**:
+    most dangerously, the entire DB_* block Terakan currently emits at
+    0x028000-0x02805C (`DB_RENDER_CONTROL`, `DB_COUNT_CONTROL`,
+    `DB_RENDER_OVERRIDE`, `DB_RENDER_OVERRIDE2`, `DB_Z_INFO`,
+    `DB_Z_READ_BASE`, `DB_STENCIL_READ_BASE`, `DB_DEPTH_SIZE`,
+    `DB_DEPTH_SLICE`) sits on top of `CB_COLOR0_BASE`/`_2_BASE`/`_3_BASE`/
+    `_6_BASE`/`_7_BASE` on R600/R700 -- render target base *addresses*, not
+    depth/stencil control bits, so blindly reusing this code for TeraScale 1
+    would write GPU addresses into whatever these DB fields decode to, or
+    vice versa. Also colliding: the `SQ_PGM_START`/`SQ_PGM_RESOURCES(_2)`
+    range for GS/ES/FS/HS/LS (0x028874-0x0288D8) is fully remapped --
+    Evergreen's HS/LS tessellation-stage shader pointers occupy addresses
+    that hold R600/R700's `SQ_ESGS_RING_ITEMSIZE`/`SQ_VSTMP_RING_ITEMSIZE`/
+    `SQ_PSTMP_RING_ITEMSIZE`/`SQ_FBUF_RING_ITEMSIZE`/`SQ_PGM_CF_OFFSET_*`
+    instead, and even the ES/FS shader-start pointers are shifted by one
+    register slot relative to each other between the two generations.
+    `CB_COLOR8_BASE`/`_9_BASE` (0x028E40/0x028E5C) collide with
+    `PA_CL_UCP2_X`/`_UCP3_W` (user clip plane coefficients!) on R600/R700.
+    `PA_SC_AA_MASK` (0x028C3C) collides with `CB_CLRCMP_MSK`, and the
+    address `PA_SC_AA_SAMPLE_LOCS_7` uses on R8xx/R9xx is `CB_CLRCMP_DST`
+    on R600/R700. `SPI_BARYC_CNTL`/`SPI_PS_IN_CONTROL_2` collide with the
+    R600/R700-only `SPI_FOG_FUNC_SCALE`/`_BIAS`. `SQ_GPR_RESOURCE_MGMT_3`/
+    `SQ_GLOBAL_GPR_RESOURCE_MGMT_1`/`_2` (0x008C0C/0x008C10/0x008C14) are
+    `SQ_THREAD_RESOURCE_MGMT`/`SQ_STACK_RESOURCE_MGMT_1`/`_2` on R600/R700 --
+    already correctly handled by the dedicated TeraScale 1 begin-atom
+    writer, not by the shared R8xx code, so no action needed there, but
+    listed here since it's the same class of finding, now independently
+    reconfirmed by this mechanical pass rather than by the earlier
+    by-hand read of `r600_init_atom_start_cs()`.
+
+  - **Same offset and register, but divergent field layout -- needs real
+    per-register TeraScale 1 value-computation logic, not just an offset
+    fix**: `DB_EQAA` (0x028804) is `CB_BLEND_CONTROL` in field terms on
+    R600/R700 (a completely different feature under a coincidentally
+    DB-shaped name on Evergreen); `CB_COLOR_CONTROL` (0x028808, the
+    already-known `SPECIAL_OP`-vs-`MODE` divergence at bit 4);
+    `PA_SC_MODE_CNTL_1`/`_0` (0x028A4C/0x028A48) restructure most of their
+    bits between generations; `DB_SHADER_CONTROL`, `DB_RENDER_OVERRIDE(2)`,
+    `DB_RENDER_CONTROL`, `DB_COUNT_CONTROL` (already covered above as
+    address collisions, but even where the DB *name* is right on both
+    sides the field layout still differs completely, so this is a
+    double failure mode, not just a naming coincidence to work around).
+
+  - **Same offset, register, and field positions, but a narrower mask on
+    R600/R700 -- safe to reuse as-is within the narrower range, but a
+    real range limit, not just a compatibility footnote**: the screen/
+    window/generic scissor rectangle registers (`PA_SC_SCREEN_SCISSOR_TL`/
+    `_BR`, `PA_SC_WINDOW_SCISSOR_TL`/`_BR`, `PA_SC_GENERIC_SCISSOR_TL`/
+    `_BR`) use the same bit positions on both generations, but R600/R700's
+    `TL_X`/`TL_Y`/`BR_X`/`BR_Y` fields are 15 bits (screen scissor) or 14
+    bits (window/generic scissor) wide versus 16/15 on R8xx/R9xx --
+    values within the narrower range need no change, but this is a
+    real ceiling to respect once TeraScale 1 draw-time scissor emission
+    is actually ported, not merely a historical curiosity.
+
+  - **Confirmed safe, zero code needed, offset and every field bit-for-bit
+    identical** (extending the DB_DEPTH_CONTROL/CB_TARGET_MASK finding):
+    `VGT_PRIMITIVE_TYPE`, `SQ_VTX_START_INST_LOC` (both already emitted
+    unconditionally for every chip family with no `is_r9xx`/`is_terascale_1`
+    branch at all -- now confirmed genuinely safe as-is, not merely
+    unguarded by oversight), `SQ_GPR_RESOURCE_MGMT_1`/`_2`, `CB_SHADER_MASK`,
+    `SX_MISC`, `SX_ALPHA_TEST_CONTROL`, `DB_STENCILREFMASK`,
+    `PA_CL_VPORT_XSCALE_0` (and by extension its `_1`/`_2`/`_3` siblings,
+    same field layout), `SPI_PS_INPUT_CNTL_0..31`, `SPI_VS_OUT_CONFIG`,
+    `SPI_INTERP_CONTROL_0`, `SPI_INPUT_Z`, `PA_CL_CLIP_CNTL`,
+    `PA_SU_SC_MODE_CNTL`, `PA_CL_VTE_CNTL`, `PA_CL_VS_OUT_CNTL`,
+    `PA_CL_NANINF_CNTL`, `SQ_PGM_START_PS`, `PA_SU_POINT_SIZE`,
+    `PA_SU_POINT_MINMAX`, `PA_SU_LINE_CNTL`, `PA_SC_LINE_STIPPLE`,
+    `VGT_PRIMITIVEID_EN`, `VGT_MULTI_PRIM_IB_RESET_EN`, `IA_MULTI_VGT_PARAM`,
+    and the Cayman/NI (`is_r9xx`) address forms of `PA_SC_LINE_CNTL`/
+    `PA_SC_AA_CONFIG`/`PA_SU_VTX_CNTL`/`PA_CL_GB_VERT_CLIP_ADJ`
+    (0x028C00-0x028C0C) -- these happen to coincide with the R600/R700
+    native addresses for the same registers with the same fields, an
+    accident of the address space rather than a designed compatibility,
+    worth double-checking again if this list is ever acted on rather than
+    assumed to stay true.
+
+  - **Evergreen-only concepts, absent on TeraScale 1 entirely -- not a
+    porting gap, a real hardware difference**: tessellation-related state
+    (`VGT_SHADER_STAGES_EN`, `VGT_LS_HS_CONFIG`, `VGT_TF_PARAM`,
+    `VGT_HOS_*`), streamout config (`VGT_STRMOUT_CONFIG`/
+    `_BUFFER_CONFIG`), `DB_ALPHA_TO_MASK`, `DB_PRELOAD_CONTROL`,
+    `DB_SRESULTS_COMPARE_STATE0`/`1`, `SQ_LDS_ALLOC`/`_PS`, `SPI_LDS_MGMT`,
+    `SPI_CONFIG_CNTL`/`_1`, `PA_SU_HARDWARE_SCREEN_OFFSET`,
+    `SQ_DYN_GPR_RESOURCE_LIMIT_1`, `PA_CL_ENHANCE`, and the R8xx/R9xx-only
+    `SQ_STATIC_THREAD_MGMT1`/`2`/`3` (already unreachable for TeraScale 1
+    today, since it's part of the R8xx-only branch in
+    `terakan_hw_config_shared_indirect_buffer_begun()` -- see the
+    begin-atom wiring above -- so no action needed, just confirming that
+    branch is correctly scoped). `PA_SC_EDGERULE` is a partial case: the
+    register nominally exists on both, but `r600d.h` defines no field
+    macros for it at all, matching what the earlier begin-atom port
+    already found and handled (it's one of exactly the three R700-only
+    registers `terakan_hw_config_shared_terascale_1_write_context_defaults()`
+    gates on `is_r700`).
+
+  No code changes accompany this pass -- it is a survey to work from, not
+  a set of fixes. Only DB_DEPTH_CONTROL, CB_TARGET_MASK, VGT_PRIMITIVE_TYPE,
+  and SQ_VTX_START_INST_LOC are confirmed to need nothing further; every
+  other register above needs a real, individually-checked-against-
+  `r600_state.c` port (for the divergent-field and Evergreen-only cases)
+  or at minimum an explicit `is_terascale_1` guard to prevent the same
+  class of bug already found and fixed for `SQ_THREAD_RESOURCE_MGMT_1`/
+  `SQ_LDS_RESOURCE_MGMT` (for the same-offset-different-register cases)
+  before any of this code becomes reachable.
+
 - Reducing stencil resolve, `VK_RESOLVE_MODE_MIN_BIT` and
   `VK_RESOLVE_MODE_MAX_BIT`: the same shaders and dispatch as the depth reducing
   modes, differing only in the reducing opcode (an unsigned integer comparison)
