@@ -11,8 +11,8 @@ accept the work. Both use a 1–5 scale.
 
 | Work item | Importance | Complexity | Feasibility | Acceptance criteria |
 |---|---:|---:|---|---|
-| Finish the reducing resolve modes for stencil | 3/5 | 2/5 | Depth minimum and maximum are implemented, exposed and covered at 2x, 4x and 8x. The stencil programs differ only in the reducing opcode and the export slot, so what is left is the readback test that writes a different stencil value into each sample | Stencil readbacks pass for the minimum and maximum modes at every advertised sample count |
 | Implement and validate FMASK/CMASK allocation, identity initialization and sampled MSAA addressing | 5/5 | 5/5 | Implementable; requires Evergreen tiling research | Per-sample reads and resolved reads pass for 2x/4x/8x images without corrupting ordinary color targets |
+| Fix stencil-only render targets on combined depth/stencil images | 4/5 | 3/5 | Not yet understood beyond the symptom; see the note below. Every current stencil user works around it by binding a depth attachment alongside, which is how real applications shape a depth/stencil resolve anyway, but an application that legitimately renders stencil alone (shadow volumes, portal culling) on a combined-format image would still hit it | A stencil-only `vkCmdBeginRendering` (`pDepthAttachment == NULL`, `pStencilAttachment` naming a combined-format image) writes and reads back correctly without a depth attachment bound alongside |
 | Complete cache and barrier coherency | 5/5 | 4/5 | Implementable. Composition coverage now exists (`terakan_frame_chain`, both the render-pass and the compute producer) and passes, so the remaining hazard is narrower than a repeated clear/dispatch, sample, render and copy chain | Focused attachment, texture, storage, transfer, graphics/compute and query producer-consumer chains pass without application-specific waits |
 | Cover remaining copy, blit and resolve format/subresource combinations | 5/5 | 4/5 | Implementable | Boundary tests cover non-zero offsets, partial extents, mip levels, array/3D layers and every advertised compatible format class |
 | Correct meta blit format coverage | 5/5 | 3/5 | Implementable; the typed, mirrored and layered/3D-depth cases are fixed, leaving the per-format matrix | All basic CTS blits pass for RGBA, BGRA, R32, reversed source/destination axes and 3D slices |
@@ -54,6 +54,32 @@ These are useful, but Vulkan 1.1 permits the corresponding feature bits to be
 | Native high-performance FP64 | 1/5 | CAICOS lacks the hardware needed for a useful implementation; software lowering may be used only where practical |
 
 ## Completed and regression-covered
+
+- Reducing stencil resolve, `VK_RESOLVE_MODE_MIN_BIT` and
+  `VK_RESOLVE_MODE_MAX_BIT`: the same shaders and dispatch as the depth reducing
+  modes, differing only in the reducing opcode (an unsigned integer comparison)
+  and the export slot. `terakan_stencil_resolve_modes` covers it at 2x, 4x and
+  8x the same way the depth test does: a different stencil value per sample,
+  written through `STENCIL_REPLACE` with a static per-pipeline reference and a
+  sample mask confining each draw to one sample.
+
+  Getting there surfaced a real hardware quirk, worth recording so it is not
+  rediscovered: **a stencil-only render target on a combined depth/stencil
+  image writes and reads back the wrong values.** Writing a uniform stencil
+  value with no depth attachment bound (`pDepthAttachment == NULL`,
+  `pStencilAttachment` naming a `D32_SFLOAT_S8_UINT` image) reads back a
+  per-column pattern with no relationship to what was written; a roundtrip of
+  the same pattern through `vkCmdCopyBufferToImage`/`vkCmdCopyImageToBuffer`
+  with no rendering involved is exact, which places the defect in the DB write
+  path specifically, not the tiled surface or the copy engine. Binding a depth
+  attachment of the same image alongside — even one neither read nor written —
+  makes it disappear, which is what `terakan_stencil_resolve_modes` does and
+  what `VK_KHR_depth_stencil_resolve` shapes a real resolve into anyway, since
+  VUID-06085 requires the same view when both attachments are non-null. The
+  driver's own masking of `DB_Z_INFO` when no depth attachment is bound already
+  preserves the tiling fields the code identifies as shared with stencil
+  (`ARRAY_MODE`, the bank fields), so the cause is not that masking; it is left
+  open above as its own item rather than guessed at further.
 
 - Reducing depth resolve, `VK_RESOLVE_MODE_MIN_BIT` and `VK_RESOLVE_MODE_MAX_BIT`:
   every sample is fetched and combined in the pixel shader, one program per

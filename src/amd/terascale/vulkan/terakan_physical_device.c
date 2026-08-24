@@ -855,8 +855,6 @@ terakan_physical_device_get_capabilities(
     *
     * Averaging is not offered: it is not a legal stencil mode at all, and for depth it would need
     * the shader to weight each sample, which needs a value the shader cannot currently be given.
-    * The reducing modes are depth only, because nothing advertises a capability here until a
-    * readback test covers it and the stencil aspect has none yet.
     *
     * Each aspect picks its own mode from its own draw and its own shader, so any pair of modes is
     * allowed (independentResolve), which also covers resolving one aspect while leaving the other
@@ -865,7 +863,8 @@ terakan_physical_device_get_capabilities(
    extensions_out->KHR_depth_stencil_resolve = true;
    properties_out->supportedDepthResolveModes =
       VK_RESOLVE_MODE_SAMPLE_ZERO_BIT | VK_RESOLVE_MODE_MIN_BIT | VK_RESOLVE_MODE_MAX_BIT;
-   properties_out->supportedStencilResolveModes = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT;
+   properties_out->supportedStencilResolveModes =
+      VK_RESOLVE_MODE_SAMPLE_ZERO_BIT | VK_RESOLVE_MODE_MIN_BIT | VK_RESOLVE_MODE_MAX_BIT;
    properties_out->independentResolveNone = true;
    properties_out->independentResolve = true;
 

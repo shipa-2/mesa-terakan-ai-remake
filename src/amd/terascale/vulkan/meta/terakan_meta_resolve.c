@@ -388,6 +388,12 @@ TERAKAN_META_RESOLVE_REDUCE_SHADER(depth_min_4x, 4X, 9, MIN_DX10, X, MASK);
 TERAKAN_META_RESOLVE_REDUCE_SHADER(depth_max_4x, 4X, 9, MAX_DX10, X, MASK);
 TERAKAN_META_RESOLVE_REDUCE_SHADER(depth_min_8x, 8X, 17, MIN_DX10, X, MASK);
 TERAKAN_META_RESOLVE_REDUCE_SHADER(depth_max_8x, 8X, 17, MAX_DX10, X, MASK);
+TERAKAN_META_RESOLVE_REDUCE_SHADER(stencil_min_2x, 2X, 5, MIN_UINT, MASK, X);
+TERAKAN_META_RESOLVE_REDUCE_SHADER(stencil_max_2x, 2X, 5, MAX_UINT, MASK, X);
+TERAKAN_META_RESOLVE_REDUCE_SHADER(stencil_min_4x, 4X, 9, MIN_UINT, MASK, X);
+TERAKAN_META_RESOLVE_REDUCE_SHADER(stencil_max_4x, 4X, 9, MAX_UINT, MASK, X);
+TERAKAN_META_RESOLVE_REDUCE_SHADER(stencil_min_8x, 8X, 17, MIN_UINT, MASK, X);
+TERAKAN_META_RESOLVE_REDUCE_SHADER(stencil_max_8x, 8X, 17, MAX_UINT, MASK, X);
 
 struct terakan_meta_shader const terakan_meta_resolve_stencil_sample_zero_ps = {
    .r8xx = {
@@ -532,27 +538,33 @@ terakan_meta_resolve_depth_stencil(struct terakan_gfx_command_writer * const com
       command_writer, TERAKAN_SHADER_DB_SHADER_CONTROL_IDENTITY |
                          (aspect_is_depth ? S_02880C_Z_EXPORT_ENABLE(1)
                                           : S_02880C_STENCIL_EXPORT_ENABLE(1)));
-   /* Indexed by [mode is maximum][log2 of the sample count minus one]. The reducing modes are
-    * depth only for now: the stencil programs would differ from these solely in the reducing opcode
-    * and the export slot, but nothing advertises them until a readback test covers them, so they
-    * are not built.
-    */
-   static enum terakan_meta_shader_index const reduce_shaders[2][3] = {
-      {TERAKAN_META_SHADER_RESOLVE_DEPTH_MIN_2X_PS,
-       TERAKAN_META_SHADER_RESOLVE_DEPTH_MIN_4X_PS,
-       TERAKAN_META_SHADER_RESOLVE_DEPTH_MIN_8X_PS},
-      {TERAKAN_META_SHADER_RESOLVE_DEPTH_MAX_2X_PS,
-       TERAKAN_META_SHADER_RESOLVE_DEPTH_MAX_4X_PS,
-       TERAKAN_META_SHADER_RESOLVE_DEPTH_MAX_8X_PS},
+   /* Indexed by [aspect is depth][mode is maximum][log2 of the sample count minus one]. */
+   static enum terakan_meta_shader_index const reduce_shaders[2][2][3] = {
+      {
+         {TERAKAN_META_SHADER_RESOLVE_STENCIL_MIN_2X_PS,
+          TERAKAN_META_SHADER_RESOLVE_STENCIL_MIN_4X_PS,
+          TERAKAN_META_SHADER_RESOLVE_STENCIL_MIN_8X_PS},
+         {TERAKAN_META_SHADER_RESOLVE_STENCIL_MAX_2X_PS,
+          TERAKAN_META_SHADER_RESOLVE_STENCIL_MAX_4X_PS,
+          TERAKAN_META_SHADER_RESOLVE_STENCIL_MAX_8X_PS},
+      },
+      {
+         {TERAKAN_META_SHADER_RESOLVE_DEPTH_MIN_2X_PS,
+          TERAKAN_META_SHADER_RESOLVE_DEPTH_MIN_4X_PS,
+          TERAKAN_META_SHADER_RESOLVE_DEPTH_MIN_8X_PS},
+         {TERAKAN_META_SHADER_RESOLVE_DEPTH_MAX_2X_PS,
+          TERAKAN_META_SHADER_RESOLVE_DEPTH_MAX_4X_PS,
+          TERAKAN_META_SHADER_RESOLVE_DEPTH_MAX_8X_PS},
+      },
    };
    VkResolveModeFlagBits const aspect_mode = aspect_is_depth ? depth_mode : stencil_mode;
    bool const aspect_reduces =
-      aspect_is_depth &&
       (aspect_mode & (VK_RESOLVE_MODE_MIN_BIT | VK_RESOLVE_MODE_MAX_BIT)) != 0 &&
-      reduce_sample_count_index < ARRAY_SIZE(reduce_shaders[0]);
+      reduce_sample_count_index < ARRAY_SIZE(reduce_shaders[0][0]);
    enum terakan_meta_shader_index const aspect_shader =
       aspect_reduces
-         ? reduce_shaders[aspect_mode == VK_RESOLVE_MODE_MAX_BIT][reduce_sample_count_index]
+         ? reduce_shaders[aspect_is_depth][aspect_mode == VK_RESOLVE_MODE_MAX_BIT]
+                         [reduce_sample_count_index]
          : (aspect_is_depth ? TERAKAN_META_SHADER_RESOLVE_DEPTH_SAMPLE_ZERO_PS
                             : TERAKAN_META_SHADER_RESOLVE_STENCIL_SAMPLE_ZERO_PS);
    terakan_meta_config_draw_set_sq_pgm_ps(command_writer, aspect_shader);

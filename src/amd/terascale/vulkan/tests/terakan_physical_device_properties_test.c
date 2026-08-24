@@ -258,14 +258,15 @@ main(void)
    };
    properties_2.pNext = &depth_stencil_resolve;
    vkGetPhysicalDeviceProperties2(physical_device, &properties_2);
-   /* Depth also reduces, stencil so far only reads sample zero. Since the two aspects can now be
-    * asked for different modes, each resolving from its own draw and its own shader, both
-    * independentResolveNone and full independentResolve hold. */
+   /* Both aspects reduce now. Since the two aspects can be asked for different modes, each
+    * resolving from its own draw and its own shader, both independentResolveNone and full
+    * independentResolve hold. */
    TEST_CHECK(depth_stencil_resolve.supportedDepthResolveModes ==
               (VK_RESOLVE_MODE_SAMPLE_ZERO_BIT | VK_RESOLVE_MODE_MIN_BIT |
                VK_RESOLVE_MODE_MAX_BIT));
    TEST_CHECK(depth_stencil_resolve.supportedStencilResolveModes ==
-              VK_RESOLVE_MODE_SAMPLE_ZERO_BIT);
+              (VK_RESOLVE_MODE_SAMPLE_ZERO_BIT | VK_RESOLVE_MODE_MIN_BIT |
+               VK_RESOLVE_MODE_MAX_BIT));
    TEST_CHECK(depth_stencil_resolve.independentResolveNone);
    TEST_CHECK(depth_stencil_resolve.independentResolve);
 

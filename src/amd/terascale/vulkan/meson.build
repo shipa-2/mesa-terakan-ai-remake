@@ -824,6 +824,63 @@ if with_tests
         timeout : 30,
       )
 
+      terakan_stencil_resolve_modes_test = executable(
+        'terakan_stencil_resolve_modes_test',
+        ['tests/terakan_stencil_resolve_modes_test.cpp'],
+        dependencies : vulkan_loader_dep,
+      )
+      test(
+        'terakan_stencil_resolve_modes_2x',
+        terakan_stencil_resolve_modes_test,
+        args : [
+          terakan_resolve_modes_vertex_spv, terakan_resolve_modes_fragment_spv, '2',
+        ],
+        depends : [
+          libvulkan_terascale, _dev_icd,
+          terakan_resolve_modes_vertex_spv, terakan_resolve_modes_fragment_spv,
+        ],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 30,
+      )
+      test(
+        'terakan_stencil_resolve_modes_4x',
+        terakan_stencil_resolve_modes_test,
+        args : [
+          terakan_resolve_modes_vertex_spv, terakan_resolve_modes_fragment_spv, '4',
+        ],
+        depends : [
+          libvulkan_terascale, _dev_icd,
+          terakan_resolve_modes_vertex_spv, terakan_resolve_modes_fragment_spv,
+        ],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 30,
+      )
+      test(
+        'terakan_stencil_resolve_modes_8x',
+        terakan_stencil_resolve_modes_test,
+        args : [
+          terakan_resolve_modes_vertex_spv, terakan_resolve_modes_fragment_spv, '8',
+        ],
+        depends : [
+          libvulkan_terascale, _dev_icd,
+          terakan_resolve_modes_vertex_spv, terakan_resolve_modes_fragment_spv,
+        ],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 30,
+      )
+
       terakan_blit_3d_test = executable(
         'terakan_blit_3d_test',
         ['tests/terakan_blit_3d_test.cpp'],
