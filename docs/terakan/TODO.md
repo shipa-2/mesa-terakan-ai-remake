@@ -163,6 +163,37 @@ classic Gallium R600 driver that has supported this hardware for years).
   the P0-equivalent item above, checked and found to diverge in the course of
   finding these two.
 
+- TeraScale 1 (R600/R700) `RADEON_INFO_TILING_CONFIG` decode:
+  `terakan_physical_device_decode_tiling_config()`
+  (`terakan_physical_device_tiling_config.c`) replaces the inline struct
+  literal that used to sit in `terakan_physical_device_drm_radeon.c` and was
+  only ever written for R8xx/R9xx. Checked directly against libdrm's
+  `radeon/radeon_surface.c` (`r6_init_hw_info()` vs `eg_init_hw_info()`, fetched
+  via `curl` since `gitlab.freedesktop.org`'s raw file is behind anti-bot
+  protection that blocks `WebFetch`), because the ioctl's bit layout is
+  generation-specific, not just its interpretation: on TeraScale 1 the pipe
+  count field starts one bit later (bits [1:3] instead of [0:3]) and the pipe
+  interleave ("group bytes") field lives at bits [6:7] instead of [8:11] -- a
+  different position, not a narrower field at the same one. There is also no
+  row size / `TILE_SPLIT` concept on this hardware at all (zero `TILE_SPLIT`
+  occurrences in `r600d.h`, and `r6_surface_best()` in the reference is a
+  literal no-op for r6xx/r7xx), so `row_bytes_log2` is set to 0 for TeraScale 1
+  rather than a guessed nonzero value, so a caller that starts treating it as
+  real before rendering is implemented fails loudly instead of silently using
+  a fabricated tile split. `bank_interleave_log2` stays 0 for both
+  generations, confirmed correct rather than assumed, since libdrm's
+  `struct radeon_hw_info` has no such field for either. The existing
+  R8xx/R9xx decode was cross-checked against the same reference in the same
+  pass and confirmed already correct, so only its formulas moved, unchanged,
+  into this new isolated function. Covered by
+  `terakan_physical_device_tiling_config_test`, which checks every switch case
+  (including the reference's undefined-input fallbacks) for both generations.
+  This is a prerequisite for tiled surface addressing, not the tiling work
+  itself -- the actual pitch/height alignment, macro-tile-aspect selection,
+  and bank-swizzle math for TeraScale 1 in `terakan_image.c` has not been
+  started; see the tiling/surface addressing row in the P0-equivalent table
+  above.
+
 - Reducing stencil resolve, `VK_RESOLVE_MODE_MIN_BIT` and
   `VK_RESOLVE_MODE_MAX_BIT`: the same shaders and dispatch as the depth reducing
   modes, differing only in the reducing opcode (an unsigned integer comparison)

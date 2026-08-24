@@ -25,6 +25,7 @@
 
 #include "terakan_device_drm_radeon.h"
 #include "terakan_instance.h"
+#include "terakan_physical_device_tiling_config.h"
 #include "terakan_sync_completion.h"
 
 #include "util/macros.h"
@@ -247,15 +248,17 @@ terakan_physical_device_drm_radeon_try_create(struct vk_instance * const instanc
          render_node_path, tiling_config_info_result);
       goto fail_render_node_fd;
    }
+   struct terakan_physical_device_tiling_config_info const tiling_config_info =
+      terakan_physical_device_decode_tiling_config(
+         tiling_config, terakan_physical_device_chip_family_is_terascale_1(
+                           terakan_physical_device_get_chip_family(
+                              drm_device->deviceinfo.pci->device_id)));
    struct terakan_physical_device_tiling_info const tiling_info = {
-      .pipes_log2 = tiling_config & 0xF,
-      .banks_log2 = 2 + ((tiling_config >> 4) & 0xF),
-      .pipe_interleave_bytes_log2 = 8 + ((tiling_config >> 8) & 0xF),
-      /* As of 2.50.0, DRM Radeon doesn't expose the bank interleave, but has log2(1) for it in the
-       * "golden" GB_ADDR_CONFIG values for all R8xx/R9xx chips.
-       */
-      .bank_interleave_log2 = 0,
-      .row_bytes_log2 = 10 + ((tiling_config >> 12) & 0xF),
+      .pipes_log2 = tiling_config_info.pipes_log2,
+      .banks_log2 = tiling_config_info.banks_log2,
+      .pipe_interleave_bytes_log2 = tiling_config_info.pipe_interleave_bytes_log2,
+      .bank_interleave_log2 = tiling_config_info.bank_interleave_log2,
+      .row_bytes_log2 = tiling_config_info.row_bytes_log2,
    };
 
    __u32 clock_crystal_frequency_khz;

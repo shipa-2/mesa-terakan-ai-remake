@@ -34,6 +34,7 @@ cpu_tests=(
   terakan_hw_config_loop_constants
   terakan_hw_config_shared_terascale_1
   terakan_hw_config_draw_terascale_1
+  terakan_physical_device_tiling_config
   terakan_descriptor_buffer
   terakan_vertex_input
 )
