@@ -18,6 +18,41 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+# The generation label recorded into the build (VkPhysicalDeviceProperties2::driverInfo and a
+# preprocessor define), not a functional restriction: the driver still detects the chip family of
+# whichever GPU it actually runs on at Vulkan device creation time, the same as always. See
+# terakan-target-generation's description in meson.options for what r600/r700 selection does and
+# does not do.
+terakan_target_generation = get_option('terakan-target-generation')
+if terakan_target_generation == 'auto'
+  detect_result = run_command(
+    prog_python, files('terakan_detect_generation.py'),
+    files('../../../../include/pci_ids/r600_pci_ids.h'),
+    check : false,
+  )
+  detected_generation = detect_result.returncode() == 0 ? detect_result.stdout().strip() : 'none'
+  if detected_generation in ['r600', 'r700', 'r800', 'r900']
+    terakan_target_generation = detected_generation
+    message('Terakan: auto-detected build target generation @0@ from a local AMD PCI device'
+            .format(terakan_target_generation))
+  else
+    terakan_target_generation = 'r900'
+    message('Terakan: no single AMD TeraScale PCI device found on the build machine (@0@); ' +
+            'defaulting the build target generation to r900'.format(detected_generation))
+  endif
+endif
+if terakan_target_generation in ['r600', 'r700']
+  warning('Terakan: terakan-target-generation is @0@, which is not implemented. '.format(
+            terakan_target_generation) +
+          'The driver\'s hand-written shader bytecode targets the Evergreen-and-later ' +
+          'instruction encoding; building with this option only records the label, it does ' +
+          'not add TeraScale 1 support.')
+endif
+terakan_target_generation_args = [
+  '-DTERAKAN_BUILD_TARGET_GENERATION_NAME="' + terakan_target_generation + '"',
+  '-DTERAKAN_BUILD_TARGET_GENERATION_' + terakan_target_generation.to_upper(),
+]
+
 terakan_entrypoints = custom_target(
   'terakan_entrypoints',
   input : [vk_entrypoints_gen, vk_api_xml],
@@ -203,6 +238,7 @@ libvulkan_terascale = shared_library(
   c_args : [
     no_override_init_args,
     c_msvc_compat_args,
+    terakan_target_generation_args,
   ],
   cpp_args : [
     cpp_msvc_compat_args,

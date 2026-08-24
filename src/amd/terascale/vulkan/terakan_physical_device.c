@@ -919,8 +919,17 @@ terakan_physical_device_get_capabilities(
    extensions_out->KHR_driver_properties = true;
    properties_out->driverID = VK_DRIVER_ID_MESA_RADV;
    snprintf(properties_out->driverName, sizeof(properties_out->driverName), "Terakan");
+   /* TERAKAN_BUILD_TARGET_GENERATION_NAME is the terakan-target-generation Meson option: which of
+    * the four TeraScale generations (r600/r700/r800/r900) the build was labeled for, not what the
+    * running GPU actually is. Falls back to the string "unknown" if the driver was somehow built
+    * without going through the Terakan Vulkan meson.build that defines it.
+    */
+#ifndef TERAKAN_BUILD_TARGET_GENERATION_NAME
+#define TERAKAN_BUILD_TARGET_GENERATION_NAME "unknown"
+#endif
    snprintf(properties_out->driverInfo, sizeof(properties_out->driverInfo),
-            "Mesa " PACKAGE_VERSION MESA_GIT_SHA1);
+            "Mesa " PACKAGE_VERSION MESA_GIT_SHA1 " (built for " TERAKAN_BUILD_TARGET_GENERATION_NAME
+            ")");
    /* Terakan has not passed the Vulkan conformance test suite. */
    properties_out->conformanceVersion = (VkConformanceVersion){0, 0, 0, 0};
 

@@ -1,5 +1,25 @@
 # Testing Terakan
 
+## Build target generation
+
+`bin/terakan-build` passes through the `terakan-target-generation` Meson
+option (`auto` by default), which only records which of the four TeraScale
+generations — `r600`/`r700` (HD2000-4000), `r800` (Evergreen, HD5000) or `r900`
+(Northern Islands, Terakan's primary target) — the build was made for, visible
+in `vulkaninfo`'s `driverInfo` line. It does not change what hardware the
+driver runs on: that is still detected per physical device at Vulkan
+instance/device creation time, independently of this option. `auto` detects
+the generation of an AMD PCI device present on the build machine and falls
+back to `r900` if none is found or more than one generation is present.
+`r600` and `r700` are recorded but not implemented — Terakan's hand-written
+shader bytecode targets the Evergreen-and-later instruction encoding, which
+predates TeraScale 1 — so selecting one only labels the build and prints a
+configure-time warning; nothing else changes.
+
+```bash
+meson configure build-vulkan -Dterakan-target-generation=r800
+```
+
 ## Standard test
 
 ```bash

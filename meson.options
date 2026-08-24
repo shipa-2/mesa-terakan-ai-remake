@@ -211,6 +211,27 @@ option(
 )
 
 option(
+  'terakan-target-generation',
+  type : 'combo',
+  value : 'auto',
+  choices : ['auto', 'r600', 'r700', 'r800', 'r900'],
+  description : 'AMD TeraScale generation the Terakan Vulkan driver is being built ' +
+                'for: r600/r700 is HD2000-4000 (TeraScale 1), r800 is Evergreen ' +
+                '(TeraScale 2, HD5000), r900 is Northern Islands (HD6000, Terakan\'s ' +
+                'primary target). With auto, the AMD PCI device present on the build ' +
+                'machine is detected and its generation used, falling back to r900 ' +
+                'if none is found or more than one generation is present. This only ' +
+                'records which generation the build was made for, e.g. in ' +
+                'VkPhysicalDeviceProperties2::driverInfo; the driver already detects ' +
+                'the chip family of whichever GPU it runs on at Vulkan device ' +
+                'creation time, independently of this option. r600 and r700 are not ' +
+                'implemented: Terakan\'s hand-written shader bytecode targets the ' +
+                'Evergreen-and-later instruction encoding, which the older ' +
+                'TeraScale 1 generation does not use, so selecting them only labels ' +
+                'the build.',
+)
+
+option(
   'vulkan-drivers',
   type : 'array',
   value : ['auto'],
