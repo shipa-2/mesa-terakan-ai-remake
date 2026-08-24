@@ -37,8 +37,8 @@ if terakan_target_generation == 'auto'
             .format(terakan_target_generation))
   else
     terakan_target_generation = 'r900'
-    message('Terakan: no single AMD TeraScale PCI device found on the build machine (@0@); ' +
-            'defaulting the build target generation to r900'.format(detected_generation))
+    message(('Terakan: no single AMD TeraScale PCI device found on the build machine (@0@); ' +
+             'defaulting the build target generation to r900').format(detected_generation))
   endif
 endif
 if terakan_target_generation in ['r600', 'r700']
