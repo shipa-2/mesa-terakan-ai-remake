@@ -27,6 +27,7 @@
 #include "terakan_command_buffer.h"
 #include "terakan_device.h"
 #include "terakan_hw_config_loop_constants.h"
+#include "terakan_hw_config_shared_terascale_1.h"
 #include "terakan_limits.h"
 #include "terakan_physical_device.h"
 #include "terakan_shader.h"
@@ -85,6 +86,43 @@ terakan_hw_config_shared_indirect_buffer_begun(
 
    struct terakan_physical_device_chip_info const * const chip_info =
       &terakan_gfx_command_writer_physical_device(command_writer)->chip_info;
+
+   /* TeraScale 1's SQ_CONFIG/SQ_GPR_RESOURCE_MGMT/SQ_THREAD_RESOURCE_MGMT and the rest of the
+    * per-command-buffer context defaults have a genuinely different register layout from R8xx/R9xx
+    * below (see r600d.h vs evergreend.h, and the comment on
+    * terakan_hw_config_shared_terascale_1_write_context_defaults()), so this is a real fork, not a
+    * value plugged into shared code. `TERAKAN_CONTEXT_REG_OFFSET`/`TERAKAN_CONFIG_REG_OFFSET`
+    * themselves are unaffected -- R600_CONTEXT_REG_OFFSET/R600_CONFIG_REG_OFFSET in r600d_common.h
+    * are numerically identical to the EVERGREEN_* constants these macros are built from -- but the
+    * register offsets and values written relative to them are not.
+    */
+   if (chip_info->is_terascale_1) {
+      uint32_t * packet = terakan_gfx_command_writer_emit(
+         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG,
+         TERAKAN_HW_CONFIG_SHARED_TERASCALE_1_SQ_CONFIG_DWORDS +
+            TERAKAN_HW_CONFIG_SHARED_TERASCALE_1_CONTEXT_DEFAULTS_MAX_DWORDS);
+      if (unlikely(packet == NULL)) {
+         return;
+      }
+      struct terakan_hw_config_shared_terascale_1_sq_config_info const sq_config_info = {
+         .has_vertex_cache = chip_info->has_vertex_cache,
+         .num_gs_gprs = chip_info->terascale_1.num_gs_gprs,
+         .num_es_gprs = chip_info->terascale_1.num_es_gprs,
+         .num_ps_threads = chip_info->terascale_1.num_ps_threads,
+         .num_vs_threads = chip_info->terascale_1.num_vs_threads,
+         .num_gs_threads = chip_info->terascale_1.num_gs_threads,
+         .num_es_threads = chip_info->terascale_1.num_es_threads,
+         .num_ps_stack_entries = chip_info->terascale_1.num_ps_stack_entries,
+         .num_vs_stack_entries = chip_info->terascale_1.num_vs_stack_entries,
+         .num_gs_stack_entries = chip_info->terascale_1.num_gs_stack_entries,
+         .num_es_stack_entries = chip_info->terascale_1.num_es_stack_entries,
+      };
+      packet = terakan_hw_config_shared_terascale_1_write_sq_config(packet, &sq_config_info);
+      packet = terakan_hw_config_shared_terascale_1_write_context_defaults(
+         packet, terakan_physical_device_chip_family_is_r700(chip_info->chip_family));
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
+      return;
+   }
 
    {
       uint32_t * packet = terakan_gfx_command_writer_emit(
@@ -259,7 +297,18 @@ static void
 terakan_hw_config_shared_draw_emit_sq_thread_stack_resource_mgmt(
    struct terakan_gfx_command_writer * const command_writer)
 {
-   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_r9xx) {
+   struct terakan_physical_device_chip_info const * const chip_info =
+      &terakan_gfx_command_writer_physical_device(command_writer)->chip_info;
+   /* R9xx has no SQ_THREAD_RESOURCE_MGMT_1 at all (fixed thread/stack allocation instead). TeraScale
+    * 1 has no register at this offset (0x008C18) either -- r600d.h defines no
+    * R_008C18_SQ_THREAD_RESOURCE_MGMT_1, unlike evergreend.h -- and doesn't switch thread/stack
+    * allocation per draw call in the first place, since it has no tessellator: the fixed set written
+    * once in terakan_hw_config_shared_indirect_buffer_begun() (via
+    * terakan_hw_config_shared_terascale_1_write_sq_config()) is all it needs. Writing this register
+    * for TeraScale 1 would hit whatever unrelated register (if any) actually lives at this offset on
+    * that hardware, not a differently-laid-out version of the same one.
+    */
+   if (chip_info->is_r9xx || chip_info->is_terascale_1) {
       return;
    }
    uint32_t * packet = terakan_gfx_command_writer_emit(
@@ -284,7 +333,17 @@ terakan_hw_config_shared_compute_emit_sq_thread_stack_resource_mgmt(
 {
    struct terakan_physical_device_chip_info const * const chip_info =
       &terakan_gfx_command_writer_physical_device(command_writer)->chip_info;
-   if (chip_info->is_r9xx) {
+   /* See the comment on terakan_hw_config_shared_draw_emit_sq_thread_stack_resource_mgmt() for why
+    * R9xx is excluded. TeraScale 1 is excluded for the same reason (no register at this offset in
+    * r600d.h), but unlike the draw-time function, this isn't simply unneeded for TeraScale 1: its
+    * compute/"LS" thread and stack allocation hasn't been researched yet at all (chip_info->terascale_1
+    * has no LS-stage field the way it has num_ps_gprs/num_vs_gprs/etc. for the graphics stages -- see
+    * terakan_physical_device.h), so this is a real gap, not a no-op, tracked in TODO.md. Guarding it
+    * out here means a TeraScale 1 compute dispatch would run with no compute thread/stack
+    * configuration at all rather than one built from a register that doesn't mean this on this
+    * hardware.
+    */
+   if (chip_info->is_r9xx || chip_info->is_terascale_1) {
       return;
    }
    uint32_t * packet = terakan_gfx_command_writer_emit(
@@ -543,7 +602,14 @@ terakan_hw_config_shared_draw_emit_modified(struct terakan_gfx_command_writer * 
       config->is_compute_active_ = false;
       terakan_hw_config_shared_set_common_modified_for_draw_compute_switch(config);
 
-      if (!terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_r9xx) {
+      /* R_008E2C_SQ_LDS_RESOURCE_MGMT does not exist in r600d.h -- see the comment on
+       * terakan_hw_config_shared_compute_emit_sq_thread_stack_resource_mgmt() for the same finding
+       * about R_008C18. TeraScale 1 LDS/compute-shared-memory configuration is unresearched, so this
+       * stays unguarded-but-skipped rather than writing to an offset that means something else there.
+       */
+      struct terakan_physical_device_chip_info const * const chip_info =
+         &terakan_gfx_command_writer_physical_device(command_writer)->chip_info;
+      if (!chip_info->is_r9xx && !chip_info->is_terascale_1) {
          terakan_hw_config_shared_emit_config_register(
             command_writer, R_008E2C_SQ_LDS_RESOURCE_MGMT,
             S_008E2C_NUM_PS_LDS(TERAKAN_LIMITS_HW_LDS_SIMD_DWORD_COUNT / 2) |
@@ -553,7 +619,9 @@ terakan_hw_config_shared_draw_emit_modified(struct terakan_gfx_command_writer * 
       bool ps_and_vs_partial_flush = false, vs_partial_flush = false;
 
       /* Flush before changing shader hardware resource allocation. */
-      if (!terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_r9xx) {
+      struct terakan_physical_device_chip_info const * const chip_info =
+         &terakan_gfx_command_writer_physical_device(command_writer)->chip_info;
+      if (!chip_info->is_r9xx && !chip_info->is_terascale_1) {
          if (config->draw_.entries_modified &
              BITFIELD_BIT(TERAKAN_HW_CONFIG_SHARED_ENTRY_SQ_THREAD_STACK_RESOURCE_MGMT)) {
             if (config->draw_.sq_thread_stack_resource_mgmt.ps_modified) {

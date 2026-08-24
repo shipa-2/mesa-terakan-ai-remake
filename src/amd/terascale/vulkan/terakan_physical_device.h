@@ -66,6 +66,18 @@ terakan_physical_device_chip_family_is_terascale_1(enum radeon_family const chip
    return chip_family >= CHIP_R600 && chip_family <= CHIP_RV740;
 }
 
+/* Only meaningful when terakan_physical_device_chip_family_is_terascale_1() is true for the same
+ * chip_family: true for R700 (RV770/RV730/RV710/RV740, contiguous in enum radeon_family), false for
+ * R600 (R600/RV610/RV630/RV670/RV620/RV635/RS780/RS880, also contiguous and immediately preceding
+ * R700 in the enum). Matches the classic Gallium R600 driver's own R600-vs-R700 gfx_level split
+ * (radeon_drm_winsys.c's DRV_R600 chip_family switch).
+ */
+static inline bool
+terakan_physical_device_chip_family_is_r700(enum radeon_family const chip_family)
+{
+   return chip_family >= CHIP_RV770 && chip_family <= CHIP_RV740;
+}
+
 char const * terakan_physical_device_chip_family_name(enum radeon_family chip_family);
 
 struct terakan_physical_device_chip_info {
