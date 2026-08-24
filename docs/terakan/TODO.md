@@ -69,7 +69,7 @@ classic Gallium R600 driver that has supported this hardware for years).
 | Work item | Importance | Complexity | Feasibility | Acceptance criteria |
 |---|---:|---:|---|---|
 | Determine real per-family render backend counts (or query `RADEON_INFO_NUM_BACKENDS` from the kernel, as the classic R600 driver does) | 5/5 | 2/5 | `max_render_backends_log2` is a placeholder 0 for TeraScale 1 today, deliberately, so anything that starts consuming it before this is done fails loudly rather than addressing memory as though there were more backends than the hardware has | A real value backs `max_render_backends_log2` for every recognized TeraScale 1 chip family, sourced from kernel query or documented per-family reference, not guessed |
-| Wire the TeraScale 1 "begin command buffer" register atom into command buffer recording, plus CB/DB per-draw state and command stream building | 5/5 | 5/5 | The atom itself is fully written and regression-tested against real RV710 reference values (`terakan_hw_config_shared_terascale_1_write_sq_config()` and `_write_context_defaults()`, covering everything `r600_init_atom_start_cs()` in `r600_state.c` does), but not yet called from `terakan_hw_config_shared_indirect_buffer_begun`, and CB/DB per-draw state (the actual point of "SQ/CB/DB register configuration") has not been started at all. SQ_GPR_RESOURCE_MGMT_1 (NUM_PS_GPRS/NUM_VS_GPRS/NUM_CLAUSE_TEMP_GPRS) is dynamic per shader binding on this hardware, not part of the begin-command-buffer atom -- see `r600_update_gpr_alloc()` in `r600_state.c` -- and is not covered yet either. Streaming output is out of scope until TODO.md's existing R8xx/R9xx P1 item for it lands, so the reference function's streamout-conditional registers are not written | `vkCreateDevice` succeeds on a TeraScale 1 physical device and a trivial compute dispatch completes |
+| Wire the TeraScale 1 register-emission helpers into command buffer recording, keep surveying and porting per-draw CB/DB state, and build command stream submission | 5/5 | 5/5 | The begin-command-buffer atom is fully written and tested against real RV710 reference values. Two per-draw registers are also written and tested (`terakan_hw_config_draw_terascale_1_write_db_depth_control`/`_write_cb_target_mask`), chosen because their field layout (or, for CB_TARGET_MASK, complete absence of one) is confirmed identical to R8xx/R9xx, so Terakan's existing value-computation logic for them needs no TeraScale 1 equivalent, only the register offset does. None of this is called from anywhere yet. Most of CB/DB per-draw state remains unsurveyed, and where it is surveyed it is not uniformly compatible -- CB_COLOR_CONTROL at 0x028808, for instance, has a 3-bit field at the same bit position (4) that means SPECIAL_OP on R600/R700 and MODE on Evergreen-and-later, an incompatible field with no shared meaning, so each register needs checking against both `r600d.h` and `evergreend.h` before assuming either compatibility or divergence. CB_COLOR*_BASE/INFO/SIZE (the actual render target binding) is blocked on tiling/surface addressing, the item below, since it needs surface pitch/slice tile counts that do not exist for TeraScale 1 yet | `vkCreateDevice` succeeds on a TeraScale 1 physical device and a trivial compute dispatch completes |
 | Research TeraScale 1 tiling/surface addressing (bank/pipe swizzle, macro-tile layout) | 5/5 | 5/5 | Not yet started; this is the highest-risk area, since a wrong tiling computation corrupts memory silently rather than failing loudly | A buffer/image round trip through the tiled surface layout matches, the same class of check `terakan_image.c` already does for R8xx/R9xx |
 | Port the hand-written meta shader bytecode (blit/resolve/clear/copy/query, all of `src/amd/terascale/vulkan/meta/`) to the R6xx/R7xx CF/ALU/TEX instruction encoding | 4/5 | 5/5 | The NIR-to-bytecode compiler (SFN, `src/gallium/drivers/r600/sfn/`) already accepts `amd_gfx_level` including `R600`/`R700` distinct from `EVERGREEN`, since the classic Gallium R600 driver already uses it for this hardware -- shaders reaching the driver through NIR may need only the right `gfx_level` threaded through, but the meta shaders are hand-written Evergreen-only bytecode and need real per-generation variants | Each meta operation this driver depends on (at minimum blit and clear) passes its existing readback test on TeraScale 1 hardware |
 | Recognize R600/R700 PCI IDs and correctly plumb `gfx_level` through the NIR shader path for real application shaders | 3/5 | 2/5 | The `is_chip_family_supported`/`chip_info_init` work above already recognizes the full R600..RV740 range; what remains is confirming no Evergreen-specific assumption leaks into `terakan_nir_*` lowering | A real application vertex/fragment shader compiles and renders correctly on TeraScale 1 |
@@ -142,6 +142,26 @@ classic Gallium R600 driver that has supported this hardware for years).
   the reference function's streamout-conditional stores are not written.
   Neither function is called from anywhere yet -- see the P0-equivalent item
   above for what wiring them in still needs.
+
+- TeraScale 1 (R600/R700) `DB_DEPTH_CONTROL`/`CB_TARGET_MASK` emission:
+  `terakan_hw_config_draw_terascale_1_write_db_depth_control()` and
+  `_write_cb_target_mask()`, the first two per-draw (as opposed to
+  once-per-command-buffer) registers ported. Both take a caller-computed
+  value rather than computing one themselves, because both are confirmed
+  compatible with R8xx/R9xx by checking every field macro against both
+  `r600d.h` and `evergreend.h` directly: `DB_DEPTH_CONTROL`'s fields
+  (`STENCIL_ENABLE`, `Z_ENABLE`, `Z_WRITE_ENABLE`, `ZFUNC`,
+  `BACKFACE_ENABLE`, the `STENCILFUNC`/`FAIL`/`ZPASS`/`ZFAIL` group and their
+  `_BF` back-face counterparts) all have identical bit positions and widths
+  in both headers, and `CB_TARGET_MASK` has no named fields in either header
+  at all -- it is a plain 4-bits-per-render-target write mask, so there is no
+  layout to diverge in the first place. This means Terakan's existing
+  R8xx/R9xx value-computation logic for these two registers needs no
+  TeraScale 1 equivalent; only the register offset differs between
+  generations, which these two functions exist to isolate. Not every
+  neighboring register is like this: see the note on `CB_COLOR_CONTROL` in
+  the P0-equivalent item above, checked and found to diverge in the course of
+  finding these two.
 
 - Reducing stencil resolve, `VK_RESOLVE_MODE_MIN_BIT` and
   `VK_RESOLVE_MODE_MAX_BIT`: the same shaders and dispatch as the depth reducing
