@@ -89,6 +89,18 @@ its eight destination slices unwritten, and three of the four array layers
 receive layer zero. The CTS blit batch has not been rerun since, so the numbers
 above still describe the previous state.
 
+With the CTS binary still unavailable, `terakan_blit_format_matrix` covers the
+specific format-matrix gap the acceptance criteria name explicitly:
+`VK_FORMAT_R8G8B8A8_UNORM` to `VK_FORMAT_B8G8R8A8_UNORM` (a format-converting
+blit between formats with a different channel order in memory), the same pair
+mirrored on X (combining the format conversion with a reversed
+source/destination axis), and an identity `VK_FORMAT_R32_UINT` blit (a single
+32-bit-channel format, a different pixel shader export/texture fetch shape
+from the 8-bit-per-channel packed formats every other blit test here uses).
+All three pass on real CAICOS hardware. This is real, previously-missing
+regression coverage, not a bug found and fixed -- the full per-format matrix
+CTS would exercise remains unverified without the CTS binary.
+
 The initial selected clear batch passed its first 64 1D and 2D color cases, then
 `dEQP-VK.api.image_clearing.core.clear_color_image.3d.optimal.single_layer.r8g8b8a8_unorm`
 returned `VK_ERROR_DEVICE_LOST`. The kernel rejected the command stream with:
@@ -139,6 +151,7 @@ terakan_frame_chain_compute
 terakan_frame_chain_depth
 terakan_dynamic_rendering
 terakan_blit_3d
+terakan_blit_format_matrix
 terakan_depth_resolve_subresource
 terakan_resolve_modes_2x
 terakan_resolve_modes_4x
