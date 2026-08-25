@@ -12,7 +12,7 @@ accept the work. Both use a 1–5 scale.
 | Work item | Importance | Complexity | Feasibility | Acceptance criteria |
 |---|---:|---:|---|---|
 | Implement and validate FMASK/CMASK allocation, identity initialization and sampled MSAA addressing | 5/5 | 5/5 | Implementable; requires Evergreen tiling research | Per-sample reads and resolved reads pass for 2x/4x/8x images without corrupting ordinary color targets |
-| Fix stencil-only render targets on combined depth/stencil images | 4/5 | 3/5 | Still not understood beyond the symptom; see the note below, updated with a real fix that was confirmed NOT to be the cause and a documented negative reproduction attempt, so the next pass doesn't retread the same ground. Every current stencil user works around it by binding a depth attachment alongside, which is how real applications shape a depth/stencil resolve anyway, but an application that legitimately renders stencil alone (shadow volumes, portal culling) on a combined-format image would still hit it | A stencil-only `vkCmdBeginRendering` (`pDepthAttachment == NULL`, `pStencilAttachment` naming a combined-format image) writes and reads back correctly without a depth attachment bound alongside |
+| Fix stencil-only render targets on combined depth/stencil images | 4/5 | 3/5 | Root cause still unknown, but now precisely isolated: a stencil-only clear and a stencil-only single-sample draw both work correctly (confirmed on real hardware, several sizes), while a stencil-only *multisampled* draw (2x/4x/8x, any resolve mode) fails deterministically every run -- see the note below for the exact three-line repro and the leading `DB_Z_INFO.NUM_SAMPLES` lead for the next pass. Every current stencil user works around it by binding a depth attachment alongside, which is how real applications shape a depth/stencil resolve anyway, but an application that legitimately renders multisampled stencil alone on a combined-format image would still hit it | A stencil-only `vkCmdBeginRendering` (`pDepthAttachment == NULL`, `pStencilAttachment` naming a combined-format image) writes and reads back correctly without a depth attachment bound alongside, at any sample count |
 | Complete cache and barrier coherency | 5/5 | 4/5 | Implementable. Composition coverage now exists (`terakan_frame_chain`, both the render-pass and the compute producer) and passes, so the remaining hazard is narrower than a repeated clear/dispatch, sample, render and copy chain | Focused attachment, texture, storage, transfer, graphics/compute and query producer-consumer chains pass without application-specific waits |
 | Cover remaining copy, blit and resolve format/subresource combinations | 5/5 | 4/5 | Implementable | Boundary tests cover non-zero offsets, partial extents, mip levels, array/3D layers and every advertised compatible format class |
 | Correct meta blit format coverage | 5/5 | 3/5 | Implementable; the typed, mirrored and layered/3D-depth cases are fixed, leaving the per-format matrix | All basic CTS blits pass for RGBA, BGRA, R32, reversed source/destination axes and 3D slices |
@@ -683,6 +683,50 @@ classic Gallium R600 driver that has supported this hardware for years).
   what `terakan_stencil_resolve_modes` exercises when it works around the
   bug by binding a depth attachment alongside), since a bare `LOAD_OP_CLEAR`
   may simply not exercise whatever code path the original symptom came from.
+
+  **A further pass reliably reproduced the bug, isolating it to
+  multisampling specifically** -- neither a clear (above) nor a
+  single-sample rasterizer draw through `STENCIL_REPLACE` (also tried,
+  256x256, `VK_FORMAT_D32_SFLOAT_S8_UINT`, stencil-only view,
+  `pDepthAttachment == NULL`, 25 clean runs, all passed exactly) reproduce
+  anything wrong. Taking `terakan_stencil_resolve_modes_test.cpp` almost
+  unchanged -- the only edit is `.pDepthAttachment = &depth_attachment`
+  becoming `.pDepthAttachment = nullptr` on its `VkRenderingInfoKHR` --
+  and running it at 2x, 4x or 8x samples fails **deterministically and
+  identically every run**: every texel of all three resolve destinations
+  (`SAMPLE_ZERO`/`MIN`/`MAX`) reads back the same constant byte, `0x5A`,
+  regardless of sample count or resolve mode, instead of the distinct
+  per-mode values the test expects. `0x5A` is not the clear value (the
+  test clears stencil to `0`), not any of the per-sample values the test
+  writes (`kSampleStencils`, none of which is `0x5A`), and not a value
+  this test or the reference-value constant in the single-sample draw
+  test that was tried first and passed (`0x5A` was chosen there
+  independently, coincidentally the same byte, before this MSAA case was
+  found) has any reason to produce -- the leading theory is that it is
+  simply whatever was already sitting in that VRAM allocation, i.e. nothing
+  in the draw *or the resolve* actually reached the destination in the
+  no-depth-bound case, not that a wrong value got written. This has not
+  been confirmed by reading back the raw multisampled surface directly
+  (Vulkan doesn't allow a plain buffer copy of a multisampled image, and
+  adapting `terakan_stencil_msaa_fetch_test.cpp`'s shader-based readback
+  to check the pre-resolve surface specifically was not done this pass).
+  This is now a precise, reliable, three-line repro recipe rather than a
+  vague "sometimes corrupts" report, and should let the next pass go
+  straight to instrumenting the actual command stream (`TERAKAN_DEBUG_RENDER=1`
+  prints render-pass-begin/-end state but not register contents; a real
+  next step is dumping what `terakan_hw_config_draw_emit_db_depth_stencil_buffer()`
+  and the DB register atoms it depends on actually compute and submit for
+  this exact case) instead of re-deriving a repro from scratch. Single
+  samples (this bullet and the one above) are unaffected regardless of
+  whether depth is bound, narrowing the search to whatever differs
+  specifically between the single-sample and multisample code paths when
+  `pDepthAttachment == NULL` -- `DB_Z_INFO.NUM_SAMPLES` is one candidate
+  worth checking first: `terakan_hw_config_draw_emit_db_depth_stencil_buffer()`
+  unconditionally clears it for every non-R9xx chip (`hw_z_info &=
+  C_028040_NUM_SAMPLES`, Caicos included) regardless of whether depth is
+  bound, so if the real sample count needs to reach DB by some other path
+  when only stencil is written, that path -- not this masking, which is
+  identical either way -- is where to look.
 
 - Reducing depth resolve, `VK_RESOLVE_MODE_MIN_BIT` and `VK_RESOLVE_MODE_MAX_BIT`:
   every sample is fetched and combined in the pixel shader, one program per
