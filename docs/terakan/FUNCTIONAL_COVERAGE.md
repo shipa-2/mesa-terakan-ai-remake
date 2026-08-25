@@ -112,10 +112,19 @@ starts filled with a sentinel, so a readback distinguishes a
 misplaced/mis-sized copy from a merely wrong value. All four cases pass
 on real CAICOS hardware, repeated eight times with zero failures given
 the earlier retracted "deterministic" MSAA claim above making single-run
-results untrustworthy on their own. Multisampled vkCmdCopyImage is not
-covered: `terakan_meta_copy_image.c` has no sample-count guard before its
-single-sample-shaped meta-draw copy path, a separate, still-open gap
-comparable in scope to the FMASK/CMASK work.
+results untrustworthy on their own. Multisampled vkCmdCopyImage itself is
+still not implemented -- `terakan_meta_copy_image.c` has no sample-count
+guard before its single-sample-shaped meta-draw copy path -- but
+`terakan_copy_image_multisample_noop_test` establishes what actually
+happens today: the destination is left completely untouched (6/6 repeat
+runs), not corrupted, most likely because a #MemoryIntegrity-style check
+inside the meta-draw's descriptor creation rejects the source's mismatched
+dimensionality (bound as plain 2D_ARRAY regardless of its real sample
+count) and the copy loop silently skips the region. Implementing real MSAA
+copying remains comparable in scope to the FMASK/CMASK work; this test
+just locks in that the current gap is a silent no-op rather than the
+silent corruption it looked like it could be, so a future unrelated change
+cannot regress into that worse failure mode unnoticed.
 
 `terakan_color_resolve_subresource` is the first test in this suite to
 exercise a COLOR attachment multisample resolve at all -- prior coverage
@@ -196,6 +205,7 @@ terakan_dynamic_rendering
 terakan_blit_3d
 terakan_blit_format_matrix
 terakan_copy_image_subresource
+terakan_copy_image_multisample_noop
 terakan_color_resolve_subresource
 terakan_depth_resolve_subresource
 terakan_resolve_modes_2x
