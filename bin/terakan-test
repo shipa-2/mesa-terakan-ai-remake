@@ -71,6 +71,7 @@ gpu_tests=(
   terakan_dynamic_rendering
   terakan_blit_3d
   terakan_blit_format_matrix
+  terakan_copy_image_subresource
   terakan_depth_resolve_subresource
   terakan_resolve_modes_2x
   terakan_resolve_modes_4x

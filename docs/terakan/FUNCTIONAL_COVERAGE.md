@@ -101,6 +101,22 @@ All three pass on real CAICOS hardware. This is real, previously-missing
 regression coverage, not a bug found and fixed -- the full per-format matrix
 CTS would exercise remains unverified without the CTS binary.
 
+`terakan_copy_image_subresource` covers the vkCmdCopyImage subresource
+gaps the "remaining copy, blit and resolve" acceptance criteria name
+explicitly: a partial-extent copy at non-zero source and destination
+offsets landing in a different array layer, a copy between two different
+mip levels of the same image, and a copy region spanning multiple array
+layers at once. The source image is filled per level/layer with a value
+encoding its own mip, layer and (x, y) position and the destination
+starts filled with a sentinel, so a readback distinguishes a
+misplaced/mis-sized copy from a merely wrong value. All four cases pass
+on real CAICOS hardware, repeated eight times with zero failures given
+the earlier retracted "deterministic" MSAA claim above making single-run
+results untrustworthy on their own. Multisampled vkCmdCopyImage is not
+covered: `terakan_meta_copy_image.c` has no sample-count guard before its
+single-sample-shaped meta-draw copy path, a separate, still-open gap
+comparable in scope to the FMASK/CMASK work.
+
 The initial selected clear batch passed its first 64 1D and 2D color cases, then
 `dEQP-VK.api.image_clearing.core.clear_color_image.3d.optimal.single_layer.r8g8b8a8_unorm`
 returned `VK_ERROR_DEVICE_LOST`. The kernel rejected the command stream with:
@@ -152,6 +168,7 @@ terakan_frame_chain_depth
 terakan_dynamic_rendering
 terakan_blit_3d
 terakan_blit_format_matrix
+terakan_copy_image_subresource
 terakan_depth_resolve_subresource
 terakan_resolve_modes_2x
 terakan_resolve_modes_4x
