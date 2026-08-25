@@ -746,6 +746,26 @@ if with_tests
         ],
         depfile : 'terakan_frame_chain_depth.frag.spv.d',
       )
+      terakan_frame_chain_ssbo_compute_spv = custom_target(
+        'terakan_frame_chain_ssbo.comp.spv',
+        input : 'tests/terakan_frame_chain_ssbo.comp',
+        output : 'terakan_frame_chain_ssbo.comp.spv',
+        command : [
+          prog_glslang, '-V', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_frame_chain_ssbo.comp.spv.d',
+      )
+      terakan_frame_chain_ssbo_fragment_spv = custom_target(
+        'terakan_frame_chain_ssbo.frag.spv',
+        input : 'tests/terakan_frame_chain_ssbo.frag',
+        output : 'terakan_frame_chain_ssbo.frag.spv',
+        command : [
+          prog_glslang, '-V', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_frame_chain_ssbo.frag.spv.d',
+      )
       terakan_frame_chain_test = executable(
         'terakan_frame_chain_test',
         ['tests/terakan_frame_chain_test.cpp'],
@@ -798,6 +818,27 @@ if with_tests
           libvulkan_terascale, _dev_icd,
           terakan_frame_chain_vertex_spv, terakan_frame_chain_fragment_spv,
           terakan_frame_chain_depth_fragment_spv,
+        ],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 30,
+      )
+
+      test(
+        'terakan_frame_chain_ssbo',
+        terakan_frame_chain_test,
+        args : [
+          terakan_frame_chain_vertex_spv, terakan_frame_chain_fragment_spv,
+          terakan_frame_chain_ssbo_compute_spv, terakan_frame_chain_ssbo_fragment_spv,
+          '--compute-ssbo',
+        ],
+        depends : [
+          libvulkan_terascale, _dev_icd,
+          terakan_frame_chain_vertex_spv, terakan_frame_chain_fragment_spv,
+          terakan_frame_chain_ssbo_compute_spv, terakan_frame_chain_ssbo_fragment_spv,
         ],
         env : {
           'VK_DRIVER_FILES' : _dev_icd.full_path(),

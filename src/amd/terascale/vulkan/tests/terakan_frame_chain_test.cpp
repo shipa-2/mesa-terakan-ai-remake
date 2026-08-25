@@ -15,6 +15,13 @@
  * is dominated by depth-only passes that are then sampled. It exercises the DB-to-texture path that
  * the colour chain never touches.
  *
+ * --compute-ssbo composes a storage buffer hazard alongside the existing storage image one: the
+ * compute pass that produces the frame also writes a per-frame value into an SSBO, and the sampling
+ * pass reads it back into the alpha channel next to the RGB it samples from the image. Storage
+ * buffers and storage images go through different cache/RAT paths on this hardware, and this is the
+ * gap the coverage note above calls out explicitly: "storage buffers alongside storage images".
+ * Alpha wrong with RGB correct isolates an SSBO-specific staleness bug from an image one.
+ *
  * Each frame clears attachment A to a colour unique to that frame, transitions it to be sampled,
  * samples it into attachment B, transitions B for transfer, and copies B into its own slice of a
  * readback buffer. Any frame that observes a neighbouring frame's colour has seen through a
@@ -144,18 +151,31 @@ main(int argc, char ** argv)
     */
    bool const use_compute = argc == 5 && std::strcmp(argv[4], "--compute") == 0;
    bool const use_depth = argc == 5 && std::strcmp(argv[4], "--depth") == 0;
-   if (argc != 3 && !(argc == 5 && (use_compute || use_depth))) {
-      std::fprintf(stderr, "usage: %s VERT_SPV FRAG_SPV [COMP_SPV --compute | DEPTH_FRAG_SPV --depth]\n",
+   bool const use_ssbo = argc == 6 && std::strcmp(argv[5], "--compute-ssbo") == 0;
+   if (argc != 3 && !(argc == 5 && (use_compute || use_depth)) && !use_ssbo) {
+      std::fprintf(stderr,
+                   "usage: %s VERT_SPV FRAG_SPV [COMP_SPV --compute | DEPTH_FRAG_SPV --depth | "
+                   "COMP_SSBO_SPV SSBO_FRAG_SPV --compute-ssbo]\n",
                    argv[0]);
       return 2;
    }
    std::vector<uint32_t> const vertex_spirv = read_spirv(argv[1]);
-   /* In depth mode the second pass samples a depth texture, so it needs its own fragment shader. */
+   /* In depth mode the second pass samples a depth texture, so it needs its own fragment shader.
+    * In ssbo mode it needs its own fragment shader too, to also read the storage buffer; argv[2]
+    * is unused in that mode, kept only so every mode's argv[1]/argv[2] stay the plain vertex/colour
+    * shaders positionally.
+    */
    std::vector<uint32_t> const fragment_spirv = read_spirv(use_depth ? argv[3] : argv[2]);
-   std::vector<uint32_t> const compute_spirv = use_compute ? read_spirv(argv[3])
-                                                           : std::vector<uint32_t>{1};
+   std::vector<uint32_t> const compute_spirv =
+      (use_compute || use_ssbo) ? read_spirv(argv[3]) : std::vector<uint32_t>{1};
+   std::vector<uint32_t> const ssbo_fragment_spirv =
+      use_ssbo ? read_spirv(argv[4]) : std::vector<uint32_t>{};
    if (compute_spirv.empty()) {
       std::fprintf(stderr, "Unable to read the compute SPIR-V\n");
+      return 2;
+   }
+   if (use_ssbo && ssbo_fragment_spirv.empty()) {
+      std::fprintf(stderr, "Unable to read the ssbo fragment SPIR-V\n");
       return 2;
    }
    if (vertex_spirv.empty() || fragment_spirv.empty()) {
@@ -238,6 +258,38 @@ main(int argc, char ** argv)
    VK_CHECK(create_image(device, physical_device,
                          VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                          VK_FORMAT_D32_SFLOAT, VK_IMAGE_ASPECT_DEPTH_BIT, depth));
+
+   /* The ssbo producer's storage buffer: a single frame value, written by the compute pass and
+    * read back by the fragment pass, standing in for a real application's compute-generated data
+    * (particle positions, culling results, indirect draw parameters) consumed a few draws later.
+    * Created unconditionally so the teardown stays uniform.
+    */
+   VkBuffer ssbo_buffer = VK_NULL_HANDLE;
+   VkDeviceMemory ssbo_memory = VK_NULL_HANDLE;
+   {
+      VkBufferCreateInfo const ssbo_info = {
+         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+         .size = sizeof(uint32_t),
+         .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+      };
+      VK_CHECK(vkCreateBuffer(device, &ssbo_info, nullptr, &ssbo_buffer));
+      VkMemoryRequirements ssbo_requirements;
+      vkGetBufferMemoryRequirements(device, ssbo_buffer, &ssbo_requirements);
+      uint32_t const ssbo_memory_type = find_memory_type(
+         physical_device, ssbo_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+      if (ssbo_memory_type == UINT32_MAX) {
+         std::fprintf(stderr, "No device-local memory for the ssbo buffer\n");
+         return 1;
+      }
+      VkMemoryAllocateInfo const ssbo_allocation = {
+         .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+         .allocationSize = ssbo_requirements.size,
+         .memoryTypeIndex = ssbo_memory_type,
+      };
+      VK_CHECK(vkAllocateMemory(device, &ssbo_allocation, nullptr, &ssbo_memory));
+      VK_CHECK(vkBindBufferMemory(device, ssbo_buffer, ssbo_memory, 0));
+   }
 
    VkDeviceSize const frame_bytes = kWidth * kHeight * 4;
    VkBufferCreateInfo const readback_info = {
@@ -499,17 +551,25 @@ main(int argc, char ** argv)
    VkShaderModule compute_module = VK_NULL_HANDLE;
    VkDescriptorPool compute_descriptor_pool = VK_NULL_HANDLE;
    struct ComputePushConstants { uint32_t frame, width, height; };
-   if (use_compute) {
-      VkDescriptorSetLayoutBinding const compute_binding = {
-         .binding = 0,
-         .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-         .descriptorCount = 1,
-         .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+   if (use_compute || use_ssbo) {
+      VkDescriptorSetLayoutBinding const compute_bindings[2] = {
+         {
+            .binding = 0,
+            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+            .descriptorCount = 1,
+            .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+         },
+         {
+            .binding = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .descriptorCount = 1,
+            .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+         },
       };
       VkDescriptorSetLayoutCreateInfo const compute_set_layout_info = {
          .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-         .bindingCount = 1,
-         .pBindings = &compute_binding,
+         .bindingCount = use_ssbo ? 2u : 1u,
+         .pBindings = compute_bindings,
       };
       VK_CHECK(vkCreateDescriptorSetLayout(device, &compute_set_layout_info, nullptr,
                                            &compute_set_layout));
@@ -527,15 +587,15 @@ main(int argc, char ** argv)
       };
       VK_CHECK(vkCreatePipelineLayout(device, &compute_pipeline_layout_info, nullptr,
                                       &compute_pipeline_layout));
-      VkDescriptorPoolSize const compute_pool_size = {
-         .type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-         .descriptorCount = 1,
+      VkDescriptorPoolSize const compute_pool_sizes[2] = {
+         {.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, .descriptorCount = 1},
+         {.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .descriptorCount = 1},
       };
       VkDescriptorPoolCreateInfo const compute_pool_info = {
          .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
          .maxSets = 1,
-         .poolSizeCount = 1,
-         .pPoolSizes = &compute_pool_size,
+         .poolSizeCount = use_ssbo ? 2u : 1u,
+         .pPoolSizes = compute_pool_sizes,
       };
       VK_CHECK(vkCreateDescriptorPool(device, &compute_pool_info, nullptr,
                                       &compute_descriptor_pool));
@@ -551,15 +611,30 @@ main(int argc, char ** argv)
          .imageView = source.view,
          .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
       };
-      VkWriteDescriptorSet const compute_write = {
-         .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-         .dstSet = compute_descriptor_set,
-         .dstBinding = 0,
-         .descriptorCount = 1,
-         .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-         .pImageInfo = &storage_descriptor,
+      VkDescriptorBufferInfo const ssbo_descriptor = {
+         .buffer = ssbo_buffer,
+         .offset = 0,
+         .range = sizeof(uint32_t),
       };
-      vkUpdateDescriptorSets(device, 1, &compute_write, 0, nullptr);
+      VkWriteDescriptorSet const compute_writes[2] = {
+         {
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstSet = compute_descriptor_set,
+            .dstBinding = 0,
+            .descriptorCount = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+            .pImageInfo = &storage_descriptor,
+         },
+         {
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstSet = compute_descriptor_set,
+            .dstBinding = 1,
+            .descriptorCount = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .pBufferInfo = &ssbo_descriptor,
+         },
+      };
+      vkUpdateDescriptorSets(device, use_ssbo ? 2u : 1u, compute_writes, 0, nullptr);
 
       VkShaderModuleCreateInfo const compute_module_info = {
          .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
@@ -577,6 +652,113 @@ main(int argc, char ** argv)
       };
       VK_CHECK(vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &compute_pipeline_info, nullptr,
                                         &compute_pipeline));
+   }
+
+   /* ssbo path: its own descriptor set layout (sampler + storage buffer), pipeline layout and
+    * graphics pipeline for the sampling pass, since it needs a binding the plain colour/depth
+    * pipeline above does not have.
+    */
+   VkDescriptorSetLayout ssbo_set_layout = VK_NULL_HANDLE;
+   VkPipelineLayout ssbo_pipeline_layout = VK_NULL_HANDLE;
+   VkPipeline ssbo_pipeline = VK_NULL_HANDLE;
+   VkDescriptorSet ssbo_descriptor_set = VK_NULL_HANDLE;
+   VkShaderModule ssbo_fragment_module = VK_NULL_HANDLE;
+   VkDescriptorPool ssbo_descriptor_pool = VK_NULL_HANDLE;
+   if (use_ssbo) {
+      VkDescriptorSetLayoutBinding const ssbo_bindings[2] = {
+         {
+            .binding = 0,
+            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .descriptorCount = 1,
+            .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+         },
+         {
+            .binding = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .descriptorCount = 1,
+            .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+         },
+      };
+      VkDescriptorSetLayoutCreateInfo const ssbo_set_layout_info = {
+         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+         .bindingCount = 2,
+         .pBindings = ssbo_bindings,
+      };
+      VK_CHECK(
+         vkCreateDescriptorSetLayout(device, &ssbo_set_layout_info, nullptr, &ssbo_set_layout));
+      VkPipelineLayoutCreateInfo const ssbo_pipeline_layout_info = {
+         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+         .setLayoutCount = 1,
+         .pSetLayouts = &ssbo_set_layout,
+      };
+      VK_CHECK(vkCreatePipelineLayout(device, &ssbo_pipeline_layout_info, nullptr,
+                                      &ssbo_pipeline_layout));
+      VkDescriptorPoolSize const ssbo_pool_sizes[2] = {
+         {.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 1},
+         {.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .descriptorCount = 1},
+      };
+      VkDescriptorPoolCreateInfo const ssbo_pool_info = {
+         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+         .maxSets = 1,
+         .poolSizeCount = 2,
+         .pPoolSizes = ssbo_pool_sizes,
+      };
+      VK_CHECK(vkCreateDescriptorPool(device, &ssbo_pool_info, nullptr, &ssbo_descriptor_pool));
+      VkDescriptorSetAllocateInfo const ssbo_set_allocate_info = {
+         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+         .descriptorPool = ssbo_descriptor_pool,
+         .descriptorSetCount = 1,
+         .pSetLayouts = &ssbo_set_layout,
+      };
+      VK_CHECK(vkAllocateDescriptorSets(device, &ssbo_set_allocate_info, &ssbo_descriptor_set));
+      VkDescriptorImageInfo const ssbo_image_descriptor = {
+         .sampler = sampler,
+         .imageView = source.view,
+         .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+      };
+      VkDescriptorBufferInfo const ssbo_frag_buffer_descriptor = {
+         .buffer = ssbo_buffer,
+         .offset = 0,
+         .range = sizeof(uint32_t),
+      };
+      VkWriteDescriptorSet const ssbo_writes[2] = {
+         {
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstSet = ssbo_descriptor_set,
+            .dstBinding = 0,
+            .descriptorCount = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .pImageInfo = &ssbo_image_descriptor,
+         },
+         {
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstSet = ssbo_descriptor_set,
+            .dstBinding = 1,
+            .descriptorCount = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+            .pBufferInfo = &ssbo_frag_buffer_descriptor,
+         },
+      };
+      vkUpdateDescriptorSets(device, 2, ssbo_writes, 0, nullptr);
+
+      VkShaderModuleCreateInfo const ssbo_fragment_module_info = {
+         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+         .codeSize = ssbo_fragment_spirv.size() * sizeof(uint32_t),
+         .pCode = ssbo_fragment_spirv.data(),
+      };
+      VK_CHECK(vkCreateShaderModule(device, &ssbo_fragment_module_info, nullptr,
+                                    &ssbo_fragment_module));
+      VkPipelineShaderStageCreateInfo const ssbo_stages[2] = {
+         {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+          .stage = VK_SHADER_STAGE_VERTEX_BIT, .module = modules[0], .pName = "main"},
+         {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+          .stage = VK_SHADER_STAGE_FRAGMENT_BIT, .module = ssbo_fragment_module, .pName = "main"},
+      };
+      VkGraphicsPipelineCreateInfo ssbo_pipeline_info = pipeline_info;
+      ssbo_pipeline_info.pStages = ssbo_stages;
+      ssbo_pipeline_info.layout = ssbo_pipeline_layout;
+      VK_CHECK(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &ssbo_pipeline_info, nullptr,
+                                        &ssbo_pipeline));
    }
 
    VkCommandPoolCreateInfo const command_pool_info = {
@@ -626,7 +808,7 @@ main(int argc, char ** argv)
          };
          vkCmdBeginRenderPass(command_buffer, &depth_begin, VK_SUBPASS_CONTENTS_INLINE);
          vkCmdEndRenderPass(command_buffer);
-      } else if (use_compute) {
+      } else if (use_compute || use_ssbo) {
          vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute_pipeline);
          vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE,
                                  compute_pipeline_layout, 0, 1, &compute_descriptor_set, 0,
@@ -642,7 +824,7 @@ main(int argc, char ** argv)
 
       VkAccessFlags producer_access = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
       VkPipelineStageFlags producer_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-      if (use_compute) {
+      if (use_compute || use_ssbo) {
          producer_access = VK_ACCESS_SHADER_WRITE_BIT;
          producer_stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
       } else if (use_depth) {
@@ -661,17 +843,34 @@ main(int argc, char ** argv)
          .subresourceRange = {use_depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT,
                               0, 1, 0, 1},
       };
+      /* A second, independent hazard alongside the image one: the ssbo mode's compute pass also
+       * wrote the storage buffer the fragment pass is about to read, through the buffer/RAT cache
+       * path rather than the image one.
+       */
+      VkBufferMemoryBarrier const ssbo_to_read = {
+         .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+         .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+         .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+         .buffer = ssbo_buffer,
+         .offset = 0,
+         .size = sizeof(uint32_t),
+      };
       vkCmdPipelineBarrier(command_buffer, producer_stage, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                           0, 0, nullptr, 0, nullptr, 1, &source_to_sampled);
+                           0, 0, nullptr, use_ssbo ? 1 : 0, use_ssbo ? &ssbo_to_read : nullptr, 1,
+                           &source_to_sampled);
 
       /* Pass 2: sample it straight through into the target. */
       VkClearValue const target_clear = {.color = {.float32 = {0.0F, 0.0F, 0.0F, 0.0F}}};
       render_begin.framebuffer = target_framebuffer;
       render_begin.pClearValues = &target_clear;
       vkCmdBeginRenderPass(command_buffer, &render_begin, VK_SUBPASS_CONTENTS_INLINE);
-      vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-      vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0,
-                              1, &descriptor_set, 0, nullptr);
+      vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                        use_ssbo ? ssbo_pipeline : pipeline);
+      vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                              use_ssbo ? ssbo_pipeline_layout : pipeline_layout, 0, 1,
+                              use_ssbo ? &ssbo_descriptor_set : &descriptor_set, 0, nullptr);
       vkCmdDraw(command_buffer, 3, 1, 0, 0);
       vkCmdEndRenderPass(command_buffer);
 
@@ -751,7 +950,8 @@ main(int argc, char ** argv)
       for (uint32_t texel = 0; texel < kWidth * kHeight; ++texel) {
          uint8_t const * const pixel = pixels + texel * 4;
          bool matches = true;
-         for (uint32_t channel = 0; channel < 3; ++channel)
+         uint32_t const channel_count = use_ssbo ? 4 : 3;
+         for (uint32_t channel = 0; channel < channel_count; ++channel)
             matches &= pixel[channel] == expected_channel(frame, channel);
          if (!matches) {
             if (mismatches == 0)
@@ -781,8 +981,8 @@ main(int argc, char ** argv)
          ++bad_frames;
       }
    }
-   std::printf("frame_chain frames=%u bad=%u %s\n", kFrameCount, bad_frames,
-               bad_frames == 0 ? "PASS" : "FAIL");
+   std::printf("frame_chain%s frames=%u bad=%u %s\n", use_ssbo ? "_ssbo" : "", kFrameCount,
+               bad_frames, bad_frames == 0 ? "PASS" : "FAIL");
 
    vkDeviceWaitIdle(device);
    vkDestroyFence(device, fence, nullptr);
@@ -807,6 +1007,8 @@ main(int argc, char ** argv)
    vkUnmapMemory(device, readback_memory);
    vkDestroyBuffer(device, readback_buffer, nullptr);
    vkFreeMemory(device, readback_memory, nullptr);
+   vkDestroyBuffer(device, ssbo_buffer, nullptr);
+   vkFreeMemory(device, ssbo_memory, nullptr);
    vkDestroyDevice(device, nullptr);
    vkDestroyInstance(instance, nullptr);
    return bad_frames == 0 ? 0 : 1;

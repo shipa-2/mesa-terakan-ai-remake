@@ -1,0 +1,32 @@
+#version 450
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+/* Produces the frame's colour into a storage image, exactly like terakan_frame_chain.comp, and
+ * additionally writes a distinct per-frame value into a storage buffer -- a second producer using
+ * the RAT/cache path a plain storage image write does not exercise, composed into the same chain.
+ */
+layout(set = 0, binding = 0, rgba8) uniform writeonly image2D destination;
+layout(set = 0, binding = 1) buffer FrameValue {
+   uint value;
+} frame_value;
+
+layout(push_constant) uniform PushConstants {
+   uint frame;
+   uint width;
+   uint height;
+} push_constants;
+
+void
+main()
+{
+   uvec2 coordinate = gl_GlobalInvocationID.xy;
+   if (coordinate.x >= push_constants.width || coordinate.y >= push_constants.height)
+      return;
+   float r = float(8u + push_constants.frame * 9u + 0u) / 255.0;
+   float g = float(8u + push_constants.frame * 9u + 3u) / 255.0;
+   float b = float(8u + push_constants.frame * 9u + 6u) / 255.0;
+   imageStore(destination, ivec2(coordinate), vec4(r, g, b, 1.0));
+   if (coordinate.x == 0u && coordinate.y == 0u)
+      frame_value.value = 8u + push_constants.frame * 9u + 9u;
+}
