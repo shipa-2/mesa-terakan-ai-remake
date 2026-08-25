@@ -1289,6 +1289,30 @@ if with_tests
         ],
         dependencies : vulkan_loader_dep,
       )
+      terakan_color_resolve_multivalued_test = executable(
+        'terakan_color_resolve_multivalued_test',
+        [
+          'tests/terakan_color_resolve_multivalued_test.cpp',
+          terakan_color_msaa_write_vertex_spv,
+          terakan_color_msaa_write_fragment_spv,
+        ],
+        dependencies : vulkan_loader_dep,
+      )
+      foreach _color_resolve_samples : ['2', '4', '8']
+        test(
+          'terakan_color_resolve_multivalued_' + _color_resolve_samples + 'x',
+          terakan_color_resolve_multivalued_test,
+          args : ['--samples=' + _color_resolve_samples],
+          depends : [libvulkan_terascale, _dev_icd],
+          env : {
+            'VK_DRIVER_FILES' : _dev_icd.full_path(),
+            'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+            'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+          },
+          timeout : 15,
+        )
+      endforeach
+
       foreach _color_msaa_samples : ['2', '4', '8']
         test(
           'terakan_color_msaa_fetch_' + _color_msaa_samples + 'x',

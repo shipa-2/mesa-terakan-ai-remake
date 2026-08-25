@@ -160,6 +160,18 @@ when a render pass performed the initial layout transition, and CB colour
 compression/fast clear was enabled even for sampled images, letting the CB
 leave fragment planes unwritten that a texture fetch then read directly.
 
+`terakan_color_resolve_multivalued_2x`/`_4x`/`_8x` cover the resolve half of
+the same item. Every other resolve test in this suite resolves a surface whose
+samples all hold the same value, which passes for VK_RESOLVE_MODE_AVERAGE no
+matter what the hardware does with the individual samples. This one gives each
+sample its own colour and checks the resolved result against the actual
+arithmetic mean, with the colours chosen so the mean equals no individual
+sample's value, so a resolve that returns one sample instead of averaging is
+caught. It also deliberately omits VK_IMAGE_USAGE_SAMPLED_BIT so the
+multisample image keeps CB compression and fast clear enabled, making it the
+only coverage of the compressed CB write and CB_RESOLVE path. All three
+sample counts pass.
+
 An earlier version of this test cleared every sample to the same colour. That
 version could only detect an out-of-range plane index, and under it the wrong
 FMASK constants scored *better* than the correct ones, because they pointed
@@ -254,6 +266,9 @@ terakan_depth_msaa_fetch
 terakan_color_msaa_fetch_2x
 terakan_color_msaa_fetch_4x
 terakan_color_msaa_fetch_8x
+terakan_color_resolve_multivalued_2x
+terakan_color_resolve_multivalued_4x
+terakan_color_resolve_multivalued_8x
 terakan_depth_resolve
 terakan_depth_stencil_resolve
 terakan_stencil_readback

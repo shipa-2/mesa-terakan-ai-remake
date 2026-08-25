@@ -67,6 +67,9 @@ gpu_tests=(
   terakan_color_msaa_fetch_2x
   terakan_color_msaa_fetch_4x
   terakan_color_msaa_fetch_8x
+  terakan_color_resolve_multivalued_2x
+  terakan_color_resolve_multivalued_4x
+  terakan_color_resolve_multivalued_8x
   terakan_depth_resolve
   terakan_depth_stencil_resolve
   terakan_stencil_msaa_fetch
