@@ -226,6 +226,134 @@ test_select_array_mode(void)
         TERAKAN_IMAGE_TILING_TERASCALE_1_ARRAY_2D_TILED_THIN1);
 }
 
+/* RV710's real 2D-tiled and 1D-tiled alignments for bpe=4, samples=1 (from test_2d_tiled_thin1()/
+ * test_1d_tiled_thin1() above): 2D pitch/height alignment 128/16, base BO alignment 8192; 1D
+ * pitch/height alignment 16/8, base BO alignment 512.
+ */
+static struct terakan_image_tiling_terascale_1_alignments const rv710_2d_alignments_bpe4 = {
+   .pitch_surfels = 128, .height_surfels = 16, .base_level_bo_alignment_bytes = 8192,
+};
+static struct terakan_image_tiling_terascale_1_alignments const rv710_1d_alignments_bpe4 = {
+   .pitch_surfels = 16, .height_surfels = 8, .base_level_bo_alignment_bytes = 512,
+};
+
+static void
+test_mip_chain_layout_no_degrade(void)
+{
+   /* 300x50, 3 levels, single layer, no 3D depth. Every level stays large enough to remain
+    * 2D-tiled (hand-derived from terakan_image_tiling_terascale_1_mip_extent()/_level_layout()'s
+    * own already-tested formulas -- see the comment in the corresponding commit for the full
+    * derivation): level 0 300x50 -> aligned 384x64, pitch_bytes=1536, slice=98304; level 1 minifies
+    * to 150x25 -> POT-rounded 256x32 -> aligned 256x32 (already aligned), pitch_bytes=1024,
+    * slice=32768; level 2 minifies to 75x12 -> POT-rounded 128x16 -> aligned 128x16 (exactly at the
+    * alignment boundary, not below it, so still no degrade), pitch_bytes=512, slice=8192.
+    */
+   struct terakan_image_tiling_terascale_1_mip_chain_level levels[3];
+   uint64_t const total = terakan_image_tiling_terascale_1_mip_chain_layout(
+      300, 50, 1, false, 3, 4, 1, &rv710_2d_alignments_bpe4, &rv710_1d_alignments_bpe4, levels);
+
+   CHECK(!levels[0].is_1d_tiled_thin1_or_fixed);
+   CHECK(levels[0].offset_bytes == 0);
+   CHECK(levels[0].aligned_pitch_surfels == 384);
+   CHECK(levels[0].aligned_height_surfels == 64);
+   CHECK(levels[0].pitch_bytes == 1536);
+   /* Level 0's slice (98304) is already a multiple of the 2D base BO alignment (8192), so the
+    * level-0 alignment step is a no-op here -- level 1 starts right after it.
+    */
+   CHECK(levels[1].offset_bytes == 98304);
+   CHECK(!levels[1].is_1d_tiled_thin1_or_fixed);
+   CHECK(levels[1].aligned_pitch_surfels == 256);
+   CHECK(levels[1].aligned_height_surfels == 32);
+   CHECK(levels[1].pitch_bytes == 1024);
+   CHECK(levels[2].offset_bytes == 98304 + 32768);
+   CHECK(!levels[2].is_1d_tiled_thin1_or_fixed);
+   CHECK(levels[2].aligned_pitch_surfels == 128);
+   CHECK(levels[2].aligned_height_surfels == 16);
+   CHECK(levels[2].pitch_bytes == 512);
+   CHECK(total == 98304 + 32768 + 8192);
+}
+
+static void
+test_mip_chain_layout_degrades(void)
+{
+   /* 100x50: level 0 is already smaller than the 2D pitch alignment (128), so the whole chain
+    * degrades to 1D-tiled starting at level 0, and stays 1D-tiled for level 1 too (a 2D-tiled chain
+    * never reverts once degraded, matching r6_surface_init_2d() calling back into
+    * r6_surface_init_1d() for the rest of the chain in the reference). Level 0 aligned (1D
+    * alignment 16/8): 100x50 -> 112x56, pitch_bytes=448, slice=25088, already a multiple of the 1D
+    * base BO alignment (512). Level 1 minifies to 50x25 -> POT-rounded 64x32 -> aligned 64x32
+    * (already aligned to 16/8), pitch_bytes=256, slice=8192.
+    */
+   struct terakan_image_tiling_terascale_1_mip_chain_level levels[2];
+   uint64_t const total = terakan_image_tiling_terascale_1_mip_chain_layout(
+      100, 50, 1, false, 2, 4, 1, &rv710_2d_alignments_bpe4, &rv710_1d_alignments_bpe4, levels);
+
+   CHECK(levels[0].is_1d_tiled_thin1_or_fixed);
+   CHECK(levels[0].offset_bytes == 0);
+   CHECK(levels[0].aligned_pitch_surfels == 112);
+   CHECK(levels[0].aligned_height_surfels == 56);
+   CHECK(levels[0].pitch_bytes == 448);
+   CHECK(levels[1].is_1d_tiled_thin1_or_fixed);
+   CHECK(levels[1].offset_bytes == 25088);
+   CHECK(levels[1].aligned_pitch_surfels == 64);
+   CHECK(levels[1].aligned_height_surfels == 32);
+   CHECK(levels[1].pitch_bytes == 256);
+   CHECK(total == 25088 + 8192);
+}
+
+static void
+test_mip_chain_layout_fixed_1d(void)
+{
+   /* alignments_2d == NULL: every level uses the 1D alignment unconditionally, no degrade check at
+    * all (matching a chain whose base array mode was already chosen as 1D-tiled or linear-aligned
+    * by terakan_image_tiling_terascale_1_select_array_mode(), which never attempts 2D tiling in the
+    * first place). 50x30 -> aligned 64x32, pitch_bytes=256, slice=8192, a multiple of the 512-byte
+    * base BO alignment. Level 1 minifies to 25x15 -> POT-rounded 32x16 -> aligned 32x16 (already
+    * aligned), pitch_bytes=128, slice=2048.
+    */
+   struct terakan_image_tiling_terascale_1_mip_chain_level levels[2];
+   uint64_t const total = terakan_image_tiling_terascale_1_mip_chain_layout(
+      50, 30, 1, false, 2, 4, 1, NULL, &rv710_1d_alignments_bpe4, levels);
+
+   CHECK(levels[0].is_1d_tiled_thin1_or_fixed);
+   CHECK(levels[0].offset_bytes == 0);
+   CHECK(levels[0].pitch_bytes == 256);
+   CHECK(levels[1].offset_bytes == 8192);
+   CHECK(levels[1].pitch_bytes == 128);
+   CHECK(total == 8192 + 2048);
+}
+
+static void
+test_mip_chain_layout_array_layers(void)
+{
+   /* Same base level as test_mip_chain_layout_no_degrade's level 0 (300x50, no degrade), but with 3
+    * array layers instead of 1: the per-level size is multiplied by array_layers, matching
+    * r6_surface_init_2d()'s own `surf->bo_size = offset + slice_size * nblk_z * surf->array_size`.
+    */
+   struct terakan_image_tiling_terascale_1_mip_chain_level levels[1];
+   uint64_t const total = terakan_image_tiling_terascale_1_mip_chain_layout(
+      300, 50, 3, false, 1, 4, 1, &rv710_2d_alignments_bpe4, &rv710_1d_alignments_bpe4, levels);
+   CHECK(total == 98304 * 3);
+}
+
+static void
+test_mip_chain_layout_3d_depth(void)
+{
+   /* depth_minifies_per_level = true: base_depth_or_array_layers (3) is mip-minified per level like
+    * width/height, instead of staying constant like an array layer count. Level 0's depth stays 3
+    * (u_minify(3, 0) = 3, no power-of-two rounding for level 0); level 1's depth minifies to
+    * u_minify(3, 1) = 1, rounded up to the next power of two (still 1, already a power of two).
+    */
+   struct terakan_image_tiling_terascale_1_mip_chain_level levels[2];
+   uint64_t const total = terakan_image_tiling_terascale_1_mip_chain_layout(
+      300, 50, 3, true, 2, 4, 1, &rv710_2d_alignments_bpe4, &rv710_1d_alignments_bpe4, levels);
+   /* Level 0: slice 98304 * 3 depth planes = 294912, already a multiple of the 8192-byte base BO
+    * alignment. Level 1: slice 32768 * 1 depth plane = 32768.
+    */
+   CHECK(levels[1].offset_bytes == 294912);
+   CHECK(total == 294912 + 32768);
+}
+
 int
 main(void)
 {
@@ -235,5 +363,10 @@ main(void)
    test_mip_extent();
    test_level_layout();
    test_select_array_mode();
+   test_mip_chain_layout_no_degrade();
+   test_mip_chain_layout_degrades();
+   test_mip_chain_layout_fixed_1d();
+   test_mip_chain_layout_array_layers();
+   test_mip_chain_layout_3d_depth();
    return 0;
 }

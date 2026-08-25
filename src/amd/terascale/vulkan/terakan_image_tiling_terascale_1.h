@@ -29,11 +29,12 @@ extern "C" {
  * than R8xx/R9xx's tiling code.
  *
  * This covers the pitch/height/base alignment math, per-level layout (mip extent, aligned
- * pitch/height, pitch/slice byte size, and the degrade-to-1D-on-small-mip decision), and the
- * base-level array-mode decision -- the foundational pieces every further step (walking a full mip
- * chain to cumulative offsets, and the DB_DEPTH_INFO/CB_COLOR_INFO field computation this blocks
- * per the CB/DB register audit in TODO.md) builds on. It is not wired into terakan_image.c's
- * surface layout computation yet; see TODO.md for what remains.
+ * pitch/height, pitch/slice byte size, and the degrade-to-1D-on-small-mip decision), the base-level
+ * array-mode decision, and walking a full mip chain to cumulative byte offsets -- everything needed
+ * to compute a complete TeraScale 1 surface layout in isolation. It is not wired into
+ * terakan_image.c's surface layout computation yet, and the DB_DEPTH_INFO/CB_COLOR_INFO register
+ * field computation this unblocks (per the CB/DB register audit in TODO.md) still needs its own
+ * per-field compatibility check; see TODO.md for what remains.
  *
  * 2D tiling additionally requires the kernel driver to actually support it
  * (surf_man->hw_info.allow_2d in the reference, gated on DRM minor version >= 14). Terakan already
@@ -165,6 +166,63 @@ uint8_t terakan_image_tiling_terascale_1_select_array_mode(bool tiling_linear_re
                                                             bool used_by_db, bool multisampled,
                                                             bool format_tiled_only,
                                                             bool is_1d_image_type);
+
+/* Maximum mip levels this driver ever creates a surface for: Vulkan images are limited to 8192 in
+ * any dimension (TERAKAN_IMAGE_MAX_WIDTH_HEIGHT in terakan_image.h) elsewhere in this driver, and
+ * log2(8192) + 1 = 14.
+ */
+#define TERAKAN_IMAGE_TILING_TERASCALE_1_MAX_MIP_LEVELS 14u
+
+struct terakan_image_tiling_terascale_1_mip_chain_level {
+   uint64_t offset_bytes;
+   uint32_t aligned_pitch_surfels;
+   uint32_t aligned_height_surfels;
+   uint32_t pitch_bytes;
+   /* True if this level ended up 1D-tiled, either because the whole chain was requested as 1D-tiled
+    * (or linear-aligned, in which case this is still set for simplicity, since linear-aligned and
+    * 1D-tiled share the same "no further degrade" behavior in this function) or because a 2D-tiled
+    * chain degraded at or before this level. A caller emitting per-level ARRAY_MODE needs this to
+    * know which value to write for each level -- the reference's own mip chain can have some levels
+    * 2D-tiled and later, smaller ones 1D-tiled within the same image.
+    */
+   bool is_1d_tiled_thin1_or_fixed;
+};
+
+/* Walks a full mip chain, calling terakan_image_tiling_terascale_1_mip_extent() and
+ * terakan_image_tiling_terascale_1_level_layout() for each level and accumulating offsets, mirroring
+ * what the reference's surf_minify() does across a whole call to r6_surface_init_1d()/_2d() (its own
+ * `offset`/`surf->bo_size` running state across the `for (i = start_level; i <= surf->last_level;
+ * i++)` loop, including r6_surface_init_2d() calling back into r6_surface_init_1d() for the level
+ * that degrades and every level after it -- once a chain degrades to 1D-tiled it never reverts to
+ * 2D-tiled for a smaller, later mip, matching the reference exactly).
+ *
+ * alignments_2d is the 2D-tiled alignment (terakan_image_tiling_terascale_1_alignments_2d_tiled_thin1())
+ * to try first, with degrade checked against it; pass NULL for a chain that should never attempt 2D
+ * tiling at all (a linear-aligned or 1D-tiled base array mode, from
+ * terakan_image_tiling_terascale_1_select_array_mode() returning something other than
+ * ARRAY_2D_TILED_THIN1) -- in that case every level uses fixed_or_1d_alignments unconditionally, and
+ * `is_1d_tiled_thin1_or_fixed` is set on every output level even though it may really be
+ * linear-aligned; the caller already knows which from its own array-mode decision and doesn't need
+ * this function to repeat it.
+ *
+ * depth_minifies_per_level selects between a 3D image's npix_z (mip-minified like npix_x/npix_y --
+ * VkImageType 3D, base_depth_or_array_layers is imageCreateInfo->extent.depth) and a 2D image's
+ * array layer count (constant across all mip levels -- imageCreateInfo->arrayLayers), matching the
+ * same `imageType == VK_IMAGE_TYPE_3D ? u_minify(extent.depth, level) : arrayLayers` distinction
+ * terakan_image_surface_aspect_compute() already makes for R8xx/R9xx (this is Vulkan-level surface
+ * shape, not hardware-specific, so it is not re-derived from the reference the way the tiling math
+ * itself is -- r6_surface_init_2d()'s own `nblk_z` and `array_size` play the equivalent roles).
+ *
+ * mip_levels must not exceed TERAKAN_IMAGE_TILING_TERASCALE_1_MAX_MIP_LEVELS, and levels_out must
+ * have room for at least that many entries. Returns the total surface size in bytes (surf->bo_size
+ * in the reference, after the whole loop).
+ */
+uint64_t terakan_image_tiling_terascale_1_mip_chain_layout(
+   uint32_t base_width, uint32_t base_height, uint32_t base_depth_or_array_layers,
+   bool depth_minifies_per_level, uint32_t mip_levels, uint32_t bytes_per_element, uint32_t samples,
+   struct terakan_image_tiling_terascale_1_alignments const * alignments_2d,
+   struct terakan_image_tiling_terascale_1_alignments const * fixed_or_1d_alignments,
+   struct terakan_image_tiling_terascale_1_mip_chain_level * levels_out);
 
 #ifdef __cplusplus
 }

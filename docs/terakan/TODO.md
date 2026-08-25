@@ -491,14 +491,38 @@ classic Gallium R600 driver that has supported this hardware for years).
   R8xx/R9xx policy this was transcribed from, so no additional branching
   was needed, just confirmed rather than assumed to still hold here.
 
+  A third follow-up pass added the mip-chain-to-offsets walk itself:
+  `terakan_image_tiling_terascale_1_mip_chain_layout()` calls
+  `mip_extent()`/`level_layout()` for every level and accumulates
+  offsets, mirroring the reference's own `offset`/`surf->bo_size` running
+  state across `r6_surface_init_1d()`/`_2d()`'s per-level loop --
+  including `r6_surface_init_2d()` calling back into
+  `r6_surface_init_1d()` for the level that degrades and every level
+  after it, ported here as a `degraded_to_1d` flag that latches once set
+  and is never cleared, matching the reference exactly (a 2D-tiled chain
+  never reverts to 2D for a smaller, later mip once it degrades).
+  Array-layer/3D-depth-plane multiplication is folded in via a
+  `depth_minifies_per_level` flag distinguishing a 3D image's `npix_z`
+  (mip-minified like width/height) from a 2D image's array layer count
+  (constant across the chain) -- the same distinction
+  `terakan_image_surface_aspect_compute()` already makes for R8xx/R9xx,
+  so this is Vulkan-level surface shape rather than something to
+  re-derive from the reference, unlike the tiling math itself.
+  Unit-tested with five hand-derived cases (a chain that never degrades,
+  one that degrades at the base level and stays degraded, a
+  fixed-1D-from-the-start chain with no degrade check at all, array
+  layers, and 3D depth planes), reusing the same RV710 alignment
+  parameters as every prior tiling test in this pass.
+
   Still not done, and each a substantial piece of its own: wiring any of
   this into `terakan_image.c`'s surface layout computation itself
   (currently entirely R8xx/R9xx-shaped throughout, not just the pieces
-  ported so far); the mip-chain-to-offsets walk described above;
-  array-layer/3D-depth-plane multiplication (left to the caller by both
-  `surf_minify()` and this port's `level_layout()`); and the
-  `DB_DEPTH_INFO`/`CB_COLOR_INFO` register field computation this
-  unblocks, which still needs its own per-field compatibility check
+  ported so far -- this is now the only remaining piece before a
+  TeraScale 1 image could theoretically get a real, computed tiled
+  layout, though `vkCreateDevice` still refuses TeraScale 1 devices
+  regardless); and the `DB_DEPTH_INFO`/`CB_COLOR_INFO` register field
+  computation this unblocks, which still needs its own per-field
+  compatibility check
   against `r600d.h` (not yet done -- these registers weren't in the
   CB/DB/PA/SPI/SQ audit above, since that audit only covered registers
   the R8xx/R9xx code currently references, and this tiling work is what
