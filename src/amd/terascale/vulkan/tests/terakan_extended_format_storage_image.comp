@@ -1,0 +1,24 @@
+#version 450
+
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(constant_id = 0) const uint test_width = 17u;
+layout(constant_id = 1) const uint test_height = 13u;
+
+/* rg16f is one of the formats VK_FORMAT_FEATURE_SHADER_STORAGE_IMAGE_EXTENDED_FORMAT_BIT and
+ * shaderStorageImageExtendedFormats require support for -- it is not in the small mandatory
+ * baseline set (r32ui/r32i/r32f and a handful of others) that works regardless of the feature bit.
+ */
+layout(set = 0, binding = 0, rg16f) uniform writeonly image2D destination;
+
+void
+main()
+{
+   uvec2 position = gl_GlobalInvocationID.xy;
+   uvec2 size = uvec2(test_width, test_height);
+   if (any(greaterThanEqual(position, size)))
+      return;
+   uint linear_index = position.y * size.x + position.x;
+   float r = float(linear_index) * 0.125 - 32.0;
+   float g = float(linear_index) * -0.25 + 16.0;
+   imageStore(destination, ivec2(position), vec4(r, g, 0.0, 0.0));
+}

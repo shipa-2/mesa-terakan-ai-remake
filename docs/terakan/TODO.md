@@ -24,7 +24,7 @@ accept the work. Both use a 1–5 scale.
 | Enable geometry shaders and complete vertex-pipeline stage plumbing | 4/5 | 5/5 | Hardware-supported; see the vertex pipeline stage survey below | Focused GS tests pass and `geometryShader` is exposed only afterwards |
 | Enable tessellation control/evaluation shaders | 4/5 | 5/5 | Hardware-supported; see the vertex pipeline stage survey below | Tessellation limits are reported from tested hardware behavior and representative pipelines pass |
 | Complete stream output / transform feedback | 4/5 | 4/5 | Hardware-supported | SFN receives NIR stream-output metadata and D3D11 stream-output workloads pass readback tests |
-| Complete storage-image/UAV format and atomic coverage | 4/5 | 4/5 | Mostly implementable; limited by hardware binding counts and formats | Every advertised storage-image format passes load, store and applicable integer-atomic tests |
+| Complete storage-image/UAV format and atomic coverage | 4/5 | 4/5 | Mostly implementable; limited by hardware binding counts and formats. `shaderStorageImageExtendedFormats` is now exposed: `terakan_format.c` already advertised `VK_FORMAT_FEATURE_2_STORAGE_IMAGE_BIT` broadly (any format with a CB color view, an SQ texture-fetch view and an SQ vertex/buffer-fetch view), and `terakan_extended_format_storage_image_test` confirms imageStore/imageLoad round-trip correctly for two representative non-mandatory formats (R16G16_SFLOAT, R32G32_SFLOAT) on real CAICOS hardware -- the feature bit itself was just never flipped. Integer-atomic coverage across the full advertised format set and `shaderStorageImageMultisample` remain open (the latter blocked on the same FMASK/CMASK research as the item above) | Every advertised storage-image format passes load, store and applicable integer-atomic tests |
 | Implement multisample storage images | 4/5 | 4/5 | Implementable with format-aware lowering, FMASK work and RAT validation; single-sample formatless reads/writes now work | Multisample UAV loads/stores pass for every exposed format before the remaining feature bit is enabled |
 | Implement extended image gather | 4/5 | 3/5 | Likely implementable through Evergreen texture instructions plus lowering | Component selection and constant/dynamic offset gather tests pass for all advertised sampled formats |
 | Implement vertex-pipeline stores and atomics | 4/5 | 4/5 | Hardware-supported with stage-specific RAT synchronization work | VS/GS/TES storage writes and applicable atomics pass readback and cross-stage visibility tests before exposure |
@@ -864,6 +864,11 @@ classic Gallium R600 driver that has supported this hardware for years).
 - Single-sample formatless storage-image reads and writes: transfer-initialized
   reads and independently generated writes pass exact 17x13 `R32_UINT`
   readback with intact guards. Both corresponding feature bits are exposed.
+- `shaderStorageImageExtendedFormats`: `terakan_extended_format_storage_image`
+  round-trips imageStore/imageLoad exactly for two representative
+  non-mandatory formats (`R16G16_SFLOAT`, `R32G32_SFLOAT`) on real CAICOS
+  hardware. The format-capability advertisement in `terakan_format.c` was
+  already broad enough; only the feature bit itself needed flipping.
 
 ## Cache and barrier coherency: what is covered so far
 

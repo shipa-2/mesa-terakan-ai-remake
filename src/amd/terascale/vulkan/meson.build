@@ -1247,6 +1247,47 @@ if with_tests
         dependencies : vulkan_loader_dep,
       )
 
+      terakan_extended_format_storage_image_spv = custom_target(
+        'terakan_extended_format_storage_image.spv.h',
+        input : 'tests/terakan_extended_format_storage_image.comp',
+        output : 'terakan_extended_format_storage_image.spv.h',
+        command : [
+          prog_glslang, '-V', '-x', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_extended_format_storage_image.spv.h.d',
+      )
+      terakan_extended_format_storage_image_load_spv = custom_target(
+        'terakan_extended_format_storage_image_load.spv.h',
+        input : 'tests/terakan_extended_format_storage_image_load.comp',
+        output : 'terakan_extended_format_storage_image_load.spv.h',
+        command : [
+          prog_glslang, '-V', '-x', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_extended_format_storage_image_load.spv.h.d',
+      )
+      terakan_extended_format_storage_image_test = executable(
+        'terakan_extended_format_storage_image_test',
+        [
+          'tests/terakan_extended_format_storage_image_test.cpp',
+          terakan_extended_format_storage_image_spv,
+          terakan_extended_format_storage_image_load_spv,
+        ],
+        dependencies : vulkan_loader_dep,
+      )
+      test(
+        'terakan_extended_format_storage_image',
+        terakan_extended_format_storage_image_test,
+        depends : [libvulkan_terascale, _dev_icd],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 15,
+      )
+
       terakan_depth_resolve_test = executable(
         'terakan_depth_resolve_test',
         ['tests/terakan_depth_resolve_test.cpp'],

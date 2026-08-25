@@ -203,6 +203,7 @@ terakan_bc6_cube_single_level_views
 terakan_bc6_array_view
 terakan_compute_loop
 terakan_formatless_image_store
+terakan_extended_format_storage_image
 terakan_dynamic_offset_bounds
 terakan_clip_distance
 terakan_depth_readback

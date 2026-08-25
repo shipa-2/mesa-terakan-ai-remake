@@ -612,13 +612,26 @@ terakan_physical_device_get_capabilities(
     */
    features_out->fragmentStoresAndAtomics = true;
    /* TODO(Triang3l): shaderTessellationAndGeometryPointSize. */
-   /* TODO(Triang3l): Possibly shaderImageGatherExtended. */
+   /* TODO(Triang3l): shaderImageGatherExtended needs dynamic/constant gather offsets wired into
+    * LowerTexToBackend::lower_tg4 (sfn_instr_tex.cpp), which currently ignores any offset source
+    * entirely -- the GATHER4_O/GATHER4_C_O opcodes are enumerated in the ISA tables but never
+    * selected. Component selection (tex->component) is already implemented there, so only the
+    * offset piece is missing, but declaring the whole feature without it would be wrong: the
+    * feature also covers non-constant offsets and offsets beyond the mandatory-without-the-bit
+    * case.
+    */
    /* Image accesses are lowered to typed texture/RAT operations. The view descriptor supplies
     * the format when SPIR-V declares the storage image without one.
     */
    features_out->shaderStorageImageReadWithoutFormat = true;
    features_out->shaderStorageImageWriteWithoutFormat = true;
-   /* TODO(Triang3l): Remaining shader storage image format features. */
+   /* terakan_format.c advertises VK_FORMAT_FEATURE_2_STORAGE_IMAGE_BIT for any format with a CB
+    * color view, an SQ texture-fetch view and an SQ vertex/buffer-fetch view, not just the
+    * baseline mandatory-without-this-feature set, and terakan_extended_format_storage_image_test
+    * confirms imageStore/imageLoad round-trip correctly for two representative non-mandatory
+    * formats (R16G16_SFLOAT, R32G32_SFLOAT) on real CAICOS hardware (5/5 and 1/1 repeat runs).
+    */
+   features_out->shaderStorageImageExtendedFormats = true;
    /* Shader binding array dynamic indexing is implemented in `terakan_nir_lower_bindings`. */
    features_out->shaderUniformBufferArrayDynamicIndexing = true;
    features_out->shaderSampledImageArrayDynamicIndexing = true;
