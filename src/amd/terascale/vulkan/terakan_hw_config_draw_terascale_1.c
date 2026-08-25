@@ -38,3 +38,25 @@ terakan_hw_config_draw_terascale_1_write_db_render_control_override(
    *packet++ = db_render_override;
    return packet;
 }
+
+uint32_t *
+terakan_hw_config_draw_terascale_1_write_db_depth_size(uint32_t * const packet,
+                                                        uint32_t const pitch_tile_max,
+                                                        uint32_t const slice_tile_max)
+{
+   return write_context_reg(packet, R_028000_DB_DEPTH_SIZE,
+                            S_028000_PITCH_TILE_MAX(pitch_tile_max) |
+                               S_028000_SLICE_TILE_MAX(slice_tile_max));
+}
+
+uint32_t *
+terakan_hw_config_draw_terascale_1_write_db_depth_base_info(uint32_t * packet,
+                                                             uint32_t const db_depth_base,
+                                                             uint32_t const db_depth_info)
+{
+   *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 2, 0);
+   *packet++ = (R_02800C_DB_DEPTH_BASE - R600_CONTEXT_REG_OFFSET) >> 2;
+   *packet++ = db_depth_base;
+   *packet++ = db_depth_info;
+   return packet;
+}

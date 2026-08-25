@@ -565,6 +565,34 @@ classic Gallium R600 driver that has supported this hardware for years).
   needing none of those inputs); block-compressed and subsampled format
   support; and 3x-expand format support (both just described above).
 
+  A fifth follow-up pass ported the emission (not value-computation) side
+  of the actual depth surface binding registers:
+  `terakan_hw_config_draw_terascale_1_write_db_depth_size()`
+  (`R_028000_DB_DEPTH_SIZE`, `PITCH_TILE_MAX`/`SLICE_TILE_MAX` -- no
+  R8xx/R9xx equivalent at this offset or shape, since R600/R700 packs the
+  whole slice tile count into this one register instead of splitting
+  pitch/height across `DB_DEPTH_SIZE` and a separate `DB_DEPTH_SLICE`
+  register the way R8xx/R9xx does; R600/R700 has no `DB_DEPTH_SLICE` at
+  all) and
+  `terakan_hw_config_draw_terascale_1_write_db_depth_base_info()`
+  (`R_02800C_DB_DEPTH_BASE`/`R_028010_DB_DEPTH_INFO` together, matching
+  `r600_state.c`'s own `radeon_set_context_reg_seq(cs,
+  R_02800C_DB_DEPTH_BASE, 2)` sequencing). Both take fully
+  caller-computed values, same as every other TeraScale 1 register
+  emission function -- the VALUE COMPUTATION side (deriving a real
+  `DB_DEPTH_INFO` `FORMAT`/`ARRAY_MODE` and `DB_DEPTH_BASE` address from
+  a Vulkan depth/stencil attachment) is not written, and is a genuinely
+  open research question, not just unstarted work: R600/R700 binds depth
+  and stencil through one combined surface and base address (no separate
+  stencil base at all), which doesn't map onto Terakan's existing
+  `terakan_depth_stencil_descriptor` (built around separate
+  `z_base`/`stencil_base`/`z_info`/`stencil_info`) without first figuring
+  out how the packed combined-surface model actually stores stencil data
+  alongside depth on this hardware. These two functions exist so the
+  register shape is ready once that research is done, not because the
+  value-computation problem is solved -- it remains the largest concrete
+  gap left before a TeraScale 1 depth attachment could actually be bound.
+
 - TeraScale 1 (R600/R700) `CB_COLORn_INFO`/`DB_Z_INFO` field-position
   comparison, following up on the spot-check above with the real
   per-field breakdown: none of R8xx/R9xx's `CB_COLOR0_BASE..CB_COLOR0_DIM`
