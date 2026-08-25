@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-/* Probe for the FMASK/CMASK P0 item: can a multisample COLOR image be fetched per sample?
+/* Coverage for the FMASK/CMASK P0 item: can a multisample COLOR image be fetched per sample?
  *
  * terakan_depth_msaa_fetch already answered this for depth, which needs no compression metadata on
  * Evergreen (Terakan does not implement HTILE). Multisample color is different: FMASK/CMASK memory
@@ -13,11 +13,19 @@
  * -- see the note in TODO.md: "per-sample texture reads and real color-target resolve coverage are
  * still required".
  *
- * Clears a 2x R8G8B8A8_UNORM image through a render pass, then reads every sample of every texel
- * with texelFetch on a sampler2DMS from a compute shader, exactly mirroring
- * terakan_depth_msaa_fetch's structure. Every sample should read back the clear colour exactly: a
- * mismatch says the FMASK addressing used for the texture-fetch path is wrong, separately from
- * whatever a resolve or a CB write would need.
+ * Gives every sample of an R8G8B8A8_UNORM image its own distinct colour -- one draw per sample,
+ * each confined to that sample by the pipeline's sample mask -- then reads every sample of every
+ * texel with texelFetch on a sampler2DMS from a compute shader, mirroring
+ * terakan_depth_msaa_fetch's structure. Sample i must read back sample i's own colour, so this
+ * catches a fetch that lands on the wrong plane, not merely one that lands outside the surface.
+ * (An earlier version cleared every sample to the same colour and could only detect the latter.)
+ *
+ * Two real bugs were found and fixed through this test, both described in TODO.md: the identity
+ * FMASK fill constants did not match the shader's fixed 4-bit-per-sample decode, and the identity
+ * initialization never ran when a render pass performed the initial layout transition. A third,
+ * larger one was found the same way: CB colour compression and fast clear were enabled for every
+ * multisample image with metadata, including sampled ones, so the CB was free to leave fragment
+ * planes unwritten while a texture fetch -- which never consults CMASK -- read them anyway.
  */
 
 #include <vulkan/vulkan.h>
@@ -47,6 +55,26 @@ constexpr float kClearColor[4] = {0.75F, 0.25F, 0.5F, 1.0F};
 uint32_t const color_msaa_fetch_spirv[] = {
 #include "terakan_color_msaa_fetch.spv.h"
 };
+uint32_t const color_msaa_write_vertex_spirv[] = {
+#include "terakan_color_msaa_write.vert.spv.h"
+};
+uint32_t const color_msaa_write_fragment_spirv[] = {
+#include "terakan_color_msaa_write.frag.spv.h"
+};
+
+/* One distinct, exactly-UNORM8-representable colour per sample, so a fetch that returns the right
+ * value can only have read that sample's own plane -- the whole point of an identity FMASK. A test
+ * that gave every sample the same colour (as this one originally did) would pass just as happily
+ * while reading some other sample's plane.
+ */
+void
+sample_colour(uint32_t sample_index, float out_colour[4])
+{
+   out_colour[0] = (16.0F + float(sample_index) * 24.0F) / 255.0F;
+   out_colour[1] = (200.0F - float(sample_index) * 20.0F) / 255.0F;
+   out_colour[2] = (64.0F + float(sample_index) * 9.0F) / 255.0F;
+   out_colour[3] = 1.0F;
+}
 
 struct PushConstants {
    uint32_t width;
@@ -394,6 +422,97 @@ main(int argc, char ** argv)
    VkFramebuffer framebuffer;
    VK_CHECK(vkCreateFramebuffer(device, &framebuffer_info, nullptr, &framebuffer));
 
+   /* One graphics pipeline per sample: its sample mask confines the draw to that sample, so each
+    * sample's plane ends up holding a value no other sample has.
+    */
+   VkShaderModuleCreateInfo const write_vertex_module_info = {
+      .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+      .codeSize = sizeof(color_msaa_write_vertex_spirv),
+      .pCode = color_msaa_write_vertex_spirv,
+   };
+   VkShaderModule write_vertex_module;
+   VK_CHECK(vkCreateShaderModule(device, &write_vertex_module_info, nullptr, &write_vertex_module));
+   VkShaderModuleCreateInfo const write_fragment_module_info = {
+      .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+      .codeSize = sizeof(color_msaa_write_fragment_spirv),
+      .pCode = color_msaa_write_fragment_spirv,
+   };
+   VkShaderModule write_fragment_module;
+   VK_CHECK(
+      vkCreateShaderModule(device, &write_fragment_module_info, nullptr, &write_fragment_module));
+   VkPushConstantRange const write_push_range = {
+      .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+      .offset = 0,
+      .size = sizeof(float) * 4,
+   };
+   VkPipelineLayoutCreateInfo const write_pipeline_layout_info = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+      .pushConstantRangeCount = 1,
+      .pPushConstantRanges = &write_push_range,
+   };
+   VkPipelineLayout write_pipeline_layout;
+   VK_CHECK(vkCreatePipelineLayout(device, &write_pipeline_layout_info, nullptr,
+                                   &write_pipeline_layout));
+   VkPipelineShaderStageCreateInfo const write_stages[2] = {
+      {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+       .stage = VK_SHADER_STAGE_VERTEX_BIT, .module = write_vertex_module, .pName = "main"},
+      {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+       .stage = VK_SHADER_STAGE_FRAGMENT_BIT, .module = write_fragment_module, .pName = "main"},
+   };
+   VkPipelineVertexInputStateCreateInfo const write_vertex_input = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+   };
+   VkPipelineInputAssemblyStateCreateInfo const write_input_assembly = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+      .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+   };
+   VkViewport const write_viewport = {0.0F, 0.0F, (float)kWidth, (float)kHeight, 0.0F, 1.0F};
+   VkRect2D const write_scissor = {{0, 0}, {kWidth, kHeight}};
+   VkPipelineViewportStateCreateInfo const write_viewport_state = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+      .viewportCount = 1, .pViewports = &write_viewport,
+      .scissorCount = 1, .pScissors = &write_scissor,
+   };
+   VkPipelineRasterizationStateCreateInfo const write_rasterization = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+      .polygonMode = VK_POLYGON_MODE_FILL,
+      .cullMode = VK_CULL_MODE_NONE,
+      .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
+      .lineWidth = 1.0F,
+   };
+   VkPipelineColorBlendAttachmentState const write_blend_attachment = {
+      .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                        VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
+   };
+   VkPipelineColorBlendStateCreateInfo const write_color_blend = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+      .attachmentCount = 1, .pAttachments = &write_blend_attachment,
+   };
+   std::vector<VkPipeline> write_pipelines(sample_count);
+   std::vector<VkSampleMask> write_sample_masks(sample_count);
+   for (uint32_t sample_index = 0; sample_index < sample_count; ++sample_index) {
+      write_sample_masks[sample_index] = 1u << sample_index;
+      VkPipelineMultisampleStateCreateInfo const write_multisample = {
+         .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+         .rasterizationSamples = samples,
+         .pSampleMask = &write_sample_masks[sample_index],
+      };
+      VkGraphicsPipelineCreateInfo const write_pipeline_info = {
+         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+         .stageCount = 2, .pStages = write_stages,
+         .pVertexInputState = &write_vertex_input,
+         .pInputAssemblyState = &write_input_assembly,
+         .pViewportState = &write_viewport_state,
+         .pRasterizationState = &write_rasterization,
+         .pMultisampleState = &write_multisample,
+         .pColorBlendState = &write_color_blend,
+         .layout = write_pipeline_layout,
+         .renderPass = render_pass,
+      };
+      VK_CHECK(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &write_pipeline_info, nullptr,
+                                         &write_pipelines[sample_index]));
+   }
+
    VkCommandPoolCreateInfo const command_pool_info = {
       .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
       .queueFamilyIndex = queue_family,
@@ -424,6 +543,15 @@ main(int argc, char ** argv)
       .pClearValues = &clear,
    };
    vkCmdBeginRenderPass(command_buffer, &render_begin, VK_SUBPASS_CONTENTS_INLINE);
+   for (uint32_t sample_index = 0; sample_index < sample_count; ++sample_index) {
+      float colour[4];
+      sample_colour(sample_index, colour);
+      vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                        write_pipelines[sample_index]);
+      vkCmdPushConstants(command_buffer, write_pipeline_layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                         sizeof(colour), colour);
+      vkCmdDraw(command_buffer, 6, 1, 0, 0);
+   }
    vkCmdEndRenderPass(command_buffer);
 
    VkImageMemoryBarrier const color_ready = {
@@ -479,17 +607,19 @@ main(int argc, char ** argv)
          for (uint32_t sample_index = 0; sample_index < sample_count; ++sample_index) {
             float const * const actual =
                &output_mapping[((y * kWidth + x) * sample_count + sample_index) * 4];
+            float expected[4];
+            sample_colour(sample_index, expected);
             bool ok = true;
             for (uint32_t channel = 0; channel < 4; ++channel)
                /* One UNORM8 quantization step is 1/255; allow a little more slack than that. */
-               ok &= std::fabs(actual[channel] - kClearColor[channel]) <= 1.0F / 128.0F;
+               ok &= std::fabs(actual[channel] - expected[channel]) <= 1.0F / 128.0F;
             if (!ok) {
                if (mismatches < 8) {
                   std::fprintf(stderr,
                                "color(%u,%u) sample %u = (%.4f,%.4f,%.4f,%.4f), expected "
                                "(%.4f,%.4f,%.4f,%.4f) FAIL\n",
                                x, y, sample_index, actual[0], actual[1], actual[2], actual[3],
-                               kClearColor[0], kClearColor[1], kClearColor[2], kClearColor[3]);
+                               expected[0], expected[1], expected[2], expected[3]);
                }
                ++mismatches;
             }
@@ -505,6 +635,11 @@ main(int argc, char ** argv)
    vkDestroyFramebuffer(device, framebuffer, nullptr);
    vkDestroyRenderPass(device, render_pass, nullptr);
    vkDestroyPipeline(device, pipeline, nullptr);
+   for (VkPipeline write_pipeline : write_pipelines)
+      vkDestroyPipeline(device, write_pipeline, nullptr);
+   vkDestroyPipelineLayout(device, write_pipeline_layout, nullptr);
+   vkDestroyShaderModule(device, write_vertex_module, nullptr);
+   vkDestroyShaderModule(device, write_fragment_module, nullptr);
    vkDestroyShaderModule(device, shader_module, nullptr);
    vkDestroyDescriptorPool(device, descriptor_pool, nullptr);
    vkDestroyPipelineLayout(device, pipeline_layout, nullptr);

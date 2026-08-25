@@ -11,7 +11,7 @@ accept the work. Both use a 1–5 scale.
 
 | Work item | Importance | Complexity | Feasibility | Acceptance criteria |
 |---|---:|---:|---|---|
-| Implement and validate FMASK/CMASK allocation, identity initialization and sampled MSAA addressing | 5/5 | 5/5 | Partly fixed; the rest needs Evergreen research. Two real bugs found and fixed (see the note below): the identity-fill constants did not match the shader's fixed 4-bit-per-sample FMASK decode for 2x/4x, and -- independently -- the identity initialization never ran at all when a render pass performed the initial layout transition, because the common runtime forwards that as `VkRenderingAttachmentInitialLayoutInfoMESA` instead of lowering it into a barrier and Terakan ignored the struct. With both fixed, 2x per-sample colour reads are fully correct and regression-covered (`terakan_color_msaa_fetch_2x`); 4x (96/256 wrong) and 8x (448/512 wrong) are improved but still wrong. The remaining suspect is the per-sample field width at higher sample counts, not the fill trigger or the fill value -- both were re-tested and ruled out | Per-sample reads and resolved reads pass for 2x/4x/8x images without corrupting ordinary color targets |
+| ~~Implement and validate FMASK/CMASK allocation, identity initialization and sampled MSAA addressing~~ **per-sample reads FIXED** | 5/5 | 5/5 | Per-sample colour reads now pass at 2x, 4x and 8x on real CAICOS hardware, repeatably, with every sample given its own distinct colour (`terakan_color_msaa_fetch_2x`/`_4x`/`_8x`), and the rest of the suite stays green, which is the "without corrupting ordinary color targets" half of the criteria. Three real bugs were found and fixed to get there -- see the note below: the 2x FMASK identity constant used the wrong field width, the identity initialization never ran when a render pass performed the initial layout transition, and CB colour compression/fast clear was enabled even for sampled images, letting the CB leave fragment planes unwritten that a texture fetch then read. Still open before the item can be closed outright: real colour-target **resolve** coverage (`vkCmdResolveImage` of a genuinely multi-valued MSAA surface), and reusing an MSAA colour companion for depth resolve | Per-sample reads and resolved reads pass for 2x/4x/8x images without corrupting ordinary color targets |
 | ~~Fix stencil-only render targets on combined depth/stencil images~~ **FIXED** | 4/5 | 3/5 | **Root-caused and fixed.** `terakan_hw_config_draw_set_db_depth_stencil_buffer()` stored the two aspects' base addresses *swapped* whenever depth was not bound, so the stencil-only emit path wrote the depth plane's address into `DB_STENCIL_READ_BASE`/`DB_STENCIL_WRITE_BASE` and every stencil write landed in the depth plane. Verified directly with register-level instrumentation: the incoming descriptor had `z_base=0x0`/`stencil_base=0x4` and the emit chose `0x0`. Fixed by storing each base as itself; the emit path never writes the unbound aspect's base registers at all, so the swap accomplished nothing, and the setter's own dedup comparison (which compares each stored base against the incoming descriptor's same-named field) was silently broken by it too. `terakan_stencil_only_render` regression-covers both the previously broken shape and the depth-bound workaround shape, and is a verified negative control: against the unfixed driver it fails 15/16 stencil-only iterations while the depth-bound pass still passes | A stencil-only `vkCmdBeginRendering` (`pDepthAttachment == NULL`, `pStencilAttachment` naming a combined-format image) writes and reads back correctly without a depth attachment bound alongside, at any sample count, repeatably |
 | Complete cache and barrier coherency | 5/5 | 4/5 | Implementable. Composition coverage now exists (`terakan_frame_chain` with the render-pass producer, the compute producer, `--compute-ssbo` for a storage-buffer producer/consumer alongside the storage-image one, `--multi-size` for a second, independently sized 4x4 chain recorded within the same per-frame block as the main 16x16 one, and `--compute-multi-pipeline` for six distinct `VkPipeline` objects bound round-robin across frames instead of rebinding one) and all pass, closing every concrete gap the original coverage note named. Whatever remains is narrower than this composition shape, not a specific named scenario | Focused attachment, texture, storage, transfer, graphics/compute and query producer-consumer chains pass without application-specific waits |
 | Cover remaining copy, blit and resolve format/subresource combinations | 5/5 | 4/5 | Implementable; the vkCmdCopyImage subresource slice is fixed, and a real bug in color resolve subresource addressing was found and fixed along the way. `terakan_copy_image_subresource` regression-covers a non-zero-offset partial-extent copy across array layers, a copy between two different mip levels, and a copy spanning multiple array layers in one region -- all pass on real CAICOS hardware (8/8 repeat runs, in light of the earlier retracted "deterministic" claim above). `terakan_color_resolve_subresource` closed a previously nonexistent COLOR attachment resolve test (only depth/stencil resolve had coverage) and found that resolving into a destination array layer other than the multisample source's own layer did not fail cleanly -- it silently wrote the resolved color into the SOURCE's layer of the destination instead, corrupting whatever was there. This is Evergreen's CB_RESOLVE apparently sharing one per-draw array-slice-select state across both bound color buffers rather than addressing each RTV's slice independently (no errata research beyond this observed behavior). The fix extends `terakan_meta_resolve_region_is_fixed_function_compatible` in `terakan_meta_resolve.c` to require a matching source/destination array layer, same as it already required matching extents and offsets, so a cross-layer region is now skipped like any other CB_RESOLVE-incompatible one instead of corrupting the wrong layer; there is no shader fallback for the cross-layer case (the alternate shader resolve path is disabled elsewhere in that file) so it remains genuinely unsupported, just safely so. Multisampled vkCmdCopyImage is a separate, still-open gap: `terakan_meta_copy_image.c` has no `samples > 1` guard before its single-sample-shaped meta-draw copy path (see the `TODO(Triang3l)` comment there), so an MSAA copy currently falls through to that path rather than being rejected or handled correctly. Actually implementing it is comparable in scope to the FMASK/CMASK work and was deliberately not attempted here, but `terakan_copy_image_multisample_noop_test` establishes what currently happens: on real CAICOS hardware (6/6 repeat runs) the destination is left completely untouched rather than corrupted, most likely because a #MemoryIntegrity-style check inside the meta-draw's descriptor creation rejects the mismatched dimensionality (source bound as plain 2D_ARRAY regardless of actual sample count) and the copy loop silently skips the region. This downgrades the gap from "possible silent corruption" to "silent no-op, locked in as a regression so it cannot regress into corruption unnoticed" -- still wrong from an application's perspective, but not the worse failure mode originally suspected. Blit subresource coverage beyond the format-matrix cases already landed, and the full CTS-driven matrix, remain unverified (CTS is not installed on the test machine, see FUNCTIONAL_COVERAGE.md) | Boundary tests cover non-zero offsets, partial extents, mip levels, array/3D layers and every advertised compatible format class |
@@ -1098,77 +1098,74 @@ depth resolve.
 Per-sample colour reads were probed directly for the first time (no test in
 this suite had ever exercised `texelFetch` on a multisample colour image --
 `terakan_color_msaa_fetch_test`, mirroring `terakan_depth_msaa_fetch`) and
-found completely broken: every texel read back wrong, mostly `(0,0,0,0)`.
-Root cause found and fixed: `LowerTexToBackend::lower_txf_ms()`
-(`sfn/sfn_instr_tex.cpp`) decodes the fetched FMASK dword with a fixed 4-bit
-(one nibble) field per sample index (`shift = ms_index * 4, mask = 0xF`)
-regardless of the actual sample count, but the identity-fill constants in
-`terakan_barrier.c` (`identity_fmask[]`) did not follow that convention for
-2x and 4x -- only the 8x constant (`0x76543210`, decoding to nibbles
-`0..7`) happened to already match it. Decoded under the shader's own
-convention, the old 2x/4x constants gave nibble sequences `(2,0,2,0,...)`
-and `(4,14,4,14,...)`, both reading out-of-range or wrong planes for most
-sample indices, exactly matching the observed failure (sample index 0 always
-wrong on 2x, decoding to plane 2, which does not exist on a 2-plane
-surface). Corrected to `0x10101010` (2x) and `0x32103210` (4x), following
-the same nibble-per-sample identity as the already-correct 8x value.
+found completely broken. **They now pass at 2x, 4x and 8x**, repeatably, with
+each sample given its own distinct colour so that a fetch landing on the wrong
+plane is distinguishable from one landing on the right plane. Three separate
+bugs had to be fixed, and two of them were only findable once the test was
+strengthened.
 
-A second, independent bug was then found in the same area: **the identity
-FMASK initialization never ran at all for the common case of an application
-that lets a render pass perform the initial layout transition.** It was
-triggered only from an explicit `VK_IMAGE_LAYOUT_UNDEFINED` image barrier in
-`terakan_CmdPipelineBarrier2()`, but the common runtime does not lower a
-render pass's `initialLayout = VK_IMAGE_LAYOUT_UNDEFINED` into a barrier --
-when `can_use_attachment_initial_layout()` succeeds it forwards it as a
+**1. The 2x identity FMASK constant used the wrong field width.** FMASK stores
+one fragment index per sample, and the field width follows the surface's
+element size rather than the sample count: 2x and 4x allocate one byte per
+pixel and use **2 bits per sample**, while 8x allocates four bytes per pixel
+and uses **4 bits per sample**. The identity values are therefore `0x04`
+(`0b0100`) for 2x, `0xE4` (`0b11100100`) for 4x and nibbles `0..7`
+(`0x76543210`) for 8x. Terakan inherited Gallium r600's constants, whose 4x and
+8x values are right but whose 2x value `0x02020202` is a *1*-bit-per-sample
+identity -- decoded at 2 bits per sample it asks for fragment 2, a plane a 2x
+surface does not have, and measured as garbage for every sample 0. Corrected to
+`0x04040404`.
+
+**2. The identity initialization never ran when a render pass performed the
+initial layout transition.** It was triggered only from an explicit
+`VK_IMAGE_LAYOUT_UNDEFINED` image barrier in `terakan_CmdPipelineBarrier2()`,
+but the common runtime does not lower a render pass's
+`initialLayout = VK_IMAGE_LAYOUT_UNDEFINED` into a barrier -- when
+`can_use_attachment_initial_layout()` succeeds it forwards it as a
 `VkRenderingAttachmentInitialLayoutInfoMESA` chained onto the attachment and
-deliberately skips the barrier (see `vk_render_pass.c`), and Terakan did not
-look at that struct at all. Confirmed directly with temporary
-instrumentation: the initialization fired 0 times through the render-pass
-path and 1 time when the same test issued an explicit barrier. Any such image
-therefore rendered with whatever the previous owner of that memory left in
-FMASK, which is exactly what the run-to-run instability in the earlier
-probing was -- not a tiling-addressing problem as first suspected, and the
-one fence-wait timeout seen then has not recurred since.
+deliberately skips the barrier (see `vk_render_pass.c`) -- and Terakan did not
+look at that struct anywhere. Confirmed with temporary instrumentation: the
+initialization fired 0 times through the render-pass path and 1 time when the
+same test issued an explicit barrier, so any application letting its render
+pass do the initial transition (legal, and extremely common) rendered with
+whatever the previous owner of that memory left in FMASK. Fixed by extracting
+`terakan_barrier_initialize_color_metadata()` and calling it from both entry
+points.
 
-Fixed by extracting the initialization into
-`terakan_barrier_initialize_color_metadata()` (`terakan_barrier.c`) and
-calling it from both entry points that can be an image's first colour use:
-the existing barrier path, and `terakan_CmdBeginRendering()` when a colour
-attachment carries that MESA struct with `initialLayout` UNDEFINED.
+**3. CB colour compression and fast clear were enabled for sampled images.**
+`terakan_image_create_color_descriptor()` set `COMPRESSION` and `FAST_CLEAR` on
+every multisample image with metadata. Those are only safe while every read
+also goes through CB, which understands CMASK; a texture fetch does not --
+`TXF_MS` reads FMASK and then addresses the fragment planes directly, with
+nothing consulting CMASK -- so the CB was free to leave planes it had not
+actually written holding stale memory, and a fast clear in particular updates
+CMASK only. This was isolated by forcing FMASK to all-zeros, pointing every
+sample at plane 0 (the one plane a fast clear does write): that made all of
+2x/4x/8x pass, which proved the fetch and decode were fine and the planes
+simply were not being written. Real drivers resolve this with an FMASK/CMASK
+decompress before sampling; Terakan has none, so sampled multisample colour
+images are now written uncompressed instead, costing the compression bandwidth
+win for those images only.
 
-**Current state, measured on real CAICOS hardware with both fixes applied:**
+Two hypotheses were tested and **ruled out** along the way, recorded so they are
+not re-derived: the FMASK element size is not wrong (allocating 4x with two
+bytes per pixel instead of one changed nothing), and the remaining failures were
+not a tiling or bank-rotation addressing mismatch as the earlier notes had
+suspected -- the run-to-run instability that suggested that was simply
+uninitialized FMASK from bug 2, and it disappeared once that was fixed.
 
-| samples | before both fixes | after |
-|---|---|---|
-| 2x | all 128 values wrong | **all correct, repeatably** |
-| 4x | all 256 wrong | 96 of 256 wrong |
-| 8x | all 512 wrong | 448 of 512 wrong |
+A methodological note worth keeping: the first version of this test cleared
+every sample to the same colour, which meant it could only detect a decoded
+plane index that was *out of range*, never one that pointed at the wrong but
+valid plane. Under that weaker test the wrong constants looked better than the
+right ones, because they happened to point more samples at plane 0 -- the only
+plane a fast clear writes. Giving each sample its own colour reversed that
+conclusion completely and is what made the real encoding legible.
 
-So 2x per-sample colour reads work now and are wired into the regression
-suite as `terakan_color_msaa_fetch_2x`; 4x and 8x are improved but still
-wrong and stay open.
-
-What the remaining 4x/8x failure is *not*: it is not the initialization
-trigger (the fill now demonstrably runs), and it is not the fill value being
-the r600 one (the original `0x02020202`/`0xE4E4E4E4` constants were re-tested
-with the fill actually running and are strictly worse -- 2x 64 bad vs 0, 4x
-192 bad vs 96). The remaining suspect is the per-sample field width at higher
-sample counts: the shader decodes a fixed 4-bit field per sample
-unconditionally, which needs 16 bits for 4x and 32 bits for 8x, but the FMASK
-surface is allocated 1 byte per pixel for both 2x and 4x (`bpe = 1`, matching
-Gallium r600's `r600_texture_get_fmask_info()`) and only 4 bytes for 8x. Four
-samples of 4 bits each cannot fit in one byte, which is consistent with 4x
-failing on exactly the sample indices whose nibbles fall outside the stored
-byte. Resolving that means deciding whether the FMASK element size or the
-shader's decode width is the thing that should change, which is real
-Evergreen research and is where the next pass should start.
-
-One caveat on how much these numbers prove: `terakan_color_msaa_fetch_test`
-clears every sample to the *same* colour, so it can only detect a decoded
-plane index that is out of range, not one that points at the wrong valid
-plane. A stronger version would give each sample a distinct value the way
-`terakan_resolve_modes` does (per-sample draws behind a sample mask). The 2x
-"all correct" result above should be read with that limitation in mind.
+What is still open for this item: colour-target **resolve** coverage against a
+genuinely multi-valued MSAA surface (every current resolve test resolves a
+surface whose samples all hold the same value), and reusing an MSAA colour
+companion for depth resolve.
 A TODO is complete only when:
 
 1. the implementation builds from a clean configuration;

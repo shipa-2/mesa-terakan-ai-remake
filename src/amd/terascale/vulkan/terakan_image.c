@@ -1790,8 +1790,30 @@ terakan_image_create_color_descriptor(
    if (meta_descriptor_out_opt != NULL) {
       *meta_descriptor_out_opt = terakan_color_meta_descriptor_create_disabled(descriptor_out);
       if (terakan_image_surface_has_color_metadata(&image->surface)) {
-         descriptor_out->info |= S_028C70_COMPRESSION(true);
-         descriptor_out->info |= S_028C70_FAST_CLEAR(true);
+         /* Compressed CB writes and fast clears are only safe while every read of the surface also
+          * goes through CB, which understands CMASK. A texture fetch does not: `TXF_MS` reads FMASK
+          * and then addresses the fragment planes directly, with nothing consulting CMASK. With
+          * compression enabled the CB is free to leave planes other than the one it actually wrote
+          * untouched -- a fast clear in particular updates CMASK only -- so a per-sample fetch of a
+          * sampled image reads whatever the previous owner of that memory left in the planes the CB
+          * skipped.
+          *
+          * Real drivers resolve this with an FMASK/CMASK decompress (fast-clear-eliminate plus
+          * FMASK expand) before the surface is sampled. Terakan does not implement one yet, so
+          * sampled multisample colour images have to be written uncompressed instead. This costs
+          * the fast-clear and compression bandwidth win for those images only; images that are
+          * never sampled keep both.
+          *
+          * Measured on real CAICOS hardware with terakan_color_msaa_fetch_test: with compression
+          * enabled, every sample index that FMASK maps to a plane the CB had not written read back
+          * garbage, and forcing FMASK to all-zeros (pointing every sample at plane 0, the one plane
+          * a fast clear does write) made all of 2x/4x/8x pass -- which is what isolated this to the
+          * planes not being written rather than to FMASK addressing or decoding.
+          */
+         if ((image->vk.usage & VK_IMAGE_USAGE_SAMPLED_BIT) == 0) {
+            descriptor_out->info |= S_028C70_COMPRESSION(true);
+            descriptor_out->info |= S_028C70_FAST_CLEAR(true);
+         }
          descriptor_out->attrib =
             (descriptor_out->attrib & ~S_028C74_FMASK_BANK_HEIGHT(3)) |
             S_028C74_FMASK_BANK_HEIGHT(image->surface.fmask.attrib_bank_height);

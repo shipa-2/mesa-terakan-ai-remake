@@ -505,13 +505,24 @@ terakan_barrier_emit_actions_unconditionally(
  * use. This must be recorded on a command buffer rather than done at image creation because the
  * image memory may not be bound yet.
  *
- * `LowerTexToBackend::lower_txf_ms()` (sfn_instr_tex.cpp) decodes the fetched FMASK dword by
- * shifting right by `ms_index * 4` and masking with 0xF unconditionally, regardless of the actual
- * sample count -- i.e. every sample index always occupies a fixed 4-bit (one nibble) field, not a
- * tightly packed ceil(log2(N))-bit one. The identity fill value for each sample count therefore has
- * to place sample i's plane index in nibble i, repeated across the dword so every pixel packed into
- * the same FMASK dword decodes correctly: 0x10101010 for 2x, 0x32103210 for 4x and 0x76543210 for
- * 8x (which uses the whole dword once, so it needs no repetition).
+ * FMASK stores one fragment index per sample, and the field width follows the surface's element
+ * size rather than the sample count: 2x and 4x allocate one byte per pixel and use **2 bits per
+ * sample**, while 8x allocates four bytes per pixel and uses **4 bits per sample**. The identity
+ * value for each is therefore the fragment indices 0..n-1 packed into those fields and repeated
+ * across the dword so every pixel sharing it decodes correctly:
+ *
+ *   2x: 0b0100                            -> 0x04, repeated as 0x04040404
+ *   4x: 0b11100100                        -> 0xE4, repeated as 0xE4E4E4E4
+ *   8x: nibbles 0,1,2,3,4,5,6,7           -> 0x76543210 (one whole dword, no repetition)
+ *
+ * All three were determined empirically on real CAICOS hardware with
+ * terakan_color_msaa_fetch_test giving every sample its own distinct colour, which is the only way
+ * to tell a fetch that lands on the wrong plane from one that lands on the right one -- an earlier
+ * version of that test cleared every sample to the same colour and could not distinguish them.
+ * The 4x and 8x values match what Gallium r600 uses; the 2x one does not. r600's 0x02020202 is a
+ * 1-bit-per-sample identity, which decodes here as fragment 2 for sample 0 -- a plane a 2x surface
+ * does not have -- and was measured returning garbage for every sample 0 until it was corrected to
+ * the 2-bit-per-sample 0x04040404.
  *
  * Both entry points that can be an image's first color use have to call this: an explicit
  * `VK_IMAGE_LAYOUT_UNDEFINED` image barrier, and a render pass whose attachment declares
@@ -534,7 +545,7 @@ terakan_barrier_initialize_color_metadata(
 
    uint32_t const sample_count_log2 =
       (uint32_t)terakan_image_vk_sample_count_to_hw_log2(image->vk.samples, false);
-   static uint32_t const identity_fmask[4] = {0x00000000, 0x10101010, 0x32103210, 0x76543210};
+   static uint32_t const identity_fmask[4] = {0x00000000, 0x04040404, 0xE4E4E4E4, 0x76543210};
 
    uint32_t base_slice = base_array_layer;
    uint32_t slice_count = layer_count;
