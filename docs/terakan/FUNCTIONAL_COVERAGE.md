@@ -117,6 +117,30 @@ covered: `terakan_meta_copy_image.c` has no sample-count guard before its
 single-sample-shaped meta-draw copy path, a separate, still-open gap
 comparable in scope to the FMASK/CMASK work.
 
+`terakan_color_resolve_subresource` is the first test in this suite to
+exercise a COLOR attachment multisample resolve at all -- prior coverage
+was depth/stencil only. It found a real bug: resolving into a
+destination array layer other than the multisample source's own array
+layer did not fail to write the requested layer, it silently wrote the
+resolved color into the SOURCE's layer of the destination instead,
+corrupting whatever was there. This looks like Evergreen's CB_RESOLVE
+sharing one per-draw array-slice-select state across both bound color
+buffers rather than addressing each RTV's slice independently. The fix,
+in `terakan_meta_resolve_region_is_fixed_function_compatible`
+(`terakan_meta_resolve.c`), requires a matching source/destination array
+layer the same way it already required matching extents and offsets, so
+a cross-layer resolve region is now skipped -- like any other
+CB_RESOLVE-incompatible region -- instead of corrupting the wrong layer.
+Three cases pass on real CAICOS hardware, repeated six times with zero
+failures: a non-zero mip level with an offset render area, a non-zero
+array layer shared identically by source and destination (the only
+array-layer combination CB_RESOLVE supports), and a regression check
+that a mismatched-layer resolve now leaves the sentinel intact in both
+the requested layer and the source's own layer of the destination.
+Cross-layer color resolve itself remains genuinely unsupported -- there
+is no shader fallback available for it -- just safely so rather than
+silently corrupting data.
+
 The initial selected clear batch passed its first 64 1D and 2D color cases, then
 `dEQP-VK.api.image_clearing.core.clear_color_image.3d.optimal.single_layer.r8g8b8a8_unorm`
 returned `VK_ERROR_DEVICE_LOST`. The kernel rejected the command stream with:
@@ -169,6 +193,7 @@ terakan_dynamic_rendering
 terakan_blit_3d
 terakan_blit_format_matrix
 terakan_copy_image_subresource
+terakan_color_resolve_subresource
 terakan_depth_resolve_subresource
 terakan_resolve_modes_2x
 terakan_resolve_modes_4x

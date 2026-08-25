@@ -672,8 +672,20 @@ terakan_meta_resolve_region_is_fixed_function_compatible(
 
    /* CB_RESOLVE operates on matching source and destination coordinates and surface dimensions.
     * Scissoring the draw makes same-offset subrectangles safe without rebasing either surface.
+    *
+    * It also turns out to require a matching array slice between the two surfaces: resolving into
+    * a destination array layer other than the source's own layer does not merely fail to write the
+    * requested layer, it silently writes into the source's layer of the destination image instead
+    * (confirmed on real CAICOS hardware -- see terakan_color_resolve_subresource_test, which
+    * exercises a same-layer case that passes and a cross-layer case that would corrupt an unrelated
+    * layer if not excluded here). This matches Evergreen's single, per-draw array-slice-select
+    * state being shared across all bound color buffers rather than being independent per RTV. There
+    * is no shader fallback for this case (the alternate shader resolve path is disabled elsewhere in
+    * this file), so a cross-layer region is skipped like any other incompatible one instead of being
+    * silently misdirected.
     */
    return src_extent.width == dst_extent.width && src_extent.height == dst_extent.height &&
+          region->srcSubresource.baseArrayLayer == region->dstSubresource.baseArrayLayer &&
           region->srcOffset.x >= 0 && region->srcOffset.y >= 0 && region->srcOffset.z == 0 &&
           region->srcOffset.x == region->dstOffset.x &&
           region->srcOffset.y == region->dstOffset.y && region->dstOffset.z == 0 &&
