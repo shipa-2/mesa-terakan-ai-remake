@@ -80,6 +80,19 @@ enum terakan_barrier_action_flags {
 
 struct terakan_gfx_command_writer;
 
+struct terakan_image;
+
+/* Fills an image's FMASK with the identity sample mapping and its CMASK with the uncompressed
+ * state. Must be called on an image's first color use -- both from an explicit
+ * VK_IMAGE_LAYOUT_UNDEFINED image barrier and from a render pass declaring
+ * initialLayout = VK_IMAGE_LAYOUT_UNDEFINED, which the common runtime forwards as a
+ * VkRenderingAttachmentInitialLayoutInfoMESA rather than lowering into a barrier. Images without
+ * color metadata, and images with no memory bound yet, are ignored.
+ */
+void terakan_barrier_initialize_color_metadata(
+   struct terakan_gfx_command_writer * command_writer, struct terakan_image const * image,
+   uint32_t base_array_layer, uint32_t layer_count);
+
 void terakan_barrier_emit_pending_actions(struct terakan_gfx_command_writer * command_writer,
                                           uint32_t allowed_actions);
 

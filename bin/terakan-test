@@ -64,6 +64,7 @@ gpu_tests=(
   terakan_clip_distance
   terakan_depth_readback
   terakan_depth_msaa_fetch
+  terakan_color_msaa_fetch_2x
   terakan_depth_resolve
   terakan_depth_stencil_resolve
   terakan_stencil_msaa_fetch

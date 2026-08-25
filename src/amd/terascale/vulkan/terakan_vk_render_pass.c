@@ -21,6 +21,7 @@
  * IN THE SOFTWARE.
  */
 
+#include "terakan_barrier.h"
 #include "terakan_command_buffer.h"
 #include "terakan_descriptor.h"
 #include "terakan_entrypoints.h"
@@ -28,6 +29,8 @@
 #include "terakan_vk_state.h"
 
 #include "meta/terakan_meta_impl.h"
+
+#include "vk_render_pass.h"
 
 #include "util/bitscan.h"
 #include "util/macros.h"
@@ -216,6 +219,25 @@ terakan_CmdBeginRendering(VkCommandBuffer const commandBuffer,
          &pRenderingInfo->pColorAttachments[color_attachment_index];
       struct terakan_image_view const * const color_attachment_view =
          terakan_image_view_from_handle(color_attachment->imageView);
+
+      /* An attachment coming from a VkRenderPass whose initialLayout is UNDEFINED is this image's
+       * first color use, and needs the same identity FMASK/CMASK initialization an explicit
+       * UNDEFINED image barrier performs. The common runtime does not lower that transition into a
+       * barrier -- it forwards it here as a VkRenderingAttachmentInitialLayoutInfoMESA (see
+       * vk_render_pass.c) -- so without this an application that lets its render pass do the
+       * initial transition, which is both legal and extremely common, would render with
+       * uninitialized FMASK and read back whatever the previous owner of that memory left behind.
+       */
+      VkRenderingAttachmentInitialLayoutInfoMESA const * const color_attachment_initial_layout =
+         vk_find_struct_const(color_attachment->pNext,
+                              RENDERING_ATTACHMENT_INITIAL_LAYOUT_INFO_MESA);
+      if (color_attachment_initial_layout != NULL &&
+          color_attachment_initial_layout->initialLayout == VK_IMAGE_LAYOUT_UNDEFINED) {
+         terakan_barrier_initialize_color_metadata(
+            command_buffer->command_writer.gfx,
+            container_of(color_attachment_view->vk.image, struct terakan_image, vk),
+            color_attachment_view->vk.base_array_layer, layer_count_minus_1 + 1);
+      }
 
       struct terakan_color_descriptor color_attachment_descriptor = color_attachment_view->color;
       color_attachment_descriptor.view =

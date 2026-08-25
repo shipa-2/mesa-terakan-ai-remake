@@ -1259,10 +1259,6 @@ if with_tests
         ],
         depfile : 'terakan_color_msaa_fetch.spv.h.d',
       )
-      # Not wired into a test() entry: this is a FMASK/CMASK research probe that does not yet
-      # reliably pass (see the note in TODO.md), unlike terakan_depth_msaa_fetch and
-      # terakan_stencil_msaa_fetch above. It still builds so it stays available for continued work,
-      # and can be run manually via bin/terakan-run.
       terakan_color_msaa_fetch_test = executable(
         'terakan_color_msaa_fetch_test',
         [
@@ -1270,6 +1266,22 @@ if with_tests
           terakan_color_msaa_fetch_spv,
         ],
         dependencies : vulkan_loader_dep,
+      )
+      # Only the 2x case is wired in: per-sample colour reads are correct at two samples now that
+      # the FMASK identity nibble encoding and the render-pass-driven FMASK initialization are both
+      # fixed. 4x and 8x still read wrong planes for some sample indices and remain open research
+      # (see the FMASK/CMASK entry in TODO.md); run them by hand with --samples=4 / --samples=8.
+      test(
+        'terakan_color_msaa_fetch_2x',
+        terakan_color_msaa_fetch_test,
+        args : ['--samples=2'],
+        depends : [libvulkan_terascale, _dev_icd],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 15,
       )
 
       terakan_extended_format_storage_image_spv = custom_target(

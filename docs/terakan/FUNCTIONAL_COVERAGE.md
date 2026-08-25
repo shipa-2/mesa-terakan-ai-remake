@@ -148,6 +148,21 @@ anything was changed. The test is a verified negative control: against the
 unfixed driver its stencil-only pass fails 15/16 iterations while its
 depth-bound pass still passes, and both pass after the fix.
 
+`terakan_color_msaa_fetch_2x` covers per-sample reads of a multisample
+COLOUR image at two samples, which now work after two fixes described in
+[TODO.md](TODO.md): the identity FMASK fill constants did not match the
+shader's fixed 4-bit-per-sample decode, and the identity initialization never
+ran at all when a render pass performed the initial layout transition (the
+common runtime forwards that as VkRenderingAttachmentInitialLayoutInfoMESA
+rather than lowering it into a barrier, and Terakan ignored the struct --
+confirmed with instrumentation showing 0 initializations through the
+render-pass path versus 1 with an explicit barrier). 4x and 8x are improved
+but still wrong and are not wired into the suite. Note the test clears every
+sample to the same colour, so it detects an out-of-range decoded plane index
+but not a wrong-but-valid one.
+
+The original probing notes follow.
+
 `terakan_color_msaa_fetch_test` probed the FMASK/CMASK item's per-sample
 colour read path directly for the first time and found, then partly fixed,
 a real bug: the shader's FMASK decode (`lower_txf_ms` in
@@ -231,6 +246,7 @@ terakan_dynamic_offset_bounds
 terakan_clip_distance
 terakan_depth_readback
 terakan_depth_msaa_fetch
+terakan_color_msaa_fetch_2x
 terakan_depth_resolve
 terakan_depth_stencil_resolve
 terakan_stencil_readback

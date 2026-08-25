@@ -500,6 +500,74 @@ terakan_barrier_emit_actions_unconditionally(
    terakan_barrier_emit_pending_actions(command_writer, actions);
 }
 
+/* Evergreen TXF_MS uses FMASK to map sample indices. Unlike r600's combined CMASK/FMASK setup,
+ * Terakan exposes FMASK directly, so initialize it to the identity mapping before the first color
+ * use. This must be recorded on a command buffer rather than done at image creation because the
+ * image memory may not be bound yet.
+ *
+ * `LowerTexToBackend::lower_txf_ms()` (sfn_instr_tex.cpp) decodes the fetched FMASK dword by
+ * shifting right by `ms_index * 4` and masking with 0xF unconditionally, regardless of the actual
+ * sample count -- i.e. every sample index always occupies a fixed 4-bit (one nibble) field, not a
+ * tightly packed ceil(log2(N))-bit one. The identity fill value for each sample count therefore has
+ * to place sample i's plane index in nibble i, repeated across the dword so every pixel packed into
+ * the same FMASK dword decodes correctly: 0x10101010 for 2x, 0x32103210 for 4x and 0x76543210 for
+ * 8x (which uses the whole dword once, so it needs no repetition).
+ *
+ * Both entry points that can be an image's first color use have to call this: an explicit
+ * `VK_IMAGE_LAYOUT_UNDEFINED` image barrier, and a render pass whose attachment declares
+ * `initialLayout = VK_IMAGE_LAYOUT_UNDEFINED`. The common runtime does not lower the latter into a
+ * barrier -- it forwards it as a `VkRenderingAttachmentInitialLayoutInfoMESA` chained onto the
+ * attachment (see vk_render_pass.c) -- so a driver that only looks at barriers silently leaves
+ * FMASK uninitialized for the very common case of an application that never transitions the image
+ * itself.
+ */
+void
+terakan_barrier_initialize_color_metadata(
+   struct terakan_gfx_command_writer * const command_writer,
+   struct terakan_image const * const image, uint32_t const base_array_layer,
+   uint32_t const layer_count)
+{
+   if (image == NULL || !terakan_image_surface_has_color_metadata(&image->surface) ||
+       image->bo == NULL) {
+      return;
+   }
+
+   uint32_t const sample_count_log2 =
+      (uint32_t)terakan_image_vk_sample_count_to_hw_log2(image->vk.samples, false);
+   static uint32_t const identity_fmask[4] = {0x00000000, 0x10101010, 0x32103210, 0x76543210};
+
+   uint32_t base_slice = base_array_layer;
+   uint32_t slice_count = layer_count;
+   if (image->vk.image_type == VK_IMAGE_TYPE_3D) {
+      base_slice = 0;
+      slice_count =
+         image->surface.fmask.size_bytes_shr8 / image->surface.fmask.slice_size_bytes_shr8;
+   } else {
+      slice_count =
+         MIN2(slice_count, image->vk.array_layers - MIN2(base_slice, image->vk.array_layers));
+   }
+   if (slice_count == 0 || base_slice >= image->vk.array_layers) {
+      return;
+   }
+
+   VkDeviceSize const slice_size = (VkDeviceSize)image->surface.fmask.slice_size_bytes_shr8 << 8;
+   command_writer->post_buffer_copy_write_barrier_actions |=
+      TERAKAN_BARRIER_ACTION_SYNC_ME_TO_CP_DMA;
+   terakan_cp_dma_fill(
+      command_writer, identity_fmask[sample_count_log2], image->bo,
+      image->va + ((VkDeviceSize)image->surface.fmask.offset_in_memory_bytes_shr8 << 8) +
+         slice_size * base_slice,
+      TERAKAN_BO_PRIORITY_SEPARATE_META, slice_size * slice_count);
+
+   VkDeviceSize const cmask_slice_size =
+      (VkDeviceSize)image->surface.cmask.slice_size_bytes_shr8 << 8;
+   terakan_cp_dma_fill(
+      command_writer, 0xCCCCCCCC, image->bo,
+      image->va + ((VkDeviceSize)image->surface.cmask.offset_in_memory_bytes_shr8 << 8) +
+         cmask_slice_size * base_slice,
+      TERAKAN_BO_PRIORITY_SEPARATE_META, cmask_slice_size * slice_count);
+}
+
 VKAPI_ATTR void VKAPI_CALL
 terakan_CmdPipelineBarrier2(VkCommandBuffer const commandBuffer,
                             VkDependencyInfo const * const pDependencyInfo)
@@ -547,69 +615,14 @@ terakan_CmdPipelineBarrier2(VkCommandBuffer const commandBuffer,
          terakan_barrier_get_image_layout_transition_actions(
             barrier->oldLayout, barrier->newLayout, barrier->subresourceRange.aspectMask);
 
-      /* Evergreen TXF_MS uses FMASK to map sample indices. Unlike r600's combined CMASK/FMASK
-       * setup, Terakan exposes FMASK directly, so initialize it to the identity mapping before
-       * the first color use. This must be recorded on the command buffer rather than done at image
-       * creation because the image memory may not be bound yet.
-       *
-       * `LowerTexToBackend::lower_txf_ms()` (sfn_instr_tex.cpp) decodes the fetched FMASK dword by
-       * shifting right by `ms_index * 4` and masking with 0xF unconditionally, regardless of the
-       * actual sample count -- i.e. every sample index always occupies a fixed 4-bit (one nibble)
-       * field, not a tightly packed ceil(log2(N))-bit one. The identity fill value for each sample
-       * count therefore has to place sample i's plane index in nibble i, repeated across the dword
-       * so every pixel packed into the same FMASK dword decodes correctly: 0x10101010 for 2x
-       * (nibbles 0,1,0,1,...), 0x32103210 for 4x (nibbles 0,1,2,3 repeated), and 0x76543210 for 8x
-       * (nibbles 0..7, using the whole dword once, so it needs no repetition). The previous 2x and
-       * 4x values (0x02020202 and 0xE4E4E4E4) do not follow this convention -- decoded the same way
-       * they give (2,0,2,0,...) and (4,14,4,14,...), which read out-of-range planes for most sample
-       * indices, confirmed against terakan_color_msaa_fetch_test failing exactly on sample index 0
-       * (which decoded to plane 2 on a 2-plane surface) while sample index 1 coincidentally read
-       * back correctly (it decoded to plane 0, which happens to hold the same clear colour as every
-       * other plane).
+      /* Evergreen TXF_MS uses FMASK to map sample indices, so it has to hold the identity
+       * mapping before the first color use. See terakan_barrier_initialize_color_metadata().
        */
       if (barrier->oldLayout == VK_IMAGE_LAYOUT_UNDEFINED &&
           (barrier->subresourceRange.aspectMask & VK_IMAGE_ASPECT_COLOR_BIT) != 0) {
-         struct terakan_image const * const image = terakan_image_from_handle(barrier->image);
-         if (terakan_image_surface_has_color_metadata(&image->surface) && image->bo != NULL) {
-            uint32_t const sample_count_log2 =
-               (uint32_t)terakan_image_vk_sample_count_to_hw_log2(image->vk.samples, false);
-            static uint32_t const identity_fmask[4] = {
-               0x00000000, 0x10101010, 0x32103210, 0x76543210
-            };
-
-            uint32_t base_slice = barrier->subresourceRange.baseArrayLayer;
-            uint32_t slice_count = barrier->subresourceRange.layerCount;
-            if (image->vk.image_type == VK_IMAGE_TYPE_3D) {
-               base_slice = 0;
-               slice_count = image->surface.fmask.size_bytes_shr8 /
-                             image->surface.fmask.slice_size_bytes_shr8;
-            } else {
-               slice_count =
-                  MIN2(slice_count, image->vk.array_layers - MIN2(base_slice, image->vk.array_layers));
-            }
-
-            if (slice_count != 0 && base_slice < image->vk.array_layers) {
-               VkDeviceSize const slice_size =
-                  (VkDeviceSize)image->surface.fmask.slice_size_bytes_shr8 << 8;
-               command_writer->post_buffer_copy_write_barrier_actions |=
-                  TERAKAN_BARRIER_ACTION_SYNC_ME_TO_CP_DMA;
-               terakan_cp_dma_fill(
-                  command_writer, identity_fmask[sample_count_log2], image->bo,
-                  image->va +
-                     ((VkDeviceSize)image->surface.fmask.offset_in_memory_bytes_shr8 << 8) +
-                     slice_size * base_slice,
-                  TERAKAN_BO_PRIORITY_SEPARATE_META, slice_size * slice_count);
-
-               VkDeviceSize const cmask_slice_size =
-                  (VkDeviceSize)image->surface.cmask.slice_size_bytes_shr8 << 8;
-               terakan_cp_dma_fill(
-                  command_writer, 0xCCCCCCCC, image->bo,
-                  image->va +
-                     ((VkDeviceSize)image->surface.cmask.offset_in_memory_bytes_shr8 << 8) +
-                     cmask_slice_size * base_slice,
-                  TERAKAN_BO_PRIORITY_SEPARATE_META, cmask_slice_size * slice_count);
-            }
-         }
+         terakan_barrier_initialize_color_metadata(
+            command_writer, terakan_image_from_handle(barrier->image),
+            barrier->subresourceRange.baseArrayLayer, barrier->subresourceRange.layerCount);
       }
    }
 }
