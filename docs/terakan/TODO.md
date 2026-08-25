@@ -514,24 +514,56 @@ classic Gallium R600 driver that has supported this hardware for years).
   layers, and 3D depth planes), reusing the same RV710 alignment
   parameters as every prior tiling test in this pass.
 
-  Still not done, and each a substantial piece of its own: wiring any of
-  this into `terakan_image.c`'s surface layout computation itself
-  (currently entirely R8xx/R9xx-shaped throughout, not just the pieces
-  ported so far -- this is now the only remaining piece before a
-  TeraScale 1 image could theoretically get a real, computed tiled
-  layout, though `vkCreateDevice` still refuses TeraScale 1 devices
-  regardless); and the `DB_DEPTH_INFO`/`CB_COLOR_INFO` register field
-  computation this unblocks, which still needs its own per-field
-  compatibility check
+  A fourth follow-up pass wired all of the above into
+  `terakan_image.c`'s real `terakan_image_surface_compute()`, behind an
+  `is_terascale_1` branch that returns early before any R8xx/R9xx-shaped
+  code runs (so this cannot regress R8xx/R9xx -- verified by full local
+  and real-hardware test suite runs after the change, both green).
+  `terakan_image_surface_compute_terascale_1()`
+  (`terakan_image_surface_terascale_1.c`) assembles the pieces above into
+  a complete `terakan_image_surface` the same shape
+  `terakan_image_surface_compute()` itself produces, including the
+  combined-depth-stencil array-mode sharing R8xx/R9xx already does.
+  **This integration is UNTESTED beyond code review and does not have a
+  unit test**, unlike every other piece of the TeraScale 1 port so far:
+  `terakan_CreateDevice` still refuses TeraScale 1 physical devices, so
+  there is no way to actually call `vkCreateImage` on this generation and
+  observe real behavior, and the function is not unit-testable in
+  isolation the way the pure tiling-math functions it calls are (it needs
+  real `VkImageCreateInfo`/`terakan_format_info`/`terakan_physical_device`
+  inputs). Treat it as a draft to re-verify once TeraScale 1 device
+  creation exists, not as verified working code -- its own header comment
+  says the same. Two real mistakes were caught by review during this
+  pass specifically because of that lack of a safety net, worth recording
+  so a future re-check knows to look here first: an earlier draft
+  pre-multiplied the base width by `surfels_per_block` before calling
+  `mip_chain_layout()`, which rounds the wrong quantity (surfel count
+  instead of texel count) to a power of two for mip levels above 0 --
+  fixed by excluding 3x-expand formats (8_8_8, 16_16_16, 32_32_32)
+  entirely for now rather than getting the multiplication order right
+  blind; and a copy-paste error passed `bytes_per_element * surfels_per_block`
+  (i.e. `bytes_per_block` again) to three tiling calls instead of the
+  intended per-surfel byte size, caught the same way. Also does not
+  handle 4x4-compressed formats (BC1-7) or 8x1/2x1 subsampled formats at
+  all yet (returns `false` rather than guessing at the
+  `block_texels_log2`-based block-width/height division
+  `terakan_image_surface_tiling_compute()` has for R8xx/R9xx) -- see the
+  header comment on `terakan_image_surface_compute_terascale_1()` for the
+  full list of what is and isn't handled.
+
+  Still not done, and each a substantial piece of its own: the
+  `DB_DEPTH_INFO`/`CB_COLOR_INFO` register field computation this
+  unblocks, which still needs its own per-field compatibility check
   against `r600d.h` (not yet done -- these registers weren't in the
   CB/DB/PA/SPI/SQ audit above, since that audit only covered registers
   the R8xx/R9xx code currently references, and this tiling work is what
   would make TeraScale 1's own field set relevant for the first time;
-  spot-checked while writing this, though, and R600/R700's
+  spot-checked while writing an earlier pass, though, and R600/R700's
   `CB_COLOR0_INFO`/`DB_DEPTH_INFO` field sets are consistent with the
   simpler algorithm above -- no `BANK_WIDTH`/`BANK_HEIGHT`/`NUM_BANKS`/
   `MACRO_TILE_ASPECT` fields on either register, matching the tiling math
-  needing none of those inputs).
+  needing none of those inputs); block-compressed and subsampled format
+  support; and 3x-expand format support (both just described above).
 
 - TeraScale 1 (R600/R700) `CB_COLORn_INFO`/`DB_Z_INFO` field-position
   comparison, following up on the spot-check above with the real

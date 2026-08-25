@@ -257,6 +257,8 @@ test_mip_chain_layout_no_degrade(void)
    CHECK(levels[0].aligned_pitch_surfels == 384);
    CHECK(levels[0].aligned_height_surfels == 64);
    CHECK(levels[0].pitch_bytes == 1536);
+   CHECK(levels[0].slice_bytes == 98304);
+   CHECK(levels[0].depth_planes_or_array_layers == 1);
    /* Level 0's slice (98304) is already a multiple of the 2D base BO alignment (8192), so the
     * level-0 alignment step is a no-op here -- level 1 starts right after it.
     */
@@ -334,6 +336,8 @@ test_mip_chain_layout_array_layers(void)
    uint64_t const total = terakan_image_tiling_terascale_1_mip_chain_layout(
       300, 50, 3, false, 1, 4, 1, &rv710_2d_alignments_bpe4, &rv710_1d_alignments_bpe4, levels);
    CHECK(total == 98304 * 3);
+   CHECK(levels[0].slice_bytes == 98304);
+   CHECK(levels[0].depth_planes_or_array_layers == 3);
 }
 
 static void
@@ -350,6 +354,8 @@ test_mip_chain_layout_3d_depth(void)
    /* Level 0: slice 98304 * 3 depth planes = 294912, already a multiple of the 8192-byte base BO
     * alignment. Level 1: slice 32768 * 1 depth plane = 32768.
     */
+   CHECK(levels[0].depth_planes_or_array_layers == 3);
+   CHECK(levels[1].depth_planes_or_array_layers == 1);
    CHECK(levels[1].offset_bytes == 294912);
    CHECK(total == 294912 + 32768);
 }

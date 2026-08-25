@@ -135,6 +135,8 @@ libterakan_files = files(
   'terakan_image.h',
   'terakan_image_tiling_terascale_1.c',
   'terakan_image_tiling_terascale_1.h',
+  'terakan_image_surface_terascale_1.c',
+  'terakan_image_surface_terascale_1.h',
   'terakan_instance.c',
   'terakan_instance.h',
   'terakan_limits.h',

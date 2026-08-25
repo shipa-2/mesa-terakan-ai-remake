@@ -168,6 +168,8 @@ terakan_image_tiling_terascale_1_mip_chain_layout(
          .aligned_pitch_surfels = layout.aligned_pitch_surfels,
          .aligned_height_surfels = layout.aligned_height_surfels,
          .pitch_bytes = layout.pitch_bytes,
+         .slice_bytes = layout.slice_bytes,
+         .depth_planes_or_array_layers = depth_minifies_per_level ? depth_planes : array_layers,
          .is_1d_tiled_thin1_or_fixed = degraded_to_1d,
       };
 

@@ -31,10 +31,12 @@ extern "C" {
  * This covers the pitch/height/base alignment math, per-level layout (mip extent, aligned
  * pitch/height, pitch/slice byte size, and the degrade-to-1D-on-small-mip decision), the base-level
  * array-mode decision, and walking a full mip chain to cumulative byte offsets -- everything needed
- * to compute a complete TeraScale 1 surface layout in isolation. It is not wired into
- * terakan_image.c's surface layout computation yet, and the DB_DEPTH_INFO/CB_COLOR_INFO register
- * field computation this unblocks (per the CB/DB register audit in TODO.md) still needs its own
- * per-field compatibility check; see TODO.md for what remains.
+ * to compute a complete TeraScale 1 surface layout in isolation. It is wired into
+ * terakan_image.c's surface layout computation via terakan_image_surface_compute_terascale_1()
+ * (terakan_image_surface_terascale_1.c), which is itself unverified beyond code review -- see its
+ * own header comment. The DB_DEPTH_INFO/CB_COLOR_INFO register field computation this unblocks (per
+ * the CB/DB register audit in TODO.md) still needs its own per-field compatibility check; see
+ * TODO.md for what remains.
  *
  * 2D tiling additionally requires the kernel driver to actually support it
  * (surf_man->hw_info.allow_2d in the reference, gated on DRM minor version >= 14). Terakan already
@@ -132,12 +134,18 @@ terakan_image_tiling_terascale_1_level_layout(uint32_t npix_x, uint32_t npix_y,
                                                uint32_t bytes_per_element, uint32_t samples,
                                                bool is_2d_tiled_single_sample);
 
-/* Matches r600d.h's V_0280A0_ARRAY_LINEAR_ALIGNED/_2D_TILED_THIN1 and evergreend.h's
- * V_028C70_ARRAY_LINEAR_ALIGNED/_2D_TILED_THIN1 -- confirmed numerically identical between the two
- * headers, not assumed, so this file can return one of these without including either register
- * header (keeping it decoupled the way the rest of this file already is).
+/* Matches r600d.h's V_0280A0_ARRAY_LINEAR_ALIGNED/_1D_TILED_THIN1/_2D_TILED_THIN1 and evergreend.h's
+ * V_028C70_ARRAY_LINEAR_ALIGNED/_1D_TILED_THIN1/_2D_TILED_THIN1 -- confirmed numerically identical
+ * between the two headers, not assumed, so this file can return one of these without including
+ * either register header (keeping it decoupled the way the rest of this file already is).
+ * ARRAY_1D_TILED_THIN1 is not a possible return value of
+ * terakan_image_tiling_terascale_1_select_array_mode() below (that function only ever picks linear
+ * or 2D for the base level, matching R8xx/R9xx's own base-level decision), but a caller populating
+ * a per-level array mode after terakan_image_tiling_terascale_1_mip_chain_layout() needs it for a
+ * level that degraded from 2D to 1D-tiled partway through a mip chain.
  */
 #define TERAKAN_IMAGE_TILING_TERASCALE_1_ARRAY_LINEAR_ALIGNED 1u
+#define TERAKAN_IMAGE_TILING_TERASCALE_1_ARRAY_1D_TILED_THIN1 2u
 #define TERAKAN_IMAGE_TILING_TERASCALE_1_ARRAY_2D_TILED_THIN1 4u
 
 /* The base-level array mode decision from terakan_image_surface_tiling_compute() (terakan_image.c),
@@ -178,6 +186,19 @@ struct terakan_image_tiling_terascale_1_mip_chain_level {
    uint32_t aligned_pitch_surfels;
    uint32_t aligned_height_surfels;
    uint32_t pitch_bytes;
+   /* One array layer/3D-depth-plane's worth of bytes (before the array_layers/depth_planes
+    * multiplication `offset_bytes` already includes) -- a caller populating a per-level memory
+    * footprint field (as opposed to the register-facing tile-count fields, computed separately from
+    * aligned_pitch_surfels/aligned_height_surfels) uses this directly.
+    */
+   uint64_t slice_bytes;
+   /* This level's depth-plane count (3D images) or array layer count (everything else) -- whichever
+    * depth_minifies_per_level selected. Exposed since a caller populating a per-level struct
+    * typically needs this alongside aligned_pitch_surfels/aligned_height_surfels/slice_bytes, not
+    * because this function does anything with it beyond already using it to compute slice_bytes's
+    * contribution to offset_bytes.
+    */
+   uint32_t depth_planes_or_array_layers;
    /* True if this level ended up 1D-tiled, either because the whole chain was requested as 1D-tiled
     * (or linear-aligned, in which case this is still set for simplicity, since linear-aligned and
     * 1D-tiled share the same "no further degrade" behavior in this function) or because a 2D-tiled

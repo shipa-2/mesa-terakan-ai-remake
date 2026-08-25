@@ -35,6 +35,7 @@
 #include "terakan_device_memory.h"
 #include "terakan_entrypoints.h"
 #include "terakan_format.h"
+#include "terakan_image_surface_terascale_1.h"
 #include "terakan_physical_device.h"
 
 #include "gallium/drivers/r600/evergreend.h"
@@ -943,6 +944,22 @@ terakan_image_surface_compute(VkImageCreateInfo const * const image_create_info,
 {
    /* Simplify handling of missing aspects. */
    memset(surface_out, 0, sizeof(*surface_out));
+
+   if (physical_device->chip_info.is_terascale_1) {
+      /* terakan_image_surface_compute_terascale_1() returns false for formats it doesn't handle
+       * yet (block-compressed and 8x1/2x1 subsampled formats -- see its header comment). This
+       * function has no way to report that failure (VKAPI_CALL void at both of this function's
+       * call sites), and TeraScale 1 doesn't reach either of them in practice yet regardless --
+       * terakan_CreateDevice refuses TeraScale 1 physical devices outright, and no physical device
+       * capability query for TeraScale 1 advertises support for those formats to trigger this in
+       * the first place. The zeroed-out surface_out from the memset above is a safe, inert fallback
+       * if this is ever reached despite that: a zero-size image fails allocation harmlessly rather
+       * than computing a wrong layout.
+       */
+      terakan_image_surface_compute_terascale_1(image_create_info, format_info, physical_device,
+                                                surface_out);
+      return;
+   }
 
    surface_out->alignment_bytes_shr8 = 1;
    surface_out->size_bytes_shr8 = 0;
