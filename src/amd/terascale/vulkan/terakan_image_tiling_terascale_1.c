@@ -104,3 +104,20 @@ terakan_image_tiling_terascale_1_level_layout(uint32_t const npix_x, uint32_t co
       .degrades_to_1d_tiled_thin1 = false,
    };
 }
+
+uint8_t
+terakan_image_tiling_terascale_1_select_array_mode(bool const tiling_linear_requested,
+                                                    bool const debug_force_linear,
+                                                    bool const format_linear_only,
+                                                    bool const used_by_db, bool const multisampled,
+                                                    bool const format_tiled_only,
+                                                    bool const is_1d_image_type)
+{
+   if (tiling_linear_requested || debug_force_linear || format_linear_only) {
+      return TERAKAN_IMAGE_TILING_TERASCALE_1_ARRAY_LINEAR_ALIGNED;
+   }
+   if (!used_by_db && !multisampled && !format_tiled_only && is_1d_image_type) {
+      return TERAKAN_IMAGE_TILING_TERASCALE_1_ARRAY_LINEAR_ALIGNED;
+   }
+   return TERAKAN_IMAGE_TILING_TERASCALE_1_ARRAY_2D_TILED_THIN1;
+}

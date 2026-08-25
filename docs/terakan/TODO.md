@@ -470,17 +470,34 @@ classic Gallium R600 driver that has supported this hardware for years).
   levels in the reference -- is still the caller's job and not yet
   written.
 
+  A second follow-up pass added the base-level array-mode decision:
+  `terakan_image_tiling_terascale_1_select_array_mode()` transcribes
+  `terakan_image_surface_tiling_compute()`'s policy (prefer 2D-tiled
+  unless linear tiling was requested, a debug override is set, the
+  format requires linear, or it's a non-multisampled non-DB 1D image
+  whose format doesn't require tiling) rather than re-deriving it, since
+  that policy is a driver-level Vulkan design choice, not something
+  hardware-specific to re-research -- only the array-mode constants
+  (`V_0280A0_ARRAY_*` vs `V_028C70_ARRAY_*`, confirmed numerically
+  identical) and the tiled-only format table (`terascale_format.h`
+  already has `TERASCALE_FORMATS_TILED_ONLY_R6XX` sitting next to the
+  R8xx one, unused until now) differ. Takes plain booleans rather than
+  `VkImageType`/`VkImageTiling`/`terascale_format_index` so the file
+  stays decoupled from Vulkan and format-table headers the way the rest
+  of it already is. Also confirmed against `r6_surface_init()` in the
+  reference that R600/R700 zbuffers (depth/stencil images) can never be
+  plain linear -- only 1D-tiled or 2D-tiled -- and that MSAA surfaces
+  must always be 2D-tiled; both are already true of the existing
+  R8xx/R9xx policy this was transcribed from, so no additional branching
+  was needed, just confirmed rather than assumed to still hold here.
+
   Still not done, and each a substantial piece of its own: wiring any of
-  this into `terakan_image.c`'s surface layout computation (currently
-  entirely R8xx/R9xx-shaped, gated on `V_028C70_ARRAY_*` from
-  `evergreend.h` -- TeraScale 1's equivalent constants are
-  `V_0280A0_ARRAY_*` in `r600d.h`, same numeric values, confirmed, but the
-  surrounding array-mode-selection logic needs its own read-through
-  before reuse can be assumed the way it could for
-  DB_DEPTH_CONTROL/CB_TARGET_MASK); the mip-chain-to-offsets walk just
-  described; array-layer/3D-depth-plane multiplication (left to the
-  caller by both `surf_minify()` and this port's `level_layout()`); and
-  the `DB_DEPTH_INFO`/`CB_COLOR_INFO` register field computation this
+  this into `terakan_image.c`'s surface layout computation itself
+  (currently entirely R8xx/R9xx-shaped throughout, not just the pieces
+  ported so far); the mip-chain-to-offsets walk described above;
+  array-layer/3D-depth-plane multiplication (left to the caller by both
+  `surf_minify()` and this port's `level_layout()`); and the
+  `DB_DEPTH_INFO`/`CB_COLOR_INFO` register field computation this
   unblocks, which still needs its own per-field compatibility check
   against `r600d.h` (not yet done -- these registers weren't in the
   CB/DB/PA/SPI/SQ audit above, since that audit only covered registers

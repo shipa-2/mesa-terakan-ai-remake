@@ -175,6 +175,57 @@ test_level_layout(void)
    CHECK(not_2d_single_sample.aligned_height_surfels == 64);
 }
 
+static void
+test_select_array_mode(void)
+{
+   /* Default: a normal 2D image with no linear-forcing condition tiles. */
+   CHECK(terakan_image_tiling_terascale_1_select_array_mode(false, false, false, false, false,
+                                                             false, false) ==
+        TERAKAN_IMAGE_TILING_TERASCALE_1_ARRAY_2D_TILED_THIN1);
+
+   /* VK_IMAGE_TILING_LINEAR forces linear regardless of anything else. */
+   CHECK(terakan_image_tiling_terascale_1_select_array_mode(true, false, false, true, true, true,
+                                                             false) ==
+        TERAKAN_IMAGE_TILING_TERASCALE_1_ARRAY_LINEAR_ALIGNED);
+
+   /* The debug override forces linear too. */
+   CHECK(terakan_image_tiling_terascale_1_select_array_mode(false, true, false, false, false, false,
+                                                             false) ==
+        TERAKAN_IMAGE_TILING_TERASCALE_1_ARRAY_LINEAR_ALIGNED);
+
+   /* A format that must stay linear (e.g. FMT_32_32_32) forces linear even for a normal 2D image. */
+   CHECK(terakan_image_tiling_terascale_1_select_array_mode(false, false, true, false, false, false,
+                                                             false) ==
+        TERAKAN_IMAGE_TILING_TERASCALE_1_ARRAY_LINEAR_ALIGNED);
+
+   /* A non-DB, non-multisampled, non-tiled-only-format 1D image type prefers linear (more compact,
+    * matching the classic Gallium R600 driver's own preference for 1D storage images).
+    */
+   CHECK(terakan_image_tiling_terascale_1_select_array_mode(false, false, false, false, false, false,
+                                                             true) ==
+        TERAKAN_IMAGE_TILING_TERASCALE_1_ARRAY_LINEAR_ALIGNED);
+
+   /* A depth/stencil (used_by_db) 1D-image-type target must stay tiled -- R600/R700 zbuffers only
+    * support 1D-tiled or 2D-tiled surfaces, never plain linear, matching r6_surface_init()'s own
+    * "zbuffer only support 1D or 2D tiled surface" handling in the reference.
+    */
+   CHECK(terakan_image_tiling_terascale_1_select_array_mode(false, false, false, true, false, false,
+                                                             true) ==
+        TERAKAN_IMAGE_TILING_TERASCALE_1_ARRAY_2D_TILED_THIN1);
+
+   /* A multisampled 1D-image-type target also stays tiled -- MSAA surfaces must be 2D-tiled per
+    * r6_surface_init()'s own handling.
+    */
+   CHECK(terakan_image_tiling_terascale_1_select_array_mode(false, false, false, false, true, false,
+                                                             true) ==
+        TERAKAN_IMAGE_TILING_TERASCALE_1_ARRAY_2D_TILED_THIN1);
+
+   /* A tiled-only-format (e.g. a block-compressed format) 1D-image-type target also stays tiled. */
+   CHECK(terakan_image_tiling_terascale_1_select_array_mode(false, false, false, false, false, true,
+                                                             true) ==
+        TERAKAN_IMAGE_TILING_TERASCALE_1_ARRAY_2D_TILED_THIN1);
+}
+
 int
 main(void)
 {
@@ -183,5 +234,6 @@ main(void)
    test_2d_tiled_thin1();
    test_mip_extent();
    test_level_layout();
+   test_select_array_mode();
    return 0;
 }

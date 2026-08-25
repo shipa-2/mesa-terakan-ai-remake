@@ -28,12 +28,12 @@ extern "C" {
  * sample count, not a per-surface optimization search, which is why this is a much smaller port
  * than R8xx/R9xx's tiling code.
  *
- * This covers the pitch/height/base alignment math and per-level layout (mip extent, aligned
- * pitch/height, pitch/slice byte size, and the degrade-to-1D-on-small-mip decision) -- the
- * foundational pieces every further step (walking a full mip chain to cumulative offsets, and the
- * DB_DEPTH_INFO/CB_COLOR_INFO field computation this blocks per the CB/DB register audit in
- * TODO.md) builds on. It is not wired into terakan_image.c's surface layout computation yet; see
- * TODO.md for what remains.
+ * This covers the pitch/height/base alignment math, per-level layout (mip extent, aligned
+ * pitch/height, pitch/slice byte size, and the degrade-to-1D-on-small-mip decision), and the
+ * base-level array-mode decision -- the foundational pieces every further step (walking a full mip
+ * chain to cumulative offsets, and the DB_DEPTH_INFO/CB_COLOR_INFO field computation this blocks
+ * per the CB/DB register audit in TODO.md) builds on. It is not wired into terakan_image.c's
+ * surface layout computation yet; see TODO.md for what remains.
  *
  * 2D tiling additionally requires the kernel driver to actually support it
  * (surf_man->hw_info.allow_2d in the reference, gated on DRM minor version >= 14). Terakan already
@@ -130,6 +130,41 @@ terakan_image_tiling_terascale_1_level_layout(uint32_t npix_x, uint32_t npix_y,
                                                uint32_t height_alignment_surfels,
                                                uint32_t bytes_per_element, uint32_t samples,
                                                bool is_2d_tiled_single_sample);
+
+/* Matches r600d.h's V_0280A0_ARRAY_LINEAR_ALIGNED/_2D_TILED_THIN1 and evergreend.h's
+ * V_028C70_ARRAY_LINEAR_ALIGNED/_2D_TILED_THIN1 -- confirmed numerically identical between the two
+ * headers, not assumed, so this file can return one of these without including either register
+ * header (keeping it decoupled the way the rest of this file already is).
+ */
+#define TERAKAN_IMAGE_TILING_TERASCALE_1_ARRAY_LINEAR_ALIGNED 1u
+#define TERAKAN_IMAGE_TILING_TERASCALE_1_ARRAY_2D_TILED_THIN1 4u
+
+/* The base-level array mode decision from terakan_image_surface_tiling_compute() (terakan_image.c),
+ * transcribed here rather than reused directly since that function is R8xx/R9xx-shaped throughout
+ * (evergreend.h array-mode constants, terakan_physical_device_tiling_info-driven macro-tile
+ * search). The policy itself -- prefer 2D-tiled unless linear tiling was requested, a debug
+ * override is set, the format requires linear, or it's a non-multisampled non-DB 1D image whose
+ * format doesn't require tiling -- is a driver-level Vulkan design choice, not hardware-specific,
+ * so it is intentionally kept identical in shape to the R8xx/R9xx version rather than re-derived;
+ * only the array-mode constants differ (see the two macros above), and the format tables a caller
+ * uses to compute format_linear_only/format_tiled_only should be TERASCALE_FORMATS_LINEAR_ONLY
+ * (generation-agnostic, confirmed by its own comment citing both the R800 AddrLib and the Gallium
+ * R600 driver) and TERASCALE_FORMATS_TILED_ONLY_R6XX (already exists in terascale_format.h
+ * specifically for this generation, alongside the R8xx one the existing code uses) rather than the
+ * R8xx-suffixed table. Takes plain booleans rather than VkImageType/VkImageTiling/
+ * terascale_format_index directly so this file stays decoupled from Vulkan and format-table headers
+ * the way the rest of it already is; the caller computes them.
+ *
+ * debug_force_linear is expected to already have been computed with the same additional gating the
+ * R8xx/R9xx side applies (`!used_by_db && samples <= 1 && !format_tiled_only`) before being passed
+ * in here, matching TERAKAN_DEBUG_FORCE_LINEAR_IMAGES's existing semantics.
+ */
+uint8_t terakan_image_tiling_terascale_1_select_array_mode(bool tiling_linear_requested,
+                                                            bool debug_force_linear,
+                                                            bool format_linear_only,
+                                                            bool used_by_db, bool multisampled,
+                                                            bool format_tiled_only,
+                                                            bool is_1d_image_type);
 
 #ifdef __cplusplus
 }
