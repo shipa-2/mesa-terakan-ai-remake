@@ -1288,6 +1288,36 @@ if with_tests
         timeout : 15,
       )
 
+      terakan_storage_image_atomic_spv = custom_target(
+        'terakan_storage_image_atomic.spv.h',
+        input : 'tests/terakan_storage_image_atomic.comp',
+        output : 'terakan_storage_image_atomic.spv.h',
+        command : [
+          prog_glslang, '-V', '-x', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_storage_image_atomic.spv.h.d',
+      )
+      terakan_storage_image_atomic_test = executable(
+        'terakan_storage_image_atomic_test',
+        [
+          'tests/terakan_storage_image_atomic_test.cpp',
+          terakan_storage_image_atomic_spv,
+        ],
+        dependencies : vulkan_loader_dep,
+      )
+      test(
+        'terakan_storage_image_atomic',
+        terakan_storage_image_atomic_test,
+        depends : [libvulkan_terascale, _dev_icd],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 20,
+      )
+
       terakan_depth_resolve_test = executable(
         'terakan_depth_resolve_test',
         ['tests/terakan_depth_resolve_test.cpp'],
