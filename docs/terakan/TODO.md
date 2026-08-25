@@ -492,6 +492,33 @@ classic Gallium R600 driver that has supported this hardware for years).
   `MACRO_TILE_ASPECT` fields on either register, matching the tiling math
   needing none of those inputs).
 
+- TeraScale 1 (R600/R700) `CB_COLORn_INFO`/`DB_Z_INFO` field-position
+  comparison, following up on the spot-check above with the real
+  per-field breakdown: none of R8xx/R9xx's `CB_COLOR0_BASE..CB_COLOR0_DIM`
+  register offsets (0x028C60-0x028C78) exist at all in `r600d.h` --
+  confirmed with the same mechanical offset/field comparison the
+  CB/DB/PA/SPI/SQ audit used, not just read by eye -- consistent with
+  R600/R700's entirely different, already-known CB_COLOR0 block location
+  (`R_028040_CB_COLOR0_BASE`, `R_028060_CB_COLOR0_SIZE`,
+  `R_0280A0_CB_COLOR0_INFO`). Comparing `R_0280A0_CB_COLOR0_INFO`'s
+  fields against `R_028C70_CB_COLOR0_INFO`'s directly (different offsets,
+  so the mechanical same-offset audit can't do this part, only checked by
+  reading both) found a real partial overlap, not simply "compatible" or
+  "incompatible": `ENDIAN`, `FORMAT`, `ARRAY_MODE`, and `NUMBER_TYPE` sit
+  at the identical bit positions on both (bits 0-1, 2-7, 8-11, 12-14
+  respectively), but every field after that diverges -- R600/R700 has an
+  extra `READ_SIZE` bit at 15 that R8xx/R9xx's `COMP_SWAP` starts at
+  instead, and the two field sets past that point are different sizes
+  entirely (R600/R700 has `TILE_MODE`/`CLEAR_COLOR`/`BLEND_FLOAT32`, none
+  of which exist on R8xx/R9xx; R8xx/R9xx has `FAST_CLEAR`/`COMPRESSION`/
+  `RAT`/`RESOURCE_TYPE`, none of which exist on R600/R700), so nothing
+  past `NUMBER_TYPE` can be assumed compatible even though the register
+  is conceptually the same feature on both. `DB_Z_INFO` was already fully
+  covered by the standout finding in the CB/DB/PA/SPI/SQ audit above (its
+  R8xx/R9xx offset is R600/R700's `CB_COLOR0_BASE`), so this is recorded
+  here as the `CB_COLOR0_INFO` counterpart to that finding, not a new
+  discovery about `DB_Z_INFO` itself.
+
 - Reducing stencil resolve, `VK_RESOLVE_MODE_MIN_BIT` and
   `VK_RESOLVE_MODE_MAX_BIT`: the same shaders and dispatch as the depth reducing
   modes, differing only in the reducing opcode (an unsigned integer comparison)
