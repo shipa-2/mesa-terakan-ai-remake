@@ -29,6 +29,13 @@
  * state so one pipeline can draw into either size; a stale texel in the small chain that the large
  * chain's barriers do not catch would show up only here.
  *
+ * --compute-multi-pipeline is --compute with kMultiPipelineCount distinct VkPipeline objects bound
+ * round-robin across frames instead of one pipeline rebound every time. This is the last gap the
+ * coverage note calls out: "many distinct compute pipelines rather than one" -- real applications
+ * switch pipeline objects constantly, and a driver that keys some piece of shader/resource cache
+ * state off the currently bound pipeline rather than genuinely re-validating it on every bind could
+ * pass the single-pipeline --compute mode while still serving stale state after a pipeline switch.
+ *
  * Each frame clears attachment A to a colour unique to that frame, transitions it to be sampled,
  * samples it into attachment B, transitions B for transfer, and copies B into its own slice of a
  * readback buffer. Any frame that observes a neighbouring frame's colour has seen through a
@@ -59,6 +66,7 @@ constexpr uint32_t kHeight = 16;
 constexpr uint32_t kFrameCount = 24;
 constexpr uint32_t kSmallWidth = 4;
 constexpr uint32_t kSmallHeight = 4;
+constexpr uint32_t kMultiPipelineCount = 6;
 
 /* Distinct, exactly representable in UNORM8, and different in every channel so a partial stale
  * read is still caught.
@@ -173,11 +181,14 @@ main(int argc, char ** argv)
     */
    bool const use_compute = argc == 5 && std::strcmp(argv[4], "--compute") == 0;
    bool const use_depth = argc == 5 && std::strcmp(argv[4], "--depth") == 0;
+   bool const use_multi_pipeline = argc == 5 && std::strcmp(argv[4], "--compute-multi-pipeline") == 0;
    bool const use_ssbo = argc == 6 && std::strcmp(argv[5], "--compute-ssbo") == 0;
    bool const use_multi_size = argc == 4 && std::strcmp(argv[3], "--multi-size") == 0;
-   if (argc != 3 && !(argc == 5 && (use_compute || use_depth)) && !use_ssbo && !use_multi_size) {
+   if (argc != 3 && !(argc == 5 && (use_compute || use_depth || use_multi_pipeline)) && !use_ssbo &&
+       !use_multi_size) {
       std::fprintf(stderr,
                    "usage: %s VERT_SPV FRAG_SPV [COMP_SPV --compute | DEPTH_FRAG_SPV --depth | "
+                   "COMP_SPV --compute-multi-pipeline | "
                    "COMP_SSBO_SPV SSBO_FRAG_SPV --compute-ssbo | --multi-size]\n",
                    argv[0]);
       return 2;
@@ -189,8 +200,9 @@ main(int argc, char ** argv)
     * shaders positionally.
     */
    std::vector<uint32_t> const fragment_spirv = read_spirv(use_depth ? argv[3] : argv[2]);
-   std::vector<uint32_t> const compute_spirv =
-      (use_compute || use_ssbo) ? read_spirv(argv[3]) : std::vector<uint32_t>{1};
+   std::vector<uint32_t> const compute_spirv = (use_compute || use_ssbo || use_multi_pipeline)
+                                                  ? read_spirv(argv[3])
+                                                  : std::vector<uint32_t>{1};
    std::vector<uint32_t> const ssbo_fragment_spirv =
       use_ssbo ? read_spirv(argv[4]) : std::vector<uint32_t>{};
    if (compute_spirv.empty()) {
@@ -669,7 +681,7 @@ main(int argc, char ** argv)
    VkShaderModule compute_module = VK_NULL_HANDLE;
    VkDescriptorPool compute_descriptor_pool = VK_NULL_HANDLE;
    struct ComputePushConstants { uint32_t frame, width, height; };
-   if (use_compute || use_ssbo) {
+   if (use_compute || use_ssbo || use_multi_pipeline) {
       VkDescriptorSetLayoutBinding const compute_bindings[2] = {
          {
             .binding = 0,
@@ -770,6 +782,26 @@ main(int argc, char ** argv)
       };
       VK_CHECK(vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &compute_pipeline_info, nullptr,
                                         &compute_pipeline));
+   }
+
+   /* --compute-multi-pipeline: the same shader module and layout as --compute, but bound as
+    * kMultiPipelineCount distinct VkPipeline objects instead of one, cycled round-robin across
+    * frames so binding a different pipeline object is itself part of what gets exercised.
+    */
+   std::array<VkPipeline, kMultiPipelineCount> multi_pipelines{};
+   if (use_multi_pipeline) {
+      for (uint32_t i = 0; i < kMultiPipelineCount; ++i) {
+         VkComputePipelineCreateInfo const multi_pipeline_info = {
+            .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+            .stage = {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                      .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+                      .module = compute_module,
+                      .pName = "main"},
+            .layout = compute_pipeline_layout,
+         };
+         VK_CHECK(vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &multi_pipeline_info,
+                                           nullptr, &multi_pipelines[i]));
+      }
    }
 
    /* ssbo path: its own descriptor set layout (sampler + storage buffer), pipeline layout and
@@ -926,8 +958,10 @@ main(int argc, char ** argv)
          };
          vkCmdBeginRenderPass(command_buffer, &depth_begin, VK_SUBPASS_CONTENTS_INLINE);
          vkCmdEndRenderPass(command_buffer);
-      } else if (use_compute || use_ssbo) {
-         vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, compute_pipeline);
+      } else if (use_compute || use_ssbo || use_multi_pipeline) {
+         vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE,
+                           use_multi_pipeline ? multi_pipelines[frame % kMultiPipelineCount]
+                                              : compute_pipeline);
          vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE,
                                  compute_pipeline_layout, 0, 1, &compute_descriptor_set, 0,
                                  nullptr);
@@ -942,7 +976,7 @@ main(int argc, char ** argv)
 
       VkAccessFlags producer_access = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
       VkPipelineStageFlags producer_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-      if (use_compute || use_ssbo) {
+      if (use_compute || use_ssbo || use_multi_pipeline) {
          producer_access = VK_ACCESS_SHADER_WRITE_BIT;
          producer_stage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
       } else if (use_depth) {
@@ -1182,7 +1216,8 @@ main(int argc, char ** argv)
          ++bad_frames;
       }
    }
-   std::printf("frame_chain%s frames=%u bad=%u %s\n", use_ssbo ? "_ssbo" : "", kFrameCount,
+   std::printf("frame_chain%s frames=%u bad=%u %s\n",
+               use_ssbo ? "_ssbo" : (use_multi_pipeline ? "_multi_pipeline" : ""), kFrameCount,
                bad_frames, bad_frames == 0 ? "PASS" : "FAIL");
 
    uint32_t small_bad_frames = 0;
