@@ -158,7 +158,13 @@ main()
    VkPhysicalDeviceProperties properties = {};
    for (VkPhysicalDevice candidate : physical_devices) {
       vkGetPhysicalDeviceProperties(candidate, &properties);
-      if (!std::strstr(properties.deviceName, "Terakan"))
+      /* TeraScale 1 (R600/R700) devices also enumerate as "... (Terakan)" but cannot create a
+       * device yet (see terakan_physical_device_chip_info::is_terascale_1 and
+       * terakan_CreateDevice), so they are excluded by their "TeraScale 1" name prefix rather than
+       * picked and failed on below.
+       */
+      if (!std::strstr(properties.deviceName, "(Terakan)") ||
+          std::strstr(properties.deviceName, "TeraScale 1"))
          continue;
       uint32_t family_count = 0;
       vkGetPhysicalDeviceQueueFamilyProperties(candidate, &family_count, nullptr);
