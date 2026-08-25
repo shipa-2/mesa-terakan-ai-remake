@@ -12,7 +12,7 @@ accept the work. Both use a 1–5 scale.
 | Work item | Importance | Complexity | Feasibility | Acceptance criteria |
 |---|---:|---:|---|---|
 | Implement and validate FMASK/CMASK allocation, identity initialization and sampled MSAA addressing | 5/5 | 5/5 | Implementable; requires Evergreen tiling research | Per-sample reads and resolved reads pass for 2x/4x/8x images without corrupting ordinary color targets |
-| Fix stencil-only render targets on combined depth/stencil images | 4/5 | 3/5 | Not yet understood beyond the symptom; see the note below. Every current stencil user works around it by binding a depth attachment alongside, which is how real applications shape a depth/stencil resolve anyway, but an application that legitimately renders stencil alone (shadow volumes, portal culling) on a combined-format image would still hit it | A stencil-only `vkCmdBeginRendering` (`pDepthAttachment == NULL`, `pStencilAttachment` naming a combined-format image) writes and reads back correctly without a depth attachment bound alongside |
+| Fix stencil-only render targets on combined depth/stencil images | 4/5 | 3/5 | Still not understood beyond the symptom; see the note below, updated with a real fix that was confirmed NOT to be the cause and a documented negative reproduction attempt, so the next pass doesn't retread the same ground. Every current stencil user works around it by binding a depth attachment alongside, which is how real applications shape a depth/stencil resolve anyway, but an application that legitimately renders stencil alone (shadow volumes, portal culling) on a combined-format image would still hit it | A stencil-only `vkCmdBeginRendering` (`pDepthAttachment == NULL`, `pStencilAttachment` naming a combined-format image) writes and reads back correctly without a depth attachment bound alongside |
 | Complete cache and barrier coherency | 5/5 | 4/5 | Implementable. Composition coverage now exists (`terakan_frame_chain`, both the render-pass and the compute producer) and passes, so the remaining hazard is narrower than a repeated clear/dispatch, sample, render and copy chain | Focused attachment, texture, storage, transfer, graphics/compute and query producer-consumer chains pass without application-specific waits |
 | Cover remaining copy, blit and resolve format/subresource combinations | 5/5 | 4/5 | Implementable | Boundary tests cover non-zero offsets, partial extents, mip levels, array/3D layers and every advertised compatible format class |
 | Correct meta blit format coverage | 5/5 | 3/5 | Implementable; the typed, mirrored and layered/3D-depth cases are fixed, leaving the per-format matrix | All basic CTS blits pass for RGBA, BGRA, R32, reversed source/destination axes and 3D slices |
@@ -455,6 +455,44 @@ classic Gallium R600 driver that has supported this hardware for years).
   preserves the tiling fields the code identifies as shared with stencil
   (`ARRAY_MODE`, the bank fields), so the cause is not that masking; it is left
   open above as its own item rather than guessed at further.
+
+  A follow-up pass found and fixed a real, related inconsistency in the same
+  function, `terakan_image_create_depth_stencil_descriptor()`
+  (`terakan_image.c`): `DB_Z_INFO`'s `TILE_SPLIT` field was set from
+  `surface_depth->tiling.attrib_tile_split` only inside the
+  `view_depth_format != TERASCALE_R8XX_DEPTH_FORMAT_INVALID` branch, unlike
+  `ARRAY_MODE`/`BANK_WIDTH`/`BANK_HEIGHT`/`MACRO_TILE_ASPECT` just above it,
+  which already correctly come from `surface_main_aspect` (falls back to the
+  stencil surface when depth is invalid) -- so a stencil-only descriptor
+  always got `TILE_SPLIT = 0` regardless of the stencil surface's real tile
+  split, the same class of bug as the `ARRAY_MODE`/bank-field case already
+  ruled out above, just missed by that earlier pass. Fixed to use
+  `surface_main_aspect` like its neighboring fields do.
+
+  **This fix was empirically confirmed to NOT reproduce or resolve the
+  documented symptom above**, so it does not close this item, and is
+  recorded here specifically so the next attempt doesn't re-derive and
+  re-test the same hypothesis: a stencil-only clear-and-readback test
+  (`vkCmdBeginRenderPass`/`vkCmdEndRenderPass` with a `LOAD_OP_CLEAR`
+  stencil-only view of a `D32_SFLOAT_S8_UINT` image, common-runtime-translated
+  into the same `terakan_CmdBeginRendering()` path a native dynamic-rendering
+  call would take -- confirmed by reading `terakan_vk_render_pass.c`, not
+  assumed) passed identically with and without the `TILE_SPLIT` fix at every
+  size tried (8x8, 256x256, 2048x2048 on real CAICOS hardware), meaning
+  `attrib_tile_split` stayed `0` for this aspect/format/size combination
+  regardless -- either 2D macro-tiling is never selected for a stencil-only
+  aspect of a combined depth/stencil image at these sizes on this hardware
+  (in which case the field genuinely doesn't matter here, though the fix is
+  still correct to keep for whatever case does exercise it), or the true
+  root cause is unrelated to `TILE_SPLIT` entirely. The fix is kept because
+  it is independently correct regardless of this investigation's outcome
+  (the same reasoning that already justified the `ARRAY_MODE`/bank-field
+  fallback), but the documented per-column corruption itself remains
+  unreproduced by a clear -- the next attempt should try an actual draw
+  through the rasterizer's stencil test/`STENCIL_REPLACE` path (matching
+  what `terakan_stencil_resolve_modes` exercises when it works around the
+  bug by binding a depth attachment alongside), since a bare `LOAD_OP_CLEAR`
+  may simply not exercise whatever code path the original symptom came from.
 
 - Reducing depth resolve, `VK_RESOLVE_MODE_MIN_BIT` and `VK_RESOLVE_MODE_MAX_BIT`:
   every sample is fetched and combined in the pixel shader, one program per

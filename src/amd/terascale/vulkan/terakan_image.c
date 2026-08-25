@@ -1875,7 +1875,19 @@ terakan_image_create_depth_stencil_descriptor(
          1) |
       S_028040_BANK_WIDTH(surface_main_aspect->tiling.attrib_bank_width) |
       S_028040_BANK_HEIGHT(surface_main_aspect->tiling.attrib_bank_height) |
-      S_028040_MACRO_TILE_ASPECT(surface_main_aspect->tiling.attrib_macro_tile_aspect);
+      S_028040_MACRO_TILE_ASPECT(surface_main_aspect->tiling.attrib_macro_tile_aspect) |
+      /* Like ARRAY_MODE/the bank fields above, TILE_SPLIT in DB_Z_INFO is used by the stencil-only
+       * read/write path too (see the comment on `DB_Z_INFO` in
+       * terakan_hw_config_draw_emit_db_depth_stencil_buffer()), so it must come from
+       * surface_main_aspect the same way those do, not be left at 0 whenever depth isn't bound. A
+       * stencil-only render target on a combined depth/stencil image previously read back a
+       * per-column pattern unrelated to what was written -- exactly the corruption a wrong TILE_SPLIT
+       * produces, since it controls how deep into the array micro-tiles are interleaved in memory --
+       * while every case with a depth attachment bound alongside (including
+       * VK_KHR_depth_stencil_resolve, which requires one per VUID-06085) happened to set this field
+       * correctly and never showed the bug.
+       */
+      S_028040_TILE_SPLIT(surface_main_aspect->tiling.attrib_tile_split);
    if (view_depth_format != TERASCALE_R8XX_DEPTH_FORMAT_INVALID) {
       /* `ZRANGE_PRECISION` can't be set from the GPU based on the value the last clear was actually
        * done to because it's in `DB_Z_INFO`, which is used by the kernel driver for surface
@@ -1885,7 +1897,6 @@ terakan_image_create_depth_stencil_descriptor(
        * to vary throughout the Z range rather than only at extremely short distances).
        */
       descriptor_out->z_info |=
-         S_028040_TILE_SPLIT(surface_depth->tiling.attrib_tile_split) |
          S_028040_ZRANGE_PRECISION(view_depth_format != TERASCALE_R8XX_DEPTH_FORMAT_32_FLOAT);
       /* The level's own offset, which already includes the aspect's. Taking the aspect's here
        * would leave the base on level zero while `size` and `slice` below describe the requested
