@@ -551,6 +551,21 @@ terakan_CmdPipelineBarrier2(VkCommandBuffer const commandBuffer,
        * setup, Terakan exposes FMASK directly, so initialize it to the identity mapping before
        * the first color use. This must be recorded on the command buffer rather than done at image
        * creation because the image memory may not be bound yet.
+       *
+       * `LowerTexToBackend::lower_txf_ms()` (sfn_instr_tex.cpp) decodes the fetched FMASK dword by
+       * shifting right by `ms_index * 4` and masking with 0xF unconditionally, regardless of the
+       * actual sample count -- i.e. every sample index always occupies a fixed 4-bit (one nibble)
+       * field, not a tightly packed ceil(log2(N))-bit one. The identity fill value for each sample
+       * count therefore has to place sample i's plane index in nibble i, repeated across the dword
+       * so every pixel packed into the same FMASK dword decodes correctly: 0x10101010 for 2x
+       * (nibbles 0,1,0,1,...), 0x32103210 for 4x (nibbles 0,1,2,3 repeated), and 0x76543210 for 8x
+       * (nibbles 0..7, using the whole dword once, so it needs no repetition). The previous 2x and
+       * 4x values (0x02020202 and 0xE4E4E4E4) do not follow this convention -- decoded the same way
+       * they give (2,0,2,0,...) and (4,14,4,14,...), which read out-of-range planes for most sample
+       * indices, confirmed against terakan_color_msaa_fetch_test failing exactly on sample index 0
+       * (which decoded to plane 2 on a 2-plane surface) while sample index 1 coincidentally read
+       * back correctly (it decoded to plane 0, which happens to hold the same clear colour as every
+       * other plane).
        */
       if (barrier->oldLayout == VK_IMAGE_LAYOUT_UNDEFINED &&
           (barrier->subresourceRange.aspectMask & VK_IMAGE_ASPECT_COLOR_BIT) != 0) {
@@ -559,7 +574,7 @@ terakan_CmdPipelineBarrier2(VkCommandBuffer const commandBuffer,
             uint32_t const sample_count_log2 =
                (uint32_t)terakan_image_vk_sample_count_to_hw_log2(image->vk.samples, false);
             static uint32_t const identity_fmask[4] = {
-               0x00000000, 0x02020202, 0xE4E4E4E4, 0x76543210
+               0x00000000, 0x10101010, 0x32103210, 0x76543210
             };
 
             uint32_t base_slice = barrier->subresourceRange.baseArrayLayer;

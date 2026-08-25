@@ -11,7 +11,7 @@ accept the work. Both use a 1–5 scale.
 
 | Work item | Importance | Complexity | Feasibility | Acceptance criteria |
 |---|---:|---:|---|---|
-| Implement and validate FMASK/CMASK allocation, identity initialization and sampled MSAA addressing | 5/5 | 5/5 | Implementable; requires Evergreen tiling research | Per-sample reads and resolved reads pass for 2x/4x/8x images without corrupting ordinary color targets |
+| Implement and validate FMASK/CMASK allocation, identity initialization and sampled MSAA addressing | 5/5 | 5/5 | Implementable; requires Evergreen tiling research. A real per-sample-decode bug was found and fixed (see the note below): the shader's fixed 4-bit-per-sample FMASK nibble decode didn't match the 2x/4x identity-fill constants, only 8x's happened to already agree. Fixing that took per-sample colour reads from 100% wrong to roughly 25% wrong on CAICOS, but chasing the remainder surfaced a deeper, still-open issue -- run-to-run instability (including one fence-wait timeout) suggesting the identity FMASK fill doesn't reliably cover the whole tiled surface, most likely a bank-rotation/macro-tile addressing mismatch. Genuine further tiling research is needed here, not a quick fix | Per-sample reads and resolved reads pass for 2x/4x/8x images without corrupting ordinary color targets |
 | Fix stencil-only render targets on combined depth/stencil images | 4/5 | 3/5 | Root cause still unknown. One genuine failure was observed (a multisampled stencil-only draw reading back a constant wrong byte) but did not reproduce across 75 repeat runs in a later pass, including 15 deliberately preceded by a forced driver crash to rule out leftover-state contamination from this investigation's own tooling -- see the note below for the full, honestly-corrected account and what's been ruled out (`DB_Z_INFO.NUM_SAMPLES` masking, confirmed identical between working and broken observations). Not reproducible under any controlled condition tried across two passes: clear, single-sample draw, and multisample draw, with and without a preceding crash. Every current stencil user works around it by binding a depth attachment alongside anyway, which is how real applications shape a depth/stencil resolve, but an application that legitimately renders stencil alone on a combined-format image could still be affected by whatever this is | A stencil-only `vkCmdBeginRendering` (`pDepthAttachment == NULL`, `pStencilAttachment` naming a combined-format image) writes and reads back correctly without a depth attachment bound alongside, at any sample count, repeatably |
 | Complete cache and barrier coherency | 5/5 | 4/5 | Implementable. Composition coverage now exists (`terakan_frame_chain` with the render-pass producer, the compute producer, `--compute-ssbo` for a storage-buffer producer/consumer alongside the storage-image one, `--multi-size` for a second, independently sized 4x4 chain recorded within the same per-frame block as the main 16x16 one, and `--compute-multi-pipeline` for six distinct `VkPipeline` objects bound round-robin across frames instead of rebinding one) and all pass, closing every concrete gap the original coverage note named. Whatever remains is narrower than this composition shape, not a specific named scenario | Focused attachment, texture, storage, transfer, graphics/compute and query producer-consumer chains pass without application-specific waits |
 | Cover remaining copy, blit and resolve format/subresource combinations | 5/5 | 4/5 | Implementable; the vkCmdCopyImage subresource slice is fixed, and a real bug in color resolve subresource addressing was found and fixed along the way. `terakan_copy_image_subresource` regression-covers a non-zero-offset partial-extent copy across array layers, a copy between two different mip levels, and a copy spanning multiple array layers in one region -- all pass on real CAICOS hardware (8/8 repeat runs, in light of the earlier retracted "deterministic" claim above). `terakan_color_resolve_subresource` closed a previously nonexistent COLOR attachment resolve test (only depth/stencil resolve had coverage) and found that resolving into a destination array layer other than the multisample source's own layer did not fail cleanly -- it silently wrote the resolved color into the SOURCE's layer of the destination instead, corrupting whatever was there. This is Evergreen's CB_RESOLVE apparently sharing one per-draw array-slice-select state across both bound color buffers rather than addressing each RTV's slice independently (no errata research beyond this observed behavior). The fix extends `terakan_meta_resolve_region_is_fixed_function_compatible` in `terakan_meta_resolve.c` to require a matching source/destination array layer, same as it already required matching extents and offsets, so a cross-layer region is now skipped like any other CB_RESOLVE-incompatible one instead of corrupting the wrong layer; there is no shader fallback for the cross-layer case (the alternate shader resolve path is disabled elsewhere in that file) so it remains genuinely unsupported, just safely so. Multisampled vkCmdCopyImage is a separate, still-open gap: `terakan_meta_copy_image.c` has no `samples > 1` guard before its single-sample-shaped meta-draw copy path (see the `TODO(Triang3l)` comment there), so an MSAA copy currently falls through to that path rather than being rejected or handled correctly. Actually implementing it is comparable in scope to the FMASK/CMASK work and was deliberately not attempted here, but `terakan_copy_image_multisample_noop_test` establishes what currently happens: on real CAICOS hardware (6/6 repeat runs) the destination is left completely untouched rather than corrupted, most likely because a #MemoryIntegrity-style check inside the meta-draw's descriptor creation rejects the mismatched dimensionality (source bound as plain 2D_ARRAY regardless of actual sample count) and the copy loop silently skips the region. This downgrades the gap from "possible silent corruption" to "silent no-op, locked in as a regression so it cannot regress into corruption unnoticed" -- still wrong from an application's perspective, but not the worse failure mode originally suspected. Blit subresource coverage beyond the format-matrix cases already landed, and the full CTS-driven matrix, remain unverified (CTS is not installed on the test machine, see FUNCTIONAL_COVERAGE.md) | Boundary tests cover non-zero offsets, partial extents, mip levels, array/3D layers and every advertised compatible format class |
@@ -1023,6 +1023,49 @@ for identity FMASK plus compressed-state CMASK initialization pass. This does
 not complete the item yet: per-sample texture reads and real color-target
 resolve coverage are still required before reusing an MSAA color companion for
 depth resolve.
+
+Per-sample colour reads were probed directly for the first time (no test in
+this suite had ever exercised `texelFetch` on a multisample colour image --
+`terakan_color_msaa_fetch_test`, mirroring `terakan_depth_msaa_fetch`) and
+found completely broken: every texel read back wrong, mostly `(0,0,0,0)`.
+Root cause found and fixed: `LowerTexToBackend::lower_txf_ms()`
+(`sfn/sfn_instr_tex.cpp`) decodes the fetched FMASK dword with a fixed 4-bit
+(one nibble) field per sample index (`shift = ms_index * 4, mask = 0xF`)
+regardless of the actual sample count, but the identity-fill constants in
+`terakan_barrier.c` (`identity_fmask[]`) did not follow that convention for
+2x and 4x -- only the 8x constant (`0x76543210`, decoding to nibbles
+`0..7`) happened to already match it. Decoded under the shader's own
+convention, the old 2x/4x constants gave nibble sequences `(2,0,2,0,...)`
+and `(4,14,4,14,...)`, both reading out-of-range or wrong planes for most
+sample indices, exactly matching the observed failure (sample index 0 always
+wrong on 2x, decoding to plane 2, which does not exist on a 2-plane
+surface). Corrected to `0x10101010` (2x) and `0x32103210` (4x), following
+the same nibble-per-sample identity as the already-correct 8x value.
+
+This is a real, verified improvement, not a full fix: with the corrected
+constants, mismatches on CAICOS dropped from 100% to roughly 25% of texels
+across 2x/4x/8x (previously fully broken output became mostly-correct with a
+residual pattern -- position-dependent for 2x/4x, always sample indices 6-7
+for 8x), and the full existing regression suite stays green with the fix
+applied (no other test exercises this shader path, so nothing regressed).
+Chasing the remaining ~25% further surfaced something more serious than a
+constant-value bug: repeated runs of the same probe gave different
+mismatch counts (32, then stably 92, then a fence-wait timeout on a 4x run,
+then 8x alternating between 0 and 448 mismatches across otherwise-identical
+runs), which points to the identity FMASK fill not reliably covering the
+whole tiled surface -- most likely a bank-rotation or macro-tile addressing
+mismatch between the linear CP_DMA fill and the FMASK surface's real tiled
+byte layout, leaving some tile-scrambled locations uninitialized and
+dependent on leftover VRAM content from a prior allocation. That is a
+genuine Evergreen tiling-research question (matching this item's own
+complexity rating), not something to guess further at blindly, especially
+given the observed fence timeout: probing was stopped once it produced a
+hang risk rather than pushed further this session, and the driver's overall
+health was reconfirmed (full regression suite green) immediately after.
+`terakan_color_msaa_fetch_test` is committed as source (with a
+`--samples=N` selector for 2x/4x/8x) for whoever continues this, but is
+deliberately not wired into `bin/terakan-test`'s required-green suite since
+it does not reliably pass yet.
 
 A TODO is complete only when:
 

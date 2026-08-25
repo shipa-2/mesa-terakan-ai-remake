@@ -126,6 +126,23 @@ just locks in that the current gap is a silent no-op rather than the
 silent corruption it looked like it could be, so a future unrelated change
 cannot regress into that worse failure mode unnoticed.
 
+`terakan_color_msaa_fetch_test` probed the FMASK/CMASK item's per-sample
+colour read path directly for the first time and found, then partly fixed,
+a real bug: the shader's FMASK decode (`lower_txf_ms` in
+`sfn_instr_tex.cpp`) uses a fixed 4-bit-per-sample nibble field regardless
+of sample count, but the 2x/4x identity-fill constants in
+`terakan_barrier.c` didn't follow that convention (only 8x's already did).
+Fixing the constants took per-sample reads from 100% wrong to roughly 25%
+wrong on CAICOS, and the full regression suite stayed green with the fix
+applied. Chasing the remaining ~25% surfaced a deeper problem -- run-to-run
+instability including one fence-wait timeout -- pointing at the identity
+fill not reliably covering the tiled FMASK surface (likely a bank-rotation
+or macro-tile addressing mismatch), which needs real further tiling
+research and was not pushed further once it showed a hang risk. See the
+detailed account in [TODO.md](TODO.md). The test is committed with a
+`--samples=N` selector but deliberately not wired into
+`bin/terakan-test`'s required-green suite.
+
 `terakan_color_resolve_subresource` is the first test in this suite to
 exercise a COLOR attachment multisample resolve at all -- prior coverage
 was depth/stencil only. It found a real bug: resolving into a

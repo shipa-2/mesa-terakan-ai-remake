@@ -1224,6 +1224,29 @@ if with_tests
         timeout : 15,
       )
 
+      terakan_color_msaa_fetch_spv = custom_target(
+        'terakan_color_msaa_fetch.spv.h',
+        input : 'tests/terakan_color_msaa_fetch.comp',
+        output : 'terakan_color_msaa_fetch.spv.h',
+        command : [
+          prog_glslang, '-V', '-x', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_color_msaa_fetch.spv.h.d',
+      )
+      # Not wired into a test() entry: this is a FMASK/CMASK research probe that does not yet
+      # reliably pass (see the note in TODO.md), unlike terakan_depth_msaa_fetch and
+      # terakan_stencil_msaa_fetch above. It still builds so it stays available for continued work,
+      # and can be run manually via bin/terakan-run.
+      terakan_color_msaa_fetch_test = executable(
+        'terakan_color_msaa_fetch_test',
+        [
+          'tests/terakan_color_msaa_fetch_test.cpp',
+          terakan_color_msaa_fetch_spv,
+        ],
+        dependencies : vulkan_loader_dep,
+      )
+
       terakan_depth_resolve_test = executable(
         'terakan_depth_resolve_test',
         ['tests/terakan_depth_resolve_test.cpp'],
