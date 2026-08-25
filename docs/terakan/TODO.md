@@ -13,7 +13,7 @@ accept the work. Both use a 1–5 scale.
 |---|---:|---:|---|---|
 | Implement and validate FMASK/CMASK allocation, identity initialization and sampled MSAA addressing | 5/5 | 5/5 | Implementable; requires Evergreen tiling research | Per-sample reads and resolved reads pass for 2x/4x/8x images without corrupting ordinary color targets |
 | Fix stencil-only render targets on combined depth/stencil images | 4/5 | 3/5 | Root cause still unknown. One genuine failure was observed (a multisampled stencil-only draw reading back a constant wrong byte) but did not reproduce across 75 repeat runs in a later pass, including 15 deliberately preceded by a forced driver crash to rule out leftover-state contamination from this investigation's own tooling -- see the note below for the full, honestly-corrected account and what's been ruled out (`DB_Z_INFO.NUM_SAMPLES` masking, confirmed identical between working and broken observations). Not reproducible under any controlled condition tried across two passes: clear, single-sample draw, and multisample draw, with and without a preceding crash. Every current stencil user works around it by binding a depth attachment alongside anyway, which is how real applications shape a depth/stencil resolve, but an application that legitimately renders stencil alone on a combined-format image could still be affected by whatever this is | A stencil-only `vkCmdBeginRendering` (`pDepthAttachment == NULL`, `pStencilAttachment` naming a combined-format image) writes and reads back correctly without a depth attachment bound alongside, at any sample count, repeatably |
-| Complete cache and barrier coherency | 5/5 | 4/5 | Implementable. Composition coverage now exists (`terakan_frame_chain`, the render-pass producer, the compute producer, and now `--compute-ssbo`, which adds a storage-buffer producer/consumer alongside the storage-image one in the same 24-frame chain) and all pass, so the remaining hazard is narrower still. Things it does that the test still does not: many distinct compute pipelines rather than one, and several render target sizes in the same frame | Focused attachment, texture, storage, transfer, graphics/compute and query producer-consumer chains pass without application-specific waits |
+| Complete cache and barrier coherency | 5/5 | 4/5 | Implementable. Composition coverage now exists (`terakan_frame_chain`, the render-pass producer, the compute producer, `--compute-ssbo` adding a storage-buffer producer/consumer alongside the storage-image one, and `--multi-size` adding a second, independently sized 4x4 chain recorded within the same per-frame block as the main 16x16 one) and all pass, so the remaining hazard is narrower still. The one gap left from the original coverage note: many distinct compute pipelines rather than one | Focused attachment, texture, storage, transfer, graphics/compute and query producer-consumer chains pass without application-specific waits |
 | Cover remaining copy, blit and resolve format/subresource combinations | 5/5 | 4/5 | Implementable; the vkCmdCopyImage subresource slice is fixed, and a real bug in color resolve subresource addressing was found and fixed along the way. `terakan_copy_image_subresource` regression-covers a non-zero-offset partial-extent copy across array layers, a copy between two different mip levels, and a copy spanning multiple array layers in one region -- all pass on real CAICOS hardware (8/8 repeat runs, in light of the earlier retracted "deterministic" claim above). `terakan_color_resolve_subresource` closed a previously nonexistent COLOR attachment resolve test (only depth/stencil resolve had coverage) and found that resolving into a destination array layer other than the multisample source's own layer did not fail cleanly -- it silently wrote the resolved color into the SOURCE's layer of the destination instead, corrupting whatever was there. This is Evergreen's CB_RESOLVE apparently sharing one per-draw array-slice-select state across both bound color buffers rather than addressing each RTV's slice independently (no errata research beyond this observed behavior). The fix extends `terakan_meta_resolve_region_is_fixed_function_compatible` in `terakan_meta_resolve.c` to require a matching source/destination array layer, same as it already required matching extents and offsets, so a cross-layer region is now skipped like any other CB_RESOLVE-incompatible one instead of corrupting the wrong layer; there is no shader fallback for the cross-layer case (the alternate shader resolve path is disabled elsewhere in that file) so it remains genuinely unsupported, just safely so. Multisampled vkCmdCopyImage is a separate, still-open gap: `terakan_meta_copy_image.c` has no `samples > 1` guard before its single-sample-shaped meta-draw copy path (see the `TODO(Triang3l)` comment there), so an MSAA copy currently falls through to that path silently rather than being rejected or handled correctly -- this is comparable in scope to the FMASK/CMASK work and was deliberately not attempted here. Blit subresource coverage beyond the format-matrix cases already landed, and the full CTS-driven matrix, remain unverified (CTS is not installed on the test machine, see FUNCTIONAL_COVERAGE.md) | Boundary tests cover non-zero offsets, partial extents, mip levels, array/3D layers and every advertised compatible format class |
 | Correct meta blit format coverage | 5/5 | 3/5 | Implementable; the typed, mirrored and layered/3D-depth cases are fixed. `terakan_blit_format_matrix` now regression-covers RGBA<->BGRA (straight and mirrored on X) and R32 identity blits -- all pass on real CAICOS hardware -- closing what the acceptance criteria name explicitly, though the CTS binary is still not installed on the test machine (see FUNCTIONAL_COVERAGE.md), so the full per-format matrix beyond these specific cases remains unverified | All basic CTS blits pass for RGBA, BGRA, R32, reversed source/destination axes and 3D slices |
 
@@ -876,19 +876,22 @@ buffer, with only the barriers a correct application would issue. A frame that
 observes a neighbour's colour has seen through a barrier, and the failure names
 the frame whose colour it actually saw.
 
-All three producers pass on CAICOS: a render pass clear, a compute shader
-writing a storage image, and (`--compute-ssbo`) a compute shader writing both
-a storage image and a storage buffer, with the sampling pass reading the
-image into RGB and the buffer into alpha so a stale read of either channel is
-independently visible. The image write is chosen because the application
+All producers pass on CAICOS: a render pass clear, a compute shader writing a
+storage image, (`--compute-ssbo`) a compute shader writing both a storage
+image and a storage buffer, with the sampling pass reading the image into RGB
+and the buffer into alpha so a stale read of either channel is independently
+visible, and (`--multi-size`) a second, independently sized 4x4 chain
+recorded within the same per-frame block as the main 16x16 one, with its own
+colour range disjoint from the main chain's so a texel leaking between the
+two sizes is unambiguous. The image write is chosen because the application
 that strobes issues thousands of dispatches per second and the driver's
-compute RAT coherency is the least covered path; the buffer producer closes
+compute RAT coherency is the least covered path; the buffer producer closed
 the "storage buffers alongside storage images" gap this note used to list,
 since storage buffers and storage images go through different cache/RAT
-paths on this hardware. So whatever the application hits is narrower than
-this shape. Things it does that the test still does not: many distinct
-compute pipelines rather than one, and several render target sizes in the
-same frame.
+paths on this hardware, and `--multi-size` closed the "several render target
+sizes in the same frame" gap. So whatever the application hits is narrower
+than this shape. What the test still does not do: run many distinct compute
+pipelines rather than one.
 
 ## Vertex pipeline stage survey (geometry and tessellation)
 

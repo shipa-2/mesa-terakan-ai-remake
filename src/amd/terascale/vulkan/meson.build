@@ -848,6 +848,24 @@ if with_tests
         timeout : 30,
       )
 
+      test(
+        'terakan_frame_chain_multi_size',
+        terakan_frame_chain_test,
+        args : [
+          terakan_frame_chain_vertex_spv, terakan_frame_chain_fragment_spv, '--multi-size',
+        ],
+        depends : [
+          libvulkan_terascale, _dev_icd,
+          terakan_frame_chain_vertex_spv, terakan_frame_chain_fragment_spv,
+        ],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 30,
+      )
+
       terakan_dynamic_rendering_vertex_spv = custom_target(
         'terakan_dynamic_rendering.vert.spv',
         input : 'tests/terakan_dynamic_rendering.vert',

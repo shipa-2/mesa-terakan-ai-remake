@@ -22,6 +22,13 @@
  * gap the coverage note above calls out explicitly: "storage buffers alongside storage images".
  * Alpha wrong with RGB correct isolates an SSBO-specific staleness bug from an image one.
  *
+ * --multi-size adds a second, independently sized chain (4x4, next to the main 16x16 one) recorded
+ * within the same per-frame block: clear, sample and copy the small pair right after the large
+ * pair, both before moving on to the next frame. This is the other gap the coverage note calls out:
+ * "several render target sizes in the same frame". Viewport and scissor become pipeline dynamic
+ * state so one pipeline can draw into either size; a stale texel in the small chain that the large
+ * chain's barriers do not catch would show up only here.
+ *
  * Each frame clears attachment A to a colour unique to that frame, transitions it to be sampled,
  * samples it into attachment B, transitions B for transfer, and copies B into its own slice of a
  * readback buffer. Any frame that observes a neighbouring frame's colour has seen through a
@@ -50,6 +57,8 @@ namespace {
 constexpr uint32_t kWidth = 16;
 constexpr uint32_t kHeight = 16;
 constexpr uint32_t kFrameCount = 24;
+constexpr uint32_t kSmallWidth = 4;
+constexpr uint32_t kSmallHeight = 4;
 
 /* Distinct, exactly representable in UNORM8, and different in every channel so a partial stale
  * read is still caught.
@@ -58,6 +67,18 @@ uint8_t
 frame_channel(uint32_t frame, uint32_t channel)
 {
    return static_cast<uint8_t>(8u + frame * 9u + channel * 3u);
+}
+
+/* The --multi-size small chain's own colour: distinct per frame, the same across channels (with
+ * only kFrameCount frames to distinguish, the byte budget above the large chain's range does not
+ * stretch to a per-channel offset too), and offset from the large chain's range (max
+ * frame_channel value is 8 + 23*9 + 2*3 = 221) so the two chains' colours can never collide -- a
+ * texel from one showing up in the other is unambiguous.
+ */
+uint8_t
+small_frame_channel(uint32_t frame, uint32_t)
+{
+   return static_cast<uint8_t>(230u + frame);
 }
 
 uint32_t
@@ -95,13 +116,14 @@ struct Image {
 
 VkResult
 create_image(VkDevice device, VkPhysicalDevice physical_device, VkImageUsageFlags usage,
-             VkFormat format, VkImageAspectFlags aspect, Image & out)
+             VkFormat format, VkImageAspectFlags aspect, Image & out, uint32_t width = kWidth,
+             uint32_t height = kHeight)
 {
    VkImageCreateInfo const info = {
       .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
       .imageType = VK_IMAGE_TYPE_2D,
       .format = format,
-      .extent = {kWidth, kHeight, 1},
+      .extent = {width, height, 1},
       .mipLevels = 1,
       .arrayLayers = 1,
       .samples = VK_SAMPLE_COUNT_1_BIT,
@@ -152,10 +174,11 @@ main(int argc, char ** argv)
    bool const use_compute = argc == 5 && std::strcmp(argv[4], "--compute") == 0;
    bool const use_depth = argc == 5 && std::strcmp(argv[4], "--depth") == 0;
    bool const use_ssbo = argc == 6 && std::strcmp(argv[5], "--compute-ssbo") == 0;
-   if (argc != 3 && !(argc == 5 && (use_compute || use_depth)) && !use_ssbo) {
+   bool const use_multi_size = argc == 4 && std::strcmp(argv[3], "--multi-size") == 0;
+   if (argc != 3 && !(argc == 5 && (use_compute || use_depth)) && !use_ssbo && !use_multi_size) {
       std::fprintf(stderr,
                    "usage: %s VERT_SPV FRAG_SPV [COMP_SPV --compute | DEPTH_FRAG_SPV --depth | "
-                   "COMP_SSBO_SPV SSBO_FRAG_SPV --compute-ssbo]\n",
+                   "COMP_SSBO_SPV SSBO_FRAG_SPV --compute-ssbo | --multi-size]\n",
                    argv[0]);
       return 2;
    }
@@ -258,6 +281,19 @@ main(int argc, char ** argv)
    VK_CHECK(create_image(device, physical_device,
                          VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                          VK_FORMAT_D32_SFLOAT, VK_IMAGE_ASPECT_DEPTH_BIT, depth));
+   /* The --multi-size small chain's own source/target pair, independently sized from the main
+    * chain above. Created unconditionally so the teardown stays uniform.
+    */
+   Image small_source;
+   VK_CHECK(create_image(device, physical_device,
+                         VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                         VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT, small_source,
+                         kSmallWidth, kSmallHeight));
+   Image small_target;
+   VK_CHECK(create_image(device, physical_device,
+                         VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+                         VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT, small_target,
+                         kSmallWidth, kSmallHeight));
 
    /* The ssbo producer's storage buffer: a single frame value, written by the compute pass and
     * read back by the fragment pass, standing in for a real application's compute-generated data
@@ -322,6 +358,33 @@ main(int argc, char ** argv)
                         reinterpret_cast<void **>(&readback_mapping)));
    std::memset(readback_mapping, 0xA5, frame_bytes * kFrameCount);
 
+   VkDeviceSize const small_frame_bytes = kSmallWidth * kSmallHeight * 4;
+   VkBufferCreateInfo const small_readback_info = {
+      .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+      .size = small_frame_bytes * kFrameCount,
+      .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+      .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+   };
+   VkBuffer small_readback_buffer;
+   VK_CHECK(vkCreateBuffer(device, &small_readback_info, nullptr, &small_readback_buffer));
+   VkMemoryRequirements small_readback_requirements;
+   vkGetBufferMemoryRequirements(device, small_readback_buffer, &small_readback_requirements);
+   uint32_t const small_readback_memory_type =
+      find_memory_type(physical_device, small_readback_requirements.memoryTypeBits,
+                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+   VkMemoryAllocateInfo const small_readback_allocation = {
+      .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+      .allocationSize = small_readback_requirements.size,
+      .memoryTypeIndex = small_readback_memory_type,
+   };
+   VkDeviceMemory small_readback_memory;
+   VK_CHECK(vkAllocateMemory(device, &small_readback_allocation, nullptr, &small_readback_memory));
+   VK_CHECK(vkBindBufferMemory(device, small_readback_buffer, small_readback_memory, 0));
+   uint8_t * small_readback_mapping;
+   VK_CHECK(vkMapMemory(device, small_readback_memory, 0, VK_WHOLE_SIZE, 0,
+                        reinterpret_cast<void **>(&small_readback_mapping)));
+   std::memset(small_readback_mapping, 0xA5, small_frame_bytes * kFrameCount);
+
    /* One render pass description reused for both passes of every frame. */
    VkAttachmentDescription const attachment = {
       .format = VK_FORMAT_R8G8B8A8_UNORM,
@@ -365,6 +428,22 @@ main(int argc, char ** argv)
    VK_CHECK(vkCreateFramebuffer(device, &framebuffer_info, nullptr, &source_framebuffer));
    framebuffer_info.pAttachments = &target.view;
    VK_CHECK(vkCreateFramebuffer(device, &framebuffer_info, nullptr, &target_framebuffer));
+
+   VkFramebuffer small_source_framebuffer, small_target_framebuffer;
+   VkFramebufferCreateInfo small_framebuffer_info = {
+      .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+      .renderPass = render_pass,
+      .attachmentCount = 1,
+      .pAttachments = &small_source.view,
+      .width = kSmallWidth,
+      .height = kSmallHeight,
+      .layers = 1,
+   };
+   VK_CHECK(
+      vkCreateFramebuffer(device, &small_framebuffer_info, nullptr, &small_source_framebuffer));
+   small_framebuffer_info.pAttachments = &small_target.view;
+   VK_CHECK(
+      vkCreateFramebuffer(device, &small_framebuffer_info, nullptr, &small_target_framebuffer));
 
    /* A depth-only pass with no colour attachments at all, matching what the shadow passes of a
     * real frame look like to the driver.
@@ -445,11 +524,11 @@ main(int argc, char ** argv)
 
    VkDescriptorPoolSize const pool_size = {
       .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-      .descriptorCount = 1,
+      .descriptorCount = 2,
    };
    VkDescriptorPoolCreateInfo const pool_info = {
       .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-      .maxSets = 1,
+      .maxSets = 2,
       .poolSizeCount = 1,
       .pPoolSizes = &pool_size,
    };
@@ -477,6 +556,35 @@ main(int argc, char ** argv)
       .pImageInfo = &image_descriptor,
    };
    vkUpdateDescriptorSets(device, 1, &descriptor_write, 0, nullptr);
+
+   /* --multi-size's small chain samples through its own descriptor set (same layout, different
+    * image view) rather than reusing `descriptor_set`, which stays bound to the large chain's
+    * source.
+    */
+   VkDescriptorSet small_descriptor_set = VK_NULL_HANDLE;
+   if (use_multi_size) {
+      VkDescriptorSetAllocateInfo const small_set_allocate_info = {
+         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+         .descriptorPool = descriptor_pool,
+         .descriptorSetCount = 1,
+         .pSetLayouts = &set_layout,
+      };
+      VK_CHECK(vkAllocateDescriptorSets(device, &small_set_allocate_info, &small_descriptor_set));
+      VkDescriptorImageInfo const small_image_descriptor = {
+         .sampler = sampler,
+         .imageView = small_source.view,
+         .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
+      };
+      VkWriteDescriptorSet const small_descriptor_write = {
+         .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+         .dstSet = small_descriptor_set,
+         .dstBinding = 0,
+         .descriptorCount = 1,
+         .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+         .pImageInfo = &small_image_descriptor,
+      };
+      vkUpdateDescriptorSets(device, 1, &small_descriptor_write, 0, nullptr);
+   }
 
    VkShaderModule modules[2];
    std::array<std::vector<uint32_t> const *, 2> const shader_code = {&vertex_spirv,
@@ -527,6 +635,15 @@ main(int argc, char ** argv)
       .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
       .attachmentCount = 1, .pAttachments = &blend_attachment,
    };
+   /* Viewport and scissor are dynamic so --multi-size can draw the same pipeline into attachments
+    * of different sizes within one frame instead of needing a pipeline per size.
+    */
+   VkDynamicState const dynamic_states[2] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+   VkPipelineDynamicStateCreateInfo const dynamic_state = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+      .dynamicStateCount = 2,
+      .pDynamicStates = dynamic_states,
+   };
    VkGraphicsPipelineCreateInfo const pipeline_info = {
       .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
       .stageCount = 2, .pStages = stages,
@@ -536,6 +653,7 @@ main(int argc, char ** argv)
       .pRasterizationState = &rasterization,
       .pMultisampleState = &multisample,
       .pColorBlendState = &color_blend,
+      .pDynamicState = &dynamic_state,
       .layout = pipeline_layout,
       .renderPass = render_pass,
    };
@@ -871,6 +989,10 @@ main(int argc, char ** argv)
       vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                               use_ssbo ? ssbo_pipeline_layout : pipeline_layout, 0, 1,
                               use_ssbo ? &ssbo_descriptor_set : &descriptor_set, 0, nullptr);
+      VkViewport const draw_viewport = {0.0F, 0.0F, (float)kWidth, (float)kHeight, 0.0F, 1.0F};
+      VkRect2D const draw_scissor = {{0, 0}, {kWidth, kHeight}};
+      vkCmdSetViewport(command_buffer, 0, 1, &draw_viewport);
+      vkCmdSetScissor(command_buffer, 0, 1, &draw_scissor);
       vkCmdDraw(command_buffer, 3, 1, 0, 0);
       vkCmdEndRenderPass(command_buffer);
 
@@ -896,6 +1018,85 @@ main(int argc, char ** argv)
       };
       vkCmdCopyImageToBuffer(command_buffer, target.image, VK_IMAGE_LAYOUT_GENERAL,
                              readback_buffer, 1, &region);
+
+      if (use_multi_size) {
+         /* An independently sized chain recorded within this same frame, right after the large
+          * one: clear, sample and copy at 4x4 instead of 16x16.
+          */
+         VkClearValue const small_clear = {
+            .color = {.float32 = {small_frame_channel(frame, 0) / 255.0F,
+                                  small_frame_channel(frame, 1) / 255.0F,
+                                  small_frame_channel(frame, 2) / 255.0F, 1.0F}}};
+         VkRenderPassBeginInfo const small_source_begin = {
+            .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+            .renderPass = render_pass,
+            .framebuffer = small_source_framebuffer,
+            .renderArea = {{0, 0}, {kSmallWidth, kSmallHeight}},
+            .clearValueCount = 1,
+            .pClearValues = &small_clear,
+         };
+         vkCmdBeginRenderPass(command_buffer, &small_source_begin, VK_SUBPASS_CONTENTS_INLINE);
+         vkCmdEndRenderPass(command_buffer);
+
+         VkImageMemoryBarrier const small_source_to_sampled = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+            .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+            .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
+            .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = small_source.image,
+            .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
+         };
+         vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                              VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1,
+                              &small_source_to_sampled);
+
+         VkClearValue const small_target_clear = {.color = {.float32 = {0.0F, 0.0F, 0.0F, 0.0F}}};
+         VkRenderPassBeginInfo const small_target_begin = {
+            .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+            .renderPass = render_pass,
+            .framebuffer = small_target_framebuffer,
+            .renderArea = {{0, 0}, {kSmallWidth, kSmallHeight}},
+            .clearValueCount = 1,
+            .pClearValues = &small_target_clear,
+         };
+         vkCmdBeginRenderPass(command_buffer, &small_target_begin, VK_SUBPASS_CONTENTS_INLINE);
+         vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+         vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout,
+                                 0, 1, &small_descriptor_set, 0, nullptr);
+         VkViewport const small_viewport = {0.0F, 0.0F, (float)kSmallWidth, (float)kSmallHeight,
+                                            0.0F, 1.0F};
+         VkRect2D const small_scissor = {{0, 0}, {kSmallWidth, kSmallHeight}};
+         vkCmdSetViewport(command_buffer, 0, 1, &small_viewport);
+         vkCmdSetScissor(command_buffer, 0, 1, &small_scissor);
+         vkCmdDraw(command_buffer, 3, 1, 0, 0);
+         vkCmdEndRenderPass(command_buffer);
+
+         VkImageMemoryBarrier const small_target_to_transfer = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+            .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+            .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
+            .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = small_target.image,
+            .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
+         };
+         vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                              VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1,
+                              &small_target_to_transfer);
+
+         VkBufferImageCopy const small_region = {
+            .bufferOffset = small_frame_bytes * frame,
+            .imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
+            .imageExtent = {kSmallWidth, kSmallHeight, 1},
+         };
+         vkCmdCopyImageToBuffer(command_buffer, small_target.image, VK_IMAGE_LAYOUT_GENERAL,
+                                small_readback_buffer, 1, &small_region);
+      }
 
       /* The next frame overwrites both images, so the copy has to be done with them first. */
       VkMemoryBarrier const transfer_done = {
@@ -984,6 +1185,45 @@ main(int argc, char ** argv)
    std::printf("frame_chain%s frames=%u bad=%u %s\n", use_ssbo ? "_ssbo" : "", kFrameCount,
                bad_frames, bad_frames == 0 ? "PASS" : "FAIL");
 
+   uint32_t small_bad_frames = 0;
+   if (use_multi_size) {
+      for (uint32_t frame = 0; frame < kFrameCount; ++frame) {
+         uint8_t const * const pixels = small_readback_mapping + small_frame_bytes * frame;
+         uint32_t mismatches = 0;
+         uint8_t first_bad[4] = {};
+         for (uint32_t texel = 0; texel < kSmallWidth * kSmallHeight; ++texel) {
+            uint8_t const * const pixel = pixels + texel * 4;
+            bool matches = true;
+            for (uint32_t channel = 0; channel < 3; ++channel)
+               matches &= pixel[channel] == small_frame_channel(frame, channel);
+            if (!matches) {
+               if (mismatches == 0)
+                  std::memcpy(first_bad, pixel, 4);
+               ++mismatches;
+            }
+         }
+         if (mismatches != 0) {
+            int seen_frame = -1;
+            for (uint32_t candidate = 0; candidate < kFrameCount; ++candidate) {
+               if (first_bad[0] == small_frame_channel(candidate, 0)) {
+                  seen_frame = static_cast<int>(candidate);
+                  break;
+               }
+            }
+            std::fprintf(stderr,
+                         "small frame %u: %u/%u texels wrong, first was %u which is %s\n", frame,
+                         mismatches, kSmallWidth * kSmallHeight, first_bad[0],
+                         seen_frame >= 0 ? "another small frame's colour"
+                                        : "not any small frame's colour, or the large chain's");
+            if (seen_frame >= 0)
+               std::fprintf(stderr, "  that colour belongs to small frame %d\n", seen_frame);
+            ++small_bad_frames;
+         }
+      }
+      std::printf("frame_chain_multi_size_small frames=%u bad=%u %s\n", kFrameCount,
+                  small_bad_frames, small_bad_frames == 0 ? "PASS" : "FAIL");
+   }
+
    vkDeviceWaitIdle(device);
    vkDestroyFence(device, fence, nullptr);
    vkDestroyCommandPool(device, command_pool, nullptr);
@@ -997,9 +1237,11 @@ main(int argc, char ** argv)
    vkDestroyFramebuffer(device, source_framebuffer, nullptr);
    vkDestroyFramebuffer(device, target_framebuffer, nullptr);
    vkDestroyFramebuffer(device, depth_framebuffer, nullptr);
+   vkDestroyFramebuffer(device, small_source_framebuffer, nullptr);
+   vkDestroyFramebuffer(device, small_target_framebuffer, nullptr);
    vkDestroyRenderPass(device, render_pass, nullptr);
    vkDestroyRenderPass(device, depth_render_pass, nullptr);
-   for (Image const & image : {source, target, depth}) {
+   for (Image const & image : {source, target, depth, small_source, small_target}) {
       vkDestroyImageView(device, image.view, nullptr);
       vkDestroyImage(device, image.image, nullptr);
       vkFreeMemory(device, image.memory, nullptr);
@@ -1007,9 +1249,12 @@ main(int argc, char ** argv)
    vkUnmapMemory(device, readback_memory);
    vkDestroyBuffer(device, readback_buffer, nullptr);
    vkFreeMemory(device, readback_memory, nullptr);
+   vkUnmapMemory(device, small_readback_memory);
+   vkDestroyBuffer(device, small_readback_buffer, nullptr);
+   vkFreeMemory(device, small_readback_memory, nullptr);
    vkDestroyBuffer(device, ssbo_buffer, nullptr);
    vkFreeMemory(device, ssbo_memory, nullptr);
    vkDestroyDevice(device, nullptr);
    vkDestroyInstance(instance, nullptr);
-   return bad_frames == 0 ? 0 : 1;
+   return bad_frames == 0 && small_bad_frames == 0 ? 0 : 1;
 }

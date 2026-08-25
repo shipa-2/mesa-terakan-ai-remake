@@ -190,6 +190,7 @@ terakan_frame_chain
 terakan_frame_chain_compute
 terakan_frame_chain_depth
 terakan_frame_chain_ssbo
+terakan_frame_chain_multi_size
 terakan_dynamic_rendering
 terakan_blit_3d
 terakan_blit_format_matrix
@@ -355,15 +356,19 @@ which cannot reliably catch the bad frame.
 
 Since then `terakan_frame_chain` was added to test that shape directly:
 twenty-four frames of produce, sample, render and copy in one command buffer.
-It now runs with four producers — a render pass, a compute dispatch,
+It now runs with five variants — a render pass, a compute dispatch,
 (`--depth`) a depth-only render pass whose result is sampled the way a shadow
-map is, and (`--compute-ssbo`) a compute dispatch that writes both a storage
+map is, (`--compute-ssbo`) a compute dispatch that writes both a storage
 image and a storage buffer, with the sampling pass reading the image into RGB
-and the buffer into alpha so a stale read of either is independently visible.
-All four pass, closing the "mix storage buffers with storage images" gap this
-note used to name, so the hazard is narrower than the chain itself. What the
+and the buffer into alpha so a stale read of either is independently visible,
+and (`--multi-size`) a second, independently sized 4x4 chain recorded right
+after the main 16x16 one within the same per-frame block, with its own
+colour range disjoint from the main chain's so a leak between the two sizes
+is unambiguous. All five pass, closing the "mix storage buffers with storage
+images" and "several render target sizes in the same frame" gaps this note
+used to name, so the hazard is narrower than the chain itself. What the
 application does that the test still does not is run many distinct compute
-pipelines rather than one and use several render target sizes within a frame.
+pipelines rather than one.
 
 Buckshot Roulette was retested after the stencil-aspect view swizzle and the
 multisample `MIP_ADDRESS` fixes landed, and the symptom changed: it now renders

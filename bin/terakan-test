@@ -69,6 +69,7 @@ gpu_tests=(
   terakan_frame_chain_compute
   terakan_frame_chain_depth
   terakan_frame_chain_ssbo
+  terakan_frame_chain_multi_size
   terakan_dynamic_rendering
   terakan_blit_3d
   terakan_blit_format_matrix
