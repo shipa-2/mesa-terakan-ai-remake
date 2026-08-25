@@ -111,16 +111,16 @@ struct Image {
    VkImageView view = VK_NULL_HANDLE;
    /* A depth-aspect view of the same image, bound alongside the stencil view.
     *
-    * DB_Z_INFO carries the tiling configuration (array mode and bank layout) that the stencil
-    * plane's addressing also depends on. When a render only names a stencil attachment, the driver
-    * marks DB_Z_INFO's format invalid to keep depth out of the picture, and on this hardware that
-    * also breaks the stencil plane's addressing: writing a uniform stencil value with no depth
-    * attachment bound reads back a per-column pattern that has nothing to do with what was written.
-    * Binding a depth attachment alongside, even though nothing here reads or writes depth, works
-    * around it and is how a real depth/stencil resolve is shaped anyway, since
-    * VK_KHR_depth_stencil_resolve resolves both aspects from the one attachment VUID-06085 requires
-    * to be the same view. Recorded in TODO.md as a separate, unsolved issue: a genuinely
-    * stencil-only render target remains broken.
+    * This was originally a workaround: a genuinely stencil-only render (no depth attachment) used
+    * to read back values unrelated to what was written, because the driver stored the two aspects'
+    * DB base addresses swapped when depth was not bound and so pointed stencil writes at the depth
+    * plane. That is fixed now (see terakan_hw_config_draw_set_db_depth_stencil_buffer() and
+    * terakan_stencil_only_render, which covers the stencil-only shape directly), so the depth view
+    * is no longer needed to make this test work.
+    *
+    * It is kept because it is also how a real depth/stencil resolve is shaped:
+    * VK_KHR_depth_stencil_resolve resolves both aspects from the one attachment VUID-06085
+    * requires to be the same view, so this stays the representative shape for these modes.
     */
    VkImageView depth_view = VK_NULL_HANDLE;
 };

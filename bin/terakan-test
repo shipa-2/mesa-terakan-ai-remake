@@ -87,6 +87,7 @@ gpu_tests=(
   terakan_stencil_resolve_modes_4x
   terakan_stencil_resolve_modes_8x
   terakan_stencil_readback
+  terakan_stencil_only_render
   terakan_stencil_fetch
   terakan_physical_device_properties
   terakan_terascale_1_enumeration

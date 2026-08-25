@@ -126,6 +126,28 @@ just locks in that the current gap is a silent no-op rather than the
 silent corruption it looked like it could be, so a future unrelated change
 cannot regress into that worse failure mode unnoticed.
 
+`terakan_stencil_only_render` closes the long-open "stencil-only render
+targets on combined depth/stencil images" P0 item, which two earlier
+investigation passes had failed to reproduce at all. Two changes in approach
+made it reproduce deterministically, both of them things TODO.md had recorded
+as untried: drawing through the rasterizer's STENCIL_REPLACE path rather than
+relying on a bare LOAD_OP_CLEAR (a clear does not go through the same DB
+base-address programming a draw does, which is why the earlier passes saw
+nothing), and running many renders back to back inside one command buffer with
+a different stencil reference each. A four-way control matrix then isolated it
+exactly: stencil-only failed with both dynamic and static stencil references,
+and binding a depth attachment alongside passed in both -- purely "no depth
+attachment bound".
+
+The cause was in terakan_hw_config_draw_set_db_depth_stencil_buffer(), which
+stored the two aspects' DB base addresses swapped whenever depth was not bound,
+so the stencil-only emit path wrote the depth plane's address into
+DB_STENCIL_READ_BASE/DB_STENCIL_WRITE_BASE and every stencil write landed in
+the depth plane. Register-level instrumentation confirmed it directly before
+anything was changed. The test is a verified negative control: against the
+unfixed driver its stencil-only pass fails 15/16 iterations while its
+depth-bound pass still passes, and both pass after the fix.
+
 `terakan_color_msaa_fetch_test` probed the FMASK/CMASK item's per-sample
 colour read path directly for the first time and found, then partly fixed,
 a real bug: the shader's FMASK decode (`lower_txf_ms` in
@@ -212,6 +234,7 @@ terakan_depth_msaa_fetch
 terakan_depth_resolve
 terakan_depth_stencil_resolve
 terakan_stencil_readback
+terakan_stencil_only_render
 terakan_stencil_fetch
 terakan_stencil_msaa_fetch
 terakan_frame_chain

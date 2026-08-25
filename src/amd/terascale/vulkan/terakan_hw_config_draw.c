@@ -206,12 +206,22 @@ terakan_hw_config_draw_set_db_depth_stencil_buffer(
    config->db_depth_stencil_buffer_.bo = bo;
    config->db_depth_stencil_buffer_.descriptor.view = descriptor->view;
    config->db_depth_stencil_buffer_.descriptor.z_info = z_info;
-   config->db_depth_stencil_buffer_.descriptor.z_base =
-      new_depth_bound ? descriptor->z_base : descriptor->stencil_base;
+   /* Each aspect's base is stored as itself, never swapped with the other aspect's.
+    *
+    * These used to be stored swapped when depth was not bound (`z_base` taking the stencil base
+    * and `stencil_base` taking the depth base), which silently pointed a stencil-only render at
+    * the depth plane: `terakan_hw_config_draw_emit_db_depth_stencil_buffer()`'s single-aspect path
+    * picks `stencil_bound ? descriptor->stencil_base : descriptor->z_base` and writes it to
+    * `DB_STENCIL_READ_BASE`/`DB_STENCIL_WRITE_BASE`, so it received the depth plane's address and
+    * every stencil write landed there instead of in the stencil plane. The unbound aspect's base
+    * registers are not written at all in that path, so there was nothing for the swap to
+    * accomplish. The dedup comparison above also compares each stored base against the incoming
+    * descriptor's same-named field, which only holds without the swap.
+    */
+   config->db_depth_stencil_buffer_.descriptor.z_base = descriptor->z_base;
    config->db_depth_stencil_buffer_.descriptor.stencil_info =
       new_stencil_bound ? descriptor->stencil_info : S_028044_FORMAT(V_028044_STENCIL_INVALID);
-   config->db_depth_stencil_buffer_.descriptor.stencil_base =
-      new_depth_bound ? descriptor->stencil_base : descriptor->z_base;
+   config->db_depth_stencil_buffer_.descriptor.stencil_base = descriptor->stencil_base;
    config->db_depth_stencil_buffer_.descriptor.size = descriptor->size;
    config->db_depth_stencil_buffer_.descriptor.slice = descriptor->slice;
    BITSET_SET(config->entries_modified_, TERAKAN_HW_CONFIG_DRAW_ENTRY_DB_DEPTH_STENCIL_BUFFER);

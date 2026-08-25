@@ -12,7 +12,7 @@ accept the work. Both use a 1–5 scale.
 | Work item | Importance | Complexity | Feasibility | Acceptance criteria |
 |---|---:|---:|---|---|
 | Implement and validate FMASK/CMASK allocation, identity initialization and sampled MSAA addressing | 5/5 | 5/5 | Implementable; requires Evergreen tiling research. A real per-sample-decode bug was found and fixed (see the note below): the shader's fixed 4-bit-per-sample FMASK nibble decode didn't match the 2x/4x identity-fill constants, only 8x's happened to already agree. Fixing that took per-sample colour reads from 100% wrong to roughly 25% wrong on CAICOS, but chasing the remainder surfaced a deeper, still-open issue -- run-to-run instability (including one fence-wait timeout) suggesting the identity FMASK fill doesn't reliably cover the whole tiled surface, most likely a bank-rotation/macro-tile addressing mismatch. Genuine further tiling research is needed here, not a quick fix | Per-sample reads and resolved reads pass for 2x/4x/8x images without corrupting ordinary color targets |
-| Fix stencil-only render targets on combined depth/stencil images | 4/5 | 3/5 | Root cause still unknown. One genuine failure was observed (a multisampled stencil-only draw reading back a constant wrong byte) but did not reproduce across 75 repeat runs in a later pass, including 15 deliberately preceded by a forced driver crash to rule out leftover-state contamination from this investigation's own tooling -- see the note below for the full, honestly-corrected account and what's been ruled out (`DB_Z_INFO.NUM_SAMPLES` masking, confirmed identical between working and broken observations). Not reproducible under any controlled condition tried across two passes: clear, single-sample draw, and multisample draw, with and without a preceding crash. Every current stencil user works around it by binding a depth attachment alongside anyway, which is how real applications shape a depth/stencil resolve, but an application that legitimately renders stencil alone on a combined-format image could still be affected by whatever this is | A stencil-only `vkCmdBeginRendering` (`pDepthAttachment == NULL`, `pStencilAttachment` naming a combined-format image) writes and reads back correctly without a depth attachment bound alongside, at any sample count, repeatably |
+| ~~Fix stencil-only render targets on combined depth/stencil images~~ **FIXED** | 4/5 | 3/5 | **Root-caused and fixed.** `terakan_hw_config_draw_set_db_depth_stencil_buffer()` stored the two aspects' base addresses *swapped* whenever depth was not bound, so the stencil-only emit path wrote the depth plane's address into `DB_STENCIL_READ_BASE`/`DB_STENCIL_WRITE_BASE` and every stencil write landed in the depth plane. Verified directly with register-level instrumentation: the incoming descriptor had `z_base=0x0`/`stencil_base=0x4` and the emit chose `0x0`. Fixed by storing each base as itself; the emit path never writes the unbound aspect's base registers at all, so the swap accomplished nothing, and the setter's own dedup comparison (which compares each stored base against the incoming descriptor's same-named field) was silently broken by it too. `terakan_stencil_only_render` regression-covers both the previously broken shape and the depth-bound workaround shape, and is a verified negative control: against the unfixed driver it fails 15/16 stencil-only iterations while the depth-bound pass still passes | A stencil-only `vkCmdBeginRendering` (`pDepthAttachment == NULL`, `pStencilAttachment` naming a combined-format image) writes and reads back correctly without a depth attachment bound alongside, at any sample count, repeatably |
 | Complete cache and barrier coherency | 5/5 | 4/5 | Implementable. Composition coverage now exists (`terakan_frame_chain` with the render-pass producer, the compute producer, `--compute-ssbo` for a storage-buffer producer/consumer alongside the storage-image one, `--multi-size` for a second, independently sized 4x4 chain recorded within the same per-frame block as the main 16x16 one, and `--compute-multi-pipeline` for six distinct `VkPipeline` objects bound round-robin across frames instead of rebinding one) and all pass, closing every concrete gap the original coverage note named. Whatever remains is narrower than this composition shape, not a specific named scenario | Focused attachment, texture, storage, transfer, graphics/compute and query producer-consumer chains pass without application-specific waits |
 | Cover remaining copy, blit and resolve format/subresource combinations | 5/5 | 4/5 | Implementable; the vkCmdCopyImage subresource slice is fixed, and a real bug in color resolve subresource addressing was found and fixed along the way. `terakan_copy_image_subresource` regression-covers a non-zero-offset partial-extent copy across array layers, a copy between two different mip levels, and a copy spanning multiple array layers in one region -- all pass on real CAICOS hardware (8/8 repeat runs, in light of the earlier retracted "deterministic" claim above). `terakan_color_resolve_subresource` closed a previously nonexistent COLOR attachment resolve test (only depth/stencil resolve had coverage) and found that resolving into a destination array layer other than the multisample source's own layer did not fail cleanly -- it silently wrote the resolved color into the SOURCE's layer of the destination instead, corrupting whatever was there. This is Evergreen's CB_RESOLVE apparently sharing one per-draw array-slice-select state across both bound color buffers rather than addressing each RTV's slice independently (no errata research beyond this observed behavior). The fix extends `terakan_meta_resolve_region_is_fixed_function_compatible` in `terakan_meta_resolve.c` to require a matching source/destination array layer, same as it already required matching extents and offsets, so a cross-layer region is now skipped like any other CB_RESOLVE-incompatible one instead of corrupting the wrong layer; there is no shader fallback for the cross-layer case (the alternate shader resolve path is disabled elsewhere in that file) so it remains genuinely unsupported, just safely so. Multisampled vkCmdCopyImage is a separate, still-open gap: `terakan_meta_copy_image.c` has no `samples > 1` guard before its single-sample-shaped meta-draw copy path (see the `TODO(Triang3l)` comment there), so an MSAA copy currently falls through to that path rather than being rejected or handled correctly. Actually implementing it is comparable in scope to the FMASK/CMASK work and was deliberately not attempted here, but `terakan_copy_image_multisample_noop_test` establishes what currently happens: on real CAICOS hardware (6/6 repeat runs) the destination is left completely untouched rather than corrupted, most likely because a #MemoryIntegrity-style check inside the meta-draw's descriptor creation rejects the mismatched dimensionality (source bound as plain 2D_ARRAY regardless of actual sample count) and the copy loop silently skips the region. This downgrades the gap from "possible silent corruption" to "silent no-op, locked in as a regression so it cannot regress into corruption unnoticed" -- still wrong from an application's perspective, but not the worse failure mode originally suspected. Blit subresource coverage beyond the format-matrix cases already landed, and the full CTS-driven matrix, remain unverified (CTS is not installed on the test machine, see FUNCTIONAL_COVERAGE.md) | Boundary tests cover non-zero offsets, partial extents, mip levels, array/3D layers and every advertised compatible format class |
 | Correct meta blit format coverage | 5/5 | 3/5 | Implementable; the typed, mirrored and layered/3D-depth cases are fixed. `terakan_blit_format_matrix` now regression-covers RGBA<->BGRA (straight and mirrored on X) and R32 identity blits -- all pass on real CAICOS hardware -- closing what the acceptance criteria name explicitly, though the CTS binary is still not installed on the test machine (see FUNCTIONAL_COVERAGE.md), so the full per-format matrix beyond these specific cases remains unverified | All basic CTS blits pass for RGBA, BGRA, R32, reversed source/destination axes and 3D slices |
@@ -628,8 +628,9 @@ classic Gallium R600 driver that has supported this hardware for years).
   written through `STENCIL_REPLACE` with a static per-pipeline reference and a
   sample mask confining each draw to one sample.
 
-  Getting there surfaced a real hardware quirk, worth recording so it is not
-  rediscovered: **a stencil-only render target on a combined depth/stencil
+  Getting there surfaced a real driver bug, worth recording so it is not
+  rediscovered (**now root-caused and fixed -- see the RESOLVED note at the end
+  of this entry**): **a stencil-only render target on a combined depth/stencil
   image writes and reads back the wrong values.** Writing a uniform stencil
   value with no depth attachment bound (`pDepthAttachment == NULL`,
   `pStencilAttachment` naming a `D32_SFLOAT_S8_UINT` image) reads back a
@@ -723,6 +724,65 @@ classic Gallium R600 driver that has supported this hardware for years).
   out which, rather than re-discovering that the "deterministic" repro
   doesn't actually reproduce on the first try and wondering whether it
   did something wrong.
+
+  **RESOLVED.** A third pass reproduced this deterministically and found the root
+  cause. Two things made the difference, both of them things the notes above had
+  recorded as untried:
+
+  1. **Draw, don't clear.** A bare `LOAD_OP_CLEAR` had already been tried and
+     passed, which is why two passes found nothing; the clear does not go through
+     the same DB base-address programming a draw does. Drawing through the
+     rasterizer's `STENCIL_REPLACE` path -- exactly what the note above said the
+     next attempt should try -- fails immediately and every time.
+  2. **Many renders in one command buffer.** Every earlier pass ran the scenario
+     once per process. Running sixteen renders back to back with a different
+     stencil reference each makes a wrong result impossible to mistake for an
+     uninitialised read.
+
+  With that, the failure is 100% reproducible at single sample, and a four-way
+  control matrix isolates it exactly: stencil-only fails with both a dynamic and a
+  static stencil reference, and binding a depth attachment alongside passes in
+  both cases. So it is purely "no depth attachment bound", and nothing to do with
+  how the reference reaches the hardware.
+
+  The cause is in `terakan_hw_config_draw_set_db_depth_stencil_buffer()`
+  (`terakan_hw_config_draw.c`), which stored the two aspects' base addresses
+  **swapped** when depth was not bound:
+
+  ```c
+  descriptor.z_base       = new_depth_bound ? descriptor->z_base : descriptor->stencil_base;
+  descriptor.stencil_base = new_depth_bound ? descriptor->stencil_base : descriptor->z_base;
+  ```
+
+  `terakan_hw_config_draw_emit_db_depth_stencil_buffer()`'s single-aspect path then
+  picks `stencil_bound ? descriptor->stencil_base : descriptor->z_base` and writes
+  it to `DB_STENCIL_READ_BASE`/`DB_STENCIL_WRITE_BASE` -- so for a stencil-only
+  render it received the **depth plane's** address, and every stencil write landed
+  there instead of in the stencil plane. Confirmed with temporary register-level
+  instrumentation before changing anything: the incoming descriptor carried
+  `z_base=0x00000000` and `stencil_base=0x00000004` (the stencil plane sits 0x400
+  bytes in) and the emit path chose `0x00000000`; after the fix it chooses
+  `0x00000004` and the readback is exact.
+
+  The swap accomplished nothing even in principle: that path does not write the
+  unbound aspect's base registers at all, so there was no "point the other one
+  somewhere safe" effect to preserve. It also silently broke the setter's own dedup
+  comparison, which compares each stored base against the incoming descriptor's
+  same-named field and therefore never matched for a stencil-only bind. Fixed by
+  storing each base as itself.
+
+  This also explains why the earlier `TILE_SPLIT` and `DB_Z_INFO.NUM_SAMPLES`
+  hypotheses were both correctly ruled out: neither had anything to do with it, and
+  the one genuine but unreproduced multisample observation recorded above is
+  consistent with the same root cause (a stencil-only bind at any sample count),
+  which is why that observation was real even though the specific repro recipe
+  around it was not reliable.
+
+  `terakan_stencil_only_render` covers it permanently, including the depth-bound
+  shape existing stencil users rely on, so a future change that fixes one by
+  breaking the other is caught. It is a verified negative control: reverting the
+  one-line fix makes its stencil-only pass fail 15/16 iterations while its
+  depth-bound pass still passes.
 
 - Reducing depth resolve, `VK_RESOLVE_MODE_MIN_BIT` and `VK_RESOLVE_MODE_MAX_BIT`:
   every sample is fetched and combined in the pixel shader, one program per

@@ -971,6 +971,31 @@ if with_tests
         ['tests/terakan_resolve_modes_test.cpp'],
         dependencies : vulkan_loader_dep,
       )
+
+      # Reuses the resolve-modes shaders: a full-target quad plus an empty fragment shader is
+      # exactly what a stencil-only STENCIL_REPLACE draw needs too.
+      terakan_stencil_only_render_test = executable(
+        'terakan_stencil_only_render_test',
+        ['tests/terakan_stencil_only_render_test.cpp'],
+        dependencies : vulkan_loader_dep,
+      )
+      test(
+        'terakan_stencil_only_render',
+        terakan_stencil_only_render_test,
+        args : [
+          terakan_resolve_modes_vertex_spv, terakan_resolve_modes_fragment_spv,
+        ],
+        depends : [
+          libvulkan_terascale, _dev_icd,
+          terakan_resolve_modes_vertex_spv, terakan_resolve_modes_fragment_spv,
+        ],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 30,
+      )
       test(
         'terakan_resolve_modes_2x',
         terakan_resolve_modes_test,
