@@ -70,7 +70,7 @@ classic Gallium R600 driver that has supported this hardware for years).
 |---|---:|---:|---|---|
 | ~~Determine real per-family render backend counts~~ | 5/5 | 2/5 | Done: `max_render_backends_log2` is now populated from `RADEON_INFO_NUM_BACKENDS`, queried by the drm_radeon winsys for TeraScale 1 devices and required to succeed, matching the classic R600 driver's own unconditional query-and-fail-if-missing behavior. Confirmed on real RV710 hardware (ioctl reports 1 backend). R8xx/R9xx keep their existing static table, untouched | A real value backs `max_render_backends_log2` for every recognized TeraScale 1 chip family, sourced from kernel query or documented per-family reference, not guessed |
 | Wire the TeraScale 1 register-emission helpers into command buffer recording, keep surveying and porting per-draw CB/DB state, and build command stream submission | 5/5 | 5/5 | The begin-command-buffer atom is now wired in: `terakan_hw_config_shared_indirect_buffer_begun()` branches on `chip_info->is_terascale_1` and calls the already-tested `terakan_hw_config_shared_terascale_1_write_sq_config()`/`_write_context_defaults()` instead of the R8xx/R9xx SQ_CONFIG block. DB_DEPTH_CONTROL/CB_TARGET_MASK turned out to need no separate TeraScale 1 code at all -- see the "no separate emission path needed" bullet below -- so the dedicated writer functions for them were retired as redundant. Two latent correctness bugs were found and fixed in the same pass: `terakan_hw_config_shared_draw_emit_sq_thread_stack_resource_mgmt()`, `_compute_emit_sq_thread_stack_resource_mgmt()`, and the LDS resource management block in `terakan_hw_config_shared_draw_emit_modified()` were all guarded only against `is_r9xx`, so TeraScale 1 (`is_r9xx` false) would have fallen through into writing R_008C18_SQ_THREAD_RESOURCE_MGMT_1 and R_008E2C_SQ_LDS_RESOURCE_MGMT once it ever reached command buffer recording -- neither register exists in `r600d.h` at all, so this would have hit whatever unrelated register (if any) actually lives at those offsets on real hardware. All three now also check `is_terascale_1` and skip; TeraScale 1 compute/LDS thread-stack configuration remains unresearched (no register decided) rather than guessed. Most of the rest of CB/DB per-draw state remains unsurveyed, and where it is surveyed it is not uniformly compatible -- CB_COLOR_CONTROL at 0x028808, for instance, has a 3-bit field at the same bit position (4) that means SPECIAL_OP on R600/R700 and MODE on Evergreen-and-later, an incompatible field with no shared meaning, so each register needs checking against both `r600d.h` and `evergreend.h` before assuming either compatibility or divergence. CB_COLOR*_BASE/INFO/SIZE (the actual render target binding) is blocked on tiling/surface addressing, the item below, since it needs surface pitch/slice tile counts that do not exist for TeraScale 1 yet. `terakan_CreateDevice`'s explicit refusal of TeraScale 1 physical devices is unchanged -- none of this is reachable yet | `vkCreateDevice` succeeds on a TeraScale 1 physical device and a trivial compute dispatch completes |
-| Research TeraScale 1 tiling/surface addressing (bank/pipe swizzle, macro-tile layout) | 5/5 | 5/5 | Not yet started; this is the highest-risk area, since a wrong tiling computation corrupts memory silently rather than failing loudly | A buffer/image round trip through the tiled surface layout matches, the same class of check `terakan_image.c` already does for R8xx/R9xx |
+| TeraScale 1 tiling/surface addressing (bank/pipe swizzle, macro-tile layout) | 5/5 | 5/5 | Started: the pitch/height/base-alignment math (`terakan_image_tiling_terascale_1.c`) is ported and unit-tested against real RV710 tiling parameters, but not wired into `terakan_image.c`'s surface layout computation yet, and the much larger remaining pieces -- per-level offset/size computation, degrade-to-1D-on-small-mip, and the DB_DEPTH_INFO/CB_COLOR_INFO field computation this blocks -- are still fully open. This remains the highest-risk area, since a wrong tiling computation corrupts memory silently rather than failing loudly | A buffer/image round trip through the tiled surface layout matches, the same class of check `terakan_image.c` already does for R8xx/R9xx |
 | Port the hand-written meta shader bytecode (blit/resolve/clear/copy/query, all of `src/amd/terascale/vulkan/meta/`) to the R6xx/R7xx CF/ALU/TEX instruction encoding | 4/5 | 5/5 | The NIR-to-bytecode compiler (SFN, `src/gallium/drivers/r600/sfn/`) already accepts `amd_gfx_level` including `R600`/`R700` distinct from `EVERGREEN`, since the classic Gallium R600 driver already uses it for this hardware -- shaders reaching the driver through NIR may need only the right `gfx_level` threaded through, but the meta shaders are hand-written Evergreen-only bytecode and need real per-generation variants | Each meta operation this driver depends on (at minimum blit and clear) passes its existing readback test on TeraScale 1 hardware |
 | Recognize R600/R700 PCI IDs and correctly plumb `gfx_level` through the NIR shader path for real application shaders | 3/5 | 2/5 | The `is_chip_family_supported`/`chip_info_init` work above already recognizes the full R600..RV740 range; what remains is confirming no Evergreen-specific assumption leaks into `terakan_nir_*` lowering | A real application vertex/fragment shader compiles and renders correctly on TeraScale 1 |
 
@@ -427,8 +427,46 @@ classic Gallium R600 driver that has supported this hardware for years).
   R8xx/R9xx's four independent read/write Z/stencil base registers), and
   `DB_DEPTH_INFO`'s `ARRAY_MODE` field needs real tiling information this
   driver doesn't have for TeraScale 1 yet (`terakan_image.c`'s
-  surface/macro-tile address math, still not started -- see the
-  tiling/surface addressing row in the P0-equivalent table above).
+  surface/macro-tile address math -- see the tiling/surface addressing row
+  in the P0-equivalent table above and the bullet below for what exists
+  of it so far).
+
+- TeraScale 1 (R600/R700) surface pitch/height/base-alignment math:
+  `terakan_image_tiling_terascale_1_alignments_linear_aligned()`/
+  `_1d_tiled_thin1()`/`_2d_tiled_thin1()` (`terakan_image_tiling_terascale_1.c`),
+  ported from libdrm's `radeon/radeon_surface.c` (`r6_surface_init_linear_aligned()`/
+  `_1d()`/`_2d()`, the same reference already used for the
+  `RADEON_INFO_TILING_CONFIG` decode and the begin-command-buffer atom) and
+  unit-tested against the real RV710 tiling parameters
+  (`terakan_physical_device_tiling_config_test` already established:
+  `group_bytes=512`, `num_pipes=2`, `num_banks=8`). This is deliberately a
+  much smaller port than R8xx/R9xx's AddrLib-derived tiling code in
+  `terakan_image.c`: TeraScale 1 has no `TILE_SPLIT`, no per-surface
+  `bank_width`/`bank_height`/`macro_tile_aspect` selection, and no
+  macro-tile-aspect-ratio search at all -- confirmed by the tiling-config
+  decode work (no `TILE_SPLIT` field exists in `r600d.h` for any CB/DB
+  register) and by `r6_surface_best()` in the reference being a literal
+  no-op ("no value to optimize for r6xx/r7xx") -- so the whole algorithm
+  is a handful of fixed formulas over group bytes/pipes/banks/bytes-per-
+  element/sample count, not an optimization search.
+
+  This covers only the foundational alignment math. Not yet done, and each
+  a substantial piece of its own: wiring this into `terakan_image.c`'s
+  surface layout computation (currently entirely R8xx/R9xx-shaped, gated
+  on `V_028C70_ARRAY_*` from `evergreend.h` -- TeraScale 1's equivalent
+  constants are `V_0280A0_ARRAY_*` in `r600d.h`, same numeric values,
+  confirmed, but the surrounding array-mode-selection logic needs its own
+  read-through before reuse can be assumed the way it could for
+  DB_DEPTH_CONTROL/CB_TARGET_MASK); per-level offset/size computation
+  and the degrade-to-1D-on-small-mip decision (`r6_surface_init_2d()`
+  calls back into `r6_surface_init_1d()` for a level once it degrades,
+  matching the R8xx/R9xx side's own equivalent behavior in spirit); and
+  the `DB_DEPTH_INFO`/`CB_COLOR_INFO` register field computation this
+  unblocks, which still needs its own per-field compatibility check
+  against `r600d.h` (not yet done -- these registers weren't in the
+  CB/DB/PA/SPI/SQ audit above, since that audit only covered registers
+  the R8xx/R9xx code currently references, and this tiling work is what
+  would make TeraScale 1's own field set relevant for the first time).
 
 - Reducing stencil resolve, `VK_RESOLVE_MODE_MIN_BIT` and
   `VK_RESOLVE_MODE_MAX_BIT`: the same shaders and dispatch as the depth reducing
