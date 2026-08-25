@@ -450,23 +450,47 @@ classic Gallium R600 driver that has supported this hardware for years).
   is a handful of fixed formulas over group bytes/pipes/banks/bytes-per-
   element/sample count, not an optimization search.
 
-  This covers only the foundational alignment math. Not yet done, and each
-  a substantial piece of its own: wiring this into `terakan_image.c`'s
-  surface layout computation (currently entirely R8xx/R9xx-shaped, gated
-  on `V_028C70_ARRAY_*` from `evergreend.h` -- TeraScale 1's equivalent
-  constants are `V_0280A0_ARRAY_*` in `r600d.h`, same numeric values,
-  confirmed, but the surrounding array-mode-selection logic needs its own
-  read-through before reuse can be assumed the way it could for
-  DB_DEPTH_CONTROL/CB_TARGET_MASK); per-level offset/size computation
-  and the degrade-to-1D-on-small-mip decision (`r6_surface_init_2d()`
-  calls back into `r6_surface_init_1d()` for a level once it degrades,
-  matching the R8xx/R9xx side's own equivalent behavior in spirit); and
+  A follow-up pass added per-level layout on top of that alignment math:
+  `terakan_image_tiling_terascale_1_mip_extent()` (`mip_minify()` in the
+  reference -- plain `u_minify()` for the base level, rounded up to the
+  next power of two for every level above it, since higher mips need
+  power-of-two dimensions for the tiled addressing scheme; confirmed this
+  isn't R8xx/R9xx-specific by finding the same "pow2Pad" rounding already
+  in `terakan_image_surface_aspect_compute()`, not assumed to carry over)
+  and `terakan_image_tiling_terascale_1_level_layout()` (`surf_minify()`
+  in the reference -- aligns already-minified pixel dimensions up to a
+  tiling mode's pitch/height alignment granularity and computes
+  pitch/slice byte sizes, including the degrade-to-1D-on-small-mip check
+  `r6_surface_init_2d()` uses before calling back into
+  `r6_surface_init_1d()` for a level that's too small to stay 2D-tiled).
+  Both are pure functions taking already-computed inputs (minified pixel
+  dimensions, alignment granularity from the `_alignments_*()` functions),
+  so walking a full mip chain to cumulative byte offsets -- what
+  `surf_minify()`'s own `offset`/`surf->bo_size` accumulation does across
+  levels in the reference -- is still the caller's job and not yet
+  written.
+
+  Still not done, and each a substantial piece of its own: wiring any of
+  this into `terakan_image.c`'s surface layout computation (currently
+  entirely R8xx/R9xx-shaped, gated on `V_028C70_ARRAY_*` from
+  `evergreend.h` -- TeraScale 1's equivalent constants are
+  `V_0280A0_ARRAY_*` in `r600d.h`, same numeric values, confirmed, but the
+  surrounding array-mode-selection logic needs its own read-through
+  before reuse can be assumed the way it could for
+  DB_DEPTH_CONTROL/CB_TARGET_MASK); the mip-chain-to-offsets walk just
+  described; array-layer/3D-depth-plane multiplication (left to the
+  caller by both `surf_minify()` and this port's `level_layout()`); and
   the `DB_DEPTH_INFO`/`CB_COLOR_INFO` register field computation this
   unblocks, which still needs its own per-field compatibility check
   against `r600d.h` (not yet done -- these registers weren't in the
   CB/DB/PA/SPI/SQ audit above, since that audit only covered registers
   the R8xx/R9xx code currently references, and this tiling work is what
-  would make TeraScale 1's own field set relevant for the first time).
+  would make TeraScale 1's own field set relevant for the first time;
+  spot-checked while writing this, though, and R600/R700's
+  `CB_COLOR0_INFO`/`DB_DEPTH_INFO` field sets are consistent with the
+  simpler algorithm above -- no `BANK_WIDTH`/`BANK_HEIGHT`/`NUM_BANKS`/
+  `MACRO_TILE_ASPECT` fields on either register, matching the tiling math
+  needing none of those inputs).
 
 - Reducing stencil resolve, `VK_RESOLVE_MODE_MIN_BIT` and
   `VK_RESOLVE_MODE_MAX_BIT`: the same shaders and dispatch as the depth reducing

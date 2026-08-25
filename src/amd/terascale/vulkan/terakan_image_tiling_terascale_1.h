@@ -28,10 +28,12 @@ extern "C" {
  * sample count, not a per-surface optimization search, which is why this is a much smaller port
  * than R8xx/R9xx's tiling code.
  *
- * This covers only the alignment math -- the foundational piece every further step (per-level
- * offset/size computation, degrade-to-1D-on-small-mip, and the DB_DEPTH_INFO/CB_COLOR_INFO field
- * computation this blocks per the CB/DB register audit in TODO.md) builds on. It is not wired into
- * terakan_image.c's surface layout computation yet; see TODO.md for what remains.
+ * This covers the pitch/height/base alignment math and per-level layout (mip extent, aligned
+ * pitch/height, pitch/slice byte size, and the degrade-to-1D-on-small-mip decision) -- the
+ * foundational pieces every further step (walking a full mip chain to cumulative offsets, and the
+ * DB_DEPTH_INFO/CB_COLOR_INFO field computation this blocks per the CB/DB register audit in
+ * TODO.md) builds on. It is not wired into terakan_image.c's surface layout computation yet; see
+ * TODO.md for what remains.
  *
  * 2D tiling additionally requires the kernel driver to actually support it
  * (surf_man->hw_info.allow_2d in the reference, gated on DRM minor version >= 14). Terakan already
@@ -78,6 +80,56 @@ terakan_image_tiling_terascale_1_alignments_2d_tiled_thin1(uint32_t group_bytes,
                                                             uint32_t num_pipes, uint32_t num_banks,
                                                             uint32_t bytes_per_element,
                                                             uint32_t samples, bool is_scanout);
+
+/* mip_minify() in the reference: level 0 is plain u_minify(); every level above that is additionally
+ * rounded up to the next power of two, since higher mip levels need power-of-two dimensions for the
+ * tiled addressing scheme -- R8xx/R9xx's terakan_image_surface_aspect_compute() does the same
+ * power-of-two rounding for its own mip chain (see the "pow2Pad" comment there), so this is not an
+ * R600/R700-specific idea, just the same requirement confirmed against this generation's own
+ * reference rather than assumed to carry over.
+ */
+uint32_t terakan_image_tiling_terascale_1_mip_extent(uint32_t base_extent, uint32_t level);
+
+struct terakan_image_tiling_terascale_1_level_layout {
+   /* Aligned up to the tiling mode's pitch/height alignment granularity (the .pitch_surfels/
+    * .height_surfels fields the _alignments_*() functions above return); npix_x/npix_y before
+    * alignment, in surfels, are the caller's job via
+    * terakan_image_tiling_terascale_1_mip_extent(), matching the reference's surf_minify() taking
+    * already-minified dimensions.
+    */
+   uint32_t aligned_pitch_surfels;
+   uint32_t aligned_height_surfels;
+   uint32_t pitch_bytes;
+   /* One array slice/depth plane; the caller multiplies by array_layers/depth itself, matching
+    * surf_minify() leaving that multiplication to its own caller (r6_surface_init_2d()'s
+    * `surf->bo_size = offset + surflevel->slice_size * surflevel->nblk_z * surf->array_size`).
+    */
+   uint64_t slice_bytes;
+   /* True when npix_x/npix_y (post-minify, pre-alignment) are smaller than the 2D tiling mode's own
+    * pitch/height alignment -- surf_minify()'s degrade check
+    * (`if (surflevel->nblk_x < xalign || surflevel->nblk_y < yalign) { mode = RADEON_SURF_MODE_1D;
+    * return; }`), which the reference only applies for single-sample 2D-tiled, non-FMASK surfaces
+    * (mirrored here by only being meaningful when the caller passes 2D-tiled alignments and
+    * samples == 1). When true, none of the other fields in this struct are populated -- the caller
+    * must recompute this level's layout using the 1D-tiled alignments instead, exactly as
+    * r6_surface_init_2d() calls back into r6_surface_init_1d() for the level that degrades.
+    */
+   bool degrades_to_1d_tiled_thin1;
+};
+
+/* surf_minify(), given already-minified pixel dimensions (see
+ * terakan_image_tiling_terascale_1_mip_extent()) and the tiling mode's alignment (see the
+ * _alignments_*() functions above). is_2d_tiled_single_sample selects whether the degrade-to-1D
+ * check applies, matching the reference's `nsamples == 1 && mode == RADEON_SURF_MODE_2D` condition
+ * (FMASK is excluded there too, but this driver has no FMASK support to model -- see the file
+ * comment above).
+ */
+struct terakan_image_tiling_terascale_1_level_layout
+terakan_image_tiling_terascale_1_level_layout(uint32_t npix_x, uint32_t npix_y,
+                                               uint32_t pitch_alignment_surfels,
+                                               uint32_t height_alignment_surfels,
+                                               uint32_t bytes_per_element, uint32_t samples,
+                                               bool is_2d_tiled_single_sample);
 
 #ifdef __cplusplus
 }

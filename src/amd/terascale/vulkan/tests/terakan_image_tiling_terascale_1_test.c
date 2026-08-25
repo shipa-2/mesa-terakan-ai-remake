@@ -115,11 +115,73 @@ test_2d_tiled_thin1(void)
    CHECK(floored.pitch_surfels == 64);
 }
 
+static void
+test_mip_extent(void)
+{
+   /* Level 0 is plain u_minify, no power-of-two rounding. */
+   CHECK(terakan_image_tiling_terascale_1_mip_extent(100, 0) == 100);
+   /* Level > 0: u_minify(100, 1) = 50, rounded up to the next power of two, 64. */
+   CHECK(terakan_image_tiling_terascale_1_mip_extent(100, 1) == 64);
+   /* u_minify(100, 2) = 25, rounded up to 32. */
+   CHECK(terakan_image_tiling_terascale_1_mip_extent(100, 2) == 32);
+   /* u_minify floors at 1 (never 0), and next_power_of_two(1) = 1. */
+   CHECK(terakan_image_tiling_terascale_1_mip_extent(1, 5) == 1);
+   /* An already-power-of-two minified size stays unchanged. */
+   CHECK(terakan_image_tiling_terascale_1_mip_extent(17, 1) == 8);
+}
+
+static void
+test_level_layout(void)
+{
+   /* RV710's real 2D-tiled alignment for bpe=4, samples=1 (from test_2d_tiled_thin1 above):
+    * pitch_alignment=128, height_alignment=16.
+    */
+   uint32_t const pitch_alignment = 128, height_alignment = 16;
+
+   /* Large enough not to degrade: aligned_pitch = ALIGN_POT(300, 128) = 384,
+    * aligned_height = ALIGN_POT(50, 16) = 64. pitch_bytes = 384*4 = 1536,
+    * slice_bytes = 1536*64 = 98304.
+    */
+   struct terakan_image_tiling_terascale_1_level_layout const large =
+      terakan_image_tiling_terascale_1_level_layout(300, 50, pitch_alignment, height_alignment, 4, 1,
+                                                     true);
+   CHECK(!large.degrades_to_1d_tiled_thin1);
+   CHECK(large.aligned_pitch_surfels == 384);
+   CHECK(large.aligned_height_surfels == 64);
+   CHECK(large.pitch_bytes == 1536);
+   CHECK(large.slice_bytes == 98304);
+
+   /* Smaller than the pitch alignment: degrades to 1D, per surf_minify()'s own check. */
+   struct terakan_image_tiling_terascale_1_level_layout const small_pitch =
+      terakan_image_tiling_terascale_1_level_layout(100, 50, pitch_alignment, height_alignment, 4, 1,
+                                                     true);
+   CHECK(small_pitch.degrades_to_1d_tiled_thin1);
+
+   /* Smaller than the height alignment: also degrades. */
+   struct terakan_image_tiling_terascale_1_level_layout const small_height =
+      terakan_image_tiling_terascale_1_level_layout(300, 8, pitch_alignment, height_alignment, 4, 1,
+                                                     true);
+   CHECK(small_height.degrades_to_1d_tiled_thin1);
+
+   /* The degrade check is skipped when is_2d_tiled_single_sample is false (e.g. computing a 1D-tiled
+    * or multisampled level, which never degrades further): the same small dimensions as above just
+    * get aligned up instead.
+    */
+   struct terakan_image_tiling_terascale_1_level_layout const not_2d_single_sample =
+      terakan_image_tiling_terascale_1_level_layout(100, 50, pitch_alignment, height_alignment, 4, 1,
+                                                     false);
+   CHECK(!not_2d_single_sample.degrades_to_1d_tiled_thin1);
+   CHECK(not_2d_single_sample.aligned_pitch_surfels == 128);
+   CHECK(not_2d_single_sample.aligned_height_surfels == 64);
+}
+
 int
 main(void)
 {
    test_linear_aligned();
    test_1d_tiled_thin1();
    test_2d_tiled_thin1();
+   test_mip_extent();
+   test_level_layout();
    return 0;
 }
