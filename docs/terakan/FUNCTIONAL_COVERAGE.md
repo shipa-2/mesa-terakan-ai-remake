@@ -126,6 +126,19 @@ just locks in that the current gap is a silent no-op rather than the
 silent corruption it looked like it could be, so a future unrelated change
 cannot regress into that worse failure mode unnoticed.
 
+`terakan_storage_format_matrix` walks 28 storage-image formats spanning every
+class Terakan advertises -- UNORM, SNORM, packed 10/11-bit, 16- and 32-bit
+float, and UINT/SINT at 8/16/32 bits, one to four channels -- storing a known
+value through a formatless storage image and loading the same texel back in a
+single dispatch (a coherent image plus memoryBarrierImage(), which is what
+makes a same-invocation store-then-load of one address well defined). All 28
+are advertised as storage images and all 28 round-trip correctly on real
+CAICOS hardware, none skipped. Only the channels a format actually has are
+compared, since a one-channel format loads as (r, 0, 0, 1), and tolerances are
+per format. Together with terakan_storage_image_atomic this closes the
+load/store and atomic halves of the storage-image coverage item; what remains
+there is shaderStorageImageMultisample.
+
 `terakan_stencil_only_render` closes the long-open "stencil-only render
 targets on combined depth/stencil images" P0 item, which two earlier
 investigation passes had failed to reproduce at all. Two changes in approach
@@ -259,6 +272,7 @@ terakan_compute_loop
 terakan_formatless_image_store
 terakan_extended_format_storage_image
 terakan_storage_image_atomic
+terakan_storage_format_matrix
 terakan_dynamic_offset_bounds
 terakan_clip_distance
 terakan_depth_readback
