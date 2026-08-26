@@ -1929,17 +1929,28 @@ terakan_meta_query_copy_init_offsets(VkQueryPipelineStatisticFlags const flags,
 {
    /* Initialize `32_BIT_DST_#_TO_RESULT_END`, which are subtracted from the end (availability)
     * address.
+    *
+    * These are indexed by hardware counter, not by VkQueryPipelineStatisticFlags bit: that is the
+    * order SAMPLE_PIPELINESTAT writes the samples in, the order the copy shader walks them in, and
+    * the order the 64-bit chaining below assumes. The two orders are not the same -- the hardware
+    * writes the fragment-shader counter first and the input-assembly ones near the end -- so
+    * indexing this by the flag bit put every counter at the offset belonging to some unrelated one.
+    *
+    * The destination order is still the flag-bit order the specification requires, because
+    * u_foreach_bit walks the flags from the lowest bit up and hands out the offsets from the
+    * furthest-from-the-end slot down.
     */
-   unsigned end_to_next_vk_counter = util_bitcount((uint32_t)flags);
    for (unsigned counter_index = 0; counter_index < TERAKAN_QUERY_PIPELINESTAT_HW_COUNTER_COUNT;
         ++counter_index) {
-      /* If a counter is not enabled, specify any offset that would point to a location within the
-       * boundaries of the result (for any calculations involving those offsets to behave safely).
+      /* A counter that is not enabled needs any offset that points within the boundaries of the
+       * result, so that calculations involving it stay safe.
        */
-      offsets_32_bit_out[counter_index] =
-         flags & (VkQueryPipelineStatisticFlagBits)((uint32_t)1 << counter_index)
-            ? (int8_t)end_to_next_vk_counter--
-            : 1;
+      offsets_32_bit_out[counter_index] = 1;
+   }
+   unsigned end_to_next_vk_counter = util_bitcount((uint32_t)flags);
+   u_foreach_bit (pipelinestat_vk_index, (uint32_t)flags) {
+      offsets_32_bit_out[terakan_query_pipelinestat_vk_hw_counters[pipelinestat_vk_index]] =
+         (int8_t)end_to_next_vk_counter--;
    }
 
    /* Initialize the 64-bit result offsets in dwords, which start from the counter 10's address
@@ -2162,6 +2173,14 @@ terakan_CmdCopyQueryPoolResults(VkCommandBuffer const commandBuffer, VkQueryPool
               TERAKAN_COLOR_DESCRIPTOR_BUFFER_UAV_INFO_CONST_FIELDS,
       .attrib = TERAKAN_COLOR_DESCRIPTOR_BUFFER_UAV_ATTRIB,
    };
+   /* PITCH_TILE_MAX and SLICE_TILE_MAX mean nothing to the hardware for a buffer UAV, but DRM
+    * Radeon validates the colour surface from them whether or not it is one, and rejects the whole
+    * submission when the pitch they describe is not a multiple of 64. Left at zero they describe a
+    * pitch of 8, so every vkCmdCopyQueryPoolResults was rejected outright. Unlike base and dim
+    * below, they do not depend on the batch, so they are filled in once here.
+    */
+   terakan_color_descriptor_calculate_buffer_pitch_slice(&dst_uav, sizeof(uint32_t),
+                                                         physical_device);
 
    uint32_t const constants_size_bytes =
       sizeof(uint32_t) * (query_pool->vk.query_type == VK_QUERY_TYPE_PIPELINE_STATISTICS
@@ -2281,11 +2300,17 @@ terakan_CmdCopyQueryPoolResults(VkCommandBuffer const commandBuffer, VkQueryPool
       dst_va = dst_va_aligned + sizeof(uint32_t) * ((VkDeviceSize)dst_uav.dim + 1);
    }
 
-   /* TODO(Triang3l): Integrate into the barrier infrastructure (the application should insert the
-    * barrier, since it's just a transfer to a buffer). In addition, make sure that
-    * `vkCmdResetQueryPool` for the queries being copied doesn't start being executed before the
-    * last `vkCmdCopyQueryPoolResults` for it has finished reading the availability.
+   /* The copy is a transfer to a buffer, so making its writes visible to whatever reads them next
+    * is the application's barrier to insert. What is not the application's problem, and what this
+    * SURFACE_SYNC does not cover, is the query pool on the source side: the samples and the
+    * availability are read here by a vertex shader, and rewritten by vkCmdResetQueryPool,
+    * vkCmdBeginQuery and vkCmdEndQuery from the ME, which runs far ahead of it. Raise a pending
+    * VS partial flush so that the next of those waits for this copy to finish fetching -- see
+    * terakan_query_sync_before_pool_write. Deferring it rather than waiting here keeps a run of
+    * back-to-back copies down to a single wait, and costs nothing at all when the pool is never
+    * reused.
     */
+   command_writer->pending_barrier_actions |= TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_VS;
    {
       packet = terakan_gfx_command_writer_emit(command_writer,
                                                TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_OTHER, 5);

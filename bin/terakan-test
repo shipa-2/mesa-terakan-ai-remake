@@ -61,6 +61,7 @@ gpu_tests=(
   terakan_extended_format_storage_image
   terakan_storage_image_atomic
   terakan_attachmentless_atomic
+  terakan_query_sync
   terakan_storage_format_matrix
   terakan_shadow_compare
   terakan_layered_depth_render

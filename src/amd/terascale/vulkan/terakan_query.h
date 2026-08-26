@@ -64,6 +64,10 @@ enum terakan_query_pipelinestat_hw_counter {
    TERAKAN_QUERY_PIPELINESTAT_HW_COUNTER_COUNT,
 };
 
+/* Mapping of log2(VkQueryPipelineStatisticFlagBits) to hardware counter indices. */
+extern enum terakan_query_pipelinestat_hw_counter const
+   terakan_query_pipelinestat_vk_hw_counters[TERAKAN_QUERY_PIPELINESTAT_HW_COUNTER_COUNT];
+
 struct terakan_query_pool {
    struct vk_query_pool vk;
 

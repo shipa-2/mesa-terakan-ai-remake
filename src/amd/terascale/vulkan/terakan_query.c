@@ -98,8 +98,11 @@ terakan_query_get_sample_index(VkQueryType const query_type, uint32_t const quer
    }
 }
 
-/* Mapping of log2(VkQueryPipelineStatisticFlagBits) to hardware counter indices. */
-static enum terakan_query_pipelinestat_hw_counter const
+/* Mapping of log2(VkQueryPipelineStatisticFlagBits) to hardware counter indices. Not the identity:
+ * SAMPLE_PIPELINESTAT writes the counters in the hardware's own order, which has nothing to do with
+ * the order of the bits in VkQueryPipelineStatisticFlags.
+ */
+enum terakan_query_pipelinestat_hw_counter const
    terakan_query_pipelinestat_vk_hw_counters[] = {
       TERAKAN_QUERY_PIPELINESTAT_HW_COUNTER_IA_VERTICES,
       TERAKAN_QUERY_PIPELINESTAT_HW_COUNTER_IA_PRIMITIVES,
@@ -139,6 +142,28 @@ terakan_query_pool_vk_result_size_counters(struct terakan_query_pool const * con
    }
 }
 
+/* Query pool memory is written by the ME -- the availability fills of vkCmdResetQueryPool and
+ * vkCmdEndQuery go through CP DMA, and the samples themselves through EVENT_WRITE -- while
+ * vkCmdCopyQueryPoolResults reads that same memory from a vertex shader in a meta draw. The ME runs
+ * ahead of the shader pipeline, so nothing in the command stream keeps the two apart on its own: an
+ * application that copies results and then resets or reuses the same queries, which is the ordinary
+ * per-frame pattern, would have the reset's fill land in the middle of a copy still fetching from
+ * it, and read back a mix of the old and new contents.
+ *
+ * The copy does not drain the pipeline itself. It raises
+ * TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_VS as a pending barrier action instead, so a run
+ * of back-to-back copies -- one per query pool, say -- costs one wait rather than one per copy.
+ * The wait is emitted here, immediately before the first write that could overtake it. When no copy
+ * is outstanding the pending action is clear and terakan_barrier_emit_pending_actions returns
+ * without emitting anything.
+ */
+static void
+terakan_query_sync_before_pool_write(struct terakan_gfx_command_writer * const command_writer)
+{
+   terakan_barrier_emit_pending_actions(command_writer,
+                                        TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_VS);
+}
+
 VKAPI_ATTR void VKAPI_CALL
 terakan_CmdResetQueryPool(VkCommandBuffer const commandBuffer, VkQueryPool const queryPool,
                           uint32_t firstQuery, uint32_t queryCount)
@@ -151,18 +176,18 @@ terakan_CmdResetQueryPool(VkCommandBuffer const commandBuffer, VkQueryPool const
    }
    struct terakan_gfx_command_writer * const command_writer =
       terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx;
-   /* TODO(Triang3l): This must not be done while vkCmdCopyQueryPoolResults is still fetching the
-    * availability. VS_PARTIAL_FLUSH maybe if there's outstanding query copying.
-    */
+   terakan_query_sync_before_pool_write(command_writer);
    /* Mark as unavailable. */
    terakan_cp_dma_fill(
       command_writer, 0, query_pool->bo,
       query_pool->bo->va + terakan_query_pool_availability_offset_bytes(query_pool, firstQuery),
       TERAKAN_BO_PRIORITY_QUERY, (VkDeviceSize)sizeof(uint32_t) * queryCount);
-   terakan_cp_dma_sync_cp_me(command_writer);
-   /* TODO(Triang3l): Maybe sync before the next query access, not immediately here, possibly more
-    * granularly than to all CP DMA operations in general.
+   /* Not deferred to the next query access: terakan_cp_dma_sync_cp_me emits nothing, it only sets
+    * the sync bit in the CP DMA packet that was just written, so there is nothing to save by
+    * putting it off -- and the packet has to be reachable when it happens, which it stops being
+    * once the indirect buffer is closed.
     */
+   terakan_cp_dma_sync_cp_me(command_writer);
 }
 
 static void
@@ -197,6 +222,8 @@ terakan_CmdBeginQueryIndexedEXT(VkCommandBuffer const commandBuffer, VkQueryPool
 
    struct terakan_gfx_command_writer * const command_writer =
       terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx;
+
+   terakan_query_sync_before_pool_write(command_writer);
 
    /* Sample the initial value, and make sure the final value of the hardware counters for the query
     * type is sampled at the end of the indirect buffer in case this query ends up spanning multiple
@@ -356,6 +383,8 @@ terakan_CmdEndQueryIndexedEXT(VkCommandBuffer const commandBuffer, VkQueryPool c
 
    struct terakan_gfx_command_writer * const command_writer =
       terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx;
+
+   terakan_query_sync_before_pool_write(command_writer);
 
    VkDeviceSize const samples_offset_bytes =
       terakan_query_pool_samples_offset_bytes(query_pool, query);
@@ -634,6 +663,8 @@ terakan_CmdWriteTimestamp2(VkCommandBuffer const commandBuffer,
 
    struct terakan_gfx_command_writer * const command_writer =
       terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx;
+
+   terakan_query_sync_before_pool_write(command_writer);
 
    uint64_t const sample_va =
       query_pool->bo->va + terakan_query_pool_samples_offset_bytes(query_pool, query);

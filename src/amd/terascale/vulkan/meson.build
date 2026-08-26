@@ -1504,6 +1504,27 @@ if with_tests
         timeout : 20,
       )
 
+      terakan_query_sync_test = executable(
+        'terakan_query_sync_test',
+        [
+          'tests/terakan_query_sync_test.cpp',
+          terakan_color_msaa_write_vertex_spv,
+          terakan_color_msaa_write_fragment_spv,
+        ],
+        dependencies : vulkan_loader_dep,
+      )
+      test(
+        'terakan_query_sync',
+        terakan_query_sync_test,
+        depends : [libvulkan_terascale, _dev_icd],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 30,
+      )
+
       terakan_depth_resolve_test = executable(
         'terakan_depth_resolve_test',
         ['tests/terakan_depth_resolve_test.cpp'],
