@@ -69,7 +69,7 @@ classic Gallium R600 driver that has supported this hardware for years).
 | Work item | Importance | Complexity | Feasibility | Acceptance criteria |
 |---|---:|---:|---|---|
 | ~~Determine real per-family render backend counts~~ | 5/5 | 2/5 | Done: `max_render_backends_log2` is now populated from `RADEON_INFO_NUM_BACKENDS`, queried by the drm_radeon winsys for TeraScale 1 devices and required to succeed, matching the classic R600 driver's own unconditional query-and-fail-if-missing behavior. Confirmed on real RV710 hardware (ioctl reports 1 backend). R8xx/R9xx keep their existing static table, untouched | A real value backs `max_render_backends_log2` for every recognized TeraScale 1 chip family, sourced from kernel query or documented per-family reference, not guessed |
-| Wire the TeraScale 1 register-emission helpers into command buffer recording, keep surveying and porting per-draw CB/DB state, and build command stream submission | 5/5 | 5/5 | The begin-command-buffer atom is now wired in: `terakan_hw_config_shared_indirect_buffer_begun()` branches on `chip_info->is_terascale_1` and calls the already-tested `terakan_hw_config_shared_terascale_1_write_sq_config()`/`_write_context_defaults()` instead of the R8xx/R9xx SQ_CONFIG block. DB_DEPTH_CONTROL/CB_TARGET_MASK turned out to need no separate TeraScale 1 code at all -- see the "no separate emission path needed" bullet below -- so the dedicated writer functions for them were retired as redundant. Two latent correctness bugs were found and fixed in the same pass: `terakan_hw_config_shared_draw_emit_sq_thread_stack_resource_mgmt()`, `_compute_emit_sq_thread_stack_resource_mgmt()`, and the LDS resource management block in `terakan_hw_config_shared_draw_emit_modified()` were all guarded only against `is_r9xx`, so TeraScale 1 (`is_r9xx` false) would have fallen through into writing R_008C18_SQ_THREAD_RESOURCE_MGMT_1 and R_008E2C_SQ_LDS_RESOURCE_MGMT once it ever reached command buffer recording -- neither register exists in `r600d.h` at all, so this would have hit whatever unrelated register (if any) actually lives at those offsets on real hardware. All three now also check `is_terascale_1` and skip; TeraScale 1 compute/LDS thread-stack configuration remains unresearched (no register decided) rather than guessed. Most of the rest of CB/DB per-draw state remains unsurveyed, and where it is surveyed it is not uniformly compatible -- CB_COLOR_CONTROL at 0x028808, for instance, has a 3-bit field at the same bit position (4) that means SPECIAL_OP on R600/R700 and MODE on Evergreen-and-later, an incompatible field with no shared meaning, so each register needs checking against both `r600d.h` and `evergreend.h` before assuming either compatibility or divergence. CB_COLOR*_BASE/INFO/SIZE (the actual render target binding) is blocked on tiling/surface addressing, the item below, since it needs surface pitch/slice tile counts that do not exist for TeraScale 1 yet. `terakan_CreateDevice`'s explicit refusal of TeraScale 1 physical devices is unchanged -- none of this is reachable yet | `vkCreateDevice` succeeds on a TeraScale 1 physical device and a trivial compute dispatch completes |
+| Wire the TeraScale 1 register-emission helpers into command buffer recording, keep surveying and porting per-draw CB/DB state, and build command stream submission | 5/5 | 5/5 | Minimal logical-device creation is now enabled only for hardware-validated R700: physical-device ISA selection, conservative maximum BO alignment and internal allocations are derived from the actual chip family and DRM-reported tiling/backend topology. R600 remains refused. The begin-command-buffer atom is wired to the separate TeraScale 1 SQ/default-register writers, but queue submission still returns `VK_ERROR_DEVICE_LOST` before the winsys because the remaining per-draw packets and meta shaders are not hardware-validated. Real RV710 `1002:954f` passes create/destroy and the guarded-submit negative check. | A trivial graphics submission completes on R700 with register and memory readback checks |
 | TeraScale 1 tiling/surface addressing (bank/pipe swizzle, macro-tile layout) | 5/5 | 5/5 | Started: the pitch/height/base-alignment math (`terakan_image_tiling_terascale_1.c`) is ported and unit-tested against real RV710 tiling parameters, but not wired into `terakan_image.c`'s surface layout computation yet, and the much larger remaining pieces -- per-level offset/size computation, degrade-to-1D-on-small-mip, and the DB_DEPTH_INFO/CB_COLOR_INFO field computation this blocks -- are still fully open. This remains the highest-risk area, since a wrong tiling computation corrupts memory silently rather than failing loudly | A buffer/image round trip through the tiled surface layout matches, the same class of check `terakan_image.c` already does for R8xx/R9xx |
 | Port the hand-written meta shader bytecode (blit/resolve/clear/copy/query, all of `src/amd/terascale/vulkan/meta/`) to the R6xx/R7xx CF/ALU/TEX instruction encoding | 4/5 | 5/5 | The NIR-to-bytecode compiler (SFN, `src/gallium/drivers/r600/sfn/`) already accepts `amd_gfx_level` including `R600`/`R700` distinct from `EVERGREEN`, since the classic Gallium R600 driver already uses it for this hardware -- shaders reaching the driver through NIR may need only the right `gfx_level` threaded through, but the meta shaders are hand-written Evergreen-only bytecode and need real per-generation variants | Each meta operation this driver depends on (at minimum blit and clear) passes its existing readback test on TeraScale 1 hardware |
 | Recognize R600/R700 PCI IDs and correctly plumb `gfx_level` through the NIR shader path for real application shaders | 4/5 | 2/5 | The `is_chip_family_supported`/`chip_info_init` work recognizes the full R600..RV740 range. Shader compilation now maps R600 and R700 separately to `R600`/`ISA_CC_R600` and `R700`/`ISA_CC_R700` instead of treating both as Evergreen, with boundary coverage in `terakan_shader_generation_test`; what remains is confirming no Evergreen-specific assumption leaks into `terakan_nir_*` lowering | A real application vertex/fragment shader compiles and renders correctly on TeraScale 1 |
@@ -86,11 +86,9 @@ classic Gallium R600 driver that has supported this hardware for years).
   register set where R8xx/R9xx has a tessellation-stage-indexed one --
   populating that struct needed a genuinely separate code path through
   `terakan_physical_device_chip_info_init`, not new switch cases plugged into
-  the existing one. `terakan_CreateDevice` explicitly and cleanly refuses
-  TeraScale 1 physical devices (`VK_ERROR_INITIALIZATION_FAILED`) rather than
-  building and submitting a command stream from hardware state that was never
-  actually computed for this generation, since that configuration and command
-  building do not exist yet (see the section above). Verified on real RV710
+  the existing one. Minimal `terakan_CreateDevice` bring-up is enabled only for
+  hardware-validated R700, while R600 is still refused and R700 queue submission
+  is stopped before the winsys until its command stream is verified. Verified on real RV710
   (R700) hardware installed alongside a Cedar (R8xx) card on the same machine;
   `terakan_terascale_1_enumeration` covers it and passes trivially (nothing to
   check) on machines with no TeraScale 1 hardware installed.
@@ -241,8 +239,8 @@ classic Gallium R600 driver that has supported this hardware for years).
   `terakan_hw_config_shared_terascale_1_write_sq_config()`/
   `_write_context_defaults()` in place of the R8xx/R9xx SQ_CONFIG block, so
   the atom written and tested in an earlier pass is now actually reachable
-  from command buffer recording (once `terakan_CreateDevice`'s refusal is
-  eventually lifted, which it still is not). Auditing the surrounding code
+  from command buffer recording. Minimal R700 device creation now reaches this
+  setup, though queue submission is still guarded. Auditing the surrounding code
   for other places gated on `is_r9xx` alone -- since `is_terascale_1` chips
   have `is_r9xx == false` too, the same as R8xx -- turned up two functions
   that would have miscompiled TeraScale 1 command buffers had they run
@@ -524,11 +522,9 @@ classic Gallium R600 driver that has supported this hardware for years).
   a complete `terakan_image_surface` the same shape
   `terakan_image_surface_compute()` itself produces, including the
   combined-depth-stencil array-mode sharing R8xx/R9xx already does.
-  **This integration is UNTESTED beyond code review and does not have a
-  unit test**, unlike every other piece of the TeraScale 1 port so far:
-  `terakan_CreateDevice` still refuses TeraScale 1 physical devices, so
-  there is no way to actually call `vkCreateImage` on this generation and
-  observe real behavior, and the function is not unit-testable in
+  **This integration has no GPU readback validation and does not have a
+  focused unit test**: R700 device creation can now call `vkCreateImage`, but
+  queue submission remains disabled, and the function is not unit-testable in
   isolation the way the pure tiling-math functions it calls are (it needs
   real `VkImageCreateInfo`/`terakan_format_info`/`terakan_physical_device`
   inputs). Treat it as a draft to re-verify once TeraScale 1 device

@@ -3,19 +3,18 @@
  * SPDX-License-Identifier: MIT
  */
 
-/* TeraScale 1 (R600/R700) physical devices enumerate and report properties, but vkCreateDevice
- * refuses them cleanly: the hardware register configuration (SQ/CB/DB state setup, command stream
- * building) for that generation does not exist yet, only R8xx/Evergreen-and-later's does. This is
- * the first step of porting Terakan to R700, ported no further than this yet -- see the comment on
- * terakan_physical_device_chip_info::is_terascale_1 and terakan_CreateDevice.
+/* TeraScale 1 physical devices enumerate and report properties. On hardware-validated R700,
+ * vkCreateDevice additionally performs the minimal logical-device bring-up, while R600 is still
+ * refused cleanly. Queue submission remains disabled on both until the command stream is validated.
  *
  * Meaningful only on a machine with a TeraScale 1 card actually installed; there is no requirement
- * that one be present; the check machines this project has been developed on so far have none.
- * When none is found, this reports that plainly and passes, since there is nothing to check.
+ * that one be present. When none is found, this reports that plainly and passes, since there is
+ * nothing to check.
  */
 
 #include <vulkan/vulkan.h>
 
+#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -27,6 +26,13 @@
          return 1;                                                                                 \
       }                                                                                            \
    } while (0)
+
+static bool
+device_name_is_r700(char const * const device_name)
+{
+   return strstr(device_name, "RV770") != NULL || strstr(device_name, "RV730") != NULL ||
+          strstr(device_name, "RV710") != NULL || strstr(device_name, "RV740") != NULL;
+}
 
 int
 main(void)
@@ -87,18 +93,42 @@ main(void)
       VkDevice device;
       VkResult const create_result =
          vkCreateDevice(physical_devices[device_index], &device_info, NULL, &device);
-      if (create_result == VK_SUCCESS) {
-         /* Not implemented yet, so success here would mean it silently started submitting command
-          * streams built from state that was never actually computed for this generation --
-          * exactly what terakan_CreateDevice's refusal exists to prevent.
-          */
-         fprintf(stderr, "  vkCreateDevice unexpectedly succeeded on %s\n", properties.deviceName);
-         vkDestroyDevice(device, NULL);
+      if (device_name_is_r700(properties.deviceName)) {
+         if (create_result != VK_SUCCESS) {
+            fprintf(stderr, "  vkCreateDevice failed with %d on hardware-validated R700\n",
+                    create_result);
+            ++failures;
+         } else {
+            fprintf(stderr, "  minimal R700 vkCreateDevice succeeded\n");
+
+            VkQueue queue;
+            vkGetDeviceQueue(device, 0, 0, &queue);
+            VkSubmitInfo const empty_submit = {
+               .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+            };
+            VkResult const submit_result = vkQueueSubmit(queue, 1, &empty_submit, VK_NULL_HANDLE);
+            if (submit_result != VK_ERROR_DEVICE_LOST) {
+               fprintf(
+                  stderr,
+                  "  guarded R700 queue submission returned %d, expected VK_ERROR_DEVICE_LOST\n",
+                  submit_result);
+               ++failures;
+            } else {
+               fprintf(stderr, "  R700 queue submission remains safely disabled\n");
+            }
+         }
+      } else if (create_result == VK_SUCCESS) {
+         fprintf(stderr, "  vkCreateDevice unexpectedly succeeded on unvalidated TeraScale 1 %s\n",
+                 properties.deviceName);
          ++failures;
       } else if (create_result != VK_ERROR_INITIALIZATION_FAILED) {
-         fprintf(stderr, "  vkCreateDevice failed with %d, expected VK_ERROR_INITIALIZATION_FAILED\n",
+         fprintf(stderr,
+                 "  vkCreateDevice failed with %d, expected VK_ERROR_INITIALIZATION_FAILED\n",
                  create_result);
          ++failures;
+      }
+      if (create_result == VK_SUCCESS) {
+         vkDestroyDevice(device, NULL);
       }
    }
 

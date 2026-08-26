@@ -19,13 +19,10 @@ struct terakan_physical_device;
 
 /* TeraScale 1 (R600/R700) counterpart to terakan_image_surface_compute() (terakan_image.c),
  * assembled from the pure, already-unit-tested tiling functions in
- * terakan_image_tiling_terascale_1.c. Not called from anywhere yet -- terakan_CreateDevice still
- * refuses TeraScale 1 physical devices, so there is no way to exercise image creation on this
- * generation at all, which means this function is UNTESTED beyond code review: unlike every other
- * piece of the TeraScale 1 port so far, there is no unit test or real-hardware run backing it, only
- * a careful line-by-line structural match against terakan_image_surface_compute()'s own,
- * already-working R8xx/R9xx logic. Treat it as a draft to re-verify once TeraScale 1 device creation
- * exists and image creation can actually run, not as verified working code.
+ * terakan_image_tiling_terascale_1.c. R700 logical-device creation can now reach this function, but
+ * image layout has not been validated through GPU readback because queue submission remains
+ * disabled. Unlike the pure tiling helpers it calls, this integration has no focused unit test yet;
+ * treat it as a draft until create/bind plus GPU readback coverage exists.
  *
  * Does not handle formats needing block_texels_log2-based block-width/height division: the
  * 4x4-compressed formats (BC1-7 and friends) and the 8x1/2x1 subsampled ones both need the

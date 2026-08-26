@@ -173,10 +173,15 @@ terakan_device_init(struct terakan_device * const device,
          DIV_ROUND_UP(physical_device->chip_info.uav_immediate_size_elements << element_bytes_log2,
                       (uint32_t)1 << 8);
    }
+   /* R700 has no Evergreen RAT immediate-return storage. Keep one aligned page as an inert
+    * bootstrap allocation so logical-device construction has valid BO bookkeeping while command
+    * submission remains disabled for this bring-up stage. Do not invent a hardware element count.
+    */
+   VkDeviceSize const uav_immediate_bo_bytes =
+      MAX2((VkDeviceSize)uav_immediate_bo_bytes_shr8 << 8, (VkDeviceSize)1 << 8);
    result = device->winsys_fn->bo->allocate_device_memory(
-      device, uav_immediate_bo_bytes_shr8 << 8, (VkDeviceSize)1 << 8,
-      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0, NULL, VK_SYSTEM_ALLOCATION_SCOPE_DEVICE,
-      &device->uav_immediate_bo);
+      device, uav_immediate_bo_bytes, (VkDeviceSize)1 << 8, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0,
+      NULL, VK_SYSTEM_ALLOCATION_SCOPE_DEVICE, &device->uav_immediate_bo);
    if (result != VK_SUCCESS) {
       result =
          vk_errorf(physical_device->vk.instance, result,
@@ -376,17 +381,18 @@ terakan_CreateDevice(VkPhysicalDevice const physicalDevice,
    struct terakan_physical_device * const physical_device =
       terakan_physical_device_from_handle(physicalDevice);
 
-   /* TeraScale 1 (R600/R700) enumerates and reports properties correctly, but nothing past that:
-    * the hardware register configuration (SQ/CB/DB state setup, command stream building) for it
-    * does not exist yet, only the R8xx/Evergreen-and-later one does. Refuse cleanly here rather
-    * than building and submitting a command stream from state that was never actually computed for
-    * this generation -- see the comment on terakan_physical_device_chip_info::terascale_1.
+   /* The minimal logical-device bring-up is intentionally R700-only. Its ISA, BO alignment and
+    * fixed SQ configuration are selected from the actual chip family and DRM tiling/backend
+    * queries. R600 has a separate instruction encoding and register defaults and remains closed
+    * until it gets its own hardware validation.
     */
-   if (physical_device->chip_info.is_terascale_1) {
-      return vk_errorf(physical_device->vk.instance, VK_ERROR_INITIALIZATION_FAILED,
-                       "TeraScale 1 (%s) is recognized but device creation is not implemented yet; "
-                       "only enumeration and property reporting work so far",
-                       terakan_physical_device_chip_family_name(physical_device->chip_info.chip_family));
+   if (physical_device->chip_info.is_terascale_1 &&
+       !terakan_physical_device_chip_family_is_r700(physical_device->chip_info.chip_family)) {
+      return vk_errorf(
+         physical_device->vk.instance, VK_ERROR_INITIALIZATION_FAILED,
+         "TeraScale 1 %s is recognized, but minimal logical-device bring-up is "
+         "enabled only for hardware-validated R700 devices",
+         terakan_physical_device_chip_family_name(physical_device->chip_info.chip_family));
    }
 
    struct terakan_device * device;

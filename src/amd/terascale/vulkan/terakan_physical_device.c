@@ -28,6 +28,7 @@
 #include "terakan_physical_device.h"
 
 #include "terakan_physical_device_backend_count.h"
+#include "terakan_physical_device_tiling_config.h"
 
 #include "terakan_descriptor.h"
 #include "terakan_entrypoints.h"
@@ -36,6 +37,7 @@
 #include "terakan_instance.h"
 #include "terakan_limits.h"
 #include "terakan_push_constants.h"
+#include "terakan_shader_generation.h"
 #include "terakan_vertex_input.h"
 #include "terakan_vk_state.h"
 #include "terakan_wsi.h"
@@ -1494,9 +1496,15 @@ terakan_physical_device_init(
     * the image alignment. It's normally 256 bytes, but potentially can be 512 bytes, depending on
     * device. It's also not smaller than the kcache buffer alignment (256 bytes).
     */
-   device->buffer_image_bo_alignment =
-      (VkDeviceSize)1 << (MIN2(device->tiling_info.row_bytes_log2, 3 + 3 + 3 + 4) +
-                          device->tiling_info.banks_log2 + device->tiling_info.pipes_log2);
+   if (device->chip_info.is_terascale_1) {
+      device->buffer_image_bo_alignment = terakan_physical_device_terascale_1_max_bo_alignment(
+         device->tiling_info.pipes_log2, device->tiling_info.banks_log2,
+         device->tiling_info.pipe_interleave_bytes_log2);
+   } else {
+      device->buffer_image_bo_alignment =
+         (VkDeviceSize)1 << (MIN2(device->tiling_info.row_bytes_log2, 3 + 3 + 3 + 4) +
+                             device->tiling_info.banks_log2 + device->tiling_info.pipes_log2);
+   }
 
    device->submission_info_gfx = *submission_info_gfx;
 
@@ -1634,7 +1642,7 @@ terakan_physical_device_init(
    if (device->isa == NULL) {
       return vk_error(instance, VK_ERROR_OUT_OF_HOST_MEMORY);
    }
-   if (r600_isa_init(device->chip_info.is_r9xx ? CAYMAN : EVERGREEN, device->isa) != 0) {
+   if (r600_isa_init(terakan_shader_gfx_level(device->chip_info.chip_family), device->isa) != 0) {
       result = vk_error(instance, VK_ERROR_OUT_OF_HOST_MEMORY);
       goto fail_isa;
    }

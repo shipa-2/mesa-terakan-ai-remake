@@ -39,6 +39,11 @@ check(uint32_t const tiling_config, bool const is_terascale_1, uint8_t const pip
 static void
 test_terascale_1(void)
 {
+   /* Real RV710 topology used by the hardware test machine: 2 pipes, 8 banks, 512-byte groups.
+    * The worst exposed 2D surface is 8-sample, 16-byte-per-element, requiring 128 KiB.
+    */
+   CHECK(terakan_physical_device_terascale_1_max_bo_alignment(1, 3, 9) == 131072);
+
    /* pipes field (bits [3:1]) case 0 -> 1 pipe, banks field (bits [5:4]) case 0 -> 4 banks,
     * group bytes field (bits [7:6]) case 0 -> 256 bytes: the typical RV710 configuration.
     */

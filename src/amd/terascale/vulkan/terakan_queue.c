@@ -312,6 +312,15 @@ terakan_queue_submit(struct vk_queue * const queue_base, struct vk_queue_submit 
    struct terakan_physical_device const * const physical_device =
       terakan_device_physical_device(device);
 
+   /* vkCreateDevice is enabled on hardware-validated R700 so resource allocation and API object
+    * bring-up can proceed, but the complete R700 command stream is not validated yet. Never let
+    * the remaining Evergreen-only packets reach real TeraScale 1 hardware.
+    */
+   if (physical_device->chip_info.is_terascale_1) {
+      return vk_errorf(device, VK_ERROR_DEVICE_LOST,
+                       "R700 logical-device bring-up does not enable queue submission yet");
+   }
+
    /* Update submission-time allocations. */
 
    uint64_t await_internal_bo_timeline_value = 0;

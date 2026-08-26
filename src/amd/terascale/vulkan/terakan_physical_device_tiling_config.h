@@ -59,6 +59,13 @@ struct terakan_physical_device_tiling_config_info {
 struct terakan_physical_device_tiling_config_info
 terakan_physical_device_decode_tiling_config(uint32_t tiling_config, bool is_terascale_1);
 
+/* Maximum BO base alignment needed by any TeraScale 1 image Terakan exposes (up to 16 bytes per
+ * element and 8 samples), derived from r6_surface_init_2d() rather than R8xx AddrLib ROW_SIZE.
+ */
+uint64_t terakan_physical_device_terascale_1_max_bo_alignment(uint8_t pipes_log2,
+                                                              uint8_t banks_log2,
+                                                              uint8_t group_bytes_log2);
+
 #ifdef __cplusplus
 }
 #endif

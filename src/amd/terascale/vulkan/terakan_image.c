@@ -948,13 +948,10 @@ terakan_image_surface_compute(VkImageCreateInfo const * const image_create_info,
    if (physical_device->chip_info.is_terascale_1) {
       /* terakan_image_surface_compute_terascale_1() returns false for formats it doesn't handle
        * yet (block-compressed and 8x1/2x1 subsampled formats -- see its header comment). This
-       * function has no way to report that failure (VKAPI_CALL void at both of this function's
-       * call sites), and TeraScale 1 doesn't reach either of them in practice yet regardless --
-       * terakan_CreateDevice refuses TeraScale 1 physical devices outright, and no physical device
-       * capability query for TeraScale 1 advertises support for those formats to trigger this in
-       * the first place. The zeroed-out surface_out from the memset above is a safe, inert fallback
-       * if this is ever reached despite that: a zero-size image fails allocation harmlessly rather
-       * than computing a wrong layout.
+       * function has no way to report that failure (VKAPI_CALL void at both call sites). The
+       * zeroed-out surface_out from the memset above is a safe, inert fallback: a zero-size image
+       * fails allocation harmlessly rather than computing a wrong layout. Queue submission remains
+       * disabled for R700, so none of these layouts are treated as GPU-readback-validated yet.
        */
       terakan_image_surface_compute_terascale_1(image_create_info, format_info, physical_device,
                                                 surface_out);

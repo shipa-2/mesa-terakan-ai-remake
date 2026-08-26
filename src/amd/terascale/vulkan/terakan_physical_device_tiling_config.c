@@ -5,6 +5,30 @@
 
 #include "terakan_physical_device_tiling_config.h"
 
+#include <assert.h>
+
+uint64_t
+terakan_physical_device_terascale_1_max_bo_alignment(uint8_t const pipes_log2,
+                                                     uint8_t const banks_log2,
+                                                     uint8_t const group_bytes_log2)
+{
+   /* r6_surface_init_2d() takes the maximum of:
+    *
+    *   pipes * banks * samples * bytes_per_element * 64
+    *   pitch_alignment * height_alignment * samples * bytes_per_element
+    *
+    * Across Terakan's limits, the second expression reduces to at most the maximum of the first
+    * expression and group_bytes * banks * pipes. Keep both terms explicit so the value follows the
+    * actual kernel-reported tiling topology rather than an R8xx-only ROW_SIZE substitute.
+    */
+   unsigned const sample_bytes_term_log2 = pipes_log2 + banks_log2 + 3 + 4 + 6;
+   unsigned const group_term_log2 = group_bytes_log2 + banks_log2 + pipes_log2;
+   unsigned const alignment_log2 =
+      sample_bytes_term_log2 > group_term_log2 ? sample_bytes_term_log2 : group_term_log2;
+   assert(alignment_log2 < 64);
+   return UINT64_C(1) << alignment_log2;
+}
+
 struct terakan_physical_device_tiling_config_info
 terakan_physical_device_decode_tiling_config(uint32_t const tiling_config,
                                              bool const is_terascale_1)

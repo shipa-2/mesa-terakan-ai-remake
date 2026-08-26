@@ -134,10 +134,9 @@ struct terakan_physical_device_chip_info {
     * src/gallium/drivers/r600/r600_state.c, the classic Gallium R600 driver that has supported this
     * hardware for years and is the authoritative reference here, not a guess.
     *
-    * Reading/writing through this hardware is not implemented: only physical device enumeration and
-    * property reporting use this struct so far. terakan_CreateDevice refuses TeraScale 1 physical
-    * devices explicitly rather than attempting to submit command streams built from incomplete
-    * state.
+    * Minimal logical-device creation consumes these values on hardware-validated R700. Queue
+    * submission is still refused before the winsys until command streams built from this state are
+    * validated. R600 logical-device creation remains disabled.
     */
    struct {
       uint32_t num_ps_gprs, num_vs_gprs, num_temp_gprs, num_gs_gprs, num_es_gprs;
