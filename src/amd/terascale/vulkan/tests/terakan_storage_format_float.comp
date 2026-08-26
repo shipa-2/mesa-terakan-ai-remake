@@ -1,0 +1,33 @@
+#version 450
+#extension GL_EXT_shader_image_load_formatted : require
+
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(constant_id = 0) const uint test_width = 8u;
+layout(constant_id = 1) const uint test_height = 8u;
+
+/* Stores a known pattern through a formatless storage image and immediately loads the same texel
+ * back, so one dispatch exercises both halves of the round trip for whatever format the view
+ * supplies. The image is coherent and the store is separated from the load by memoryBarrierImage(),
+ * which is what makes a same-invocation store-then-load of one address well defined.
+ */
+layout(set = 0, binding = 0) coherent uniform image2D destination;
+layout(set = 0, binding = 1, std430) writeonly buffer Output {
+   vec4 values[];
+} output_data;
+
+layout(push_constant) uniform Push {
+   vec4 base;
+} push;
+
+void
+main()
+{
+   uvec2 position = gl_GlobalInvocationID.xy;
+   if (any(greaterThanEqual(position, uvec2(test_width, test_height))))
+      return;
+   uint linear_index = position.y * test_width + position.x;
+   vec4 value = push.base;
+   imageStore(destination, ivec2(position), value);
+   memoryBarrierImage();
+   output_data.values[linear_index] = imageLoad(destination, ivec2(position));
+}

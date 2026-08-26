@@ -1369,6 +1369,36 @@ if with_tests
         timeout : 15,
       )
 
+      terakan_storage_format_spvs = []
+      foreach _storage_format_class : ['float', 'uint', 'sint']
+        terakan_storage_format_spvs += custom_target(
+          'terakan_storage_format_' + _storage_format_class + '.spv.h',
+          input : 'tests/terakan_storage_format_' + _storage_format_class + '.comp',
+          output : 'terakan_storage_format_' + _storage_format_class + '.spv.h',
+          command : [
+            prog_glslang, '-V', '-x', '-o', '@OUTPUT@', '@INPUT@',
+            glslang_quiet, glslang_depfile,
+          ],
+          depfile : 'terakan_storage_format_' + _storage_format_class + '.spv.h.d',
+        )
+      endforeach
+      terakan_storage_format_matrix_test = executable(
+        'terakan_storage_format_matrix_test',
+        ['tests/terakan_storage_format_matrix_test.cpp'] + terakan_storage_format_spvs,
+        dependencies : vulkan_loader_dep,
+      )
+      test(
+        'terakan_storage_format_matrix',
+        terakan_storage_format_matrix_test,
+        depends : [libvulkan_terascale, _dev_icd],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 60,
+      )
+
       terakan_storage_image_atomic_spv = custom_target(
         'terakan_storage_image_atomic.spv.h',
         input : 'tests/terakan_storage_image_atomic.comp',
