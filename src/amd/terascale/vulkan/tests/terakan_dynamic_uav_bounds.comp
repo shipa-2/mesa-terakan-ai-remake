@@ -1,0 +1,21 @@
+#version 450
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+/* Bound as VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC with a static range covering the whole real
+ * buffer, and a dynamic offset applied at bind time that the C test pushes towards the end of it.
+ * Written, not read, so the descriptor is used through the colour/UAV path rather than the
+ * resource path -- the two encode their bounds completely differently.
+ */
+layout(set = 0, binding = 0, std430) writeonly buffer DynamicTarget {
+   uint words[64];
+} dynamic_target;
+
+void
+main()
+{
+   /* Each word is stamped with its own index, so the host can tell not just that something was
+    * written but exactly which element of the nominal range landed where.
+    */
+   dynamic_target.words[gl_GlobalInvocationID.x] = 0xABCD0000u | gl_GlobalInvocationID.x;
+}

@@ -228,27 +228,48 @@ terakan_CmdBindDescriptorSets(VkCommandBuffer const commandBuffer,
                 * undefined, the BO pointer must not be dereferenced here as it may be outdated.
                 */
                if (set_uav->bo != NULL) {
-                  /* TODO(Triang3l): #MemoryIntegrity with an additional remaining size variable. */
                   struct terakan_color_descriptor const * new_uav_color = &set_uav->color;
                   struct terakan_color_descriptor new_uav_color_with_dynamic_offset;
                   if (range->first_dynamic_offset != UINT16_MAX) {
                      assert(G_028C70_RESOURCE_TYPE(set_uav->color.info) == V_028C70_BUFFER);
-                     unsigned const uav_bytes_per_texel =
+                     unsigned const uav_bytes_per_element =
                         terascale_format_bytes_per_block[G_028C70_FORMAT(set_uav->color.info)];
-                     uint64_t const new_uav_va =
-                        ((uint64_t)set_uav->color.base << 8) +
-                        set_uav->color.view * uav_bytes_per_texel +
-                        set_dynamic_offsets[range->first_dynamic_offset + uav_index];
-                     unsigned const tile_pipe_interleave_bytes_log2 =
-                        terakan_gfx_command_writer_physical_device(command_writer)
-                           ->tiling_info.pipe_interleave_bytes_log2;
-                     uint64_t const new_uav_va_aligned =
-                        new_uav_va >> tile_pipe_interleave_bytes_log2
-                                         << tile_pipe_interleave_bytes_log2;
+                     /* A buffer UAV states its extent as BASE, VIEW and DIM together: BASE is the
+                      * descriptor's own alignment granularity floor, VIEW the byte distance from
+                      * there to the buffer range's start, and DIM the inclusive last element
+                      * counted from BASE, not from VIEW. A dynamic offset moves the range, so all
+                      * three have to be rebuilt -- moving BASE alone, as this used to do, left DIM
+                      * describing the old, further end and handed the shader the dynamic offset's
+                      * worth of memory past the range. Recover the element count from the
+                      * descriptor, then rebuild the three fields with the same helper that wrote
+                      * them.
+                      */
+                     uint64_t const uav_va =
+                        ((uint64_t)set_uav->color.base << 8) + set_uav->color.view;
+                     uint64_t const uav_elements = (uint64_t)set_uav->color.dim + 1 -
+                                                   set_uav->color.view / uav_bytes_per_element;
+                     /* #MemoryIntegrity: hold the window inside the bound VkBuffer whatever the
+                      * dynamic offset is. Keeping one element's room means the rebuilt descriptor
+                      * always has a valid nonzero extent without ever reaching past the end.
+                      */
+                     uint32_t const remaining_bytes = set_uav->dynamic_offset_remaining_bytes;
+                     uint32_t const max_dynamic_offset =
+                        remaining_bytes >= uav_bytes_per_element
+                           ? remaining_bytes - uav_bytes_per_element
+                           : 0;
+                     uint32_t const dynamic_offset =
+                        MIN2(set_dynamic_offsets[range->first_dynamic_offset + uav_index],
+                             max_dynamic_offset);
+                     uint64_t const new_uav_elements =
+                        MAX2(MIN2(uav_elements,
+                                  (uint64_t)(remaining_bytes - dynamic_offset) /
+                                     uav_bytes_per_element),
+                             UINT64_C(1));
                      new_uav_color_with_dynamic_offset = set_uav->color;
-                     new_uav_color_with_dynamic_offset.base = (uint32_t)(new_uav_va_aligned >> 8);
-                     new_uav_color_with_dynamic_offset.view =
-                        (uint32_t)(new_uav_va - new_uav_va_aligned) * uav_bytes_per_texel;
+                     terakan_color_descriptor_calculate_buffer_base_pitch_slice_view_dim(
+                        &new_uav_color_with_dynamic_offset, uav_va + dynamic_offset,
+                        new_uav_elements, uav_bytes_per_element,
+                        terakan_gfx_command_writer_physical_device(command_writer), false);
                      new_uav_color = &new_uav_color_with_dynamic_offset;
                   }
                   terakan_app_config_draw_set_cb_color_uav(&command_writer->app_config_draw,

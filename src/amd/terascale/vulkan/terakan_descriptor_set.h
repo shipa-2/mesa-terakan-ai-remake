@@ -75,6 +75,13 @@ terakan_descriptor_set_sampler_init(struct terakan_descriptor_set_sampler * cons
 struct terakan_descriptor_set_uav {
    struct terakan_bo const * bo;
    struct terakan_color_descriptor color;
+   /* #MemoryIntegrity: the number of bytes from the descriptor's static offset to the end of the
+    * bound VkBuffer, independent of `range`, for the same reason as in
+    * `struct terakan_descriptor_set_resource`. A buffer UAV encodes its extent as BASE, VIEW and
+    * DIM rather than as a byte count, so a dynamic offset has to rebuild all three, and this is
+    * what bounds the rebuilt extent.
+    */
+   uint32_t dynamic_offset_remaining_bytes;
 };
 
 #define TERAKAN_DESCRIPTOR_SET_DESCRIPTOR_ALIGNMENT                                                \

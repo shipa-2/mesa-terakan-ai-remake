@@ -213,9 +213,13 @@ terakan_UpdateDescriptorSets(UNUSED VkDevice const device, uint32_t const descri
                buffer_info, &dst_resource->resource, &dst_uav->color);
             dst_resource->bo = bo;
             dst_uav->bo = bo;
-            /* #MemoryIntegrity, see the UNIFORM_BUFFER_DYNAMIC case above. */
-            dst_resource->dynamic_offset_remaining_bytes =
+            /* #MemoryIntegrity, see the UNIFORM_BUFFER_DYNAMIC case above. The UAV needs it too:
+             * its extent lives in BASE/VIEW/DIM, all of which a dynamic offset invalidates.
+             */
+            uint32_t const dynamic_offset_remaining_bytes =
                terakan_descriptor_set_dynamic_offset_remaining_bytes(buffer_info);
+            dst_resource->dynamic_offset_remaining_bytes = dynamic_offset_remaining_bytes;
+            dst_uav->dynamic_offset_remaining_bytes = dynamic_offset_remaining_bytes;
          }
       } break;
 

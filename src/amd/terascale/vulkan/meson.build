@@ -1674,6 +1674,36 @@ if with_tests
         timeout : 5,
       )
 
+      terakan_dynamic_uav_bounds_spv = custom_target(
+        'terakan_dynamic_uav_bounds.spv.h',
+        input : 'tests/terakan_dynamic_uav_bounds.comp',
+        output : 'terakan_dynamic_uav_bounds.spv.h',
+        command : [
+          prog_glslang, '-V', '-x', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_dynamic_uav_bounds.spv.h.d',
+      )
+      terakan_dynamic_uav_bounds_test = executable(
+        'terakan_dynamic_uav_bounds_test',
+        [
+          'tests/terakan_dynamic_uav_bounds_test.c',
+          terakan_dynamic_uav_bounds_spv,
+        ],
+        dependencies : vulkan_loader_dep,
+      )
+      test(
+        'terakan_dynamic_uav_bounds',
+        terakan_dynamic_uav_bounds_test,
+        depends : [libvulkan_terascale, _dev_icd],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 20,
+      )
+
       terakan_formatless_image_store_spv = custom_target(
         'terakan_formatless_image_store.spv.h',
         input : 'tests/terakan_formatless_image_store.comp',
