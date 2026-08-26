@@ -1369,6 +1369,23 @@ if with_tests
         timeout : 15,
       )
 
+      terakan_layered_depth_render_test = executable(
+        'terakan_layered_depth_render_test',
+        ['tests/terakan_layered_depth_render_test.cpp'],
+        dependencies : vulkan_loader_dep,
+      )
+      test(
+        'terakan_layered_depth_render',
+        terakan_layered_depth_render_test,
+        depends : [libvulkan_terascale, _dev_icd],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 30,
+      )
+
       terakan_shadow_compare_spv = custom_target(
         'terakan_shadow_compare.spv.h',
         input : 'tests/terakan_shadow_compare.comp',

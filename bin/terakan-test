@@ -62,6 +62,7 @@ gpu_tests=(
   terakan_storage_image_atomic
   terakan_storage_format_matrix
   terakan_shadow_compare
+  terakan_layered_depth_render
   terakan_dynamic_offset_bounds
   terakan_clip_distance
   terakan_depth_readback

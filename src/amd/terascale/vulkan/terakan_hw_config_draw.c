@@ -194,6 +194,15 @@ terakan_hw_config_draw_set_db_depth_stencil_buffer(
    if (old_depth_bound == new_depth_bound && old_stencil_bound == new_stencil_bound &&
        config->db_depth_stencil_buffer_.bo == bo &&
        config->db_depth_stencil_buffer_.descriptor.z_info == z_info &&
+       /* `view` carries DB_DEPTH_VIEW's SLICE_START/SLICE_MAX, which is the only thing that selects
+        * the array layer being rendered to: the base addresses deliberately point at the surface
+        * rather than the slice, because DB indexes slices from the base itself. Leaving it out of
+        * this comparison meant that rendering consecutive layers of one image -- every cube face of
+        * an omni-light shadow map, for instance -- looked identical to this early-out, so
+        * DB_DEPTH_VIEW was never re-emitted and every face was rendered into face zero, leaving the
+        * rest of the image holding whatever the previous owner of that memory left behind.
+        */
+       config->db_depth_stencil_buffer_.descriptor.view == descriptor->view &&
        config->db_depth_stencil_buffer_.descriptor.size == descriptor->size &&
        config->db_depth_stencil_buffer_.descriptor.slice == descriptor->slice &&
        (!new_depth_bound ||

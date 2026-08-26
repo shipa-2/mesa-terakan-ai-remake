@@ -936,6 +936,44 @@ classic Gallium R600 driver that has supported this hardware for years).
   6 runs on real CAICOS hardware -- verified evidence the existing atomic
   lowering is correct, not just advertised.
 
+## Layered depth rendering: the omni-shadow regression
+
+`DB_DEPTH_VIEW`'s `SLICE_START`/`SLICE_MAX` is the only thing selecting which array
+layer a depth render targets -- the base addresses deliberately point at the
+surface rather than the slice, because DB indexes slices from the base itself.
+`terakan_hw_config_draw_set_db_depth_stencil_buffer()`'s early-out for redundant
+state compared every field of the descriptor except that one, so two consecutive
+layers of the same image were indistinguishable to it: same buffer object, same
+`z_info`, same `size`, same `slice`, same base addresses. The update was skipped,
+`DB_DEPTH_VIEW` kept the layer it already held, and every cube face of an omni
+light's shadow map rendered into face zero while faces one to five kept whatever
+the previous owner of that memory contained.
+
+Found by bisecting a real application fault rather than by a test, and worth
+recording how, because the honest version of the story is not flattering. The
+symptom was intermittent -- a Godot game rendered correct lighting about four
+runs in ten, badly lit in three, and speckled in the rest -- and a ten-commit
+bisect run at one observation per commit produced a confident but completely
+wrong culprit. What actually settled it was measuring instead of observing:
+ten runs per configuration, and a debug probe that pre-filled fresh allocations
+so that anything read before being written became a known value. That took the
+failure rate from six in ten to zero in ten, which proved an uninitialized read;
+narrowing the fill to images, then to depth images, then to layered depth images
+named the exact resource class, at which point the missing comparison was
+obvious on inspection.
+
+The lesson generalizes and has now been learned twice in this project: a single
+observation of an intermittent fault carries almost no information, and a bisect
+built on single observations is measuring noise. See also the retraction above
+concerning the "deterministic" stencil-only MSAA repro.
+
+`terakan_layered_depth_render` covers it: six single-layer views of one six-layer
+depth image, each cleared to a value only it should hold, over an image
+pre-cleared to a sentinel so an unwritten layer is deterministic rather than
+stale VRAM. Against the unfixed driver every layer fails, and the failure names
+the mechanism directly -- layer zero holds layer five's value, and layers one
+through five still hold the sentinel.
+
 ## Cache and barrier coherency: what is covered so far
 
 The single-hazard tests all pass while applications still show frame-to-frame
