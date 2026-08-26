@@ -1369,6 +1369,33 @@ if with_tests
         timeout : 15,
       )
 
+      terakan_shadow_compare_spv = custom_target(
+        'terakan_shadow_compare.spv.h',
+        input : 'tests/terakan_shadow_compare.comp',
+        output : 'terakan_shadow_compare.spv.h',
+        command : [
+          prog_glslang, '-V', '-x', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_shadow_compare.spv.h.d',
+      )
+      terakan_shadow_compare_test = executable(
+        'terakan_shadow_compare_test',
+        ['tests/terakan_shadow_compare_test.cpp', terakan_shadow_compare_spv],
+        dependencies : vulkan_loader_dep,
+      )
+      test(
+        'terakan_shadow_compare',
+        terakan_shadow_compare_test,
+        depends : [libvulkan_terascale, _dev_icd],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 30,
+      )
+
       terakan_storage_format_spvs = []
       foreach _storage_format_class : ['float', 'uint', 'sint']
         terakan_storage_format_spvs += custom_target(
