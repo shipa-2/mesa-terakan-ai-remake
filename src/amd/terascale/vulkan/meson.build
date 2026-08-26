@@ -1473,6 +1473,37 @@ if with_tests
         timeout : 20,
       )
 
+      terakan_attachmentless_atomic_fragment_spv = custom_target(
+        'terakan_attachmentless_atomic.frag.spv.h',
+        input : 'tests/terakan_attachmentless_atomic.frag',
+        output : 'terakan_attachmentless_atomic.frag.spv.h',
+        command : [
+          prog_glslang, '-V', '-x', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_attachmentless_atomic.frag.spv.h.d',
+      )
+      terakan_attachmentless_atomic_test = executable(
+        'terakan_attachmentless_atomic_test',
+        [
+          'tests/terakan_attachmentless_atomic_test.cpp',
+          terakan_color_msaa_write_vertex_spv,
+          terakan_attachmentless_atomic_fragment_spv,
+        ],
+        dependencies : vulkan_loader_dep,
+      )
+      test(
+        'terakan_attachmentless_atomic',
+        terakan_attachmentless_atomic_test,
+        depends : [libvulkan_terascale, _dev_icd],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 20,
+      )
+
       terakan_depth_resolve_test = executable(
         'terakan_depth_resolve_test',
         ['tests/terakan_depth_resolve_test.cpp'],
