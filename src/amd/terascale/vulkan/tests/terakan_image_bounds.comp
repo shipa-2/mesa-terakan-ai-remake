@@ -1,0 +1,30 @@
+#version 450
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, r32ui) writeonly uniform uimage2DArray target_image;
+
+/* The number of array layers the bound view actually has. The dispatch deliberately runs past it
+ * on both sides; this only tells the shader how far past to go.
+ */
+layout(push_constant) uniform Push {
+   int layer_count;
+} push;
+
+void
+main()
+{
+   /* The dispatch domain is far larger than any view and starts before its origin, so every
+    * coordinate is out of range in some direction: negative, past the width, past the height, and
+    * past the last array layer. Each store is stamped with its own view-relative coordinate, so
+    * the host can tell both that the in-range texels got the right value and, if something escapes,
+    * which coordinate it was.
+    */
+   const ivec2 xy = ivec2(gl_GlobalInvocationID.xy) - ivec2(8);
+   for (int z = -2; z < push.layer_count + 2; ++z) {
+      const ivec3 coordinate = ivec3(xy, z);
+      const uint marker = 0xAB000000u | (uint(z & 0xFF) << 16) | (uint(xy.y & 0xFF) << 8) |
+                          uint(xy.x & 0xFFu);
+      imageStore(target_image, coordinate, uvec4(marker, 0u, 0u, 0u));
+   }
+}

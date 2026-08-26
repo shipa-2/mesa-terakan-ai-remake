@@ -44,9 +44,9 @@ endif
 if terakan_target_generation in ['r600', 'r700']
   warning('Terakan: terakan-target-generation is @0@, which is not implemented. '.format(
             terakan_target_generation) +
-          'The driver\'s hand-written shader bytecode targets the Evergreen-and-later ' +
-          'instruction encoding; building with this option only records the label, it does ' +
-          'not add TeraScale 1 support.')
+          'The shader compiler selects the matching TeraScale 1 instruction encoding, but ' +
+          'device creation and command submission are still disabled; building with this option ' +
+          'records the label but does not enable TeraScale 1 devices.')
 endif
 terakan_target_generation_args = [
   '-DTERAKAN_BUILD_TARGET_GENERATION_NAME="' + terakan_target_generation + '"',
@@ -426,6 +426,20 @@ if with_tests
     c_args : c_msvc_compat_args,
   )
   test('terakan_physical_device_backend_count', terakan_physical_device_backend_count_test)
+
+  terakan_shader_generation_test = executable(
+    'terakan_shader_generation_test',
+    'tests/terakan_shader_generation_test.c',
+    include_directories : [
+      inc_include,
+      inc_src,
+      inc_gallium,
+      inc_amd,
+      inc_amd_common,
+    ],
+    c_args : c_msvc_compat_args,
+  )
+  test('terakan_shader_generation', terakan_shader_generation_test)
 
   terakan_descriptor_buffer_test = executable(
     'terakan_descriptor_buffer_test',
@@ -1695,6 +1709,36 @@ if with_tests
       test(
         'terakan_dynamic_uav_bounds',
         terakan_dynamic_uav_bounds_test,
+        depends : [libvulkan_terascale, _dev_icd],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 20,
+      )
+
+      terakan_image_bounds_spv = custom_target(
+        'terakan_image_bounds.spv.h',
+        input : 'tests/terakan_image_bounds.comp',
+        output : 'terakan_image_bounds.spv.h',
+        command : [
+          prog_glslang, '-V', '-x', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_image_bounds.spv.h.d',
+      )
+      terakan_image_bounds_test = executable(
+        'terakan_image_bounds_test',
+        [
+          'tests/terakan_image_bounds_test.c',
+          terakan_image_bounds_spv,
+        ],
+        dependencies : vulkan_loader_dep,
+      )
+      test(
+        'terakan_image_bounds',
+        terakan_image_bounds_test,
         depends : [libvulkan_terascale, _dev_icd],
         env : {
           'VK_DRIVER_FILES' : _dev_icd.full_path(),
