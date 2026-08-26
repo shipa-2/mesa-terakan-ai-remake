@@ -27,6 +27,7 @@
 #include "terakan_descriptor.h"
 #include "terakan_device.h"
 #include "terakan_physical_device.h"
+#include "terakan_shader_generation.h"
 
 #include "compiler/shader_enums.h"
 #include "gallium/drivers/r600/evergreend.h"
@@ -58,7 +59,8 @@ terakan_shader_impl_compile(terakan_shader_impl * const shader, terakan_device *
 {
    terakan_physical_device const & physical_device = *terakan_device_physical_device(device);
    terakan_physical_device_chip_info const & chip_info = physical_device.chip_info;
-   amd_gfx_level const gfx_level = chip_info.is_r9xx ? CAYMAN : EVERGREEN;
+   amd_gfx_level const gfx_level = terakan_shader_gfx_level(chip_info.chip_family);
+   r600_chip_class const isa_chip_class = terakan_shader_isa_chip_class(chip_info.chip_family);
 
    /* TODO(Triang3l): Fill stream output info from NIR. */
    pipe_stream_output_info so_info = {};
@@ -101,8 +103,7 @@ terakan_shader_impl_compile(terakan_shader_impl * const shader, terakan_device *
    binding_layout.keep_all_vertex_inputs = key->vs.keep_all_vertex_inputs;
 
    r600::Shader * const unscheduled_sfn_shader = r600::Shader::translate_from_nir(
-      nir, &so_info, nullptr, *key, chip_info.is_r9xx ? ISA_CC_CAYMAN : ISA_CC_EVERGREEN,
-      chip_info.chip_family, binding_layout);
+      nir, &so_info, nullptr, *key, isa_chip_class, chip_info.chip_family, binding_layout);
    if (unscheduled_sfn_shader == nullptr) {
       r600::release_pool();
       return vk_errorf(device, VK_ERROR_UNKNOWN, "Failed to translate the shader from NIR");
