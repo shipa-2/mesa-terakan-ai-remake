@@ -1,0 +1,48 @@
+#version 450
+
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) uniform sampler2D source;
+layout(set = 0, binding = 1, std430) writeonly buffer Results { vec4 values[]; } results;
+layout(push_constant) uniform Push { ivec2 dynamic_offset; } push;
+
+/* Texel coordinate 16.1 in a 32x32 image, so the gather footprint is texels 15 and 16 on both
+ * axes with nothing sitting on a boundary, and offsets of -8..7 stay well inside the image.
+ */
+const vec2 uv = vec2(16.1 / 32.0);
+
+void
+main()
+{
+   /* Component selection, which SFN already implements. */
+   results.values[0] = textureGather(source, uv, 0);
+   results.values[1] = textureGather(source, uv, 1);
+   results.values[2] = textureGather(source, uv, 2);
+   results.values[3] = textureGather(source, uv, 3);
+
+   /* Constant offsets, which reach the hardware as the TEX instruction's own offset fields.
+    * The last two are the extremes of the advertised range.
+    */
+   results.values[4] = textureGatherOffset(source, uv, ivec2(0, 0), 1);
+   results.values[5] = textureGatherOffset(source, uv, ivec2(3, 0), 1);
+   results.values[6] = textureGatherOffset(source, uv, ivec2(0, -5), 1);
+   results.values[7] = textureGatherOffset(source, uv, ivec2(-8, 7), 1);
+   results.values[8] = textureGatherOffset(source, uv, ivec2(7, -8), 1);
+
+   /* A non-constant offset, which is the only thing that selects GATHER4_O. */
+   results.values[9] = textureGatherOffset(source, uv, push.dynamic_offset, 1);
+
+   /* Four independent offsets, lowered to four gathers of which only the lower-left texel of each
+    * footprint is kept.
+    */
+   results.values[10] = textureGatherOffsets(
+      source, uv, ivec2[4](ivec2(0, 0), ivec2(2, 1), ivec2(-3, 4), ivec2(5, -6)), 1);
+
+   /* Ordinary offset sampling, which encodes the offset into the same instruction fields, at the
+    * extremes of minTexelOffset/maxTexelOffset. glslang refuses to write an offset of +8 at all,
+    * which is its own comment on maxTexelOffset being advertised as 8.
+    */
+   results.values[11] = textureLodOffset(source, uv, 0.0, ivec2(0, 0));
+   results.values[12] = textureLodOffset(source, uv, 0.0, ivec2(7, 7));
+   results.values[13] = textureLodOffset(source, uv, 0.0, ivec2(-8, -8));
+}

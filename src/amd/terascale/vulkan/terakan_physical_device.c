@@ -623,14 +623,15 @@ terakan_physical_device_get_capabilities(
     */
    features_out->fragmentStoresAndAtomics = true;
    /* TODO(Triang3l): shaderTessellationAndGeometryPointSize. */
-   /* TODO(Triang3l): shaderImageGatherExtended needs dynamic/constant gather offsets wired into
-    * LowerTexToBackend::lower_tg4 (sfn_instr_tex.cpp), which currently ignores any offset source
-    * entirely -- the GATHER4_O/GATHER4_C_O opcodes are enumerated in the ISA tables but never
-    * selected. Component selection (tex->component) is already implemented there, so only the
-    * offset piece is missing, but declaring the whole feature without it would be wrong: the
-    * feature also covers non-constant offsets and offsets beyond the mandatory-without-the-bit
-    * case.
+   /* LowerTexToBackend::lower_tg4 does not read the offset source, but it does not drop it either:
+    * finalize() removes only the coordinate, LOD, bias, comparator and sample index sources, so
+    * nir_tex_src_offset survives into TexInstr::Inputs. From there the backend already handles
+    * both forms -- get_opcode selects GATHER4_O/GATHER4_C_O when the offset is not a constant, and
+    * set_coord_offsets folds a constant one into the TEX instruction's own offset fields.
+    * terakan_image_gather covers component selection, constant offsets at both extremes of the
+    * advertised range, a non-constant offset and the four-independent-offset form.
     */
+   features_out->shaderImageGatherExtended = true;
    /* Image accesses are lowered to typed texture/RAT operations. The view descriptor supplies
     * the format when SPIR-V declares the storage image without one.
     */
@@ -926,12 +927,22 @@ terakan_physical_device_get_capabilities(
 
    properties_out->minStorageBufferOffsetAlignment = sizeof(uint32_t);
 
-   properties_out->minTexelOffset = -8;
-   properties_out->maxTexelOffset = 8;
-
-   /* TODO(Triang3l): Texel gather offset range when extended image gather is enabled (need to
-    * research the range given that the offsets come from a GPR vector).
+   /* A constant offset is encoded into SQ_TEX_WORD2's OFFSET_X/Y/Z, which are five bits wide and
+    * carry the value shifted left by one for their fractional bit (TexInstr::get_offset), so the
+    * representable integer range is exactly [-8, 7]. The maximum was previously advertised as 8,
+    * which does not fit: 8 << 1 is 16, and as a five-bit signed field that reads back as -16, so
+    * an offset of +8 would have been applied as -8. Seven is also all the specification requires.
     */
+   properties_out->minTexelOffset = -8;
+   properties_out->maxTexelOffset = 7;
+
+   /* Gather uses the same instruction fields for a constant offset, and the same range is what the
+    * specification requires. A non-constant gather offset goes through SET_TEXTURE_OFFSETS and a
+    * GPR vector instead, which may well accept more, but there is no reason to advertise a wider
+    * range than the constant form can express.
+    */
+   properties_out->minTexelGatherOffset = -8;
+   properties_out->maxTexelGatherOffset = 7;
 
    /* Evergreen interpolation offsets use 4 fractional bits in the range required by Vulkan. */
    properties_out->minInterpolationOffset = -0.5f;
