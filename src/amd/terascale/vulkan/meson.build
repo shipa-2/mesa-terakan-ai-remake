@@ -1748,6 +1748,38 @@ if with_tests
         timeout : 20,
       )
 
+      terakan_vertex_fetch_bounds_vertex_spv = custom_target(
+        'terakan_vertex_fetch_bounds.vert.spv.h',
+        input : 'tests/terakan_vertex_fetch_bounds.vert',
+        output : 'terakan_vertex_fetch_bounds.vert.spv.h',
+        command : [
+          prog_glslang, '-V', '-x', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_vertex_fetch_bounds.vert.spv.h.d',
+      )
+      terakan_vertex_fetch_bounds_fragment_spv = custom_target(
+        'terakan_vertex_fetch_bounds.frag.spv.h',
+        input : 'tests/terakan_vertex_fetch_bounds.frag',
+        output : 'terakan_vertex_fetch_bounds.frag.spv.h',
+        command : [
+          prog_glslang, '-V', '-x', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_vertex_fetch_bounds.frag.spv.h.d',
+      )
+      # Deliberately not wired into test(): this is a characterization tool whose output is a table
+      # to read, not a pass/fail result. See the comment at the top of its source.
+      terakan_vertex_fetch_bounds_probe = executable(
+        'terakan_vertex_fetch_bounds_probe',
+        [
+          'tests/terakan_vertex_fetch_bounds_probe.c',
+          terakan_vertex_fetch_bounds_vertex_spv,
+          terakan_vertex_fetch_bounds_fragment_spv,
+        ],
+        dependencies : vulkan_loader_dep,
+      )
+
       terakan_formatless_image_store_spv = custom_target(
         'terakan_formatless_image_store.spv.h',
         input : 'tests/terakan_formatless_image_store.comp',

@@ -608,11 +608,16 @@ terakan_vertex_input_create_fs_code(
       if (attribute_bytes_per_element != 0) {
          sorted_attribute_indices[bound_used_attribute_count++] = attribute_index;
 #if 1
-         /* TODO(Triang3l): Research robust vertex buffer access on R8xx. It seems like it's more
-          * complicated than just checking up to the first 4 bytes. `32_32_32_32_FLOAT` fetches from
+         /* TODO(Triang3l): Research robust vertex buffer access on R8xx. It is indeed more
+          * complicated than checking up to the first 4 bytes; terakan_vertex_fetch_bounds_probe
+          * now measures what the hardware actually does, and the thresholds do not fit that rule,
+          * an element-complete rule, or any simple function of the address -- they are not even
+          * monotonic in the attribute offset. Until the rule is known, the truncation stays 0: the
+          * value below over-truncates the attribute-offset-0 case, which is what made
+          * `dEQP-VK.rasterization.depth_bias_control.*` fail with `32_32_32_32_FLOAT` fetches from
           * a 64-byte-sized buffer with a stride of 16 at a 0 address relative to the beginning of
-          * the BO cause `dEQP-VK.rasterization.depth_bias_control.*` to fail if the truncation is
-          * not 0.
+          * the BO. Leaving it at 0 keeps those fetches working at the cost of a robustBufferAccess
+          * violation for attributes whose offset is not a multiple of their element size.
           */
          uint8_t const attribute_truncation = 0;
 #else

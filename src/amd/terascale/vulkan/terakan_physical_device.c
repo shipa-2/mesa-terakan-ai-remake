@@ -538,10 +538,19 @@ terakan_physical_device_get_capabilities(
     * For element sizes within 4 bytes, the entire element size must be in bounds for the data to be
     * fetched. Otherwise, 0 is loaded into all channels.
     *
-    * For element sizes larger than 4 bytes, however, only the first 4 bytes are checked, and if
-    * they're in bounds, the entire element is fetched (otherwise all channels receive 0).
-    * Therefore, if the size of the buffer is 3 bytes, a 32_32_32_32 fetch at offset 0 will return
-    * zeros, but if the buffer is 4 bytes large, all bytes [0, 15] will be loaded.
+    * For element sizes larger than 4 bytes the rule is not this, and is not yet understood. It was
+    * previously recorded here as "only the first 4 bytes are checked", which measurement on Caicos
+    * contradicts: a 32_32_32_32 fetch at attribute offset 0 returns zeros until the size reaches
+    * 16, not 4. But the check is not element-complete either -- the same fetch at attribute offset
+    * 4 is accepted with a size of 8 and returns bytes [4, 20), twelve bytes past the end. The
+    * thresholds are not even monotonic in the attribute offset: offset 0 needs 16 while offset 2
+    * needs only 6. terakan_vertex_fetch_bounds_probe measures the whole table; see the comment at
+    * the top of it for what is and is not established.
+    *
+    * The consequence is a real robustBufferAccess violation that the driver cannot currently close:
+    * shrinking SIZE by the element size minus four, the obvious fix, over-truncates the offset-0
+    * case and broke dEQP-VK.rasterization.depth_bias_control, which is why the truncation in
+    * terakan_vertex_input.c stays disabled.
     *
     * This allows for vectorizing 32-bit uniform buffer and storage buffer loads freely without
     * robustBufferAccess. However, this also makes it possible to read from beyond the memory range
