@@ -41,12 +41,12 @@ if terakan_target_generation == 'auto'
              'defaulting the build target generation to r900').format(detected_generation))
   endif
 endif
-if terakan_target_generation in ['r600', 'r700']
-  warning('Terakan: terakan-target-generation is @0@, which is not implemented. '.format(
-            terakan_target_generation) +
-          'The shader compiler selects the matching TeraScale 1 instruction encoding, but ' +
-          'device creation and command submission are still disabled; building with this option ' +
-          'records the label but does not enable TeraScale 1 devices.')
+if terakan_target_generation == 'r600'
+  warning('Terakan: the R600 shader encoding is selected, but device creation and command ' +
+          'submission remain disabled pending hardware validation.')
+elif terakan_target_generation == 'r700'
+  warning('Terakan: R700 logical-device and image-layout bring-up is enabled, but command ' +
+          'submission remains disabled pending hardware readback validation.')
 endif
 terakan_target_generation_args = [
   '-DTERAKAN_BUILD_TARGET_GENERATION_NAME="' + terakan_target_generation + '"',

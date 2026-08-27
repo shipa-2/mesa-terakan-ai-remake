@@ -128,19 +128,23 @@ uint64_t
 terakan_image_tiling_terascale_1_mip_chain_layout(
    uint32_t const base_width, uint32_t const base_height,
    uint32_t const base_depth_or_array_layers, bool const depth_minifies_per_level,
-   uint32_t const mip_levels, uint32_t const bytes_per_element, uint32_t const samples,
+   uint32_t const mip_levels, uint32_t const block_width, uint32_t const block_height,
+   uint32_t const bytes_per_element, uint32_t const samples,
    struct terakan_image_tiling_terascale_1_alignments const * const alignments_2d,
    struct terakan_image_tiling_terascale_1_alignments const * const fixed_or_1d_alignments,
    struct terakan_image_tiling_terascale_1_mip_chain_level * const levels_out)
 {
    assert(mip_levels <= TERAKAN_IMAGE_TILING_TERASCALE_1_MAX_MIP_LEVELS);
+   assert(block_width != 0 && block_height != 0);
 
    uint64_t offset = 0;
    bool degraded_to_1d = alignments_2d == NULL;
 
    for (uint32_t level = 0; level < mip_levels; ++level) {
-      uint32_t const npix_x = terakan_image_tiling_terascale_1_mip_extent(base_width, level);
-      uint32_t const npix_y = terakan_image_tiling_terascale_1_mip_extent(base_height, level);
+      uint32_t const npix_x =
+         DIV_ROUND_UP(terakan_image_tiling_terascale_1_mip_extent(base_width, level), block_width);
+      uint32_t const npix_y =
+         DIV_ROUND_UP(terakan_image_tiling_terascale_1_mip_extent(base_height, level), block_height);
 
       struct terakan_image_tiling_terascale_1_alignments const * alignments =
          degraded_to_1d ? fixed_or_1d_alignments : alignments_2d;

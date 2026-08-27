@@ -15,6 +15,7 @@
 #include <vulkan/vulkan.h>
 
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -32,6 +33,150 @@ device_name_is_r700(char const * const device_name)
 {
    return strstr(device_name, "RV770") != NULL || strstr(device_name, "RV730") != NULL ||
           strstr(device_name, "RV710") != NULL || strstr(device_name, "RV740") != NULL;
+}
+
+static uint32_t
+first_memory_type(uint32_t const memory_type_bits)
+{
+   for (uint32_t memory_type = 0; memory_type < 32; ++memory_type) {
+      if (memory_type_bits & ((uint32_t)1 << memory_type)) {
+         return memory_type;
+      }
+   }
+   return UINT32_MAX;
+}
+
+static uint32_t
+check_r700_image_layout(VkDevice const device, VkImageCreateInfo const * const image_info,
+                        char const * const name, bool const check_linear_layout)
+{
+   uint32_t failures = 0;
+   VkImage image = VK_NULL_HANDLE;
+   VkDeviceMemory memory = VK_NULL_HANDLE;
+
+   VkResult const create_result = vkCreateImage(device, image_info, NULL, &image);
+   if (create_result != VK_SUCCESS) {
+      fprintf(stderr, "  %s vkCreateImage failed with %d\n", name, create_result);
+      return 1;
+   }
+
+   VkMemoryRequirements requirements;
+   vkGetImageMemoryRequirements(device, image, &requirements);
+   if (requirements.size == 0 || requirements.alignment < 256 ||
+       (requirements.alignment & (requirements.alignment - 1)) != 0) {
+      fprintf(stderr, "  %s invalid memory requirements: size=%llu alignment=%llu\n", name,
+              (unsigned long long)requirements.size,
+              (unsigned long long)requirements.alignment);
+      ++failures;
+      goto cleanup;
+   }
+
+   if (check_linear_layout) {
+      VkImageSubresource const subresource = {
+         .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+      };
+      VkSubresourceLayout layout;
+      vkGetImageSubresourceLayout(device, image, &subresource, &layout);
+      uint64_t const expected_size = layout.rowPitch * image_info->extent.height;
+      if (layout.offset != 0 || layout.rowPitch != requirements.alignment ||
+          layout.arrayPitch != layout.size || layout.depthPitch != layout.size ||
+          layout.size != expected_size) {
+         fprintf(stderr,
+                 "  %s unexpected linear layout: offset=%llu row=%llu array=%llu depth=%llu "
+                 "size=%llu expected_size=%llu requirement_alignment=%llu\n",
+                 name, (unsigned long long)layout.offset, (unsigned long long)layout.rowPitch,
+                 (unsigned long long)layout.arrayPitch, (unsigned long long)layout.depthPitch,
+                 (unsigned long long)layout.size, (unsigned long long)expected_size,
+                 (unsigned long long)requirements.alignment);
+         ++failures;
+      }
+   }
+
+   uint32_t const memory_type = first_memory_type(requirements.memoryTypeBits);
+   if (memory_type == UINT32_MAX) {
+      fprintf(stderr, "  %s has no compatible memory type\n", name);
+      ++failures;
+      goto cleanup;
+   }
+   VkMemoryAllocateInfo const allocate_info = {
+      .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+      .allocationSize = requirements.size,
+      .memoryTypeIndex = memory_type,
+   };
+   VkResult const allocate_result = vkAllocateMemory(device, &allocate_info, NULL, &memory);
+   if (allocate_result != VK_SUCCESS) {
+      fprintf(stderr, "  %s vkAllocateMemory failed with %d\n", name, allocate_result);
+      ++failures;
+      goto cleanup;
+   }
+   VkResult const bind_result = vkBindImageMemory(device, image, memory, 0);
+   if (bind_result != VK_SUCCESS) {
+      fprintf(stderr, "  %s vkBindImageMemory failed with %d\n", name, bind_result);
+      ++failures;
+   } else {
+      fprintf(stderr, "  %s create/layout/allocate/bind succeeded (size=%llu alignment=%llu)\n",
+              name, (unsigned long long)requirements.size,
+              (unsigned long long)requirements.alignment);
+   }
+
+cleanup:
+   vkDestroyImage(device, image, NULL);
+   if (memory != VK_NULL_HANDLE) {
+      vkFreeMemory(device, memory, NULL);
+   }
+   return failures;
+}
+
+static uint32_t
+check_r700_image_layouts(VkDevice const device)
+{
+   VkImageCreateInfo const linear = {
+      .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+      .imageType = VK_IMAGE_TYPE_2D,
+      .format = VK_FORMAT_R8G8B8A8_UNORM,
+      .extent = {37, 19, 1},
+      .mipLevels = 1,
+      .arrayLayers = 1,
+      .samples = VK_SAMPLE_COUNT_1_BIT,
+      .tiling = VK_IMAGE_TILING_LINEAR,
+      .usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+      .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+      .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+   };
+   VkImageCreateInfo optimal = linear;
+   optimal.extent = (VkExtent3D){300, 50, 1};
+   optimal.mipLevels = 3;
+   optimal.tiling = VK_IMAGE_TILING_OPTIMAL;
+   optimal.usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
+
+   VkImageCreateInfo bc1 = optimal;
+   bc1.format = VK_FORMAT_BC1_RGBA_UNORM_BLOCK;
+   bc1.extent = (VkExtent3D){1023, 511, 1};
+   bc1.mipLevels = 4;
+
+   VkImageCreateInfo unsupported_3x = linear;
+   unsupported_3x.format = VK_FORMAT_R8G8B8_UNORM;
+
+   uint32_t failures = 0;
+   failures += check_r700_image_layout(device, &linear, "linear RGBA8", true);
+   failures += check_r700_image_layout(device, &optimal, "2D-tiled RGBA8 mip chain", false);
+   failures += check_r700_image_layout(device, &bc1, "2D-tiled BC1 mip chain", false);
+
+   VkImage unsupported_image = VK_NULL_HANDLE;
+   VkResult const unsupported_result =
+      vkCreateImage(device, &unsupported_3x, NULL, &unsupported_image);
+   if (unsupported_result != VK_ERROR_FORMAT_NOT_SUPPORTED) {
+      fprintf(stderr,
+              "  3-byte R700 layout returned %d, expected VK_ERROR_FORMAT_NOT_SUPPORTED\n",
+              unsupported_result);
+      if (unsupported_result == VK_SUCCESS) {
+         vkDestroyImage(device, unsupported_image, NULL);
+      }
+      ++failures;
+   } else {
+      fprintf(stderr, "  unsupported 3-byte R700 layout was rejected safely\n");
+   }
+   return failures;
 }
 
 int
@@ -100,6 +245,8 @@ main(void)
             ++failures;
          } else {
             fprintf(stderr, "  minimal R700 vkCreateDevice succeeded\n");
+
+            failures += check_r700_image_layouts(device);
 
             VkQueue queue;
             vkGetDeviceQueue(device, 0, 0, &queue);

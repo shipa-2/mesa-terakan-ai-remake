@@ -70,7 +70,7 @@ classic Gallium R600 driver that has supported this hardware for years).
 |---|---:|---:|---|---|
 | ~~Determine real per-family render backend counts~~ | 5/5 | 2/5 | Done: `max_render_backends_log2` is now populated from `RADEON_INFO_NUM_BACKENDS`, queried by the drm_radeon winsys for TeraScale 1 devices and required to succeed, matching the classic R600 driver's own unconditional query-and-fail-if-missing behavior. Confirmed on real RV710 hardware (ioctl reports 1 backend). R8xx/R9xx keep their existing static table, untouched | A real value backs `max_render_backends_log2` for every recognized TeraScale 1 chip family, sourced from kernel query or documented per-family reference, not guessed |
 | Wire the TeraScale 1 register-emission helpers into command buffer recording, keep surveying and porting per-draw CB/DB state, and build command stream submission | 5/5 | 5/5 | Minimal logical-device creation is now enabled only for hardware-validated R700: physical-device ISA selection, conservative maximum BO alignment and internal allocations are derived from the actual chip family and DRM-reported tiling/backend topology. R600 remains refused. The begin-command-buffer atom is wired to the separate TeraScale 1 SQ/default-register writers, but queue submission still returns `VK_ERROR_DEVICE_LOST` before the winsys because the remaining per-draw packets and meta shaders are not hardware-validated. Real RV710 `1002:954f` passes create/destroy and the guarded-submit negative check. | A trivial graphics submission completes on R700 with register and memory readback checks |
-| TeraScale 1 tiling/surface addressing (bank/pipe swizzle, macro-tile layout) | 5/5 | 5/5 | Started: the pitch/height/base-alignment math (`terakan_image_tiling_terascale_1.c`) is ported and unit-tested against real RV710 tiling parameters, but not wired into `terakan_image.c`'s surface layout computation yet, and the much larger remaining pieces -- per-level offset/size computation, degrade-to-1D-on-small-mip, and the DB_DEPTH_INFO/CB_COLOR_INFO field computation this blocks -- are still fully open. This remains the highest-risk area, since a wrong tiling computation corrupts memory silently rather than failing loudly | A buffer/image round trip through the tiled surface layout matches, the same class of check `terakan_image.c` already does for R8xx/R9xx |
+| TeraScale 1 tiling/surface addressing (bank/pipe swizzle, macro-tile layout) | 5/5 | 5/5 | Layout is wired into image creation: linear/1D/2D alignment, mip offsets, 2D-to-1D degradation, array/3D sizing and block-compressed/subsampled texel-to-block conversion follow classic `radeon_surface.c`. Aspect bases are independently aligned, preventing depth/stencil overlap. Real RV710 create/layout/allocate/bind checks pass for linear RGBA8 and tiled RGBA8/BC1 mip chains. GPU copy/readback and R700 CB/DB descriptor field validation remain open, so queue submission stays blocked. | A buffer/image round trip through the tiled surface layout matches, the same class of check `terakan_image.c` already does for R8xx/R9xx |
 | Port the hand-written meta shader bytecode (blit/resolve/clear/copy/query, all of `src/amd/terascale/vulkan/meta/`) to the R6xx/R7xx CF/ALU/TEX instruction encoding | 4/5 | 5/5 | The NIR-to-bytecode compiler (SFN, `src/gallium/drivers/r600/sfn/`) already accepts `amd_gfx_level` including `R600`/`R700` distinct from `EVERGREEN`, since the classic Gallium R600 driver already uses it for this hardware -- shaders reaching the driver through NIR may need only the right `gfx_level` threaded through, but the meta shaders are hand-written Evergreen-only bytecode and need real per-generation variants | Each meta operation this driver depends on (at minimum blit and clear) passes its existing readback test on TeraScale 1 hardware |
 | Recognize R600/R700 PCI IDs and correctly plumb `gfx_level` through the NIR shader path for real application shaders | 4/5 | 2/5 | The `is_chip_family_supported`/`chip_info_init` work recognizes the full R600..RV740 range. Shader compilation now maps R600 and R700 separately to `R600`/`ISA_CC_R600` and `R700`/`ISA_CC_R700` instead of treating both as Evergreen, with boundary coverage in `terakan_shader_generation_test`; what remains is confirming no Evergreen-specific assumption leaks into `terakan_nir_*` lowering | A real application vertex/fragment shader compiles and renders correctly on TeraScale 1 |
 
@@ -506,10 +506,11 @@ classic Gallium R600 driver that has supported this hardware for years).
   `terakan_image_surface_aspect_compute()` already makes for R8xx/R9xx,
   so this is Vulkan-level surface shape rather than something to
   re-derive from the reference, unlike the tiling math itself.
-  Unit-tested with five hand-derived cases (a chain that never degrades,
+  Unit-tested with six hand-derived cases (a chain that never degrades,
   one that degrades at the base level and stays degraded, a
   fixed-1D-from-the-start chain with no degrade check at all, array
-  layers, and 3D depth planes), reusing the same RV710 alignment
+  layers, 3D depth planes, and a BC1 chain that converts texels to 4x4
+  blocks before alignment), reusing the same RV710 alignment
   parameters as every prior tiling test in this pass.
 
   A fourth follow-up pass wired all of the above into
@@ -522,14 +523,13 @@ classic Gallium R600 driver that has supported this hardware for years).
   a complete `terakan_image_surface` the same shape
   `terakan_image_surface_compute()` itself produces, including the
   combined-depth-stencil array-mode sharing R8xx/R9xx already does.
-  **This integration has no GPU readback validation and does not have a
-  focused unit test**: R700 device creation can now call `vkCreateImage`, but
-  queue submission remains disabled, and the function is not unit-testable in
-  isolation the way the pure tiling-math functions it calls are (it needs
-  real `VkImageCreateInfo`/`terakan_format_info`/`terakan_physical_device`
-  inputs). Treat it as a draft to re-verify once TeraScale 1 device
-  creation exists, not as verified working code -- its own header comment
-  says the same. Two real mistakes were caught by review during this
+  The integration now has real RV710 create/layout/allocate/bind coverage:
+  linear RGBA8 reports 9728-byte size and 512-byte alignment, a 2D-tiled
+  RGBA8 mip chain reports 139264/8192, and a 2D-tiled BC1 mip chain reports
+  348160/8192. All three bind real Radeon BOs without a kernel fault. This
+  is still not GPU readback validation: queue submission remains disabled,
+  so treat tiled addressing as provisional until a copy/readback test passes.
+  Two real mistakes were caught by review during this
   pass specifically because of that lack of a safety net, worth recording
   so a future re-check knows to look here first: an earlier draft
   pre-multiplied the base width by `surfels_per_block` before calling
@@ -539,13 +539,13 @@ classic Gallium R600 driver that has supported this hardware for years).
   entirely for now rather than getting the multiplication order right
   blind; and a copy-paste error passed `bytes_per_element * surfels_per_block`
   (i.e. `bytes_per_block` again) to three tiling calls instead of the
-  intended per-surfel byte size, caught the same way. Also does not
-  handle 4x4-compressed formats (BC1-7) or 8x1/2x1 subsampled formats at
-  all yet (returns `false` rather than guessing at the
-  `block_texels_log2`-based block-width/height division
-  `terakan_image_surface_tiling_compute()` has for R8xx/R9xx) -- see the
-  header comment on `terakan_image_surface_compute_terascale_1()` for the
-  full list of what is and isn't handled.
+  intended per-surfel byte size, caught the same way. Block-compressed and
+  8x1/2x1 or 2x1 subsampled formats now use the reference ordering:
+  minify texel extents first, then divide by block dimensions, then align.
+  Each aspect base is also aligned independently; the previous draft added
+  the lower-bound offset directly and never populated the aspect base field,
+  which could overlap the second aspect with the first. 3x-expand formats
+  remain explicitly rejected rather than assigned a zero-sized surface.
 
   Still not done, and each a substantial piece of its own: the
   `DB_DEPTH_INFO`/`CB_COLOR_INFO` register field computation this
@@ -558,8 +558,8 @@ classic Gallium R600 driver that has supported this hardware for years).
   `CB_COLOR0_INFO`/`DB_DEPTH_INFO` field sets are consistent with the
   simpler algorithm above -- no `BANK_WIDTH`/`BANK_HEIGHT`/`NUM_BANKS`/
   `MACRO_TILE_ASPECT` fields on either register, matching the tiling math
-  needing none of those inputs); block-compressed and subsampled format
-  support; and 3x-expand format support (both just described above).
+  needing none of those inputs); GPU copy/readback validation; and 3x-expand
+  format support.
 
   A fifth follow-up pass ported the emission (not value-computation) side
   of the actual depth surface binding registers:

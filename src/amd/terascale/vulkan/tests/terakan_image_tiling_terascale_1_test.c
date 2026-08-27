@@ -250,7 +250,8 @@ test_mip_chain_layout_no_degrade(void)
     */
    struct terakan_image_tiling_terascale_1_mip_chain_level levels[3];
    uint64_t const total = terakan_image_tiling_terascale_1_mip_chain_layout(
-      300, 50, 1, false, 3, 4, 1, &rv710_2d_alignments_bpe4, &rv710_1d_alignments_bpe4, levels);
+      300, 50, 1, false, 3, 1, 1, 4, 1, &rv710_2d_alignments_bpe4,
+      &rv710_1d_alignments_bpe4, levels);
 
    CHECK(!levels[0].is_1d_tiled_thin1_or_fixed);
    CHECK(levels[0].offset_bytes == 0);
@@ -288,7 +289,8 @@ test_mip_chain_layout_degrades(void)
     */
    struct terakan_image_tiling_terascale_1_mip_chain_level levels[2];
    uint64_t const total = terakan_image_tiling_terascale_1_mip_chain_layout(
-      100, 50, 1, false, 2, 4, 1, &rv710_2d_alignments_bpe4, &rv710_1d_alignments_bpe4, levels);
+      100, 50, 1, false, 2, 1, 1, 4, 1, &rv710_2d_alignments_bpe4,
+      &rv710_1d_alignments_bpe4, levels);
 
    CHECK(levels[0].is_1d_tiled_thin1_or_fixed);
    CHECK(levels[0].offset_bytes == 0);
@@ -315,7 +317,7 @@ test_mip_chain_layout_fixed_1d(void)
     */
    struct terakan_image_tiling_terascale_1_mip_chain_level levels[2];
    uint64_t const total = terakan_image_tiling_terascale_1_mip_chain_layout(
-      50, 30, 1, false, 2, 4, 1, NULL, &rv710_1d_alignments_bpe4, levels);
+      50, 30, 1, false, 2, 1, 1, 4, 1, NULL, &rv710_1d_alignments_bpe4, levels);
 
    CHECK(levels[0].is_1d_tiled_thin1_or_fixed);
    CHECK(levels[0].offset_bytes == 0);
@@ -334,7 +336,8 @@ test_mip_chain_layout_array_layers(void)
     */
    struct terakan_image_tiling_terascale_1_mip_chain_level levels[1];
    uint64_t const total = terakan_image_tiling_terascale_1_mip_chain_layout(
-      300, 50, 3, false, 1, 4, 1, &rv710_2d_alignments_bpe4, &rv710_1d_alignments_bpe4, levels);
+      300, 50, 3, false, 1, 1, 1, 4, 1, &rv710_2d_alignments_bpe4,
+      &rv710_1d_alignments_bpe4, levels);
    CHECK(total == 98304 * 3);
    CHECK(levels[0].slice_bytes == 98304);
    CHECK(levels[0].depth_planes_or_array_layers == 3);
@@ -350,7 +353,8 @@ test_mip_chain_layout_3d_depth(void)
     */
    struct terakan_image_tiling_terascale_1_mip_chain_level levels[2];
    uint64_t const total = terakan_image_tiling_terascale_1_mip_chain_layout(
-      300, 50, 3, true, 2, 4, 1, &rv710_2d_alignments_bpe4, &rv710_1d_alignments_bpe4, levels);
+      300, 50, 3, true, 2, 1, 1, 4, 1, &rv710_2d_alignments_bpe4,
+      &rv710_1d_alignments_bpe4, levels);
    /* Level 0: slice 98304 * 3 depth planes = 294912, already a multiple of the 8192-byte base BO
     * alignment. Level 1: slice 32768 * 1 depth plane = 32768.
     */
@@ -358,6 +362,39 @@ test_mip_chain_layout_3d_depth(void)
    CHECK(levels[1].depth_planes_or_array_layers == 1);
    CHECK(levels[1].offset_bytes == 294912);
    CHECK(total == 294912 + 32768);
+}
+
+static void
+test_mip_chain_layout_block_compressed(void)
+{
+   /* BC1 uses 4x4 texel blocks with 8 bytes per block. On the real RV710 topology, its 2D
+    * alignment is 64x16 blocks. Minification must happen in texels before conversion to blocks:
+    * 1023x511 becomes 256x128 blocks at level 0, then 512x256 texels -> 128x64 blocks at level 1.
+    */
+   struct terakan_image_tiling_terascale_1_alignments const alignments_2d =
+      terakan_image_tiling_terascale_1_alignments_2d_tiled_thin1(
+         RV710_GROUP_BYTES, RV710_NUM_PIPES, RV710_NUM_BANKS, 8, 1, false);
+   struct terakan_image_tiling_terascale_1_alignments const alignments_1d =
+      terakan_image_tiling_terascale_1_alignments_1d_tiled_thin1(
+         RV710_GROUP_BYTES, 8, 1, false);
+   struct terakan_image_tiling_terascale_1_mip_chain_level levels[4];
+   uint64_t const total = terakan_image_tiling_terascale_1_mip_chain_layout(
+      1023, 511, 1, false, 4, 4, 4, 8, 1, &alignments_2d, &alignments_1d, levels);
+
+   CHECK(levels[0].aligned_pitch_surfels == 256);
+   CHECK(levels[0].aligned_height_surfels == 128);
+   CHECK(levels[0].slice_bytes == 262144);
+   CHECK(levels[1].offset_bytes == 262144);
+   CHECK(levels[1].aligned_pitch_surfels == 128);
+   CHECK(levels[1].aligned_height_surfels == 64);
+   CHECK(levels[1].slice_bytes == 65536);
+   CHECK(!levels[2].is_1d_tiled_thin1_or_fixed);
+   CHECK(levels[2].aligned_pitch_surfels == 64);
+   CHECK(levels[2].aligned_height_surfels == 32);
+   CHECK(levels[3].is_1d_tiled_thin1_or_fixed);
+   CHECK(levels[3].aligned_pitch_surfels == 32);
+   CHECK(levels[3].aligned_height_surfels == 16);
+   CHECK(total == 262144 + 65536 + 16384 + 4096);
 }
 
 int
@@ -374,5 +411,6 @@ main(void)
    test_mip_chain_layout_fixed_1d();
    test_mip_chain_layout_array_layers();
    test_mip_chain_layout_3d_depth();
+   test_mip_chain_layout_block_compressed();
    return 0;
 }

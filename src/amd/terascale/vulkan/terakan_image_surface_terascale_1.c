@@ -36,13 +36,16 @@ terakan_image_surface_compute_aspect_terascale_1(
     * multiplication at the right point in its own internal per-level loop, and pre-multiplying the
     * base width before calling it (as an earlier draft of this function did) rounds the surfel
     * count to a power of two instead of the texel count for level > 0, which is wrong. Bailing out
-    * explicitly rather than risk that kind of subtle error, especially since this function has no
-    * way to be exercised against real hardware yet (see the header comment).
+    * explicitly avoids silently applying the block-format path to a different expansion rule.
     */
    if (terakan_format_is_expand_3x(bytes_per_block)) {
       return false;
    }
    unsigned const bytes_per_element = bytes_per_block;
+
+   uint8_t const * const block_texels_log2 = terascale_format_block_texels_log2[aspect_format];
+   uint32_t const block_width = 1u << block_texels_log2[0];
+   uint32_t const block_height = 1u << block_texels_log2[1];
 
    memset(&surface_aspect_out->tiling, 0, sizeof(surface_aspect_out->tiling));
 
@@ -75,7 +78,7 @@ terakan_image_surface_compute_aspect_terascale_1(
    uint64_t const size_bytes = terakan_image_tiling_terascale_1_mip_chain_layout(
       image_create_info->extent.width, image_create_info->extent.height,
       is_3d ? image_create_info->extent.depth : image_create_info->arrayLayers, is_3d,
-      image_create_info->mipLevels, bytes_per_element, samples,
+      image_create_info->mipLevels, block_width, block_height, bytes_per_element, samples,
       array_mode == TERAKAN_IMAGE_TILING_TERASCALE_1_ARRAY_2D_TILED_THIN1 ? &alignments_2d : NULL,
       &alignments_1d_or_fixed, levels);
 
@@ -84,13 +87,19 @@ terakan_image_surface_compute_aspect_terascale_1(
    assert(base_level_alignments->base_level_bo_alignment_bytes >= 0x100);
    surface_aspect_out->alignment_bytes_shr8 = base_level_alignments->base_level_bo_alignment_bytes >> 8;
 
+   uint32_t const aspect_offset_in_memory_bytes_shr8 = ALIGN_POT(
+      offset_in_memory_lower_bound_bytes_shr8, surface_aspect_out->alignment_bytes_shr8);
+   surface_aspect_out->offset_in_memory_bytes_shr8 = aspect_offset_in_memory_bytes_shr8;
+
    assert(image_create_info->mipLevels <= ARRAY_SIZE(surface_aspect_out->levels));
    for (uint32_t level_index = 0; level_index < image_create_info->mipLevels; ++level_index) {
       struct terakan_image_surface_level * const level = &surface_aspect_out->levels[level_index];
       struct terakan_image_tiling_terascale_1_mip_chain_level const * const computed_level =
          &levels[level_index];
+      assert((computed_level->offset_bytes & 0xFF) == 0);
+      assert((computed_level->slice_bytes & 0xFF) == 0);
       level->offset_in_memory_bytes_shr8 =
-         (uint32_t)(offset_in_memory_lower_bound_bytes_shr8 + (computed_level->offset_bytes >> 8));
+         (uint32_t)(aspect_offset_in_memory_bytes_shr8 + (computed_level->offset_bytes >> 8));
       level->slice_size_bytes_shr8 = (uint32_t)(computed_level->slice_bytes >> 8);
       level->aligned_extent_surfels[0] = (uint16_t)computed_level->aligned_pitch_surfels;
       level->aligned_extent_surfels[1] = (uint16_t)computed_level->aligned_height_surfels;
@@ -105,6 +114,7 @@ terakan_image_surface_compute_aspect_terascale_1(
       }
    }
 
+   assert((size_bytes & 0xFF) == 0);
    surface_aspect_out->size_bytes_shr8 = (uint32_t)(size_bytes >> 8);
    return true;
 }
@@ -139,18 +149,6 @@ terakan_image_surface_compute_terascale_1(
 
       enum terascale_format_index const aspect_format =
          format_info->aspect_formats[aspect_index].format;
-
-      /* Formats needing block_texels_log2-based block-width/height division (4x4-compressed BC1-7
-       * and friends, plus the 8x1/2x1 subsampled formats) are not handled yet -- see the header
-       * comment. TERASCALE_FORMATS_BLOCK_R6XX is the broadest of the three related masks (it's
-       * TERASCALE_FORMATS_TILED_ONLY_R6XX -- the 4x4-compressed ones -- unioned with the 8x1/2x1
-       * ones, which are LINEAR_ONLY, not TILED_ONLY), so bailing out on it here is intentionally
-       * more conservative than just the block-compressed case the header comment names, since this
-       * driver doesn't yet handle the 8x1/2x1 block math for TeraScale 1 either.
-       */
-      if (TERASCALE_FORMATS_BLOCK_R6XX & BITFIELD64_BIT(aspect_format)) {
-         return false;
-      }
 
       uint8_t array_mode;
       if (is_combined_depth_stencil_used_by_db && aspect_index == 1) {

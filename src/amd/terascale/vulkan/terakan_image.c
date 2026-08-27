@@ -936,7 +936,7 @@ terakan_image_surface_color_metadata_compute(
 /* format_info must be the result of terakan_format_info_get for image_create_info->format.
  * On failure, the output is left in an undefined state.
  */
-static void
+static bool
 terakan_image_surface_compute(VkImageCreateInfo const * const image_create_info,
                               struct terakan_format_info const * const format_info,
                               struct terakan_physical_device const * const physical_device,
@@ -946,16 +946,11 @@ terakan_image_surface_compute(VkImageCreateInfo const * const image_create_info,
    memset(surface_out, 0, sizeof(*surface_out));
 
    if (physical_device->chip_info.is_terascale_1) {
-      /* terakan_image_surface_compute_terascale_1() returns false for formats it doesn't handle
-       * yet (block-compressed and 8x1/2x1 subsampled formats -- see its header comment). This
-       * function has no way to report that failure (VKAPI_CALL void at both call sites). The
-       * zeroed-out surface_out from the memset above is a safe, inert fallback: a zero-size image
-       * fails allocation harmlessly rather than computing a wrong layout. Queue submission remains
-       * disabled for R700, so none of these layouts are treated as GPU-readback-validated yet.
+      /* TeraScale 1 has a separate r6_surface_init-derived layout path. It reports unsupported
+       * layouts to vkCreateImage rather than leaving a zero-sized surface behind.
        */
-      terakan_image_surface_compute_terascale_1(image_create_info, format_info, physical_device,
-                                                surface_out);
-      return;
+      return terakan_image_surface_compute_terascale_1(image_create_info, format_info,
+                                                       physical_device, surface_out);
    }
 
    surface_out->alignment_bytes_shr8 = 1;
@@ -1009,6 +1004,7 @@ terakan_image_surface_compute(VkImageCreateInfo const * const image_create_info,
     * memory requirement of a buffer or image is never greater than that of another buffer or image
     * created with a greater or equal size."
     */
+   return true;
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -1023,10 +1019,15 @@ terakan_GetDeviceImageMemoryRequirements(VkDevice const deviceHandle,
    struct terakan_format_info format_info;
    if (likely(terakan_format_info_get(pInfo->pCreateInfo->format, &format_info))) {
       struct terakan_image_surface surface;
-      terakan_image_surface_compute(pInfo->pCreateInfo, &format_info, physical_device, &surface);
-      pMemoryRequirements->memoryRequirements.size = (VkDeviceSize)surface.size_bytes_shr8 << 8;
-      pMemoryRequirements->memoryRequirements.alignment = (VkDeviceSize)surface.alignment_bytes_shr8
-                                                          << 8;
+      if (terakan_image_surface_compute(pInfo->pCreateInfo, &format_info, physical_device,
+                                        &surface)) {
+         pMemoryRequirements->memoryRequirements.size = (VkDeviceSize)surface.size_bytes_shr8 << 8;
+         pMemoryRequirements->memoryRequirements.alignment =
+            (VkDeviceSize)surface.alignment_bytes_shr8 << 8;
+      } else {
+         pMemoryRequirements->memoryRequirements.size = 1;
+         pMemoryRequirements->memoryRequirements.alignment = 1;
+      }
    } else {
       vk_loge(VK_LOG_OBJS(terakan_device_log_obj(device)),
               "Terakan vkGetDeviceImageMemoryRequirements: Image format %s is not supported",
@@ -2012,8 +2013,14 @@ terakan_CreateImage(VkDevice const deviceHandle, VkImageCreateInfo const * const
       goto fail_image;
    }
 
-   terakan_image_surface_compute(pCreateInfo, &image->format_info,
-                                 terakan_device_physical_device(device), &image->surface);
+   if (unlikely(!terakan_image_surface_compute(pCreateInfo, &image->format_info,
+                                               terakan_device_physical_device(device),
+                                               &image->surface))) {
+      result = vk_errorf(device, VK_ERROR_FORMAT_NOT_SUPPORTED,
+                         "Image surface layout is not implemented for format %s on this hardware",
+                         vk_Format_to_str(pCreateInfo->format));
+      goto fail_image;
+   }
 
    image->bo = NULL;
    image->va = 0;
