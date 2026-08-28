@@ -1808,6 +1808,23 @@ if with_tests
         timeout : 20,
       )
 
+      terakan_blit_mixed_regions_test = executable(
+        'terakan_blit_mixed_regions_test',
+        ['tests/terakan_blit_mixed_regions_test.c'],
+        dependencies : vulkan_loader_dep,
+      )
+      test(
+        'terakan_blit_mixed_regions',
+        terakan_blit_mixed_regions_test,
+        depends : [libvulkan_terascale, _dev_icd],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 20,
+      )
+
       terakan_vertex_fetch_bounds_vertex_spv = custom_target(
         'terakan_vertex_fetch_bounds.vert.spv.h',
         input : 'tests/terakan_vertex_fetch_bounds.vert',

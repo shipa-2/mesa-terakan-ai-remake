@@ -626,7 +626,16 @@ terakan_CmdBlitImage2(VkCommandBuffer const commandBuffer,
       for (uint32_t region_index = 0; region_index < pBlitImageInfo->regionCount; ++region_index) {
          VkImageBlit2 const * const region = &pBlitImageInfo->pRegions[region_index];
 
-         if (terakan_meta_blit_region_to_copy(region, formats_identical, &copies[0])) {
+         /* This call is only asking whether the region is one of the ones the loop above already
+          * turned into a copy, so its output goes to a scratch destination. It used to be handed
+          * `copies[0]`, which overwrote the first accumulated copy with the last convertible
+          * region's parameters -- one region of the blit was silently replaced by a duplicate of
+          * another. It went unnoticed because it only bites when a blit mixes convertible and
+          * scaled regions, which is what the 3D groups of
+          * dEQP-VK.api.copy_and_blit.core.blit_image.all_formats do.
+          */
+         VkImageCopy2 convertibility_probe;
+         if (terakan_meta_blit_region_to_copy(region, formats_identical, &convertibility_probe)) {
             continue;
          }
 
