@@ -1778,6 +1778,36 @@ if with_tests
         timeout : 20,
       )
 
+      terakan_uniform_texel_buffer_spv = custom_target(
+        'terakan_uniform_texel_buffer.spv.h',
+        input : 'tests/terakan_uniform_texel_buffer.comp',
+        output : 'terakan_uniform_texel_buffer.spv.h',
+        command : [
+          prog_glslang, '-V', '-x', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_uniform_texel_buffer.spv.h.d',
+      )
+      terakan_uniform_texel_buffer_test = executable(
+        'terakan_uniform_texel_buffer_test',
+        [
+          'tests/terakan_uniform_texel_buffer_test.c',
+          terakan_uniform_texel_buffer_spv,
+        ],
+        dependencies : vulkan_loader_dep,
+      )
+      test(
+        'terakan_uniform_texel_buffer',
+        terakan_uniform_texel_buffer_test,
+        depends : [libvulkan_terascale, _dev_icd],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 20,
+      )
+
       terakan_vertex_fetch_bounds_vertex_spv = custom_target(
         'terakan_vertex_fetch_bounds.vert.spv.h',
         input : 'tests/terakan_vertex_fetch_bounds.vert',

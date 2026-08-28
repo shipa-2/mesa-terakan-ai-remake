@@ -730,7 +730,17 @@ terakan_nir_lower_bindings_instr_tex(nir_builder * const b, nir_tex_instr * cons
    int const texture_deref_src_index = nir_tex_instr_src_index(tex, nir_tex_src_texture_deref);
    if (likely(texture_deref_src_index != -1)) {
       nir_tex_src * const texture_src = &tex->src[texture_deref_src_index];
-      if (unlikely(!terakan_nir_get_binding(texture_src->src, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+      /* A sampled buffer -- GLSL's textureBuffer/samplerBuffer, SPIR-V's Dim=Buffer with Sampled=1
+       * -- reaches this pass as an ordinary texture instruction, but its descriptor is a uniform
+       * texel buffer, not a sampled image. Asking for SAMPLED_IMAGE here made every such binding
+       * fail the type check and the fetch be lowered to a null descriptor, so texelFetch on a
+       * uniform texel buffer silently returned zero for every format:
+       * dEQP-VK.api.buffer_view.access.uniform_texel_buffer failed 96 of its 97 cases.
+       */
+      VkDescriptorType const texture_descriptor_type =
+         tex->sampler_dim == GLSL_SAMPLER_DIM_BUF ? VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER
+                                                  : VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+      if (unlikely(!terakan_nir_get_binding(texture_src->src, texture_descriptor_type,
                                             state->layout, b->shader, &binding))) {
          terakan_nir_lower_bindings_instr_to_null(&tex->instr);
          return true;

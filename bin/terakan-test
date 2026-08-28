@@ -70,6 +70,7 @@ gpu_tests=(
   terakan_dynamic_uav_bounds
   terakan_image_bounds
   terakan_image_gather
+  terakan_uniform_texel_buffer
   terakan_clip_distance
   terakan_depth_readback
   terakan_depth_msaa_fetch

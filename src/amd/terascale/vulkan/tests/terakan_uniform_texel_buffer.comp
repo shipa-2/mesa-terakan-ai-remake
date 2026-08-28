@@ -1,0 +1,17 @@
+#version 450
+
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+/* A sampled buffer, not a storage one: this is the shape whose binding lowering used to ask for a
+ * sampled image and get a null descriptor instead.
+ */
+layout(set = 0, binding = 0) uniform utextureBuffer source;
+layout(set = 0, binding = 1, std430) writeonly buffer Results { uvec4 texels[]; } results;
+
+void
+main()
+{
+   for (int texel = 0; texel < 8; ++texel) {
+      results.texels[texel] = texelFetch(source, texel);
+   }
+}
