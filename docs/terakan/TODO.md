@@ -32,6 +32,30 @@ accept the work. Both use a 1–5 scale.
 | Enforce robust buffer and image bounds everywhere | 5/5 | 4/5 | Descriptor bounds are done and regression-covered on all three paths: the SIZE reclamping of the `resource[1]` read path (`terakan_dynamic_offset_bounds`), the UAV/colour path, where `BASE`/`VIEW`/`DIM` are now rebuilt together for the dynamic offset instead of `BASE` being moved on its own (`terakan_dynamic_uav_bounds`), and storage images, where the hardware's own `CB_COLOR*_DIM` and `CB_COLOR*_VIEW` were confirmed to hold stores inside the bound view across mip levels and layer subranges (`terakan_image_bounds`, with negative controls that reach 408 guard words and mistarget layers). **One hole remains open and is now measured rather than guessed**: vertex fetch can read past the end of the bound vertex buffer range. A `32_32_32_32` attribute at attribute offset 4 with a binding size of 8 returns bytes [4, 20) -- twelve bytes past. `terakan_vertex_fetch_bounds_probe` (built, deliberately not a pass/fail test) tabulates the thresholds; they fit neither the "only the first 4 bytes are checked" guess previously recorded in `terakan_physical_device.c` nor an element-complete rule, and are not monotonic in the attribute offset (offset 0 needs 16, offset 2 needs 6). Closing it needs the ISA documentation for the fetch bounds check: the obvious fix of shrinking SIZE over-truncates the offset-0 case, which is why the truncation in `terakan_vertex_input.c` is disabled | Guard regions remain intact for misaligned, dynamic and end-of-range accesses |
 | ~~Integrate query reset/copy/end synchronization with the common barrier machinery~~ | 5/5 | 3/5 | Done, and it turned up more than synchronization: queries had no coverage at all, and `vkCmdCopyQueryPoolResults` had never worked on DRM Radeon (its destination UAV described a colour surface with a pitch of 8, which the kernel rejects, losing the device), while the pipeline-statistics destination offsets were built in `VkQueryPipelineStatisticFlags` bit order and read in hardware counter order. Both fixed. The copy now raises a pending VS partial flush that `vkCmdResetQueryPool`, `vkCmdBeginQuery`, `vkCmdEndQuery` and `vkCmdWriteTimestamp` drain before writing. Note the ordering half is unproven: `terakan_query_sync` still passes with that wait removed, at eight generations of a 64-query pool, so it is kept on the strength of the requirement rather than of the test | Occlusion, timestamp and pipeline-statistics queries pass reuse and cross-stage ordering tests |
 
+### Meta shaders through NIR
+
+Every meta shader in this driver is hand-assembled Evergreen bytecode, per
+generation. Four measured gaps -- 3x-expanded clearing and copying, integer
+colour resolve, and multisample sub-region copying -- each need a shader that
+does not exist, so each has been costed as "write more bytecode by hand" and
+deferred on that basis.
+
+`meta/terakan_meta_nir.c` removes that cost. `terakan_shader_impl_compile` turned
+out to depend on no Vulkan pipeline object, so a meta shader can be built with
+`nir_builder`, run through the driver's own post-link lowering and compiled by
+the same backend as application shaders. Two places in the lowering assumed a
+pipeline layout and now treat NULL as meaning a meta shader, which changes
+nothing for application shaders.
+
+Proven with `TERAKAN_DEBUG_META_NIR_SELFTEST`, which compiles the opaque pixel
+shader as NIR at device creation: 2 dwords, NUM_GPRS 1, CB_SHADER_MASK 0xF, one
+export -- the same size and shape as the hand-written one, both encoding the
+constant into the export's swizzle selects.
+
+What remains is the placement work -- the meta shader BO is sized from static
+byte counts before allocation, so NIR-compiled shaders need compiling before that
+sizing -- and then the four shaders themselves. No existing shader is converted.
+
 ## P2 — optional Vulkan functionality
 
 These are useful, but Vulkan 1.1 permits the corresponding feature bits to be
