@@ -224,11 +224,13 @@ option(
                 'records which generation the build was made for, e.g. in ' +
                 'VkPhysicalDeviceProperties2::driverInfo; the driver already detects ' +
                 'the chip family of whichever GPU it runs on at Vulkan device ' +
-                'creation time, independently of this option. r600 and r700 are not ' +
-                'implemented: Terakan\'s hand-written shader bytecode targets the ' +
-                'Evergreen-and-later instruction encoding, which the older ' +
-                'TeraScale 1 generation does not use, so selecting them only labels ' +
-                'the build.',
+                'creation time, independently of this option, and one binary serves ' +
+                'every generation it supports. r700 has logical-device creation, ' +
+                'image layouts and shader backend selection; queue submission is ' +
+                'still refused for it, since the hand-written meta shader bytecode ' +
+                'and much of the per-draw register state are Evergreen-only. r600 ' +
+                'is recognized and refused at device creation, and selecting it ' +
+                'only labels the build.',
 )
 
 option(

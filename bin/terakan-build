@@ -14,6 +14,13 @@ Build only the Terakan Vulkan ICD and its focused unit tests.
 Environment:
   TERAKAN_BUILD_DIR   build directory (default: ./build-vulkan)
   TERAKAN_BUILD_TYPE  Meson build type (default: release)
+  TERAKAN_TARGET_GENERATION
+                      TeraScale generation to build for: r600, r700, r800, r900
+                      or auto. Unset leaves the Meson default, which is auto --
+                      and auto reads the AMD card in the build machine, so a
+                      machine with an Evergreen card labels an R700 build r800
+                      or r900. Set this explicitly when building for a
+                      generation other than the one installed here.
 EOF
 }
 
@@ -50,6 +57,12 @@ meson_args=(
   -Dbuild-tests=true
   '-Dtools=[]'
 )
+
+# Passed on every setup and reconfigure, so switching an existing build directory between
+# generations works without a wipe.
+if [[ -n ${TERAKAN_TARGET_GENERATION:-} ]]; then
+  meson_args+=("-Dterakan-target-generation=$TERAKAN_TARGET_GENERATION")
+fi
 
 export PKG_CONFIG_PATH=/usr/lib/pkgconfig:/usr/share/pkgconfig
 export CCACHE_DIR=${TERAKAN_CCACHE_DIR:-"$build_dir/.ccache"}
