@@ -176,7 +176,21 @@ worst hit because its region sets mix scaled and unscaled regions, which the 2D
 and 1D sets mostly do not -- and which is why `blit_image.simple_tests` passed
 throughout and said nothing about it.
 
-With that fixed the sample stands at **31 failures**, from 204 where it started:
+The signed 2_10_10_10 formats were then withdrawn from the texture path as well.
+`a2r10g10b10_snorm_pack32` and `a2b10g10r10_snorm_pack32` failed every blit that
+filters or converts, both of their `generate_mipmaps` cases, and both of their
+`uniform_texel_buffer` cases, which is the same family radv zeroes all image
+features for. Copying and vertex fetch of them measure clean and stay -- the
+latter at 4 passes to 0 in `vertex_input`.
+
+The same sweep found something it did not fix: `a2r10g10b10_sint_pack32` and
+`a2r10g10b10_sscaled_pack32` fail `vertex_input` outright, 0 of 2 and 0 of 4,
+while passing images and texel buffers. That is the opposite split from SNORM and
+is still open.
+
+With all of that the sample stands at **23 failures**, from 204 where it started,
+and **`api.buffer_view` fails nothing at all**, from 120. The breakdown after the
+region fix, before the 2_10_10_10 withdrawal, was:
 
 | Group | Passed | Failed |
 |---|---:|---:|
