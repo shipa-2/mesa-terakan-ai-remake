@@ -268,6 +268,27 @@ terakan_GetPhysicalDeviceFormatProperties2(UNUSED VkPhysicalDevice const physica
          image_tiled_only_features = 0;
       }
 
+      /* The signed 2-bit-alpha 10_10_10 formats. A two-bit signed channel is degenerate, and this
+       * family does not survive the texture path: every
+       * dEQP-VK.api.copy_and_blit.core.blit_image case for a2r10g10b10_snorm_pack32 and
+       * a2b10g10r10_snorm_pack32 that filters or converts fails, as do their generate_mipmaps cases
+       * and both of their dEQP-VK.api.buffer_view.access.uniform_texel_buffer cases. AMD's own radv
+       * zeroes all image features and both texel buffer features for the same family.
+       *
+       * Copying them works, for the same reason it works for the SCALED formats above -- a copy
+       * moves the bits without interpreting them -- so the transfer features stay, as does vertex
+       * buffer support, which measures clean at 4 passes and no failures in
+       * dEQP-VK.pipeline.*.vertex_input and is required of a2b10g10r10_snorm_pack32 anyway.
+       */
+      bool const image_number_type_is_signed_2_10_10_10 =
+         format == VK_FORMAT_A2R10G10B10_SNORM_PACK32 ||
+         format == VK_FORMAT_A2B10G10R10_SNORM_PACK32;
+      if (image_number_type_is_signed_2_10_10_10) {
+         image_features =
+            VK_FORMAT_FEATURE_2_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_2_TRANSFER_DST_BIT;
+         image_tiled_only_features = 0;
+      }
+
       bool const image_linear_only = (TERASCALE_FORMATS_LINEAR_ONLY & image_formats_used) != 0;
       bool const image_tiled_only = (TERASCALE_FORMATS_TILED_ONLY_R8XX & image_formats_used) != 0;
       if (!(image_linear_only && image_tiled_only)) {
@@ -307,8 +328,14 @@ terakan_GetPhysicalDeviceFormatProperties2(UNUSED VkPhysicalDevice const physica
          if (buffer_format_info.supports_sq_vertex_fetch &&
              !(TERASCALE_FORMATS_BUFFER_FETCH_BROKEN_3X &
                BITFIELD64_BIT(buffer_format_info.format))) {
-            buffer_features |=
-               VK_FORMAT_FEATURE_2_UNIFORM_TEXEL_BUFFER_BIT | VK_FORMAT_FEATURE_2_VERTEX_BUFFER_BIT;
+            buffer_features |= VK_FORMAT_FEATURE_2_VERTEX_BUFFER_BIT;
+            /* See the signed 2_10_10_10 note above: the texture path cannot read these, but the
+             * vertex fetch can, so only the texel buffer half is withheld.
+             */
+            if (format != VK_FORMAT_A2R10G10B10_SNORM_PACK32 &&
+                format != VK_FORMAT_A2B10G10R10_SNORM_PACK32) {
+               buffer_features |= VK_FORMAT_FEATURE_2_UNIFORM_TEXEL_BUFFER_BIT;
+            }
             /* STORAGE requires a CB unordered access view, and an SQ buffer for CB_IMMED. */
             if (buffer_format_info.supports_cb_color) {
                buffer_features |= VK_FORMAT_FEATURE_2_STORAGE_TEXEL_BUFFER_BIT |
