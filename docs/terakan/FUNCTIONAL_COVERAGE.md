@@ -78,8 +78,12 @@ discarding the sign of mirrored coordinate transforms. After fixing those
 paths, 58 of 149 blit cases pass, 56 fail and 35 are unsupported. The remaining
 failures were concentrated in 3D blits.
 
-The CTS binary is no longer installed on the test machine, so the 3D blit work
-was driven from the driver code and a readback test instead. `terakan_blit_3d`
+The CTS binary was believed to be unavailable, so the 3D blit work was driven
+from the driver code and a readback test instead. That belief was wrong: a built
+`deqp-vk` from VK-GL-CTS 1.4.6.1 sits beside the repository on the development
+machine and runs against Terakan through `bin/terakan-run`. It has since been
+used on the resolve group (see below); the blit batches below still describe the
+state from before that was noticed and have not been rerun. `terakan_blit_3d`
 blits a 3D image whose every slice holds a distinct colour and reports which
 source slice each destination slice received, for a minified, a magnified and a
 mirrored depth range, then blits a four-layer 2D array. Against the code before
@@ -99,7 +103,39 @@ source/destination axis), and an identity `VK_FORMAT_R32_UINT` blit (a single
 from the 8-bit-per-channel packed formats every other blit test here uses).
 All three pass on real CAICOS hardware. This is real, previously-missing
 regression coverage, not a bug found and fixed -- the full per-format matrix
-CTS would exercise remains unverified without the CTS binary.
+CTS would exercise remains unverified, though now for want of a run rather than
+for want of a binary.
+
+### Colour resolve under CTS
+
+`dEQP-VK.api.copy_and_blit.core.resolve_image`, 240 cases, run against Terakan
+for the first time: 15 passed, 87 failed, 138 unsupported. Two of the causes
+were self-inflicted and are fixed, taking the group to 33 passed and 69 failed.
+
+The fixed-function compatibility check demanded equal source and destination
+surface dimensions, which was an assumption rather than a measurement --
+CB_RESOLVE only requires the region to sit at the same offset in both. Requiring
+the region to fit inside each surface instead took `diff_image_size` from 9
+passing and 18 failing to 27 passing and none failing. Differing array layers
+were excluded because Evergreen shares one per-draw array-slice select across
+every bound colour buffer; the destination is now moved to meet the source by
+shifting its base address, which works whenever the destination carries no
+colour metadata.
+
+The 69 that remain decompose exactly, and none of them is the resolve maths:
+
+- 60 cases are gated on multisample `vkCmdCopyImage`, which is still a silent
+  no-op. 20 of them say so directly ("Intermediate verification failed for
+  coordinates (0, 0) sample 0" -- the intermediate copy never happened) and 40
+  fail later at the final compare. These are every `*_copy_before_resolving*`
+  group plus `whole_array_image` and `whole_array_image_one_region`, both of
+  which also copy the multisample image before resolving it.
+- 9 cases (`partial`, `with_regions`) need differing source and destination
+  offsets, which one coordinate stream cannot express. Those want the shader
+  resolve path, disabled in `terakan_meta_resolve.c`.
+
+So multisample `vkCmdCopyImage` is worth 60 of the 69, on top of being an
+application-visible silent no-op in its own right.
 
 `terakan_copy_image_subresource` covers the vkCmdCopyImage subresource
 gaps the "remaining copy, blit and resolve" acceptance criteria name
