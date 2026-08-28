@@ -1540,6 +1540,22 @@ static void
 terakan_hw_config_draw_emit_db_alpha_to_mask(
    struct terakan_gfx_command_writer * const command_writer)
 {
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
+      /* The tracked value is Evergreen-shaped. Only ENABLE is API state shared with R700; classic
+       * r600 uses regular 2,2,2,2 offsets even when Evergreen would select dithered locations.
+       */
+      uint32_t * packet = terakan_gfx_command_writer_emit(
+         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG, 3);
+      if (unlikely(packet == NULL)) {
+         return;
+      }
+      uint32_t const r700_value =
+         terakan_hw_config_draw_terascale_1_db_alpha_to_mask_encode(
+            G_028B70_ALPHA_TO_MASK_ENABLE(command_writer->hw_config_draw.db_alpha_to_mask_));
+      packet = terakan_hw_config_draw_terascale_1_write_db_alpha_to_mask(packet, r700_value);
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
+      return;
+   }
    terakan_hw_config_draw_emit_context_register(command_writer, R_028B70_DB_ALPHA_TO_MASK,
                                                 command_writer->hw_config_draw.db_alpha_to_mask_);
 }

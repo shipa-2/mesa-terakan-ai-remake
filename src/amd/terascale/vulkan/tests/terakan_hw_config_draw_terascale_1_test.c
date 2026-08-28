@@ -103,6 +103,25 @@ test_db_depth_base_info(void)
    CHECK(packets[3] == db_depth_info);
 }
 
+static void
+test_db_alpha_to_mask(void)
+{
+   uint32_t const offsets = S_028D44_ALPHA_TO_MASK_OFFSET0(2) |
+                            S_028D44_ALPHA_TO_MASK_OFFSET1(2) |
+                            S_028D44_ALPHA_TO_MASK_OFFSET2(2) |
+                            S_028D44_ALPHA_TO_MASK_OFFSET3(2);
+   CHECK(terakan_hw_config_draw_terascale_1_db_alpha_to_mask_encode(false) == offsets);
+   uint32_t const enabled = offsets | S_028D44_ALPHA_TO_MASK_ENABLE(1);
+   CHECK(terakan_hw_config_draw_terascale_1_db_alpha_to_mask_encode(true) == enabled);
+
+   uint32_t packets[3];
+   CHECK(terakan_hw_config_draw_terascale_1_write_db_alpha_to_mask(packets, enabled) ==
+         packets + 3);
+   CHECK(packets[0] == PKT3(PKT3_SET_CONTEXT_REG, 1, 0));
+   CHECK(packets[1] == (R_028D44_DB_ALPHA_TO_MASK - R600_CONTEXT_REG_OFFSET) >> 2);
+   CHECK(packets[2] == enabled);
+}
+
 static struct terakan_hw_config_draw_terascale_1_cb_color_input
 representative_cb_color_input(void)
 {
@@ -254,6 +273,7 @@ main(void)
    test_db_render_control_override_default_matches_r8xx_baseline();
    test_db_depth_size();
    test_db_depth_base_info();
+   test_db_alpha_to_mask();
    test_cb_color_encode();
    test_cb_color_encode_rejects_unported_surfaces();
    test_cb_color_packets();

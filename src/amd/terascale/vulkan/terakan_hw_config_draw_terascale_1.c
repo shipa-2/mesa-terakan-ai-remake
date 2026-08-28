@@ -63,6 +63,21 @@ terakan_hw_config_draw_terascale_1_write_db_depth_base_info(uint32_t * packet,
    return packet;
 }
 
+uint32_t
+terakan_hw_config_draw_terascale_1_db_alpha_to_mask_encode(bool const enable)
+{
+   return S_028D44_ALPHA_TO_MASK_ENABLE(enable) | S_028D44_ALPHA_TO_MASK_OFFSET0(2) |
+          S_028D44_ALPHA_TO_MASK_OFFSET1(2) | S_028D44_ALPHA_TO_MASK_OFFSET2(2) |
+          S_028D44_ALPHA_TO_MASK_OFFSET3(2);
+}
+
+uint32_t *
+terakan_hw_config_draw_terascale_1_write_db_alpha_to_mask(uint32_t * const packet,
+                                                          uint32_t const value)
+{
+   return write_context_reg(packet, R_028D44_DB_ALPHA_TO_MASK, value);
+}
+
 bool
 terakan_hw_config_draw_terascale_1_cb_color_encode(
    struct terakan_hw_config_draw_terascale_1_cb_color_input const * const input,

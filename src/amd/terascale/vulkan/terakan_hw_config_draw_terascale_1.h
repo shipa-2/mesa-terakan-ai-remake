@@ -83,6 +83,16 @@ uint32_t * terakan_hw_config_draw_terascale_1_write_db_depth_base_info(uint32_t 
                                                                         uint32_t db_depth_base,
                                                                         uint32_t db_depth_info);
 
+/* R700 DB_ALPHA_TO_MASK has the same ENABLE/OFFSET field positions as Evergreen, but lives at
+ * R_028D44 rather than R_028B70. Classic r600_create_blend_state_mode() always uses the regular
+ * 2,2,2,2 offsets, so take only the API-visible enable here rather than carrying an
+ * Evergreen-shaped register value across generations.
+ */
+uint32_t terakan_hw_config_draw_terascale_1_db_alpha_to_mask_encode(bool enable);
+
+uint32_t * terakan_hw_config_draw_terascale_1_write_db_alpha_to_mask(uint32_t * packet,
+                                                                      uint32_t value);
+
 /* R600/R700 CB_COLOR is not the shorter form of the R8xx/R9xx descriptor. Even though the
  * FORMAT/ARRAY_MODE/NUMBER_TYPE values are numerically shared, INFO diverges after bit 14, and the
  * other fields live in seven independently-strided register arrays rather than one per-target
