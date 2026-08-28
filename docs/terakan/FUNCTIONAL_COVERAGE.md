@@ -188,7 +188,26 @@ The same sweep found something it did not fix: `a2r10g10b10_sint_pack32` and
 while passing images and texel buffers. That is the opposite split from SNORM and
 is still open.
 
-With all of that the sample stands at **23 failures**, from 204 where it started,
+Linear filtering was then withdrawn for unpacked three-component formats. Every
+remaining blit failure used `VK_FILTER_LINEAR` -- nearest failed nothing at all,
+220 cases across all three image types -- and within that `r32g32b32_sfloat`
+failed 5 of its 6 linear blits while passing all 5 nearest ones. It is the only
+unpacked three-component format advertised as a sampled image at all, the 8- and
+16-bit ones having no texture fetch.
+
+That leaves **18 failures, and both remaining causes are now explained**:
+
+- 12 `image_to_image` cases, all three-component SCALED copies through the
+  3x-expansion path.
+- 6 blits that are 3D and linear, 6 of the 17 such cases. The driver documents
+  the reason itself, in `terakan_meta_blit_depth_source_slice`: a 3D blit source
+  is sampled as a 2D array, which has no depth filter, so the depth axis picks
+  the nearest slice whichever filter was asked for. The 11 that pass are the ones
+  whose depth mapping is one to one, where nearest and linear agree. Correcting
+  it means sampling the source as a true 3D texture, which the hand-written blit
+  pixel shader cannot currently do.
+
+With all of that the sample stands at **18 failures**, from 204 where it started,
 and **`api.buffer_view` fails nothing at all**, from 120. The breakdown after the
 region fix, before the 2_10_10_10 withdrawal, was:
 
