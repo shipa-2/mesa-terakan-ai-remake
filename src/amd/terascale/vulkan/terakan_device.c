@@ -21,6 +21,7 @@
  * IN THE SOFTWARE.
  */
 
+#include "meta/terakan_meta_nir.h"
 #include "terakan_device.h"
 
 #include "terakan_command_buffer.h"
@@ -297,6 +298,32 @@ terakan_device_init(struct terakan_device * const device,
          }
       }
       terakan_bo_unmap(device->meta_shaders_bo);
+   }
+
+   /* Self-check for the NIR meta shader path, off by default because it costs a full shader
+    * compilation at every vkCreateDevice. It builds a meta shader as NIR, runs it through the
+    * driver's post-link lowering and the same backend that compiles application shaders, and
+    * reports the bytecode size and register state it produced. See terakan_meta_nir.c for why that
+    * path exists; this is how it is exercised until a meta operation actually uses it.
+    */
+   if (unlikely(getenv("TERAKAN_DEBUG_META_NIR_SELFTEST") != NULL)) {
+      struct terakan_shader_impl meta_nir_shader;
+      nir_shader * const meta_nir = terakan_meta_nir_build_opaque_ps(device);
+      VkResult const meta_nir_result =
+         terakan_meta_nir_compile(device, meta_nir, &meta_nir_shader);
+      if (meta_nir_result == VK_SUCCESS) {
+         fprintf(stderr,
+                 "[TERAKAN_META_NIR] opaque_ps compiled: %u dwords, NUM_GPRS=%u, "
+                 "cb_shader_mask=0x%x, sq_pgm_exports_ps=0x%x\n",
+                 meta_nir_shader.shader.bc.ndw,
+                 G_028844_NUM_GPRS(meta_nir_shader.static_state.sq_pgm_resources[0]),
+                 meta_nir_shader.static_state.stage.ps.cb_shader_mask,
+                 meta_nir_shader.static_state.stage.ps.sq_pgm_exports_ps);
+         terakan_shader_impl_finish(&meta_nir_shader);
+      } else {
+         fprintf(stderr, "[TERAKAN_META_NIR] opaque_ps failed to compile with VkResult %d\n",
+                 (int)meta_nir_result);
+      }
    }
 
    if (mtx_init(&device->completion_mutex, mtx_plain) != thrd_success) {

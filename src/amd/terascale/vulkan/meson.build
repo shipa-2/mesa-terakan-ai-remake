@@ -81,6 +81,8 @@ libterakan_files = files(
   'meta/terakan_meta_blit_image.c',
   'meta/terakan_meta_dummy.c',
   'meta/terakan_meta_impl.h',
+  'meta/terakan_meta_nir.c',
+  'meta/terakan_meta_nir.h',
   'meta/terakan_meta_query_accum.c',
   'meta/terakan_meta_query_copy.c',
   'meta/terakan_meta_resolve.c',

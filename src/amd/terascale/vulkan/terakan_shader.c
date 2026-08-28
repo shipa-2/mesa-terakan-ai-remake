@@ -478,7 +478,13 @@ terakan_shader_lower_and_optimize_post_link(
    };
    NIR_PASS(_, nir, nir_lower_io_to_scalar, load_store_vectorize_options.modes, NULL, NULL);
    /* TODO(Triang3l): VK_EXT_pipeline_robustness. */
-   if (pipeline_layout->vk.base.device->enabled_features.robustBufferAccess) {
+   /* A NULL layout means a meta shader built as NIR (see meta/terakan_meta_nir.c). Those address
+    * the hardware's resource slots directly rather than through descriptors, so there is no
+    * descriptor access for robustness lowering to bound and nothing for the binding pass below to
+    * resolve either.
+    */
+   if (pipeline_layout != NULL &&
+       pipeline_layout->vk.base.device->enabled_features.robustBufferAccess) {
       load_store_vectorize_options.robust_modes |= nir_var_mem_ubo | nir_var_mem_ssbo;
    }
    load_store_vectorize_options.cb_data = &load_store_vectorize_options.robust_modes;
@@ -489,10 +495,15 @@ terakan_shader_lower_and_optimize_post_link(
     * placed above color attachments.
     */
 
-   NIR_PASS(
-      _, nir, terakan_nir_lower_bindings, pipeline_layout, sqk_usage,
-      nir->info.stage == MESA_SHADER_FRAGMENT ? util_bitcount(rtv_dsb_uncompacted_exports) : 0,
-      uavs_for_mutable_resources_needed, driver_push_constants_used);
+   /* Skipped entirely for a meta shader built as NIR, which has no descriptors to resolve; see the
+    * note on the NULL layout above.
+    */
+   if (pipeline_layout != NULL) {
+      NIR_PASS(
+         _, nir, terakan_nir_lower_bindings, pipeline_layout, sqk_usage,
+         nir->info.stage == MESA_SHADER_FRAGMENT ? util_bitcount(rtv_dsb_uncompacted_exports) : 0,
+         uavs_for_mutable_resources_needed, driver_push_constants_used);
+   }
 
    /* Binding lowering replaces SSBO and image operations, but their
     * vulkan_resource_index producers may become dead only after the replacement. SFN doesn't

@@ -1,0 +1,35 @@
+/*
+ * Copyright © 2026 Terakan contributors
+ * SPDX-License-Identifier: MIT
+ */
+
+#ifndef TERAKAN_META_NIR_H
+#define TERAKAN_META_NIR_H
+
+#include "terakan_shader.h"
+
+#include <vulkan/vulkan.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+struct terakan_device;
+struct nir_shader;
+
+/* Runs the driver's post-link lowering over a meta shader built as NIR and compiles it with the
+ * same backend as application shaders. Consumes `nir`. On success the caller owns
+ * `shader_out->shader` and must release it with terakan_shader_impl_finish once the bytecode has
+ * been copied where it belongs. See the file comment in terakan_meta_nir.c.
+ */
+VkResult terakan_meta_nir_compile(struct terakan_device * device, struct nir_shader * nir,
+                                  struct terakan_shader_impl * shader_out);
+
+/* Exports (0, 0, 0, 1) to render target 0: the stand-in for a pipeline with no fragment shader. */
+struct nir_shader * terakan_meta_nir_build_opaque_ps(struct terakan_device const * device);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* TERAKAN_META_NIR_H */
