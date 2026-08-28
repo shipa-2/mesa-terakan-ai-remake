@@ -235,11 +235,20 @@ else was wrong: the buffer view builds a correct resource descriptor, the
 descriptor set stores it, and the fetch lowers to `load_buffer_resource_r600`
 with the right format.
 
-The group is now at 20 failures, and they are almost entirely three-component
-formats -- `r8g8b8`, `b8g8r8`, `r16g16b16` in every signedness, plus two
-`a2*_snorm_pack32`. The driver already records that the hardware returns
-completely invalid values for 8_8_8 and 16_16_16 buffer fetches, so those are an
-over-claim of the same kind the SCALED formats were.
+That took the group to 20 failures, almost entirely three-component formats --
+`r8g8b8`, `b8g8r8`, `r16g16b16` in every signedness -- which the driver already
+recorded as unfetchable from a buffer, and went on advertising anyway.
+`dEQP-VK.pipeline.*.vertex_input` settled it from the other direction with an
+exact split: every variant reading all three components failed, every
+`missing_components` variant passed, 40 and 40 with nothing in between. Both uses
+are now withdrawn for 8_8_8, 16_16_16 and 16_16_16_FLOAT, which is narrower than
+the existing `TERASCALE_FORMATS_EXPAND_3X` mask because `r32g32b32` passes both
+and stays.
+
+**`api.buffer_view` is now at 2 failures, from 120.** The two are
+`a2r10g10b10_snorm_pack32` and `a2b10g10r10_snorm_pack32`, a separate
+four-component packed problem. The three-component `vertex_input` subset went
+from 40 failures to none.
 
 `terakan_uniform_texel_buffer` covers R32_UINT and R8G8B8A8_UINT, checking the
 single-channel expansion to (x, 0, 0, 1) and four-channel byte order, and reports
