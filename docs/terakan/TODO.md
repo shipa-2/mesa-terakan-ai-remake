@@ -70,7 +70,7 @@ classic Gallium R600 driver that has supported this hardware for years).
 |---|---:|---:|---|---|
 | ~~Determine real per-family render backend counts~~ | 5/5 | 2/5 | Done: `max_render_backends_log2` is now populated from `RADEON_INFO_NUM_BACKENDS`, queried by the drm_radeon winsys for TeraScale 1 devices and required to succeed, matching the classic R600 driver's own unconditional query-and-fail-if-missing behavior. Confirmed on real RV710 hardware (ioctl reports 1 backend). R8xx/R9xx keep their existing static table, untouched | A real value backs `max_render_backends_log2` for every recognized TeraScale 1 chip family, sourced from kernel query or documented per-family reference, not guessed |
 | Wire the TeraScale 1 register-emission helpers into command buffer recording, keep surveying and porting per-draw CB/DB state, and build command stream submission | 5/5 | 5/5 | Minimal logical-device creation is now enabled only for hardware-validated R700: physical-device ISA selection, conservative maximum BO alignment and internal allocations are derived from the actual chip family and DRM-reported tiling/backend topology. R600 remains refused. The begin-command-buffer atom is wired to the separate TeraScale 1 SQ/default-register writers, but queue submission still returns `VK_ERROR_DEVICE_LOST` before the winsys because the remaining per-draw packets and meta shaders are not hardware-validated. Real RV710 `1002:954f` passes create/destroy and the guarded-submit negative check. | A trivial graphics submission completes on R700 with register and memory readback checks |
-| TeraScale 1 tiling/surface addressing (bank/pipe swizzle, macro-tile layout) | 5/5 | 5/5 | Layout is wired into image creation: linear/1D/2D alignment, mip offsets, 2D-to-1D degradation, array/3D sizing and block-compressed/subsampled texel-to-block conversion follow classic `radeon_surface.c`. Aspect bases are independently aligned, preventing depth/stencil overlap. Real RV710 create/layout/allocate/bind checks pass for linear RGBA8 and tiled RGBA8/BC1 mip chains. GPU copy/readback and R700 CB/DB descriptor field validation remain open, so queue submission stays blocked. | A buffer/image round trip through the tiled surface layout matches, the same class of check `terakan_image.c` already does for R8xx/R9xx |
+| TeraScale 1 tiling/surface addressing (bank/pipe swizzle, macro-tile layout) | 5/5 | 5/5 | Layout is wired into image creation: linear/1D/2D alignment, mip offsets, 2D-to-1D degradation, array/3D sizing and block-compressed/subsampled texel-to-block conversion follow classic `radeon_surface.c`. Aspect bases are independently aligned, preventing depth/stencil overlap. Real RV710 create/layout/allocate/bind checks pass for linear RGBA8 and tiled RGBA8/BC1 mip chains. R700 single-sampled color RTV `BASE/SIZE/VIEW/INFO` encoding and register emission now follow classic `r600_init_color_surface()`/`r600_emit_framebuffer_state()` with exact packet tests; MSAA metadata, UAVs, DB value computation and GPU copy/readback remain open, so queue submission stays blocked. | A buffer/image round trip through the tiled surface layout matches, the same class of check `terakan_image.c` already does for R8xx/R9xx |
 | Port the hand-written meta shader bytecode (blit/resolve/clear/copy/query, all of `src/amd/terascale/vulkan/meta/`) to the R6xx/R7xx CF/ALU/TEX instruction encoding | 4/5 | 5/5 | The NIR-to-bytecode compiler (SFN, `src/gallium/drivers/r600/sfn/`) already accepts `amd_gfx_level` including `R600`/`R700` distinct from `EVERGREEN`, since the classic Gallium R600 driver already uses it for this hardware -- shaders reaching the driver through NIR may need only the right `gfx_level` threaded through, but the meta shaders are hand-written Evergreen-only bytecode and need real per-generation variants | Each meta operation this driver depends on (at minimum blit and clear) passes its existing readback test on TeraScale 1 hardware |
 | Recognize R600/R700 PCI IDs and correctly plumb `gfx_level` through the NIR shader path for real application shaders | 4/5 | 2/5 | The `is_chip_family_supported`/`chip_info_init` work recognizes the full R600..RV740 range. Shader compilation now maps R600 and R700 separately to `R600`/`ISA_CC_R600` and `R700`/`ISA_CC_R700` instead of treating both as Evergreen, with boundary coverage in `terakan_shader_generation_test`; what remains is confirming no Evergreen-specific assumption leaks into `terakan_nir_*` lowering | A real application vertex/fragment shader compiles and renders correctly on TeraScale 1 |
 
@@ -588,6 +588,24 @@ classic Gallium R600 driver that has supported this hardware for years).
   register shape is ready once that research is done, not because the
   value-computation problem is solved -- it remains the largest concrete
   gap left before a TeraScale 1 depth attachment could actually be bound.
+
+  A sixth follow-up ported the first complete color-target descriptor path rather than merely its
+  register shape. `terakan_hw_config_draw_terascale_1_cb_color_encode()` repacks the existing
+  field-level intermediate descriptor into R600/R700 `CB_COLORn_INFO`, `SIZE` and `VIEW`, and
+  `terakan_hw_config_draw_terascale_1_write_cb_color()` emits the seven separate R600/R700 register
+  arrays (`INFO`, `BASE`, `FRAG`, `TILE`, `SIZE`, `VIEW`, `MASK`) used by
+  `r600_emit_framebuffer_state()`. This is intentionally limited to single-sampled RTVs without
+  FMASK/CMASK: in that exact case classic `r600_init_color_surface()` points `FRAG` and `TILE` at
+  the color base and leaves `MASK` zero. Terakan does the same and rejects, rather than guesses,
+  MSAA/metadata and UAV descriptors. `terakan_hw_config_draw_emit_cb_color()` now selects this path
+  at runtime for TeraScale 1, never the Evergreen `CB_COLOR0_BASE..DIM` block; targets 8-11 and the
+  compute path stay suppressed because R600/R700 has only eight color targets and its UAV/compute
+  state is not ported. The existing `terakan_hw_config_draw_terascale_1` test (already present in
+  both Meson and `bin/terakan-test`) checks the exact R700 field values, all seven packet offsets,
+  disabled metadata bases, and rejection boundaries. Its negative control changed the
+  implementation's `COMP_SWAP` value while leaving the oracle intact and made the test abort at
+  the `INFO` comparison. This proves CPU-side packet construction only: no R700 command stream was
+  submitted and no tiled GPU copy/readback has passed yet.
 
 - TeraScale 1 (R600/R700) `CB_COLORn_INFO`/`DB_Z_INFO` field-position
   comparison, following up on the spot-check above with the real

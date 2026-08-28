@@ -501,17 +501,16 @@ main()
    /* Non-zero mip level, offset render area, single layer both sides. */
    run_case("mip_and_offset", 1, 0, 2, 1, 1, 0, VkRect2D{{2, 2}, {4, 4}}, true);
 
-   /* Non-zero array layer shared identically by the source and the destination -- the only
-    * array-layer combination CB_RESOLVE supports on this hardware.
-    */
+   /* Non-zero array layer shared identically by the source and the destination. */
    run_case("matched_array_layer", 2, 1, 1, 2, 0, 1, VkRect2D{{2, 2}, {4, 4}}, true);
 
-   /* Regression check for the fix: source layer 0, destination layer 1. Before the fix this wrote
-    * the resolved color into the destination's layer 0 (the source's layer) instead of doing
-    * nothing; the sentinel must now survive everywhere in both layers.
+   /* Source layer 0, destination layer 1, which the shared per-draw slice select cannot express
+    * directly. The destination is retargeted by shifting its base address instead, so layer 1 must
+    * now hold the resolved colour -- and layer 0, which is where the resolve originally landed when
+    * the slice select went unhandled, must still hold the sentinel.
     */
-   run_case("mismatched_array_layer_layer1_untouched", 1, 0, 1, 2, 0, 1, VkRect2D{{0, 0}, {8, 8}},
-            false, /* extra_untouched_layer */ 0);
+   run_case("mismatched_array_layer", 1, 0, 1, 2, 0, 1, VkRect2D{{0, 0}, {8, 8}}, true,
+            /* extra_untouched_layer */ 0);
 
    vkDeviceWaitIdle(device);
    vkDestroyCommandPool(device, command_pool, nullptr);

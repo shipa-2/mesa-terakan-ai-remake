@@ -6,6 +6,7 @@
 #ifndef TERAKAN_HW_CONFIG_DRAW_TERASCALE_1_H
 #define TERAKAN_HW_CONFIG_DRAW_TERASCALE_1_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -81,6 +82,63 @@ uint32_t * terakan_hw_config_draw_terascale_1_write_db_depth_size(uint32_t * pac
 uint32_t * terakan_hw_config_draw_terascale_1_write_db_depth_base_info(uint32_t * packet,
                                                                         uint32_t db_depth_base,
                                                                         uint32_t db_depth_info);
+
+/* R600/R700 CB_COLOR is not the shorter form of the R8xx/R9xx descriptor. Even though the
+ * FORMAT/ARRAY_MODE/NUMBER_TYPE values are numerically shared, INFO diverges after bit 14, and the
+ * other fields live in seven independently-strided register arrays rather than one per-target
+ * register block. Keep the input field-based so this translation unit never needs evergreend.h.
+ *
+ * This first port deliberately accepts only single-sampled RTVs with metadata disabled. Classic
+ * r600_init_color_surface() gives multisampled surfaces real FMASK/CMASK state, while Terakan's
+ * TeraScale 1 surface layout does not compute those allocations yet. UAV/compute use is also not
+ * ready on TeraScale 1. Returning false preserves those boundaries instead of manufacturing packet
+ * values that could address the wrong memory once queue submission is eventually enabled.
+ */
+struct terakan_hw_config_draw_terascale_1_cb_color_input {
+   uint32_t base;
+   uint32_t pitch_tile_max;
+   uint32_t slice_tile_max;
+   uint32_t slice_start;
+   uint32_t slice_max;
+   uint32_t endian;
+   uint32_t format;
+   uint32_t array_mode;
+   uint32_t number_type;
+   uint32_t comp_swap;
+   bool blend_clamp;
+   bool blend_bypass;
+   bool simple_float;
+   uint32_t source_format;
+   bool is_uav;
+   bool is_multisampled;
+   bool metadata_enabled;
+};
+
+struct terakan_hw_config_draw_terascale_1_cb_color {
+   uint32_t base;
+   uint32_t size;
+   uint32_t view;
+   uint32_t info;
+   uint32_t fmask;
+   uint32_t cmask;
+   uint32_t mask;
+};
+
+bool terakan_hw_config_draw_terascale_1_cb_color_encode(
+   struct terakan_hw_config_draw_terascale_1_cb_color_input const * input,
+   struct terakan_hw_config_draw_terascale_1_cb_color * color_out);
+
+/* Writes INFO, BASE, FRAG (FMASK), TILE (CMASK), SIZE, VIEW and MASK, in that order, as seven
+ * one-register SET_CONTEXT_REG packets. The base-bearing payload dwords are at indices 5, 8 and 11
+ * in the returned 21-dword stream, which the caller uses for BO relocations.
+ */
+uint32_t * terakan_hw_config_draw_terascale_1_write_cb_color(
+   uint32_t * packet, uint32_t color_index,
+   struct terakan_hw_config_draw_terascale_1_cb_color const * color);
+
+uint32_t * terakan_hw_config_draw_terascale_1_write_cb_color_unbound(uint32_t * packet,
+                                                                      uint32_t color_index,
+                                                                      uint32_t source_format);
 
 #ifdef __cplusplus
 }

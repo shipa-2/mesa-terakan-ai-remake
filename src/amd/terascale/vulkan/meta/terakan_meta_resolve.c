@@ -654,6 +654,51 @@ terakan_meta_resolve_depth_stencil(struct terakan_gfx_command_writer * const com
                          TERAKAN_BARRIER_ACTION_INV_TC);
 }
 
+/* Evergreen has one per-draw array-slice select shared by every bound colour buffer, not an
+ * independent one per RTV, so a source and destination sitting on different array layers cannot
+ * both be addressed through their own SLICE_START: the source's wins and the resolve lands on the
+ * wrong layer of the destination (confirmed on real CAICOS hardware -- see
+ * terakan_color_resolve_subresource_test).
+ *
+ * The destination can be moved to meet the source instead. Shift its base address by the layer
+ * difference and let it select the source's slice: the shared select then lands on the layer the
+ * caller asked for. Nothing changes when the layers already match, which is the case the fixed
+ * function always handled.
+ *
+ * Only the destination can be moved, and only when it carries no colour metadata. CMASK and FMASK
+ * are not addressed through a base the driver can shift -- terakan_image_create_color_descriptor
+ * leaves their bases at the image and lets the same slice select index them through their own tile
+ * strides -- so moving the colour base out from under them desynchronises the two. That rules out
+ * the multisample source, which always has them, and any destination that has them. Such a region
+ * is skipped, as it was before.
+ */
+static bool
+terakan_meta_resolve_retarget_dst_slice(struct terakan_color_descriptor * const dst_color,
+                                        struct terakan_color_meta_descriptor * const dst_meta,
+                                        struct terakan_image const * const dst_image,
+                                        unsigned const dst_aspect_index,
+                                        uint32_t const dst_mip_level, uint32_t const src_slice)
+{
+   uint32_t const dst_slice = G_028C6C_SLICE_START(dst_color->view);
+   if (dst_slice == src_slice) {
+      return true;
+   }
+   if (terakan_image_surface_has_color_metadata(&dst_image->surface)) {
+      return false;
+   }
+   uint32_t const slice_size_bytes_shr8 =
+      dst_image->surface.aspects[dst_aspect_index].levels[dst_mip_level].slice_size_bytes_shr8;
+   dst_color->base = (uint32_t)((int64_t)dst_color->base +
+                                ((int64_t)dst_slice - (int64_t)src_slice) * slice_size_bytes_shr8);
+   /* max_depth_or_layer_count is 1 here, so SLICE_MAX equals SLICE_START. */
+   dst_color->view = S_028C6C_SLICE_START(src_slice) | S_028C6C_SLICE_MAX(src_slice);
+   /* FMASK must equal BASE on a single-sampled surface, so rebuild the disabled descriptor from
+    * the moved base rather than leaving it pointing at the old layer.
+    */
+   *dst_meta = terakan_color_meta_descriptor_create_disabled(dst_color);
+   return true;
+}
+
 static bool
 terakan_meta_resolve_region_is_fixed_function_compatible(
    struct terakan_image const * const src_image, struct terakan_image const * const dst_image,
@@ -670,22 +715,25 @@ terakan_meta_resolve_region_is_fixed_function_compatible(
       .depth = 1,
    };
 
-   /* CB_RESOLVE operates on matching source and destination coordinates and surface dimensions.
-    * Scissoring the draw makes same-offset subrectangles safe without rebasing either surface.
+   /* CB_RESOLVE reads and writes one coordinate stream, so the two regions must sit at the same
+    * offset; scissoring the draw makes a same-offset subrectangle safe without rebasing either
+    * surface. Differing offsets would need the shader path, which is disabled elsewhere in this
+    * file.
     *
-    * It also turns out to require a matching array slice between the two surfaces: resolving into
-    * a destination array layer other than the source's own layer does not merely fail to write the
-    * requested layer, it silently writes into the source's layer of the destination image instead
-    * (confirmed on real CAICOS hardware -- see terakan_color_resolve_subresource_test, which
-    * exercises a same-layer case that passes and a cross-layer case that would corrupt an unrelated
-    * layer if not excluded here). This matches Evergreen's single, per-draw array-slice-select
-    * state being shared across all bound color buffers rather than being independent per RTV. There
-    * is no shader fallback for this case (the alternate shader resolve path is disabled elsewhere in
-    * this file), so a cross-layer region is skipped like any other incompatible one instead of being
-    * silently misdirected.
+    * The surfaces themselves do not have to match, though. This used to also require equal source
+    * and destination surface dimensions, which was an assumption rather than a measurement: with it
+    * dropped and only the region required to fit inside both, the whole
+    * dEQP-VK.api.copy_and_blit.core.resolve_image.diff_image_size group goes from 9 passing and 18
+    * failing to 27 passing and none failing.
+    *
+    * Differing array layers are handled by terakan_meta_resolve_fold_slice_into_base rather than by
+    * being excluded here; see its comment for why the shared slice select made that necessary.
     */
-   return src_extent.width == dst_extent.width && src_extent.height == dst_extent.height &&
-          region->srcSubresource.baseArrayLayer == region->dstSubresource.baseArrayLayer &&
+   return region->dstOffset.x >= 0 && region->dstOffset.y >= 0 &&
+          region->extent.width <= dst_extent.width &&
+          region->extent.height <= dst_extent.height &&
+          (uint32_t)region->dstOffset.x <= dst_extent.width - region->extent.width &&
+          (uint32_t)region->dstOffset.y <= dst_extent.height - region->extent.height &&
           region->srcOffset.x >= 0 && region->srcOffset.y >= 0 && region->srcOffset.z == 0 &&
           region->srcOffset.x == region->dstOffset.x &&
           region->srcOffset.y == region->dstOffset.y && region->dstOffset.z == 0 &&
@@ -857,6 +905,12 @@ terakan_CmdResolveImage2(VkCommandBuffer const command_buffer_handle,
                           &descriptor_info[0], color_resource_type[0], &color[0], &meta[0]) != 1 ||
                        terakan_image_create_color_descriptor(
                           &descriptor_info[1], color_resource_type[1], &color[1], &meta[1]) != 1)) {
+            continue;
+         }
+         if (!shader_resolve_2x &&
+             unlikely(!terakan_meta_resolve_retarget_dst_slice(
+                         &color[1], &meta[1], dst_image, dst_aspect_index,
+                         region->dstSubresource.mipLevel, G_028C6C_SLICE_START(color[0].view)))) {
             continue;
          }
          if (debug_render) {

@@ -1650,6 +1650,91 @@ terakan_hw_config_draw_emit_cb_color(struct terakan_gfx_command_writer * const c
 {
    struct terakan_hw_config_draw * const config = &command_writer->hw_config_draw;
 
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
+      /* TeraScale 1 compute/UAV state and targets 8-11 are not ported. Queue submission is still
+       * guarded, but command-buffer recording must not manufacture Evergreen CB packets for them.
+       */
+      if (command_writer->hw_config_shared.is_compute_active_) {
+         config->cb_color_.modified_bits = 0;
+         return;
+      }
+
+      while (config->cb_color_.modified_bits) {
+         unsigned const color_index = (unsigned)(ffs(config->cb_color_.modified_bits) - 1);
+         config->cb_color_.modified_bits &= ~(uint16_t)BITFIELD_BIT(color_index);
+         if (color_index >= 8) {
+            continue;
+         }
+
+         struct terakan_color_descriptor const * const color =
+            &config->cb_color_.color[color_index];
+         struct terakan_color_meta_descriptor const disabled_meta =
+            terakan_color_meta_descriptor_create_disabled(color);
+         bool const metadata_enabled =
+            memcmp(&config->cb_color_.meta[color_index], &disabled_meta,
+                   sizeof(disabled_meta)) != 0;
+         struct terakan_hw_config_draw_terascale_1_cb_color_input const input = {
+            .base = color->base,
+            .pitch_tile_max = G_028C64_PITCH_TILE_MAX(color->pitch),
+            .slice_tile_max = G_028C68_SLICE_TILE_MAX(color->slice),
+            .slice_start = G_028C6C_SLICE_START(color->view),
+            .slice_max = G_028C6C_SLICE_MAX(color->view),
+            .endian = G_028C70_ENDIAN(color->info),
+            .format = G_028C70_FORMAT(color->info),
+            .array_mode = G_028C70_ARRAY_MODE(color->info),
+            .number_type = G_028C70_NUMBER_TYPE(color->info),
+            .comp_swap = G_028C70_COMP_SWAP(color->info),
+            .blend_clamp = G_028C70_BLEND_CLAMP(color->info),
+            .blend_bypass = G_028C70_BLEND_BYPASS(color->info),
+            .simple_float = G_028C70_SIMPLE_FLOAT(color->info),
+            .source_format = G_028C70_SOURCE_FORMAT(color->info),
+            .is_uav = G_028C70_RAT(color->info),
+            .is_multisampled = G_028C74_NUM_SAMPLES(color->attrib) != 0,
+            .metadata_enabled = metadata_enabled,
+         };
+         struct terakan_hw_config_draw_terascale_1_cb_color color_r700;
+         if (!terakan_hw_config_draw_terascale_1_cb_color_encode(&input, &color_r700)) {
+            /* Unsupported includes an unbound descriptor (FORMAT == INVALID). Explicitly unbind
+             * the slot at the R700 INFO address instead of falling through to Evergreen offsets.
+             */
+            uint32_t * packet = terakan_gfx_command_writer_emit(
+               command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG, 3);
+            if (unlikely(packet == NULL)) {
+               return;
+            }
+            packet = terakan_hw_config_draw_terascale_1_write_cb_color_unbound(
+               packet, color_index, input.source_format <= 1 ? input.source_format : 0);
+            terakan_gfx_command_writer_emit_done(command_writer, packet);
+            continue;
+         }
+
+         uint32_t * packet = terakan_gfx_command_writer_emit_with_bo(
+            command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG, 21, 1, 3, 0);
+         if (unlikely(packet == NULL)) {
+            return;
+         }
+         uint32_t * const packet_start = packet;
+         packet = terakan_hw_config_draw_terascale_1_write_cb_color(packet, color_index,
+                                                                    &color_r700);
+
+         assert(config->cb_color_.bo[color_index] != NULL);
+         uint32_t const bo_reference = terakan_bo_reference_writer_add_reference(
+            &command_writer->base.bo_reference_writer, config->cb_color_.bo[color_index], true,
+            true, TERAKAN_BO_PRIORITY_COLOR_BUFFER);
+         terakan_gfx_command_writer_add_relocation(
+            command_writer, &packet, &packet_start[5], packet_start[5],
+            TERASCALE_WDDM_PATCH_IDS_CB_COLOR_BASE | color_index, bo_reference);
+         terakan_gfx_command_writer_add_relocation(
+            command_writer, &packet, &packet_start[8], packet_start[8],
+            TERASCALE_WDDM_PATCH_IDS_CB_COLOR_FMASK | color_index, bo_reference);
+         terakan_gfx_command_writer_add_relocation(
+            command_writer, &packet, &packet_start[11], packet_start[11],
+            TERASCALE_WDDM_PATCH_IDS_CB_COLOR_CMASK | color_index, bo_reference);
+         terakan_gfx_command_writer_emit_done(command_writer, packet);
+      }
+      return;
+   }
+
    /* DRM Radeon requires `ATTRIB` relocations regardless of `RADEON_CS_KEEP_TILING_FLAGS`. */
    bool const need_attrib_relocation =
       terakan_gfx_command_writer_physical_device(command_writer)

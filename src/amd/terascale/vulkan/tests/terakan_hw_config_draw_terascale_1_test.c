@@ -103,6 +103,107 @@ test_db_depth_base_info(void)
    CHECK(packets[3] == db_depth_info);
 }
 
+static struct terakan_hw_config_draw_terascale_1_cb_color_input
+representative_cb_color_input(void)
+{
+   return (struct terakan_hw_config_draw_terascale_1_cb_color_input){
+      .base = 0x12345,
+      .pitch_tile_max = 63,
+      .slice_tile_max = 511,
+      .slice_start = 3,
+      .slice_max = 7,
+      .endian = 0,
+      .format = V_0280A0_COLOR_8_8_8_8,
+      .array_mode = V_0280A0_ARRAY_2D_TILED_THIN1,
+      .number_type = V_0280A0_NUMBER_UNORM,
+      .comp_swap = V_0280A0_SWAP_ALT,
+      .blend_clamp = true,
+      .simple_float = true,
+      .source_format = 1,
+   };
+}
+
+static void
+test_cb_color_encode(void)
+{
+   struct terakan_hw_config_draw_terascale_1_cb_color_input const input =
+      representative_cb_color_input();
+   struct terakan_hw_config_draw_terascale_1_cb_color color;
+   CHECK(terakan_hw_config_draw_terascale_1_cb_color_encode(&input, &color));
+   CHECK(color.base == input.base);
+   CHECK(color.size == (S_028060_PITCH_TILE_MAX(63) | S_028060_SLICE_TILE_MAX(511)));
+   CHECK(color.view == (S_028080_SLICE_START(3) | S_028080_SLICE_MAX(7)));
+   CHECK(color.info ==
+         (S_0280A0_FORMAT(V_0280A0_COLOR_8_8_8_8) |
+          S_0280A0_ARRAY_MODE(V_0280A0_ARRAY_2D_TILED_THIN1) |
+          S_0280A0_NUMBER_TYPE(V_0280A0_NUMBER_UNORM) |
+          S_0280A0_COMP_SWAP(V_0280A0_SWAP_ALT) | S_0280A0_BLEND_CLAMP(1) |
+          S_0280A0_SIMPLE_FLOAT(1) | S_0280A0_SOURCE_FORMAT(V_0280A0_EXPORT_NORM)));
+   CHECK(color.fmask == input.base);
+   CHECK(color.cmask == input.base);
+   CHECK(color.mask == 0);
+}
+
+static void
+test_cb_color_encode_rejects_unported_surfaces(void)
+{
+   struct terakan_hw_config_draw_terascale_1_cb_color_input input =
+      representative_cb_color_input();
+   struct terakan_hw_config_draw_terascale_1_cb_color color;
+
+   input.is_uav = true;
+   CHECK(!terakan_hw_config_draw_terascale_1_cb_color_encode(&input, &color));
+   input.is_uav = false;
+   input.is_multisampled = true;
+   CHECK(!terakan_hw_config_draw_terascale_1_cb_color_encode(&input, &color));
+   input.is_multisampled = false;
+   input.metadata_enabled = true;
+   CHECK(!terakan_hw_config_draw_terascale_1_cb_color_encode(&input, &color));
+   input.metadata_enabled = false;
+   input.source_format = 2;
+   CHECK(!terakan_hw_config_draw_terascale_1_cb_color_encode(&input, &color));
+   input.source_format = 1;
+   input.pitch_tile_max = 0x400;
+   CHECK(!terakan_hw_config_draw_terascale_1_cb_color_encode(&input, &color));
+}
+
+static void
+test_cb_color_packets(void)
+{
+   struct terakan_hw_config_draw_terascale_1_cb_color_input const input =
+      representative_cb_color_input();
+   struct terakan_hw_config_draw_terascale_1_cb_color color;
+   CHECK(terakan_hw_config_draw_terascale_1_cb_color_encode(&input, &color));
+
+   uint32_t packets[21];
+   uint32_t * const end =
+      terakan_hw_config_draw_terascale_1_write_cb_color(packets, 2, &color);
+   CHECK(end == packets + 21);
+   uint32_t const registers[7] = {
+      R_0280A0_CB_COLOR0_INFO + 2 * 4, R_028040_CB_COLOR0_BASE + 2 * 4,
+      R_0280E0_CB_COLOR0_FRAG + 2 * 4, R_0280C0_CB_COLOR0_TILE + 2 * 4,
+      R_028060_CB_COLOR0_SIZE + 2 * 4, R_028080_CB_COLOR0_VIEW + 2 * 4,
+      R_028100_CB_COLOR0_MASK + 2 * 4,
+   };
+   uint32_t const values[7] = {
+      color.info, color.base, color.fmask, color.cmask, color.size, color.view, color.mask,
+   };
+   for (uint32_t register_index = 0; register_index < 7; ++register_index) {
+      uint32_t const packet_index = register_index * 3;
+      CHECK(packets[packet_index] == PKT3(PKT3_SET_CONTEXT_REG, 1, 0));
+      CHECK(packets[packet_index + 1] ==
+            (registers[register_index] - R600_CONTEXT_REG_OFFSET) >> 2);
+      CHECK(packets[packet_index + 2] == values[register_index]);
+   }
+
+   uint32_t unbound_packet[3];
+   CHECK(terakan_hw_config_draw_terascale_1_write_cb_color_unbound(unbound_packet, 7, 1) ==
+         unbound_packet + 3);
+   CHECK(unbound_packet[1] ==
+         (R_0280A0_CB_COLOR0_INFO + 7 * 4 - R600_CONTEXT_REG_OFFSET) >> 2);
+   CHECK(unbound_packet[2] == S_0280A0_SOURCE_FORMAT(V_0280A0_EXPORT_NORM));
+}
+
 int
 main(void)
 {
@@ -111,5 +212,8 @@ main(void)
    test_db_render_control_override_default_matches_r8xx_baseline();
    test_db_depth_size();
    test_db_depth_base_info();
+   test_cb_color_encode();
+   test_cb_color_encode_rejects_unported_surfaces();
+   test_cb_color_packets();
    return 0;
 }
