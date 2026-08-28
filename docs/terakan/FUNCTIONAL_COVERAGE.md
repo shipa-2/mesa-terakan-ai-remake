@@ -189,7 +189,15 @@ every bound colour buffer; the destination is now moved to meet the source by
 shifting its base address, which works whenever the destination carries no
 colour metadata.
 
-The 69 that remain decompose exactly, and none of them is the resolve maths:
+Multisample `vkCmdCopyImage` has since been given the whole-surface case, taking
+the group to **69 passing and 33 failing** -- the exact mirror of where it stood
+before. Every group that copies a multisample image whole before resolving it
+now passes. The 33 that remain are 24 multisample copies that are *not* the whole
+of two identical surfaces (a subregion, a single layer, differing layouts), which
+still take the meta-draw path and are still skipped, and the 9 `partial` and
+`with_regions` cases that need differing resolve offsets.
+
+The decomposition below describes the state before that change:
 
 - 60 cases are gated on multisample `vkCmdCopyImage`, which is still a silent
   no-op. 20 of them say so directly ("Intermediate verification failed for
