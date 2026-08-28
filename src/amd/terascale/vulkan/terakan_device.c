@@ -252,11 +252,12 @@ terakan_device_init(struct terakan_device * const device,
         ++meta_shader_index) {
       struct terakan_shader_static * const device_meta_shader =
          &device->meta_shaders[meta_shader_index];
+      bool const from_nir = terakan_meta_nir_builders[meta_shader_index] != NULL;
       struct terakan_meta_shader const * const meta_shader =
          terakan_meta_shaders[meta_shader_index];
+      /* A shader built from NIR need not have a hand-written counterpart at all. */
       struct terakan_meta_shader_description const * const meta_shader_description =
-         is_r9xx ? &meta_shader->r9xx : &meta_shader->r8xx;
-      bool const from_nir = terakan_meta_nir_builders[meta_shader_index] != NULL;
+         meta_shader == NULL ? NULL : (is_r9xx ? &meta_shader->r9xx : &meta_shader->r8xx);
       *device_meta_shader = from_nir ? meta_nir_shaders[meta_shader_index].static_state
                                      : meta_shader_description->static_registers;
       VkDeviceSize const meta_shader_program_size_bytes =
@@ -302,15 +303,15 @@ terakan_device_init(struct terakan_device * const device,
       memset(device->meta_shader_sqk_usage, 0, sizeof(device->meta_shader_sqk_usage));
       for (size_t meta_shader_index = 0; meta_shader_index < TERAKAN_META_SHADER_COUNT;
            ++meta_shader_index) {
+         bool const from_nir = terakan_meta_nir_builders[meta_shader_index] != NULL;
          struct terakan_meta_shader const * const meta_shader =
             terakan_meta_shaders[meta_shader_index];
          struct terakan_meta_shader_description const * const meta_shader_description =
-            is_r9xx ? &meta_shader->r9xx : &meta_shader->r8xx;
+            meta_shader == NULL ? NULL : (is_r9xx ? &meta_shader->r9xx : &meta_shader->r8xx);
          /* Program memory. */
          struct terakan_shader_static * const device_meta_shader =
             &device->meta_shaders[meta_shader_index];
          device_meta_shader->program_bo = device->meta_shaders_bo;
-         bool const from_nir = terakan_meta_nir_builders[meta_shader_index] != NULL;
          struct terakan_shader_impl * const meta_nir_shader =
             &meta_nir_shaders[meta_shader_index];
          util_memcpy_cpu_to_le32(

@@ -133,6 +133,12 @@ enum terakan_meta_shader_index {
    TERAKAN_META_SHADER_QUERY_COPY_STREAMOUTSTATS_32_BIT_VS,
    TERAKAN_META_SHADER_QUERY_COPY_STREAMOUTSTATS_64_BIT_VS,
 
+   /* Fetches sample zero of a multisample colour source and exports it, which is what an integer
+    * resolve has to do -- CB_RESOLVE averages, and Vulkan cannot average integers. Built as NIR;
+    * see meta/terakan_meta_nir.c.
+    */
+   TERAKAN_META_SHADER_RESOLVE_SAMPLE_ZERO_PS,
+
    TERAKAN_META_SHADER_COUNT,
 };
 

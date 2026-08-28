@@ -28,6 +28,10 @@ VkResult terakan_meta_nir_compile(struct terakan_device * device, struct nir_sha
 /* Exports (0, 0, 0, 1) to render target 0: the stand-in for a pipeline with no fragment shader. */
 struct nir_shader * terakan_meta_nir_build_opaque_ps(struct terakan_device const * device);
 
+/* Fetches sample zero of a multisample colour source and exports it: an integer resolve. */
+struct nir_shader * terakan_meta_nir_build_resolve_sample_zero_ps(
+   struct terakan_device const * device);
+
 /* Builds the NIR for one meta shader. */
 typedef struct nir_shader * (*terakan_meta_nir_builder)(struct terakan_device const * device);
 

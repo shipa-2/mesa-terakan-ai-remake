@@ -779,21 +779,26 @@ terakan_CmdResolveImage2(VkCommandBuffer const command_buffer_handle,
    struct terascale_format_info const dst_format =
       dst_image->format_info.aspect_formats[dst_aspect_index];
    bool const debug_render = getenv("TERAKAN_DEBUG_RENDER") != NULL;
-   /* CB_RESOLVE averages samples. Vulkan integer resolves select one sample instead. */
-   if (unlikely(src_format.number_type == TERASCALE_FORMAT_NUMBER_TYPE_UINT ||
-                src_format.number_type == TERASCALE_FORMAT_NUMBER_TYPE_SINT ||
-                dst_format.number_type == TERASCALE_FORMAT_NUMBER_TYPE_UINT ||
-                dst_format.number_type == TERASCALE_FORMAT_NUMBER_TYPE_SINT)) {
-      return;
-   }
+   /* CB_RESOLVE averages samples, and Vulkan resolves an integer format by selecting one instead,
+    * so integer formats take the shader path and everything else keeps the fixed function. This
+    * used to be a bare return -- an integer resolve did nothing at all, which is what made the
+    * multisample integer cases of dEQP-VK.api.image_clearing fail: they read the image back by
+    * resolving it.
+    */
+   bool const resolve_selects_sample_zero =
+      src_format.number_type == TERASCALE_FORMAT_NUMBER_TYPE_UINT ||
+      src_format.number_type == TERASCALE_FORMAT_NUMBER_TYPE_SINT ||
+      dst_format.number_type == TERASCALE_FORMAT_NUMBER_TYPE_UINT ||
+      dst_format.number_type == TERASCALE_FORMAT_NUMBER_TYPE_SINT;
 
    struct terakan_gfx_command_writer * const command_writer =
       terakan_command_buffer_from_handle(command_buffer_handle)->command_writer.gfx;
-   /* Disabled: the initial R8xx TXF_MS fallback did not decode direct sample coordinates
-    * correctly and corrupted the entire frame. Keep using CB_RESOLVE until the shader path has
-    * an isolated conformance test.
+   /* The 2x averaging shader stays disabled: the initial R8xx TXF_MS fallback did not decode
+    * direct sample coordinates correctly and corrupted the entire frame, and the fixed function
+    * does that case correctly anyway. The scaffolding it needed is what the sample-zero shader
+    * uses, which is why the flag is shared.
     */
-   bool const shader_resolve_2x = false;
+   bool const shader_resolve_2x = resolve_selects_sample_zero;
 
    terakan_barrier_emit_actions_unconditionally(
       command_writer, TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RTV_DATA |
@@ -818,7 +823,7 @@ terakan_CmdResolveImage2(VkCommandBuffer const command_buffer_handle,
    terakan_meta_config_draw_set_sq_pgm_vs(command_writer,
                                           TERAKAN_META_SHADER_POSITION_AND_LAYER_FROM_INDEX_VS);
    terakan_meta_config_draw_set_sq_pgm_ps(
-      command_writer, shader_resolve_2x ? TERAKAN_META_SHADER_RESOLVE_2X_PS
+      command_writer, shader_resolve_2x ? TERAKAN_META_SHADER_RESOLVE_SAMPLE_ZERO_PS
                                         : TERAKAN_META_SHADER_DUMMY_OPAQUE_PS);
    terakan_meta_config_draw_set_cb_color_control_for_mode(
       command_writer, shader_resolve_2x ? V_028808_CB_NORMAL : V_028808_CB_RESOLVE);
