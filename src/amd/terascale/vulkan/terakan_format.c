@@ -299,7 +299,14 @@ terakan_GetPhysicalDeviceFormatProperties2(UNUSED VkPhysicalDevice const physica
          assert(vk_format_get_aspect_format(
                    format, terakan_format_aspect_map_aspects[format_info.aspect_map][0]) == format);
          struct terascale_format_info const buffer_format_info = format_info.aspect_formats[0];
-         if (buffer_format_info.supports_sq_vertex_fetch) {
+         /* See TERASCALE_FORMATS_BUFFER_FETCH_BROKEN_3X: the hardware's buffer fetch does not
+          * deliver three-component 8- and 16-bit elements, so advertising them as vertex or texel
+          * buffers is a claim this driver cannot honour. None of them is a format Vulkan requires
+          * for either use.
+          */
+         if (buffer_format_info.supports_sq_vertex_fetch &&
+             !(TERASCALE_FORMATS_BUFFER_FETCH_BROKEN_3X &
+               BITFIELD64_BIT(buffer_format_info.format))) {
             buffer_features |=
                VK_FORMAT_FEATURE_2_UNIFORM_TEXEL_BUFFER_BIT | VK_FORMAT_FEATURE_2_VERTEX_BUFFER_BIT;
             /* STORAGE requires a CB unordered access view, and an SQ buffer for CB_IMMED. */

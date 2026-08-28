@@ -134,6 +134,19 @@ enum terascale_format_index {
    (TERASCALE_FORMAT_BIT(8_8_8) | TERASCALE_FORMAT_BIT(16_16_16) |                                 \
     TERASCALE_FORMAT_BIT(16_16_16_FLOAT) | TERASCALE_FORMAT_BIT(32_32_32) |                        \
     TERASCALE_FORMAT_BIT(32_32_32_FLOAT))
+/* Three-component 8- and 16-bit formats that the buffer fetch does not handle. Testing on Barts
+ * found that 8_8_8 and 16_16_16 buffer fetches return completely invalid values (see the assertion
+ * in terakan_nir_load_raw_resource_buffer), and CTS confirms it on Caicos from both directions:
+ * every dEQP-VK.api.buffer_view.access.uniform_texel_buffer case for r8g8b8, b8g8r8 and r16g16b16
+ * fails, and in dEQP-VK.pipeline.*.vertex_input every variant that actually reads all three
+ * components fails while the `missing_components` variants, which do not, all pass.
+ *
+ * The 32-bit three-component formats are not affected: r32g32b32 passes both, so this is narrower
+ * than TERASCALE_FORMATS_EXPAND_3X above, which exists for a different reason.
+ */
+#define TERASCALE_FORMATS_BUFFER_FETCH_BROKEN_3X                                                   \
+   (TERASCALE_FORMAT_BIT(8_8_8) | TERASCALE_FORMAT_BIT(16_16_16) |                                 \
+    TERASCALE_FORMAT_BIT(16_16_16_FLOAT))
 #define TERASCALE_FORMATS_4X4_BLOCK_R6XX                                                           \
    (TERASCALE_FORMAT_BIT(BC1) | TERASCALE_FORMAT_BIT(BC2) | TERASCALE_FORMAT_BIT(BC3) |            \
     TERASCALE_FORMAT_BIT(BC4) | TERASCALE_FORMAT_BIT(BC5) | TERASCALE_FORMAT_BIT(CTX1))
