@@ -283,8 +283,22 @@ terakan_CmdCopyImage2(VkCommandBuffer const commandBuffer,
    /*
     * Whole-image copies between identical single-sample color surface layouts don't need format
     * conversion. Copy the backing storage directly, preserving tiled addressing and avoiding a
-    * full-screen meta draw. Multisample metadata is excluded because its state may not be
-    * represented solely by the copied color aspect.
+    * full-screen meta draw.
+    *
+    * Multisample images go through here too. They used to be excluded, on the grounds that their
+    * metadata state may not be represented solely by the copied colour aspect -- true of a copy
+    * that moves only the colour, but this one does not. terakan_image_surface_compute extends
+    * `size_bytes_shr8` past the colour to cover FMASK and then CMASK, so a copy of that length
+    * moves the compression state along with the samples it describes, and the memcmp below has
+    * already established that the two surfaces place all three identically. That leaves the
+    * destination in exactly the source's state rather than in an inconsistent one.
+    *
+    * This is what left multisample vkCmdCopyImage a silent no-op: nothing here accepted it and the
+    * meta-draw path below rejects the mismatched dimensionality further down, so the region was
+    * skipped. It is worth 60 of the 69 remaining failures in
+    * dEQP-VK.api.copy_and_blit.core.resolve_image, whose groups copy a multisample image before
+    * resolving it. A copy that is not the whole of two identically laid out surfaces is still not
+    * handled -- see the TODO further down.
     */
    if (getenv("TERAKAN_DEBUG_DISABLE_IMAGE_CP_DMA") == NULL &&
        pCopyImageInfo->regionCount == 1 && src_image->vk.format == dst_image->vk.format &&
@@ -294,12 +308,13 @@ terakan_CmdCopyImage2(VkCommandBuffer const commandBuffer,
        src_image->vk.extent.depth == dst_image->vk.extent.depth &&
        src_image->vk.mip_levels == dst_image->vk.mip_levels &&
        src_image->vk.array_layers == dst_image->vk.array_layers &&
-       src_image->vk.samples == VK_SAMPLE_COUNT_1_BIT &&
-       dst_image->vk.samples == VK_SAMPLE_COUNT_1_BIT &&
-       src_image->surface.fmask.size_bytes_shr8 == 0 &&
-       dst_image->surface.fmask.size_bytes_shr8 == 0 &&
-       src_image->surface.cmask.size_bytes_shr8 == 0 &&
-       dst_image->surface.cmask.size_bytes_shr8 == 0 &&
+       src_image->vk.samples == dst_image->vk.samples &&
+       /* The whole surface is copied, so every mip level goes with it. A caller asking for level 0
+        * alone would have the rest of the destination's levels overwritten, which
+        * vkCmdCopyImage does not permit -- the destination outside the copied regions is preserved.
+        * Multisample images have one level by definition, so this costs the new case nothing.
+        */
+       src_image->vk.mip_levels == 1 &&
        memcmp(&src_image->surface, &dst_image->surface, sizeof(src_image->surface)) == 0) {
       VkImageCopy2 const * const region = &pCopyImageInfo->pRegions[0];
       if (region->srcSubresource.aspectMask == VK_IMAGE_ASPECT_COLOR_BIT &&

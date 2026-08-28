@@ -3,25 +3,27 @@
  * SPDX-License-Identifier: MIT
  */
 
-/* vkCmdCopyImage on multisample images is unimplemented -- see the TODO(Triang3l) comment in
- * terakan_meta_copy_image.c immediately above the meta-draw copy path, which has no
- * VK_SAMPLE_COUNT_1_BIT guard before binding the source through a plain 2D_ARRAY resource
- * descriptor regardless of its actual sample count. That looked, before this test, like a route
- * to silent corruption: a resource descriptor built for the wrong dimensionality could plausibly
- * misaddress an MSAA surface's per-sample layout and produce garbage in the destination.
+/* A whole-surface multisample-to-multisample vkCmdCopyImage.
  *
- * Testing it directly shows something better: the destination is left completely untouched. A
- * multisample-to-multisample vkCmdCopyImage call currently does nothing rather than corrupting
- * data, most likely because a #MemoryIntegrity-style check inside the meta-draw's descriptor
- * creation (terakan_image_create_resource_descriptor / terakan_image_create_color_descriptor)
- * rejects the mismatched dimensionality and the copy loop's `continue` on that rejection silently
- * skips the region.
+ * This used to be a silent no-op. The meta-draw copy path binds the source through a plain
+ * 2D_ARRAY resource descriptor regardless of sample count, and a #MemoryIntegrity check inside
+ * descriptor creation rejects the mismatched dimensionality, so the copy loop skipped the region
+ * and left the destination untouched. This test was written then to lock in that it was at least
+ * safe rather than corrupting, and reported which of the two behaviours it saw.
  *
- * This test exists to lock that finding in as a regression, not to close the feature gap: a real
- * MSAA vkCmdCopyImage implementation (see the TODO for the intended approach -- per-fragment
- * copying with sample shading, plus FMask) is still needed and this test says nothing about when
- * that lands. What it protects against is a future unrelated change accidentally turning today's
- * safe no-op into the silent corruption this test originally set out to check for.
+ * It now copies, through the CP DMA path rather than a meta draw: when two surfaces are laid out
+ * identically and the whole of one is being copied to the other, the backing storage can be moved
+ * verbatim, and terakan_image_surface_compute extends the surface size past the colour to cover
+ * FMASK and CMASK, so the compression state travels with the samples it describes.
+ *
+ * The verdict is now that the copy must land, not merely that it must not corrupt. A destination
+ * left holding the sentinel fails here rather than being reported as an acceptable gap.
+ *
+ * What this does not cover is a multisample copy that is not the whole of two identical surfaces
+ * -- a subregion, a single array layer, or differing layouts. Those still take the meta-draw path
+ * and are still skipped; they are the remaining 24 failures in
+ * dEQP-VK.api.copy_and_blit.core.resolve_image and the subject of the TODO in
+ * terakan_meta_copy_image.c.
  */
 
 #include <vulkan/vulkan.h>
@@ -365,14 +367,13 @@ main()
          ++corrupted;
    }
    std::printf(
-      "copy_image_multisample_noop texels=%u untouched=%u copied=%u corrupted=%u %s\n",
-      kWidth * kHeight, untouched, copied, corrupted, corrupted == 0 ? "PASS" : "FAIL");
-   if (corrupted == 0) {
-      std::printf("  behavior: %s\n",
-                  copied == kWidth * kHeight ? "copy landed correctly"
-                  : untouched == kWidth * kHeight
-                     ? "copy safely did nothing (matches the TODO(Triang3l) gap)"
-                     : "mixed sentinel/copied, still not corrupt");
+      "copy_image_multisample texels=%u untouched=%u copied=%u corrupted=%u %s\n",
+      kWidth * kHeight, untouched, copied, corrupted,
+      (corrupted == 0 && copied == kWidth * kHeight) ? "PASS" : "FAIL");
+   if (corrupted == 0 && copied != kWidth * kHeight) {
+      std::printf("  %s\n", untouched == kWidth * kHeight
+                                ? "the destination still holds the sentinel: the copy did nothing"
+                                : "some texels copied and some did not");
    }
 
    vkDeviceWaitIdle(device);
@@ -386,5 +387,5 @@ main()
    }
    vkDestroyDevice(device, nullptr);
    vkDestroyInstance(instance, nullptr);
-   return corrupted == 0 ? 0 : 1;
+   return (corrupted == 0 && copied == kWidth * kHeight) ? 0 : 1;
 }

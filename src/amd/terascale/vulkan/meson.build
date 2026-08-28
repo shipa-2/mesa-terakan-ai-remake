@@ -1170,14 +1170,14 @@ if with_tests
         timeout : 30,
       )
 
-      terakan_copy_image_multisample_noop_test = executable(
-        'terakan_copy_image_multisample_noop_test',
-        ['tests/terakan_copy_image_multisample_noop_test.cpp'],
+      terakan_copy_image_multisample_test = executable(
+        'terakan_copy_image_multisample_test',
+        ['tests/terakan_copy_image_multisample_test.cpp'],
         dependencies : vulkan_loader_dep,
       )
       test(
-        'terakan_copy_image_multisample_noop',
-        terakan_copy_image_multisample_noop_test,
+        'terakan_copy_image_multisample',
+        terakan_copy_image_multisample_test,
         depends : [libvulkan_terascale, _dev_icd],
         env : {
           'VK_DRIVER_FILES' : _dev_icd.full_path(),
