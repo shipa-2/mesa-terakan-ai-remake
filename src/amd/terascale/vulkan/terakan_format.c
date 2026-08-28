@@ -175,6 +175,21 @@ terakan_GetPhysicalDeviceFormatProperties2(UNUSED VkPhysicalDevice const physica
                  aspect_format_info.number_type == TERASCALE_FORMAT_NUMBER_TYPE_SINT)) {
                image_sq_texture_fetch_linear_filter = false;
             }
+
+            /* Unpacked three-component formats do not filter. In the sampled format matrix
+             * r32g32b32_sfloat -- the only one of the set the driver advertises as a sampled image
+             * at all, the 8- and 16-bit ones having no texture fetch -- fails 5 of its 6 linear
+             * blits while passing all 5 of its nearest ones, and every other remaining blit failure
+             * in that run was linear too. TERASCALE_FORMATS_EXPAND_3X is exactly the unpacked set,
+             * so packed three-channel formats such as r5g6b5_unorm_pack16, which filter correctly,
+             * are not caught by this.
+             *
+             * None of these formats is required to support linear filtering, or indeed anything
+             * else, as a sampled image.
+             */
+            if (TERASCALE_FORMATS_EXPAND_3X & BITFIELD64_BIT(aspect_format_info.format)) {
+               image_sq_texture_fetch_linear_filter = false;
+            }
          } else {
             image_sq_texture_fetch = false;
          }
