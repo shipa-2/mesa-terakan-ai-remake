@@ -60,13 +60,18 @@ compared against the hand-written one it replaces: identical export instruction
 and identical swizzle selects, differing only in `ELEM_SIZE` and `BARRIER`, which
 `sfn_assembler` sets on every export and CF instruction respectively.
 
-What remains is the four shaders themselves. Each is now an ordinary shader to
-write rather than bytecode to assemble:
+The first of the four shaders is written and the gap it closes is closed; see
+below. Two things had to be learned for meta NIR doing it, and both are handled
+for whatever comes next: the backend wants the fragment position as an input
+variable at `VARYING_SLOT_POS` rather than as `load_frag_coord`, and the binding
+pass that meta NIR skips is also what records which hardware resource slots a
+shader touches, so `terakan_meta_nir_compile` now walks the NIR and records them
+itself -- without that every fetch returns zero.
 
 | Gap | Shader needed | Worth |
 |---|---|---|
 | 3x-expanded clearing | write three components per texel at `x % 3` | 117 CTS cases |
-| Integer colour resolve | fetch sample zero and export it | 35 CTS cases, plus part of the resolve group |
+| ~~Integer colour resolve~~ | **Done** -- the first shader written this way | 35 CTS cases, all now passing |
 | Multisample sub-region copy | per-sample copy with FMASK | 24 CTS cases |
 | 3D blit depth filtering | sample the source as 3D rather than a 2D array | 6 CTS cases |
 

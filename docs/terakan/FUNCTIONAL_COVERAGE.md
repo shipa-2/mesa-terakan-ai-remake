@@ -275,10 +275,11 @@ duplicated for `r8g8b8a8_uint`, nothing written for `r8_uint` -- are simply
 whatever stale contents the destination happened to hold, not a component mapping
 pattern.
 
-So these 35 belong with the integer resolve gap, not with clearing. Closing them
-means a colour sample-zero resolve, which needs another hand-assembled pixel
-shader: the existing sample-zero shaders are depth and stencil only, and the one
-colour resolve shader covers 2x and is disabled.
+So these 35 belonged with the integer resolve gap, not with clearing, and closing
+that closed them: **all 35 now pass**. The colour sample-zero resolve shader was
+written as NIR rather than assembled by hand -- the first use of that path -- and
+`terakan_meta_resolve.c` now takes it for integer formats instead of returning
+without doing anything.
 
 **10 are depth/stencil clears**, all returning zero. Two markers separate them:
 width 1 (`1x33`, failing 5 of 6) and multiple subresource ranges in one call
