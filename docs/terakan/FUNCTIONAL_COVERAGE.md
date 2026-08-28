@@ -157,6 +157,13 @@ fails every case it is run on.** Twenty such formats appear in the sample --
 `a2b10g10r10_sscaled_pack32` -- with 145 failures and not one pass between them.
 They are advertised as blittable and are not.
 
+SCALED image support has since been withdrawn -- see the TODO row -- taking the
+sample to **415 passing and 69 failing** for blits with nothing that passed
+before now skipped, and surfacing 12 previously-passing
+`image_to_image.all_formats` failures, every one of them a three-component
+SCALED format that the driver copies through its 3x-expansion path. Net across
+the sample: 204 failures to 81.
+
 The remaining 59 failures are much thinner: `r32g32b32_sfloat` fails 5 of 11,
 the two `a2*10*_snorm_pack32` formats fail 2 of 6 and 2 of 7, and the rest are
 single cases spread across formats that otherwise pass, so those look like
