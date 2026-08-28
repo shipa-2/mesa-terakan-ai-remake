@@ -204,6 +204,48 @@ test_cb_color_packets(void)
    CHECK(unbound_packet[2] == S_0280A0_SOURCE_FORMAT(V_0280A0_EXPORT_NORM));
 }
 
+static void
+test_cb_color_control_and_blend_packets(void)
+{
+   uint32_t const control = terakan_hw_config_draw_terascale_1_cb_color_control_encode(
+      TERAKAN_HW_CONFIG_DRAW_TERASCALE_1_CB_COLOR_NORMAL, 0xCC, true, true, 0xA5);
+   CHECK(control ==
+         (S_028808_MULTIWRITE_ENABLE(1) | S_028808_DEGAMMA_ENABLE(1) |
+          S_028808_SPECIAL_OP(V_028808_SPECIAL_NORMAL) | S_028808_PER_MRT_BLEND(1) |
+          S_028808_TARGET_BLEND_ENABLE(0xA5) | S_028808_ROP3(0xCC)));
+   CHECK(terakan_hw_config_draw_terascale_1_cb_color_control_encode(
+            TERAKAN_HW_CONFIG_DRAW_TERASCALE_1_CB_COLOR_DISABLE, 0xCC, false, false, 0) ==
+         (S_028808_SPECIAL_OP(V_028808_SPECIAL_DISABLE) | S_028808_PER_MRT_BLEND(1) |
+          S_028808_ROP3(0xCC)));
+   CHECK(terakan_hw_config_draw_terascale_1_cb_color_control_encode(
+            TERAKAN_HW_CONFIG_DRAW_TERASCALE_1_CB_COLOR_RESOLVE_BOX, 0xCC, false, false, 0) ==
+         (S_028808_SPECIAL_OP(V_028808_SPECIAL_RESOLVE_BOX) | S_028808_PER_MRT_BLEND(1) |
+          S_028808_ROP3(0xCC)));
+
+   uint32_t control_packet[3];
+   CHECK(terakan_hw_config_draw_terascale_1_write_cb_color_control(control_packet, control) ==
+         control_packet + 3);
+   CHECK(control_packet[0] == PKT3(PKT3_SET_CONTEXT_REG, 1, 0));
+   CHECK(control_packet[1] == (R_028808_CB_COLOR_CONTROL - R600_CONTEXT_REG_OFFSET) >> 2);
+   CHECK(control_packet[2] == control);
+
+   uint32_t const blend_control[2] = {
+      S_028804_COLOR_SRCBLEND(V_028804_BLEND_SRC_ALPHA) |
+         S_028804_COLOR_DESTBLEND(V_028804_BLEND_ONE_MINUS_SRC_ALPHA) | (UINT32_C(1) << 30),
+      S_028804_COLOR_SRCBLEND(V_028804_BLEND_ONE) |
+         S_028804_COLOR_DESTBLEND(V_028804_BLEND_ZERO),
+   };
+   uint32_t blend_packet[4];
+   CHECK(terakan_hw_config_draw_terascale_1_write_cb_blend_control(blend_packet, 3, 2,
+                                                                   blend_control) ==
+         blend_packet + 4);
+   CHECK(blend_packet[0] == PKT3(PKT3_SET_CONTEXT_REG, 2, 0));
+   CHECK(blend_packet[1] ==
+         (R_02878C_CB_BLEND3_CONTROL - R600_CONTEXT_REG_OFFSET) >> 2);
+   CHECK(blend_packet[2] == (blend_control[0] & ~(UINT32_C(1) << 30)));
+   CHECK(blend_packet[3] == blend_control[1]);
+}
+
 int
 main(void)
 {
@@ -215,5 +257,6 @@ main(void)
    test_cb_color_encode();
    test_cb_color_encode_rejects_unported_surfaces();
    test_cb_color_packets();
+   test_cb_color_control_and_blend_packets();
    return 0;
 }

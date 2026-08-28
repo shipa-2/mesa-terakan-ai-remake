@@ -133,3 +133,67 @@ terakan_hw_config_draw_terascale_1_write_cb_color_unbound(uint32_t * const packe
    return write_context_reg(packet, R_0280A0_CB_COLOR0_INFO + color_index * sizeof(uint32_t),
                             S_0280A0_SOURCE_FORMAT(source_format));
 }
+
+uint32_t
+terakan_hw_config_draw_terascale_1_cb_color_control_encode(
+   enum terakan_hw_config_draw_terascale_1_cb_color_operation const operation,
+   uint32_t const rop3, bool const degamma_enable, bool const multiwrite_enable,
+   uint32_t const target_blend_enable)
+{
+   assert(rop3 <= 0xFF);
+   assert(target_blend_enable <= 0xFF);
+
+   uint32_t special_op;
+   switch (operation) {
+   case TERAKAN_HW_CONFIG_DRAW_TERASCALE_1_CB_COLOR_DISABLE:
+      special_op = V_028808_SPECIAL_DISABLE;
+      break;
+   case TERAKAN_HW_CONFIG_DRAW_TERASCALE_1_CB_COLOR_NORMAL:
+      special_op = V_028808_SPECIAL_NORMAL;
+      break;
+   case TERAKAN_HW_CONFIG_DRAW_TERASCALE_1_CB_COLOR_RESOLVE_BOX:
+      special_op = V_028808_SPECIAL_RESOLVE_BOX;
+      break;
+   default:
+      assert(!"invalid TeraScale 1 CB color operation");
+      special_op = V_028808_SPECIAL_DISABLE;
+      break;
+   }
+
+   /* RV710 is newer than the original R600 and therefore supports per-MRT blend control; this is
+    * the same family check used by r600_create_blend_state_mode().
+    */
+   return S_028808_MULTIWRITE_ENABLE(multiwrite_enable) |
+          S_028808_DEGAMMA_ENABLE(degamma_enable) | S_028808_SPECIAL_OP(special_op) |
+          S_028808_PER_MRT_BLEND(1) | S_028808_TARGET_BLEND_ENABLE(target_blend_enable) |
+          S_028808_ROP3(rop3);
+}
+
+uint32_t *
+terakan_hw_config_draw_terascale_1_write_cb_color_control(uint32_t * const packet,
+                                                          uint32_t const value)
+{
+   return write_context_reg(packet, R_028808_CB_COLOR_CONTROL, value);
+}
+
+uint32_t *
+terakan_hw_config_draw_terascale_1_write_cb_blend_control(
+   uint32_t * packet, uint32_t const first_color, uint32_t const color_count,
+   uint32_t const * const blend_control)
+{
+   assert(first_color <= 8);
+   assert(color_count <= 8 - first_color);
+   if (!color_count) {
+      return packet;
+   }
+
+   *packet++ = PKT3(PKT3_SET_CONTEXT_REG, color_count, 0);
+   *packet++ = (R_028780_CB_BLEND0_CONTROL + first_color * sizeof(uint32_t) -
+                R600_CONTEXT_REG_OFFSET) >>
+               2;
+   for (uint32_t color = 0; color < color_count; ++color) {
+      /* Bit 30 is Evergreen BLEND_CONTROL_ENABLE, but reserved in the R700 register. */
+      *packet++ = blend_control[color] & ~(UINT32_C(1) << 30);
+   }
+   return packet;
+}

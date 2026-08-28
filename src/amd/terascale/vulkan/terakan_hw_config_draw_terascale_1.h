@@ -140,6 +140,33 @@ uint32_t * terakan_hw_config_draw_terascale_1_write_cb_color_unbound(uint32_t * 
                                                                       uint32_t color_index,
                                                                       uint32_t source_format);
 
+enum terakan_hw_config_draw_terascale_1_cb_color_operation {
+   TERAKAN_HW_CONFIG_DRAW_TERASCALE_1_CB_COLOR_DISABLE,
+   TERAKAN_HW_CONFIG_DRAW_TERASCALE_1_CB_COLOR_NORMAL,
+   TERAKAN_HW_CONFIG_DRAW_TERASCALE_1_CB_COLOR_RESOLVE_BOX,
+};
+
+/* R700 moves blend enables out of CB_BLENDn_CONTROL bit 30 and into
+ * CB_COLOR_CONTROL.TARGET_BLEND_ENABLE. Its bits 4-6 are SPECIAL_OP, not Evergreen MODE, despite
+ * the shared register address. Keep the operation neutral at this interface so evergreend.h values
+ * can never accidentally reach the R700 packet.
+ */
+uint32_t terakan_hw_config_draw_terascale_1_cb_color_control_encode(
+   enum terakan_hw_config_draw_terascale_1_cb_color_operation operation, uint32_t rop3,
+   bool degamma_enable, bool multiwrite_enable, uint32_t target_blend_enable);
+
+uint32_t * terakan_hw_config_draw_terascale_1_write_cb_color_control(uint32_t * packet,
+                                                                      uint32_t value);
+
+/* The coefficient/equation fields are identical between R700's CB_BLENDn_CONTROL and Evergreen's
+ * CB_BLENDn_CONTROL, but R700 has no BLEND_CONTROL_ENABLE bit 30. The caller supplies that bit
+ * separately through CB_COLOR_CONTROL.TARGET_BLEND_ENABLE; this writer strips it from every
+ * register payload.
+ */
+uint32_t * terakan_hw_config_draw_terascale_1_write_cb_blend_control(
+   uint32_t * packet, uint32_t first_color, uint32_t color_count,
+   uint32_t const * blend_control);
+
 #ifdef __cplusplus
 }
 #endif

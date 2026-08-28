@@ -1571,6 +1571,13 @@ static void
 terakan_hw_config_draw_emit_cb_blend_control(
    struct terakan_gfx_command_writer * const command_writer)
 {
+   bool const is_terascale_1 =
+      terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1;
+   if (is_terascale_1 && command_writer->hw_config_shared.is_compute_active_) {
+      command_writer->hw_config_draw.cb_blend_control_.modified_bits = 0;
+      return;
+   }
+
    unsigned modified_remaining = command_writer->hw_config_draw.cb_blend_control_.modified_bits;
    while (modified_remaining) {
       int range_start, range_length;
@@ -1579,6 +1586,13 @@ terakan_hw_config_draw_emit_cb_blend_control(
          command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG, 2 + range_length);
       if (unlikely(packet == NULL)) {
          return;
+      }
+      if (is_terascale_1) {
+         packet = terakan_hw_config_draw_terascale_1_write_cb_blend_control(
+            packet, range_start, range_length,
+            &command_writer->hw_config_draw.cb_blend_control_.blend_control[range_start]);
+         terakan_gfx_command_writer_emit_done(command_writer, packet);
+         continue;
       }
       *packet++ = PKT3(PKT3_SET_CONTEXT_REG, range_length, 0) |
                   (command_writer->hw_config_shared.is_compute_active_
@@ -1597,6 +1611,52 @@ static void
 terakan_hw_config_draw_emit_cb_color_control(
    struct terakan_gfx_command_writer * const command_writer)
 {
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
+      if (command_writer->hw_config_shared.is_compute_active_) {
+         return;
+      }
+
+      uint32_t const evergreen_control = command_writer->hw_config_draw.cb_color_control_;
+      enum terakan_hw_config_draw_terascale_1_cb_color_operation operation;
+      switch (G_028808_MODE(evergreen_control)) {
+      case V_028808_CB_DISABLE:
+         operation = TERAKAN_HW_CONFIG_DRAW_TERASCALE_1_CB_COLOR_DISABLE;
+         break;
+      case V_028808_CB_NORMAL:
+         operation = TERAKAN_HW_CONFIG_DRAW_TERASCALE_1_CB_COLOR_NORMAL;
+         break;
+      case V_028808_CB_RESOLVE:
+         operation = TERAKAN_HW_CONFIG_DRAW_TERASCALE_1_CB_COLOR_RESOLVE_BOX;
+         break;
+      default:
+         /* ELIMINATE/DECOMPRESS/FMASK_DECOMPRESS have no proven one-to-one mapping in the classic
+          * R700 path. Disable color writes rather than interpreting MODE as SPECIAL_OP.
+          */
+         operation = TERAKAN_HW_CONFIG_DRAW_TERASCALE_1_CB_COLOR_DISABLE;
+         break;
+      }
+
+      uint32_t target_blend_enable = 0;
+      for (uint32_t color = 0; color < 8; ++color) {
+         target_blend_enable |=
+            G_028780_BLEND_CONTROL_ENABLE(
+               command_writer->hw_config_draw.cb_blend_control_.blend_control[color])
+            << color;
+      }
+      uint32_t const r700_control =
+         terakan_hw_config_draw_terascale_1_cb_color_control_encode(
+            operation, G_028808_ROP3(evergreen_control),
+            G_028808_DEGAMMA_ENABLE(evergreen_control), false, target_blend_enable);
+      uint32_t * packet = terakan_gfx_command_writer_emit(
+         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG, 3);
+      if (unlikely(packet == NULL)) {
+         return;
+      }
+      packet =
+         terakan_hw_config_draw_terascale_1_write_cb_color_control(packet, r700_control);
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
+      return;
+   }
    terakan_hw_config_draw_emit_context_register(command_writer, R_028808_CB_COLOR_CONTROL,
                                                 command_writer->hw_config_draw.cb_color_control_);
 }
