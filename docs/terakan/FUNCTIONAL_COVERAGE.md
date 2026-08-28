@@ -173,6 +173,31 @@ Failures are spread evenly over the tiling and filter suffixes
 `general_general_nearest` 21, `optimal_optimal_linear` 21, and so on), which is
 what a per-format rather than per-path problem looks like.
 
+### Uniform texel buffers
+
+`dEQP-VK.api.buffer_view` was run for the first time and failed 120 of 1004, with
+96 of the 97 `access.uniform_texel_buffer` format cases among them. `texelFetch`
+on a uniform texel buffer returned zero for every format, silently.
+
+A sampled buffer reaches `terakan_nir_lower_bindings` as an ordinary texture
+instruction, and the tex path asked for a `VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE`
+binding. A uniform texel buffer is not one, so the type check failed and the
+fetch was lowered to a null descriptor, which returns zero by design. Nothing
+else was wrong: the buffer view builds a correct resource descriptor, the
+descriptor set stores it, and the fetch lowers to `load_buffer_resource_r600`
+with the right format.
+
+The group is now at 20 failures, and they are almost entirely three-component
+formats -- `r8g8b8`, `b8g8r8`, `r16g16b16` in every signedness, plus two
+`a2*_snorm_pack32`. The driver already records that the hardware returns
+completely invalid values for 8_8_8 and 16_16_16 buffer fetches, so those are an
+over-claim of the same kind the SCALED formats were.
+
+`terakan_uniform_texel_buffer` covers R32_UINT and R8G8B8A8_UINT, checking the
+single-channel expansion to (x, 0, 0, 1) and four-channel byte order, and reports
+the all-zero case specifically. It fails with that diagnostic against the
+unfixed driver.
+
 ### Colour resolve under CTS
 
 `dEQP-VK.api.copy_and_blit.core.resolve_image`, 240 cases, run against Terakan
