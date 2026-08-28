@@ -130,6 +130,8 @@ terakan_GetPhysicalDeviceFormatProperties2(UNUSED VkPhysicalDevice const physica
       bool image_sq_texture_fetch_linear_filter = true;
 
       bool image_cb_color = true;
+      /* USCALED and SSCALED deliver integer data as unnormalized floats; see the block below. */
+      bool image_number_type_is_scaled = false;
       /* Ignore if cb_color is false. */
       bool image_cb_color_blend = true;
       bool image_cb_color_atomic = true;
@@ -145,6 +147,11 @@ terakan_GetPhysicalDeviceFormatProperties2(UNUSED VkPhysicalDevice const physica
 
          if (!aspect_format_info.supports_sq_vertex_fetch) {
             image_sq_vertex_fetch = false;
+         }
+
+         if (aspect_format_info.number_type == TERASCALE_FORMAT_NUMBER_TYPE_USCALED ||
+             aspect_format_info.number_type == TERASCALE_FORMAT_NUMBER_TYPE_SSCALED) {
+            image_number_type_is_scaled = true;
          }
 
          if (aspect_format_info.supports_sq_texture_fetch) {
@@ -236,6 +243,29 @@ terakan_GetPhysicalDeviceFormatProperties2(UNUSED VkPhysicalDevice const physica
          }
 
          image_features |= VK_FORMAT_FEATURE_2_BLIT_DST_BIT;
+      }
+
+      /* USCALED and SSCALED exist for vertex attributes -- `buffer_features` below still advertises
+       * them there -- and Vulkan mandates no image format features for them at all.
+       *
+       * The hardware format tables say the texture fetch accepts them, so Terakan advertised them
+       * as sampled, blittable and storage-capable. Measurement disagrees, and precisely: in a
+       * sampled run of dEQP-VK.api.copy_and_blit.core.blit_image.all_formats every one of the
+       * twenty USCALED and SSCALED formats failed every case it was given, 145 failures without a
+       * single pass, while every other format class passed. AMD's own radv reaches the same place
+       * structurally -- radv_is_sampler_format_supported rejects these two number formats before
+       * looking at anything else.
+       *
+       * Copying them is a different matter and does work: the same run passed every
+       * image_to_image.all_formats case for them, because a copy reinterprets the bits rather than
+       * converting them, so the number type never enters into it. Withdrawing the transfer features
+       * along with the rest would give up something measured to work, so only the features that
+       * depend on interpreting the value are dropped.
+       */
+      if (image_number_type_is_scaled) {
+         image_features =
+            VK_FORMAT_FEATURE_2_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_2_TRANSFER_DST_BIT;
+         image_tiled_only_features = 0;
       }
 
       bool const image_linear_only = (TERASCALE_FORMATS_LINEAR_ONLY & image_formats_used) != 0;
