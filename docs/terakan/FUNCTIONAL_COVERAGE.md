@@ -192,16 +192,30 @@ Three-component formats are now the single largest cause found anywhere: 117 her
 20 in `buffer_view.access.uniform_texel_buffer`, and 12 in
 `image_to_image.all_formats`, so 149 failures across three groups.
 
-**35 are multisample colour attachment clears, and every one is an integer
-format.** All 143 passing multisample clears are UNORM, SRGB or float; sample
-count does not discriminate (failures appear at 2x, 4x and 8x alike). The
-symptoms differ between formats -- `a8b8g8r8_uint_pack32` comes back with red and
-blue swapped, `r8g8b8a8_uint` with two components halved and duplicated,
-`r8_uint` with nothing written -- so this is component mapping or export width
-rather than a missing path. `vkCmdClearAttachments` passes the raw clear value
-into shader constants and lets the CB convert it per the RTV format, which is
-correct in principle; where that breaks for integer multisample targets is not
-yet established.
+**35 are multisample and every one is an integer format, and they are not clear
+failures at all.** All 143 passing multisample clears are UNORM, SRGB or float,
+and sample count does not discriminate (failures appear at 2x, 4x and 8x alike),
+which looked at first like a clear bug specific to integer multisample targets.
+It is not. These tests read the multisample image back by resolving it, and
+`terakan_meta_resolve.c` returns early without doing anything for integer
+formats, because CB_RESOLVE averages samples while an integer resolve has to
+select one. Instrumenting that early return shows it firing during a failing
+case, and the same formats pass at a single sample, so the clear itself is not
+implicated.
+
+Two hypotheses were tested and dropped before that one. Colour compression and
+fast clear are enabled for multisample images that are not sampled, which is the
+only structural difference between the multisample and single-sample paths;
+disabling both left all 35 still failing. The differing symptoms between formats
+-- red and blue swapped for `a8b8g8r8_uint_pack32`, components halved and
+duplicated for `r8g8b8a8_uint`, nothing written for `r8_uint` -- are simply
+whatever stale contents the destination happened to hold, not a component mapping
+pattern.
+
+So these 35 belong with the integer resolve gap, not with clearing. Closing them
+means a colour sample-zero resolve, which needs another hand-assembled pixel
+shader: the existing sample-zero shaders are depth and stencil only, and the one
+colour resolve shader covers 2x and is disabled.
 
 **10 are depth/stencil clears**, all returning zero. Two markers separate them:
 width 1 (`1x33`, failing 5 of 6) and multiple subresource ranges in one call
