@@ -173,6 +173,40 @@ Failures are spread evenly over the tiling and filter suffixes
 `general_general_nearest` 21, `optimal_optimal_linear` 21, and so on), which is
 what a per-format rather than per-path problem looks like.
 
+### Image clearing under CTS
+
+A sampled run of `dEQP-VK.api.image_clearing` (every 15th case, 3042 of 45636)
+failed 162. They decompose into three unrelated causes, none of which is a
+one-line fix, and all three are recorded here rather than half-investigated:
+
+**117 are three-component formats.** `vkCmdClearColorImage` returns without doing
+anything for them -- see the `TODO(Triang3l): 3x-expanded format clearing` guard
+in `terakan_meta_clear.c`, which bails whenever the format's bytes per block is
+not a power of two. Another silent no-op. The driver has 3x-expansion machinery
+for copies, but it is hand-assembled R8xx/R9xx bytecode issuing three UAV stores
+per texel, so a clear variant means writing more of the same by hand. 78 of the
+117 are also SCALED formats, which is the same set already withdrawn from
+sampling.
+
+Three-component formats are now the single largest cause found anywhere: 117 here,
+20 in `buffer_view.access.uniform_texel_buffer`, and 12 in
+`image_to_image.all_formats`, so 149 failures across three groups.
+
+**35 are multisample colour attachment clears, and every one is an integer
+format.** All 143 passing multisample clears are UNORM, SRGB or float; sample
+count does not discriminate (failures appear at 2x, 4x and 8x alike). The
+symptoms differ between formats -- `a8b8g8r8_uint_pack32` comes back with red and
+blue swapped, `r8g8b8a8_uint` with two components halved and duplicated,
+`r8_uint` with nothing written -- so this is component mapping or export width
+rather than a missing path. `vkCmdClearAttachments` passes the raw clear value
+into shader constants and lets the CB convert it per the RTV format, which is
+correct in principle; where that breaks for integer multisample targets is not
+yet established.
+
+**10 are depth/stencil clears**, all returning zero. Two markers separate them:
+width 1 (`1x33`, failing 5 of 6) and multiple subresource ranges in one call
+(failing 5 of 8). One 3D stencil case has neither.
+
 ### Uniform texel buffers
 
 `dEQP-VK.api.buffer_view` was run for the first time and failed 120 of 1004, with
