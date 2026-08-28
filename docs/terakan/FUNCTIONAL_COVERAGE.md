@@ -164,6 +164,36 @@ before now skipped, and surfacing 12 previously-passing
 SCALED format that the driver copies through its 3x-expansion path. Net across
 the sample: 204 failures to 81.
 
+Then the 69 turned out not to be a long tail after all. Split by image type they
+were 1D 12 passing and none failing, 2D 366 and 23, and **3D 1 and 43** -- so 3D
+blits were failing almost outright while looking like scattered per-format
+failures in aggregate. Instrumenting one showed the driver collecting four copy
+regions with source offsets 12,12,12 / 4,4,4 / 8,8,8 / 12,12,12 where CTS asked
+for 0,0,0 / 4,4,4 / 8,8,8 / 12,12,12: the loop over the scaled regions was using
+`copies[0]` as scratch space while probing whether a region was convertible, so
+the first accumulated copy was overwritten by the last convertible one. 3D was
+worst hit because its region sets mix scaled and unscaled regions, which the 2D
+and 1D sets mostly do not -- and which is why `blit_image.simple_tests` passed
+throughout and said nothing about it.
+
+With that fixed the sample stands at **31 failures**, from 204 where it started:
+
+| Group | Passed | Failed |
+|---|---:|---:|
+| `blit_image.color` | 428 | 17 |
+| `blit_image.generate_mipmaps` | 36 | 2 |
+| `blit_image.depth_stencil` | 1 | 0 |
+| `image_to_image.all_formats` | 1439 | 12 |
+
+The 12 `image_to_image` failures are the three-component SCALED copies noted
+above. The 19 blit failures left are the genuine long tail: spread over many
+formats at one or two cases each, with the same formats passing in other
+combinations.
+
+`terakan_blit_mixed_regions` locks the region handling in with three regions --
+two convertible, one halving, the first convertible one not last -- and reports
+whether a wrong destination holds the sentinel or another region's source.
+
 The remaining 59 failures are much thinner: `r32g32b32_sfloat` fails 5 of 11,
 the two `a2*10*_snorm_pack32` formats fail 2 of 6 and 2 of 7, and the rest are
 single cases spread across formats that otherwise pass, so those look like
