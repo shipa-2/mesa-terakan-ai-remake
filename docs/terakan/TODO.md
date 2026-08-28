@@ -52,9 +52,23 @@ shader as NIR at device creation: 2 dwords, NUM_GPRS 1, CB_SHADER_MASK 0xF, one
 export -- the same size and shape as the hand-written one, both encoding the
 constant into the export's swizzle selects.
 
-What remains is the placement work -- the meta shader BO is sized from static
-byte counts before allocation, so NIR-compiled shaders need compiling before that
-sizing -- and then the four shaders themselves. No existing shader is converted.
+The placement work is done too. Device initialization compiles the NIR meta
+shaders first, sizes the buffer from the lengths that come back, and copies from
+either source in the same loop; `terakan_meta_nir_builders` decides which shader
+is which. The opaque pixel shader is the first real entry, and its bytecode was
+compared against the hand-written one it replaces: identical export instruction
+and identical swizzle selects, differing only in `ELEM_SIZE` and `BARRIER`, which
+`sfn_assembler` sets on every export and CF instruction respectively.
+
+What remains is the four shaders themselves. Each is now an ordinary shader to
+write rather than bytecode to assemble:
+
+| Gap | Shader needed | Worth |
+|---|---|---|
+| 3x-expanded clearing | write three components per texel at `x % 3` | 117 CTS cases |
+| Integer colour resolve | fetch sample zero and export it | 35 CTS cases, plus part of the resolve group |
+| Multisample sub-region copy | per-sample copy with FMASK | 24 CTS cases |
+| 3D blit depth filtering | sample the source as 3D rather than a 2D array | 6 CTS cases |
 
 ## P2 — optional Vulkan functionality
 
