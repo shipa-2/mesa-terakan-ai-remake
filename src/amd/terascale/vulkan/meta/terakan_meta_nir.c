@@ -34,6 +34,8 @@
 
 #include "terakan_meta_nir.h"
 
+#include "terakan_meta.h"
+
 #include "terakan_device.h"
 #include "terakan_physical_device.h"
 #include "terakan_shader.h"
@@ -85,3 +87,14 @@ terakan_meta_nir_build_opaque_ps(struct terakan_device const * const device)
    b->shader->info.outputs_written = BITFIELD64_BIT(FRAG_RESULT_DATA0);
    return b->shader;
 }
+
+/* The opaque pixel shader is the one conversion this table starts with, chosen because it is the
+ * smallest possible shader and because the driver uses it as the fallback whenever a pipeline has
+ * no fragment shader -- so every depth-only draw in the test suite exercises it. Its hand-written
+ * counterpart in terakan_meta_dummy.c stays in the table and simply goes unused for it, which keeps
+ * the two comparable: both compile to two dwords that encode (0, 0, 0, 1) into the export
+ * instruction's swizzle selects.
+ */
+terakan_meta_nir_builder const terakan_meta_nir_builders[TERAKAN_META_SHADER_COUNT] = {
+   [TERAKAN_META_SHADER_DUMMY_OPAQUE_PS] = terakan_meta_nir_build_opaque_ps,
+};

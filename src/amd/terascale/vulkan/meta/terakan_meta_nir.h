@@ -28,6 +28,15 @@ VkResult terakan_meta_nir_compile(struct terakan_device * device, struct nir_sha
 /* Exports (0, 0, 0, 1) to render target 0: the stand-in for a pipeline with no fragment shader. */
 struct nir_shader * terakan_meta_nir_build_opaque_ps(struct terakan_device const * device);
 
+/* Builds the NIR for one meta shader. */
+typedef struct nir_shader * (*terakan_meta_nir_builder)(struct terakan_device const * device);
+
+/* Indexed by terakan_meta_shader_index. A non-NULL entry means the shader is built as NIR and
+ * compiled at device creation, and the hand-written bytecode in terakan_meta_shaders is not used
+ * for it. Declared here rather than in terakan_meta.h so that only this file needs nir_shader.
+ */
+extern terakan_meta_nir_builder const terakan_meta_nir_builders[];
+
 #ifdef __cplusplus
 }
 #endif

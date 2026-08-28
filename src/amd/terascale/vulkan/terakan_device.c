@@ -219,6 +219,32 @@ terakan_device_init(struct terakan_device * const device,
 
    bool const is_r9xx = physical_device->chip_info.is_r9xx;
 
+   /* Meta shaders built as NIR are compiled before the buffer is sized, because unlike the
+    * hand-written ones their length is only known once the backend has run. See
+    * meta/terakan_meta_nir.c.
+    */
+   struct terakan_shader_impl * const meta_nir_shaders =
+      vk_zalloc(&device->vk.alloc, sizeof(*meta_nir_shaders) * TERAKAN_META_SHADER_COUNT,
+                alignof(struct terakan_shader_impl), VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
+   if (meta_nir_shaders == NULL) {
+      result = vk_error(physical_device->vk.instance, VK_ERROR_OUT_OF_HOST_MEMORY);
+      goto fail_query_accumulator_bo;
+   }
+   for (size_t meta_shader_index = 0; meta_shader_index < TERAKAN_META_SHADER_COUNT;
+        ++meta_shader_index) {
+      terakan_meta_nir_builder const builder = terakan_meta_nir_builders[meta_shader_index];
+      if (builder == NULL) {
+         continue;
+      }
+      result = terakan_meta_nir_compile(device, builder(device),
+                                        &meta_nir_shaders[meta_shader_index]);
+      if (result != VK_SUCCESS) {
+         result = vk_errorf(physical_device->vk.instance, result,
+                            "Failed to compile internal shader %zu from NIR", meta_shader_index);
+         goto fail_meta_nir_shaders;
+      }
+   }
+
    /* The first shader is the empty fetch shader. */
    VkDeviceSize meta_shaders_bo_size =
       ALIGN_POT(sizeof(uint32_t) * 2, TERAKAN_SHADER_PROGRAM_ALIGNMENT_LOG2);
@@ -230,7 +256,13 @@ terakan_device_init(struct terakan_device * const device,
          terakan_meta_shaders[meta_shader_index];
       struct terakan_meta_shader_description const * const meta_shader_description =
          is_r9xx ? &meta_shader->r9xx : &meta_shader->r8xx;
-      *device_meta_shader = meta_shader_description->static_registers;
+      bool const from_nir = terakan_meta_nir_builders[meta_shader_index] != NULL;
+      *device_meta_shader = from_nir ? meta_nir_shaders[meta_shader_index].static_state
+                                     : meta_shader_description->static_registers;
+      VkDeviceSize const meta_shader_program_size_bytes =
+         from_nir ? (VkDeviceSize)meta_nir_shaders[meta_shader_index].shader.bc.ndw *
+                       sizeof(uint32_t)
+                  : meta_shader_description->program_size_bytes;
       VkDeviceSize const meta_shader_offset =
          ALIGN_POT(meta_shaders_bo_size, (VkDeviceSize)TERAKAN_SHADER_PROGRAM_ALIGNMENT);
       /* Relative for initialization purposes.
@@ -238,7 +270,7 @@ terakan_device_init(struct terakan_device * const device,
        */
       device_meta_shader->program_va_shr8 =
          meta_shader_offset >> TERAKAN_SHADER_PROGRAM_ALIGNMENT_LOG2;
-      meta_shaders_bo_size = meta_shader_offset + meta_shader_description->program_size_bytes;
+      meta_shaders_bo_size = meta_shader_offset + meta_shader_program_size_bytes;
    }
    result = device->winsys_fn->bo->allocate_device_memory(
       device, meta_shaders_bo_size, TERAKAN_SHADER_PROGRAM_ALIGNMENT,
@@ -278,53 +310,46 @@ terakan_device_init(struct terakan_device * const device,
          struct terakan_shader_static * const device_meta_shader =
             &device->meta_shaders[meta_shader_index];
          device_meta_shader->program_bo = device->meta_shaders_bo;
+         bool const from_nir = terakan_meta_nir_builders[meta_shader_index] != NULL;
+         struct terakan_shader_impl * const meta_nir_shader =
+            &meta_nir_shaders[meta_shader_index];
          util_memcpy_cpu_to_le32(
             meta_shaders_bo_mapping + ((VkDeviceSize)device_meta_shader->program_va_shr8
                                        << TERAKAN_SHADER_PROGRAM_ALIGNMENT_LOG2),
-            meta_shader_description->program, meta_shader_description->program_size_bytes);
+            from_nir ? meta_nir_shader->shader.bc.bytecode : meta_shader_description->program,
+            from_nir ? (size_t)meta_nir_shader->shader.bc.ndw * sizeof(uint32_t)
+                     : meta_shader_description->program_size_bytes);
          device_meta_shader->program_va_shr8 += meta_shaders_va_shr8;
-         /* Constant usage. */
+         /* Constant usage. The backend works this out for a NIR shader, so only the hand-written
+          * ones state it in their description.
+          */
          struct terakan_shader_sqk_usage * const meta_shader_sqk_usage =
             &device->meta_shader_sqk_usage[meta_shader_index];
-         meta_shader_sqk_usage->kcache = meta_shader->kcache_used;
-         meta_shader_sqk_usage->samplers = meta_shader->samplers_used;
-         if (meta_shader->primary_meta_resource_used) {
-            BITSET_SET(meta_shader_sqk_usage->resources,
-                       TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META);
-         }
-         if (meta_shader->non_pixel_stage_specific_resource_used) {
-            BITSET_SET(meta_shader_sqk_usage->resources,
-                       TERAKAN_RESOURCE_RANGE_NON_PIXEL_STAGE_SPECIFIC);
+         if (from_nir) {
+            *meta_shader_sqk_usage = meta_nir_shader->sqk_usage;
+         } else {
+            meta_shader_sqk_usage->kcache = meta_shader->kcache_used;
+            meta_shader_sqk_usage->samplers = meta_shader->samplers_used;
+            if (meta_shader->primary_meta_resource_used) {
+               BITSET_SET(meta_shader_sqk_usage->resources,
+                          TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META);
+            }
+            if (meta_shader->non_pixel_stage_specific_resource_used) {
+               BITSET_SET(meta_shader_sqk_usage->resources,
+                          TERAKAN_RESOURCE_RANGE_NON_PIXEL_STAGE_SPECIFIC);
+            }
          }
       }
       terakan_bo_unmap(device->meta_shaders_bo);
    }
-
-   /* Self-check for the NIR meta shader path, off by default because it costs a full shader
-    * compilation at every vkCreateDevice. It builds a meta shader as NIR, runs it through the
-    * driver's post-link lowering and the same backend that compiles application shaders, and
-    * reports the bytecode size and register state it produced. See terakan_meta_nir.c for why that
-    * path exists; this is how it is exercised until a meta operation actually uses it.
-    */
-   if (unlikely(getenv("TERAKAN_DEBUG_META_NIR_SELFTEST") != NULL)) {
-      struct terakan_shader_impl meta_nir_shader;
-      nir_shader * const meta_nir = terakan_meta_nir_build_opaque_ps(device);
-      VkResult const meta_nir_result =
-         terakan_meta_nir_compile(device, meta_nir, &meta_nir_shader);
-      if (meta_nir_result == VK_SUCCESS) {
-         fprintf(stderr,
-                 "[TERAKAN_META_NIR] opaque_ps compiled: %u dwords, NUM_GPRS=%u, "
-                 "cb_shader_mask=0x%x, sq_pgm_exports_ps=0x%x\n",
-                 meta_nir_shader.shader.bc.ndw,
-                 G_028844_NUM_GPRS(meta_nir_shader.static_state.sq_pgm_resources[0]),
-                 meta_nir_shader.static_state.stage.ps.cb_shader_mask,
-                 meta_nir_shader.static_state.stage.ps.sq_pgm_exports_ps);
-         terakan_shader_impl_finish(&meta_nir_shader);
-      } else {
-         fprintf(stderr, "[TERAKAN_META_NIR] opaque_ps failed to compile with VkResult %d\n",
-                 (int)meta_nir_result);
+   for (size_t meta_shader_index = 0; meta_shader_index < TERAKAN_META_SHADER_COUNT;
+        ++meta_shader_index) {
+      if (terakan_meta_nir_builders[meta_shader_index] != NULL) {
+         terakan_shader_impl_finish(&meta_nir_shaders[meta_shader_index]);
       }
    }
+   vk_free(&device->vk.alloc, meta_nir_shaders);
+
 
    if (mtx_init(&device->completion_mutex, mtx_plain) != thrd_success) {
       result = vk_errorf(physical_device->vk.instance, VK_ERROR_OUT_OF_HOST_MEMORY,
@@ -386,6 +411,14 @@ fail_completion_mutex:
    mtx_destroy(&device->completion_mutex);
 fail_meta_shaders_bo:
    terakan_bo_free(device->meta_shaders_bo, NULL);
+fail_meta_nir_shaders:
+   for (size_t meta_shader_index = 0; meta_shader_index < TERAKAN_META_SHADER_COUNT;
+        ++meta_shader_index) {
+      if (terakan_meta_nir_builders[meta_shader_index] != NULL) {
+         terakan_shader_impl_finish(&meta_nir_shaders[meta_shader_index]);
+      }
+   }
+   vk_free(&device->vk.alloc, meta_nir_shaders);
 fail_query_accumulator_bo:
    terakan_bo_free(device->query_accumulator_bo, NULL);
 fail_uav_immediate_bo:
