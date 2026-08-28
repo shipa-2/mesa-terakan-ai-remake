@@ -90,8 +90,11 @@ mirrored depth range, then blits a four-layer 2D array. Against the code before
 the fix all four groups fail: the minified and mirrored ranges hand every
 destination slice the source's first slice, the magnified range leaves six of
 its eight destination slices unwritten, and three of the four array layers
-receive layer zero. The CTS blit batch has not been rerun since, so the numbers
-above still describe the previous state.
+receive layer zero.
+
+The blit batch has now been rerun, and the 3D blit fix holds: `blit_image.simple_tests`
+goes from 58 passing and 56 failing to **114 passing and none failing**, with the
+same 35 unsupported. The failures that were "concentrated in 3D blits" are gone.
 
 With the CTS binary still unavailable, `terakan_blit_format_matrix` covers the
 specific format-matrix gap the acceptance criteria name explicitly:
@@ -105,6 +108,63 @@ All three pass on real CAICOS hardware. This is real, previously-missing
 regression coverage, not a bug found and fixed -- the full per-format matrix
 CTS would exercise remains unverified, though now for want of a run rather than
 for want of a binary.
+
+### Copy and blit under CTS
+
+A 2778-case batch covering `blit_image.simple_tests`, `image_to_image.simple_tests`,
+`dimensions`, `array`, `cube` and `3d_images`, and the whole of `buffer_to_image`,
+`image_to_buffer`, `buffer_to_buffer` and `buffer_to_depthstencil`: **1146 passed,
+0 failed, 1632 unsupported.** Per group:
+
+| Group | Passed | Failed | Unsupported |
+|---|---:|---:|---:|
+| `blit_image.simple_tests` | 114 | 0 | 35 |
+| `image_to_image.simple_tests` | 23 | 0 | 0 |
+| `image_to_image.dimensions` | 672 | 0 | 992 |
+| `image_to_image.array` | 7 | 0 | 2 |
+| `image_to_image.cube` | 6 | 0 | 0 |
+| `image_to_image.3d_images` | 6 | 0 | 0 |
+| `buffer_to_image` | 82 | 0 | 33 |
+| `image_to_buffer` | 184 | 0 | 570 |
+| `buffer_to_buffer` | 8 | 0 | 0 |
+| `buffer_to_depthstencil` | 44 | 0 | 0 |
+
+`image_to_image.dimensions` is the interesting one: 672 passing cases of varying
+source and destination extents and offsets, which is the boundary coverage the
+acceptance criteria ask for, and none of it fails.
+
+### The per-format matrix, sampled
+
+`blit_image.all_formats` (129044 cases) and `image_to_image.all_formats` (50984)
+are too large to run whole, so they were sampled deterministically -- every 43rd
+and every 17th case respectively, 6002 in total. **1854 passed, 204 failed, 3944
+unsupported.** The two groups could hardly differ more:
+
+| Group | Passed | Failed | Unsupported |
+|---|---:|---:|---:|
+| `image_to_image.all_formats` | 1439 | 0 | 1561 |
+| `blit_image.all_formats` | 415 | 204 | 2383 |
+
+Copying between images is clean across the whole sampled matrix. Blitting is not,
+and the failures are not scattered: **every `*_USCALED` and `*_SSCALED` format
+fails every case it is run on.** Twenty such formats appear in the sample --
+`r8_uscaled`, `r8_sscaled`, `r8g8_uscaled`, `r8g8_sscaled`, `r8g8b8a8_uscaled`,
+`r8g8b8a8_sscaled`, `b8g8r8a8_uscaled`, `b8g8r8a8_sscaled`,
+`a8b8g8r8_uscaled_pack32`, `a8b8g8r8_sscaled_pack32`, `r16_uscaled`,
+`r16_sscaled`, `r16g16_uscaled`, `r16g16_sscaled`, `r16g16b16a16_uscaled`,
+`r16g16b16a16_sscaled`, `a2r10g10b10_uscaled_pack32`,
+`a2r10g10b10_sscaled_pack32`, `a2b10g10r10_uscaled_pack32`,
+`a2b10g10r10_sscaled_pack32` -- with 145 failures and not one pass between them.
+They are advertised as blittable and are not.
+
+The remaining 59 failures are much thinner: `r32g32b32_sfloat` fails 5 of 11,
+the two `a2*10*_snorm_pack32` formats fail 2 of 6 and 2 of 7, and the rest are
+single cases spread across formats that otherwise pass, so those look like
+specific tiling or filter combinations rather than a whole format being wrong.
+Failures are spread evenly over the tiling and filter suffixes
+(`general_optimal_nearest` 24, `general_general_linear` 22,
+`general_general_nearest` 21, `optimal_optimal_linear` 21, and so on), which is
+what a per-format rather than per-path problem looks like.
 
 ### Colour resolve under CTS
 
