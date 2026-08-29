@@ -210,6 +210,28 @@ classic Gallium R600 driver that has supported this hardware for years).
   Vulkan minification and magnification filters differ, border colors, or
   anisotropic filtering on RV710 because queue submission remains blocked.
 
+- TeraScale 1 sampled-resource and buffer T# packet encoding now translates
+  Terakan's Evergreen-shaped software descriptors at emission time, only in
+  the `is_terascale_1` branch. R600/R700 `PKT3_SET_RESOURCE` uses seven dwords
+  per slot rather than Evergreen's eight, so both the packet count and the
+  resource-slot offset use a stride of 7. Image fields are rearranged according
+  to `r600_create_sampler_view_custom()` and `r600d.h`: `TILE_MODE` and
+  `TILE_TYPE` move to word 0, `DATA_FORMAT` to word 1, and validity plus maximum
+  anisotropy to word 6. Array activation is expressed by the R700 `DIM` value
+  (`*_ARRAY`), with `BASE_ARRAY` and `LAST_ARRAY` retained in word 5; there is
+  no Evergreen word-7 resource layout to reuse. For multisampled resources the
+  R700 mip word points at the base surface, matching direct pre-Evergreen sample
+  fetch rather than treating Evergreen FMASK as a mip address. Buffer words
+  0-3 retain the common SQ vertex-constant layout, words 4-5 are zero as in
+  `texture_buffer_sampler_view()`, and validity moves to word 6. The exact
+  seven descriptor dwords and complete nine-dword packet are checked by
+  `terakan_resource_descriptor_terascale_1_test` for a tiled 2D array image,
+  with a separate buffer case. The test proves construction, not texture
+  sampling or array/MSAA addressing on RV710. R700's equivalent of Evergreen's
+  buffer `UNCACHED` bit is not named in `r600d.h`, so the existing runtime
+  uncached override is deliberately not applied on TeraScale 1 pending cache
+  coherency research.
+
 - TeraScale 1 (R600/R700) `DB_DEPTH_CONTROL`/`CB_TARGET_MASK`: confirmed to
   need no separate emission path at all, not just no separate
   value-computation logic as first thought. `DB_DEPTH_CONTROL`'s fields

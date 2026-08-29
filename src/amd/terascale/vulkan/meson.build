@@ -154,6 +154,8 @@ libterakan_files = files(
   'terakan_push_constants.h',
   'terakan_query.c',
   'terakan_query.h',
+  'terakan_resource_descriptor_terascale_1.c',
+  'terakan_resource_descriptor_terascale_1.h',
   'terakan_queue.c',
   'terakan_queue.h',
   'terakan_sampler.c',
@@ -391,6 +393,22 @@ if with_tests
     c_args : c_msvc_compat_args,
   )
   test('terakan_sampler_terascale_1', terakan_sampler_terascale_1_test)
+
+  terakan_resource_descriptor_terascale_1_test = executable(
+    'terakan_resource_descriptor_terascale_1_test',
+    [
+      'terakan_resource_descriptor_terascale_1.c',
+      'tests/terakan_resource_descriptor_terascale_1_test.c',
+    ],
+    include_directories : [
+      inc_include,
+      inc_src,
+      inc_gallium,
+    ],
+    c_args : c_msvc_compat_args,
+  )
+  test('terakan_resource_descriptor_terascale_1',
+       terakan_resource_descriptor_terascale_1_test)
 
   terakan_image_tiling_terascale_1_test = executable(
     'terakan_image_tiling_terascale_1_test',
