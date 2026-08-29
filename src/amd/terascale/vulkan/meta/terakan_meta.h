@@ -145,6 +145,12 @@ enum terakan_meta_shader_index {
     */
    TERAKAN_META_SHADER_BLIT_IMAGE_3D_PS,
 
+   /* Writes a constant colour into a 3x-expanded image, one surfel per component, through the UAV.
+    * vkCmdClearColorImage had no path for these formats at all and returned without doing anything.
+    * Built as NIR; see meta/terakan_meta_nir.c.
+    */
+   TERAKAN_META_SHADER_CLEAR_EXPAND_3X_PS,
+
    TERAKAN_META_SHADER_COUNT,
 };
 

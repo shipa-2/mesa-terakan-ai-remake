@@ -279,8 +279,73 @@ terakan_meta_nir_build_blit_image_3d_ps(struct terakan_device const * const devi
    return b->shader;
 }
 
+
+/* The clear constants, matching what terakan_meta_clear.c writes into the constant cache. The
+ * geometry is one vec4 and the colour another, because a vec4 is the unit the constant cache is
+ * read in.
+ */
+enum {
+   TERAKAN_META_NIR_CLEAR_3X_CONST_DST_PITCH,
+   TERAKAN_META_NIR_CLEAR_3X_CONST_DST_OFFSET,
+};
+
+nir_shader *
+terakan_meta_nir_build_clear_expand_3x_ps(struct terakan_device const * const device)
+{
+   nir_builder builder = nir_builder_init_simple_shader(
+      MESA_SHADER_FRAGMENT, &terakan_device_physical_device(device)->nir_options_fs,
+      "terakan_meta_clear_expand_3x_ps");
+   nir_builder * const b = &builder;
+
+   nir_variable * const position = nir_variable_create(
+      b->shader, nir_var_shader_in, glsl_vec4_type(), "gl_FragCoord");
+   position->data.location = VARYING_SLOT_POS;
+   position->data.interpolation = INTERP_MODE_NOPERSPECTIVE;
+   b->shader->info.inputs_read = BITFIELD64_BIT(VARYING_SLOT_POS);
+   nir_def * const frag_coord = nir_load_var(b, position);
+
+   nir_def * const geometry = nir_load_ubo_vec4(
+      b, 4, 32, nir_imm_int(b, TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS), nir_imm_int(b, 0));
+   nir_def * const colour = nir_load_ubo_vec4(
+      b, 4, 32, nir_imm_int(b, TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS), nir_imm_int(b, 1));
+
+   /* One fragment per texel, three surfels written per fragment. Addressing the components
+    * separately is what the copy shader does too, and it is why neither needs a modulo: the
+    * fragment's own X already counts texels, so the three surfels are simply 3x + 0, 1, 2.
+    */
+   nir_def * const x = nir_f2u32(b, nir_channel(b, frag_coord, 0));
+   nir_def * const y = nir_f2u32(b, nir_channel(b, frag_coord, 1));
+   nir_def * const base = nir_iadd(
+      b,
+      nir_iadd(b, nir_channel(b, geometry, TERAKAN_META_NIR_CLEAR_3X_CONST_DST_OFFSET),
+               nir_imul(b, y, nir_channel(b, geometry, TERAKAN_META_NIR_CLEAR_3X_CONST_DST_PITCH))),
+      nir_imul_imm(b, x, 3));
+
+   nir_def * const undef = nir_undef(b, 1, 32);
+   nir_def * const uav_array_index = nir_imm_zero(b, 1, 32);
+   for (unsigned component = 0; component < 3; ++component) {
+      nir_uav_instr_r600(b, uav_array_index, nir_iadd_imm(b, base, component),
+                         nir_channel(b, colour, component), undef,
+                         .uav_op_r600 = V_RAT_INST_STORE_TYPED, .access = 0, .id_base = 0);
+   }
+
+   /* Every pixel shader has to export at least once even when all of its work goes through the
+    * UAV, which is why the hand-written 3x copy shader ends with a dummy export as well. The colour
+    * target mask is zero for these draws, so nothing receives it.
+    */
+   nir_variable * const dummy = nir_variable_create(
+      b->shader, nir_var_shader_out, glsl_vec4_type(), "dummy");
+   dummy->data.location = FRAG_RESULT_DATA0;
+   dummy->data.driver_location = 0;
+   nir_store_var(b, dummy, nir_imm_vec4(b, 0.0f, 0.0f, 0.0f, 0.0f), 0xF);
+   b->shader->info.outputs_written = BITFIELD64_BIT(FRAG_RESULT_DATA0);
+
+   return b->shader;
+}
+
 terakan_meta_nir_builder const terakan_meta_nir_builders[TERAKAN_META_SHADER_COUNT] = {
    [TERAKAN_META_SHADER_DUMMY_OPAQUE_PS] = terakan_meta_nir_build_opaque_ps,
    [TERAKAN_META_SHADER_RESOLVE_SAMPLE_ZERO_PS] = terakan_meta_nir_build_resolve_sample_zero_ps,
    [TERAKAN_META_SHADER_BLIT_IMAGE_3D_PS] = terakan_meta_nir_build_blit_image_3d_ps,
+   [TERAKAN_META_SHADER_CLEAR_EXPAND_3X_PS] = terakan_meta_nir_build_clear_expand_3x_ps,
 };

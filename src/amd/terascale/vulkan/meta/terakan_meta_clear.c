@@ -30,11 +30,13 @@
 #include "terakan_vk_state.h"
 
 #include "util/macros.h"
+#include "util/format/u_format.h"
 #include "util/u_endian.h"
 #include "util/u_math.h"
 
 #include <assert.h>
 #include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 enum {
@@ -354,6 +356,161 @@ struct terakan_meta_shader const terakan_meta_clear_color_ps = {
    .kcache_used = BITFIELD_BIT(TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS),
 };
 
+
+/* A 3x-expanded image stores each of its three components as a separate surfel, so clearing one
+ * cannot go through the colour target at all -- the hardware has no such format to export to. The
+ * copy path already writes these images through a UAV, one surfel per component, and the clear
+ * takes the same route: one fragment per texel, three stores at 3x + 0, 1 and 2.
+ *
+ * Until this existed vkCmdClearColorImage returned without doing anything for every three-component
+ * format, silently. It was the largest single cause of failures measured anywhere in the driver:
+ * dEQP-VK.api.image_clearing failed 387 cases and all 387 were these formats.
+ */
+static void
+terakan_meta_clear_expand_3x_color_image(struct terakan_gfx_command_writer * const command_writer,
+                                         struct terakan_image const * const image,
+                                         unsigned const aspect_index,
+                                         VkClearColorValue const * const color,
+                                         uint32_t const range_count,
+                                         VkImageSubresourceRange const * const ranges)
+{
+   struct terakan_image_surface_aspect const * const surface_aspect =
+      &image->surface.aspects[aspect_index];
+   if (unlikely(!terakan_format_is_expand_3x(surface_aspect->bytes_per_block))) {
+      /* #MemoryIntegrity. */
+      return;
+   }
+   unsigned const bytes_per_surfel = surface_aspect->bytes_per_block / 3u;
+
+   /* The UAV reads and writes raw surfels, so the conversion the colour target would have done on
+    * export has to be done here instead. util_format_pack_rgba takes the clear value in exactly the
+    * union VkClearColorValue already uses -- integers for pure integer formats, floats otherwise --
+    * so the packed bytes are the image's own representation.
+    */
+   enum pipe_format const pipe_format = vk_format_to_pipe_format(image->vk.format);
+   struct util_format_description const * const format_description =
+      util_format_description(pipe_format);
+   union {
+      float float32[4];
+      uint32_t uint32[4];
+      int32_t int32[4];
+   } source;
+   memcpy(&source, color, sizeof(source));
+   /* A scaled format holds an integer that is read as a value rather than as a fraction, and the
+    * clear value for one arrives in the integer members of VkClearColorValue. util_format_pack_rgba
+    * asks util_format_is_pure_uint/sint, which are false for scaled formats, so it would read those
+    * integers as floats -- and a small integer read as a float bit pattern is a denormal, which
+    * packs to zero. That is what it did: every scaled component cleared to zero.
+    */
+   if (!util_format_is_pure_uint(pipe_format) && !util_format_is_pure_sint(pipe_format) &&
+       !format_description->channel[0].normalized &&
+       (format_description->channel[0].type == UTIL_FORMAT_TYPE_UNSIGNED ||
+        format_description->channel[0].type == UTIL_FORMAT_TYPE_SIGNED)) {
+      bool const is_signed = format_description->channel[0].type == UTIL_FORMAT_TYPE_SIGNED;
+      for (unsigned component = 0; component < 4; ++component) {
+         source.float32[component] = is_signed ? (float)color->int32[component]
+                                               : (float)color->uint32[component];
+      }
+   }
+
+   uint8_t packed[16] = {0};
+   util_format_pack_rgba(pipe_format, packed, &source, 1);
+
+   uint32_t component_surfels[3] = {0};
+   for (unsigned component = 0; component < 3; ++component) {
+      memcpy(&component_surfels[component], packed + bytes_per_surfel * component,
+             bytes_per_surfel);
+   }
+
+   command_writer->post_color_image_copy_write_barrier_actions |=
+      TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_UAV | TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_PS;
+
+   struct terakan_meta_config_draw_begin_options const meta_begin_options = {
+      .vgt_primitive_type = V_008958_DI_PT_RECTLIST,
+      .cb_and_db_shader_control_mode = TERAKAN_META_CONFIG_DRAW_BEGIN_CB_MODE_NORMAL_UAV_ONLY,
+      .rasterization = {.enable = true},
+   };
+   terakan_meta_config_draw_begin(command_writer, &meta_begin_options);
+   terakan_meta_config_draw_set_sq_pgm_vs(command_writer,
+                                          TERAKAN_META_SHADER_POSITION_FROM_INDEX_VS);
+   terakan_meta_config_draw_set_sq_pgm_ps(command_writer,
+                                          TERAKAN_META_SHADER_CLEAR_EXPAND_3X_PS);
+
+   struct terakan_color_descriptor descriptor =
+      terakan_meta_transfer_expand_3x_uav(bytes_per_surfel);
+
+   for (uint32_t range_index = 0; range_index < range_count; ++range_index) {
+      VkImageSubresourceRange const * const range = &ranges[range_index];
+
+      uint32_t const level_count =
+         range->levelCount == VK_REMAINING_MIP_LEVELS
+            ? image->vk.mip_levels - MIN2(range->baseMipLevel, image->vk.mip_levels)
+            : range->levelCount;
+      for (uint32_t level_offset = 0; level_offset < level_count; ++level_offset) {
+         /* A 3D image has one array layer and a stack of depth slices, and the clear covers all of
+          * them; the subresource's layerCount says 1 and describes the array, not the depth. Taking
+          * it at face value cleared only the first slice, which is what left the 3D cases failing
+          * while every other shape passed.
+          */
+         bool const is_3d = image->vk.image_type == VK_IMAGE_TYPE_3D;
+         uint32_t const level = range->baseMipLevel + level_offset;
+         struct terakan_image_descriptor_subresource_range subresource_range = {
+            .base_mip_level = level,
+            .max_level_count = 1,
+            .base_z_or_array_layer = is_3d ? 0 : range->baseArrayLayer,
+            .max_depth_or_layer_count =
+               is_3d ? u_minify(image->vk.extent.depth, level) : range->layerCount,
+         };
+         if (unlikely(!terakan_image_descriptor_subresource_range_sanitize(
+                         image, &subresource_range, false))) {
+            continue;
+         }
+
+         struct terakan_image_surface_level const * const surface_level =
+            &surface_aspect->levels[subresource_range.base_mip_level];
+         struct terakan_screen_rect const level_rect = {
+            .bounds = {
+               [1] = {
+                  (uint16_t)u_minify(image->vk.extent.width, subresource_range.base_mip_level),
+                  (uint16_t)u_minify(image->vk.extent.height, subresource_range.base_mip_level),
+               },
+            },
+         };
+         if (unlikely(level_rect.bounds[1][0] == 0 || level_rect.bounds[1][1] == 0)) {
+            continue;
+         }
+
+         uint32_t const constants[8] = {
+            surface_level->aligned_extent_surfels[0],
+            0,
+            0,
+            0,
+            component_surfels[0],
+            component_surfels[1],
+            component_surfels[2],
+            0,
+         };
+         if (unlikely(!terakan_meta_config_draw_set_kcache_push_constants(
+                command_writer, sizeof(constants), constants, false, true))) {
+            continue;
+         }
+
+         descriptor.base = (uint32_t)(image->va >> 8) + surface_level->offset_in_memory_bytes_shr8 +
+                           surface_level->slice_size_bytes_shr8 *
+                              subresource_range.base_z_or_array_layer;
+         descriptor.dim = ((uint32_t)surface_level->aligned_extent_surfels[0] *
+                           surface_level->aligned_extent_surfels[1]) -
+                          1u;
+
+         for (uint32_t layer = 0; layer < subresource_range.max_depth_or_layer_count; ++layer) {
+            terakan_meta_config_draw_set_cb_uav(command_writer, 0, image->bo, &descriptor);
+            terakan_meta_draw_rect(command_writer, level_rect, 1);
+            descriptor.base += surface_level->slice_size_bytes_shr8;
+         }
+      }
+   }
+}
+
 VKAPI_ATTR void VKAPI_CALL
 terakan_CmdClearColorImage(VkCommandBuffer const commandBuffer, VkImage const imageHandle,
                            UNUSED VkImageLayout const imageLayout,
@@ -371,8 +528,11 @@ terakan_CmdClearColorImage(VkCommandBuffer const commandBuffer, VkImage const im
    struct terascale_format_info const format_info = image->format_info.aspect_formats[aspect_index];
    uint8_t const format_bytes_per_block = terascale_format_bytes_per_block[format_info.format];
 
-   /* TODO(Triang3l): 3x-expanded format clearing. */
+   struct terakan_gfx_command_writer * const command_writer_early =
+      terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx;
    if (unlikely(!IS_POT(format_bytes_per_block))) {
+      terakan_meta_clear_expand_3x_color_image(command_writer_early, image, aspect_index, pColor,
+                                               rangeCount, pRanges);
       return;
    }
 

@@ -550,6 +550,56 @@ giving the meta path the FMASK binding the application path already has, not
 writing a different shader; the shaders themselves were reverted rather than left
 in place not working.
 
+### Clearing three-component formats
+
+`vkCmdClearColorImage` had no path for three-component formats and returned
+without doing anything, silently, for every one of them. Measured over the
+three-component subset of `dEQP-VK.api.image_clearing` -- 19698 cases -- that was
+9700 passing and 1800 failing, and every failure was this.
+
+These formats have no hardware equivalent, so each component is stored as its own
+surfel and the image is three times as wide in surfels as in texels; the colour
+target cannot express that. The clear now takes the route the 3x copy already
+used: a UAV, one fragment per texel, three stores at 3x + 0, 1 and 2. No modulo is
+needed anywhere, because the fragment's X already counts texels. The shader is
+built as NIR.
+
+Two things had to be got right beyond the shader.
+
+A scaled format holds an integer read as a value rather than as a fraction, and
+the clear value for one arrives in the integer members of `VkClearColorValue`.
+`util_format_pack_rgba` dispatches on `util_format_is_pure_uint`/`_sint`, which
+are false for scaled formats, so it read those integers as floats -- and a small
+integer read as a float bit pattern is a denormal, which packs to zero. Every
+scaled component cleared to zero until the source was converted first.
+
+A 3D image has one array layer and a stack of depth slices, and the subresource's
+`layerCount` describes the array, not the depth. Taking it at face value cleared
+only the first slice, which left all 72 of the 3D cases failing while every other
+shape passed.
+
+**The subset is now at 10300 passing and 1200 failing, from 9700 / 1800** -- 600
+fixed with no case moving the other way.
+
+The remaining 1200 are exactly the one- and two-byte-surfel scaled formats, and
+they are not clear failures. A probe settled it: the image's own memory held the
+correct bytes -- `11 22 33` repeated across the width for a clear of (17, 34, 51)
+-- while `vkCmdCopyImageToBuffer` on the same image returned `00 ff ff` repeating,
+which is exactly what the tests report. Reading a three-component image with one-
+or two-byte surfels back to a buffer fetches it as `8_8_8` or `16_16_16` from a
+buffer, and this hardware does not do that correctly -- the same limitation
+already recorded for `api.buffer_view` and `vertex_input`. Those cases cannot pass
+until that path fetches single components instead, which the NIR meta path now
+makes writable.
+
+`terakan_clear_expand_3x` therefore reads the image's memory directly rather than
+copying it out, since a test built on the copy would fail for a reason unrelated
+to what it tests. It checks the first row holds the three components in order
+across the width, and that the number of bytes that changed equals three surfels
+per texel over every texel of every slice -- which catches a clear that stopped
+after one row or one slice, and equally one that ran past the end. It fails
+against the unfixed driver.
+
 ### Colour resolve under CTS
 
 `dEQP-VK.api.copy_and_blit.core.resolve_image`, 240 cases, run against Terakan

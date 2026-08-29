@@ -36,6 +36,10 @@ struct nir_shader * terakan_meta_nir_build_resolve_sample_zero_ps(
 struct nir_shader * terakan_meta_nir_build_blit_image_3d_ps(
    struct terakan_device const * device);
 
+/* Writes a constant colour into a 3x-expanded image, one surfel per component, through the UAV. */
+struct nir_shader * terakan_meta_nir_build_clear_expand_3x_ps(
+   struct terakan_device const * device);
+
 /* Builds the NIR for one meta shader. */
 typedef struct nir_shader * (*terakan_meta_nir_builder)(struct terakan_device const * device);
 
