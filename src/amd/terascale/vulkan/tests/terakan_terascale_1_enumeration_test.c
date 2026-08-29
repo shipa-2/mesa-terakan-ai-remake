@@ -19,6 +19,13 @@
 #include <stdio.h>
 #include <string.h>
 
+static uint32_t const application_vertex_spirv[] = {
+#include "terakan_vertex_fetch_bounds.vert.spv.h"
+};
+static uint32_t const application_fragment_spirv[] = {
+#include "terakan_vertex_fetch_bounds.frag.spv.h"
+};
+
 #define VK_CHECK(expression)                                                                       \
    do {                                                                                            \
       VkResult const check_result = (expression);                                                  \
@@ -179,6 +186,173 @@ check_r700_image_layouts(VkDevice const device)
    return failures;
 }
 
+static uint32_t
+check_r700_application_graphics_shader_compile(VkDevice const device)
+{
+   VkShaderModule vertex_module = VK_NULL_HANDLE, fragment_module = VK_NULL_HANDLE;
+   VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
+   VkRenderPass render_pass = VK_NULL_HANDLE;
+   VkPipeline pipeline = VK_NULL_HANDLE;
+   uint32_t failures = 0;
+
+   VkShaderModuleCreateInfo const vertex_module_info = {
+      .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+      .codeSize = sizeof(application_vertex_spirv),
+      .pCode = application_vertex_spirv,
+   };
+   VkResult result = vkCreateShaderModule(device, &vertex_module_info, NULL, &vertex_module);
+   if (result != VK_SUCCESS) {
+      fprintf(stderr, "  application vertex vkCreateShaderModule failed with %d\n", result);
+      return 1;
+   }
+   VkShaderModuleCreateInfo const fragment_module_info = {
+      .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+      .codeSize = sizeof(application_fragment_spirv),
+      .pCode = application_fragment_spirv,
+   };
+   result = vkCreateShaderModule(device, &fragment_module_info, NULL, &fragment_module);
+   if (result != VK_SUCCESS) {
+      fprintf(stderr, "  application fragment vkCreateShaderModule failed with %d\n", result);
+      failures = 1;
+      goto cleanup;
+   }
+
+   VkPipelineLayoutCreateInfo const pipeline_layout_info = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+   };
+   result = vkCreatePipelineLayout(device, &pipeline_layout_info, NULL, &pipeline_layout);
+   if (result != VK_SUCCESS) {
+      fprintf(stderr, "  application vkCreatePipelineLayout failed with %d\n", result);
+      failures = 1;
+      goto cleanup;
+   }
+
+   VkAttachmentDescription const attachment = {
+      .format = VK_FORMAT_R8G8B8A8_UNORM,
+      .samples = VK_SAMPLE_COUNT_1_BIT,
+      .loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+      .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+      .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+      .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+      .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+      .finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+   };
+   VkAttachmentReference const color_reference = {
+      .attachment = 0,
+      .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+   };
+   VkSubpassDescription const subpass = {
+      .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+      .colorAttachmentCount = 1,
+      .pColorAttachments = &color_reference,
+   };
+   VkRenderPassCreateInfo const render_pass_info = {
+      .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+      .attachmentCount = 1,
+      .pAttachments = &attachment,
+      .subpassCount = 1,
+      .pSubpasses = &subpass,
+   };
+   result = vkCreateRenderPass(device, &render_pass_info, NULL, &render_pass);
+   if (result != VK_SUCCESS) {
+      fprintf(stderr, "  application vkCreateRenderPass failed with %d\n", result);
+      failures = 1;
+      goto cleanup;
+   }
+
+   VkPipelineShaderStageCreateInfo const stages[2] = {
+      {
+         .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+         .stage = VK_SHADER_STAGE_VERTEX_BIT,
+         .module = vertex_module,
+         .pName = "main",
+      },
+      {
+         .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+         .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+         .module = fragment_module,
+         .pName = "main",
+      },
+   };
+   VkVertexInputBindingDescription const vertex_binding = {
+      .binding = 0,
+      .stride = 16,
+      .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+   };
+   VkVertexInputAttributeDescription const vertex_attribute = {
+      .location = 0,
+      .binding = 0,
+      .format = VK_FORMAT_R32G32B32A32_UINT,
+   };
+   VkPipelineVertexInputStateCreateInfo const vertex_input = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+      .vertexBindingDescriptionCount = 1,
+      .pVertexBindingDescriptions = &vertex_binding,
+      .vertexAttributeDescriptionCount = 1,
+      .pVertexAttributeDescriptions = &vertex_attribute,
+   };
+   VkPipelineInputAssemblyStateCreateInfo const input_assembly = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+      .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+   };
+   VkViewport const viewport = {.width = 1.0F, .height = 1.0F, .maxDepth = 1.0F};
+   VkRect2D const scissor = {.extent = {1, 1}};
+   VkPipelineViewportStateCreateInfo const viewport_state = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+      .viewportCount = 1,
+      .pViewports = &viewport,
+      .scissorCount = 1,
+      .pScissors = &scissor,
+   };
+   VkPipelineRasterizationStateCreateInfo const rasterization = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+      .polygonMode = VK_POLYGON_MODE_FILL,
+      .cullMode = VK_CULL_MODE_NONE,
+      .lineWidth = 1.0F,
+   };
+   VkPipelineMultisampleStateCreateInfo const multisample = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+      .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+   };
+   VkPipelineColorBlendAttachmentState const blend_attachment = {
+      .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                        VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
+   };
+   VkPipelineColorBlendStateCreateInfo const blend = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+      .attachmentCount = 1,
+      .pAttachments = &blend_attachment,
+   };
+   VkGraphicsPipelineCreateInfo const pipeline_info = {
+      .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+      .stageCount = 2,
+      .pStages = stages,
+      .pVertexInputState = &vertex_input,
+      .pInputAssemblyState = &input_assembly,
+      .pViewportState = &viewport_state,
+      .pRasterizationState = &rasterization,
+      .pMultisampleState = &multisample,
+      .pColorBlendState = &blend,
+      .layout = pipeline_layout,
+      .renderPass = render_pass,
+   };
+   result = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipeline_info, NULL, &pipeline);
+   if (result != VK_SUCCESS) {
+      fprintf(stderr, "  R700 application VS/FS pipeline compilation failed with %d\n", result);
+      failures = 1;
+   } else {
+      fprintf(stderr, "  R700 application VS/FS pipeline compilation succeeded\n");
+   }
+
+cleanup:
+   vkDestroyPipeline(device, pipeline, NULL);
+   vkDestroyRenderPass(device, render_pass, NULL);
+   vkDestroyPipelineLayout(device, pipeline_layout, NULL);
+   vkDestroyShaderModule(device, fragment_module, NULL);
+   vkDestroyShaderModule(device, vertex_module, NULL);
+   return failures;
+}
+
 int
 main(void)
 {
@@ -247,6 +421,7 @@ main(void)
             fprintf(stderr, "  minimal R700 vkCreateDevice succeeded\n");
 
             failures += check_r700_image_layouts(device);
+            failures += check_r700_application_graphics_shader_compile(device);
 
             VkQueue queue;
             vkGetDeviceQueue(device, 0, 0, &queue);

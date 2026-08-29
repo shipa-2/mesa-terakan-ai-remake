@@ -26,6 +26,7 @@
 
 #include "terakan_instance.h"
 #include "terakan_queue.h"
+#include "terakan_shader_generation.h"
 #include "wsi_common.h"
 
 #include "gallium/drivers/r600/r600_isa.h"
@@ -45,7 +46,12 @@ extern "C" {
 
 #define TERAKAN_PHYSICAL_DEVICE_VENDOR_ID_ATI 0x1002
 
-enum radeon_family terakan_physical_device_get_chip_family(uint32_t pci_device_id);
+static inline enum radeon_family
+terakan_physical_device_get_chip_family(uint32_t const pci_device_id)
+{
+   /* CHIP_UNKNOWN is not an error, as this function filters unsupported physical devices. */
+   return terakan_shader_family_from_pci_id(pci_device_id);
+}
 
 static inline bool
 terakan_physical_device_is_chip_family_supported(enum radeon_family const chip_family)

@@ -161,6 +161,8 @@ libterakan_files = files(
   'terakan_screen_rect.h',
   'terakan_shader.c',
   'terakan_shader.h',
+  'terakan_shader_generation.c',
+  'terakan_shader_generation.h',
   'terakan_shader_sfn.cpp',
   'terakan_sync_completion.c',
   'terakan_sync_completion.h',
@@ -431,13 +433,24 @@ if with_tests
 
   terakan_shader_generation_test = executable(
     'terakan_shader_generation_test',
-    'tests/terakan_shader_generation_test.c',
+    [
+      'terakan_shader_generation.c',
+      'tests/terakan_shader_generation_test.c',
+    ],
     include_directories : [
       inc_include,
       inc_src,
       inc_gallium,
+      inc_gallium_aux,
       inc_amd,
       inc_amd_common,
+      inc_compiler,
+      inc_util,
+    ],
+    dependencies : [
+      idep_amd_terascale_compiler,
+      idep_mesautil,
+      idep_nir,
     ],
     c_args : c_msvc_compat_args,
   )
@@ -1958,7 +1971,11 @@ if with_tests
 
     terakan_terascale_1_enumeration_test = executable(
       'terakan_terascale_1_enumeration_test',
-      'tests/terakan_terascale_1_enumeration_test.c',
+      [
+        'tests/terakan_terascale_1_enumeration_test.c',
+        terakan_vertex_fetch_bounds_vertex_spv,
+        terakan_vertex_fetch_bounds_fragment_spv,
+      ],
       dependencies : vulkan_loader_dep,
     )
     test(

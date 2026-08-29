@@ -8,8 +8,13 @@
 
 #include "gallium/drivers/r600/r600_isa.h"
 #include "amd_family.h"
+#include "nir.h"
 
 #include <assert.h>
+#include <stdint.h>
+
+/* Production PCI-ID lookup shared by physical-device enumeration and the generation tests. */
+enum radeon_family terakan_shader_family_from_pci_id(uint32_t pci_device_id);
 
 /* Keep the shader backend generation selection independent from the R8xx/R9xx state paths.
  * In particular, treating every non-Cayman chip as Evergreen silently produces the wrong CF,
@@ -44,5 +49,13 @@ terakan_shader_isa_chip_class(enum radeon_family const family)
       return ISA_CC_CAYMAN;
    }
 }
+
+/* Initialize the SPIR-V-to-NIR options for the actual runtime family. Pre-Evergreen ALU and
+ * sampler-indexing limitations are materially different from Evergreen's and must be lowered
+ * before SFN translation rather than being selected by the build-generation label.
+ */
+void terakan_shader_nir_options_init(enum radeon_family family,
+                                     nir_shader_compiler_options * non_fs_out,
+                                     nir_shader_compiler_options * fs_out);
 
 #endif /* TERAKAN_SHADER_GENERATION_H */
