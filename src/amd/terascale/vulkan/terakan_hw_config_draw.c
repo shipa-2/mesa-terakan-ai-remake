@@ -1539,6 +1539,45 @@ static void
 terakan_hw_config_draw_emit_db_shader_control(
    struct terakan_gfx_command_writer * const command_writer)
 {
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
+      uint32_t const evergreen_control = command_writer->hw_config_draw.db_shader_control_;
+      uint32_t const known_evergreen_fields =
+         S_02880C_Z_EXPORT_ENABLE(1) | S_02880C_STENCIL_EXPORT_ENABLE(1) |
+         S_02880C_Z_ORDER(3) | S_02880C_KILL_ENABLE(1) | S_02880C_MASK_EXPORT_ENABLE(1) |
+         S_02880C_DUAL_EXPORT_ENABLE(1) | S_02880C_EXEC_ON_HIER_FAIL(1) |
+         S_02880C_EXEC_ON_NOOP(1) | S_02880C_ALPHA_TO_MASK_DISABLE(1) |
+         S_02880C_DB_SOURCE_FORMAT(3) | S_02880C_DEPTH_BEFORE_SHADER(1) |
+         S_02880C_CONSERVATIVE_Z_EXPORT(3);
+      struct terakan_hw_config_draw_terascale_1_db_shader_control_input const input = {
+         .z_export_enable = G_02880C_Z_EXPORT_ENABLE(evergreen_control),
+         .stencil_ref_export_enable = G_02880C_STENCIL_EXPORT_ENABLE(evergreen_control),
+         .z_order = G_02880C_Z_ORDER(evergreen_control),
+         .kill_enable = G_02880C_KILL_ENABLE(evergreen_control),
+         .mask_export_enable = G_02880C_MASK_EXPORT_ENABLE(evergreen_control),
+         .dual_export_enable = G_02880C_DUAL_EXPORT_ENABLE(evergreen_control),
+         .source_format = G_02880C_DB_SOURCE_FORMAT(evergreen_control),
+         .exec_on_hier_fail = G_02880C_EXEC_ON_HIER_FAIL(evergreen_control),
+         .exec_on_noop = G_02880C_EXEC_ON_NOOP(evergreen_control),
+         .alpha_to_mask_disable = (evergreen_control & S_02880C_ALPHA_TO_MASK_DISABLE(1)) != 0,
+         .depth_before_shader = (evergreen_control & S_02880C_DEPTH_BEFORE_SHADER(1)) != 0,
+         .conservative_z_export = G_02880C_CONSERVATIVE_Z_EXPORT(evergreen_control),
+         .unknown_bits = evergreen_control & ~known_evergreen_fields,
+      };
+      uint32_t r700_control;
+      if (!terakan_hw_config_draw_terascale_1_db_shader_control_encode(&input, &r700_control)) {
+         return;
+      }
+
+      uint32_t * packet = terakan_gfx_command_writer_emit(
+         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG, 3);
+      if (unlikely(packet == NULL)) {
+         return;
+      }
+      packet =
+         terakan_hw_config_draw_terascale_1_write_db_shader_control(packet, r700_control);
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
+      return;
+   }
    terakan_hw_config_draw_emit_context_register(command_writer, R_02880C_DB_SHADER_CONTROL,
                                                 command_writer->hw_config_draw.db_shader_control_);
 }

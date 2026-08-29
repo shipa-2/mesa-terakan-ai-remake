@@ -61,6 +61,38 @@ terakan_hw_config_draw_terascale_1_write_db_render_control_override(
    return packet;
 }
 
+bool
+terakan_hw_config_draw_terascale_1_db_shader_control_encode(
+   struct terakan_hw_config_draw_terascale_1_db_shader_control_input const * const input,
+   uint32_t * const db_shader_control_out)
+{
+   /* r600d.h and evergreend.h agree on the positions of the fields emitted below. The source
+    * format is Evergreen shader-export metadata rather than an R700 register field; values 0..2
+    * are the complete non-reserved Evergreen range. Classic r600_update_db_shader_control() only
+    * selects DUAL_EXPORT_ENABLE for the corresponding R700 export choice.
+    */
+   if (input->z_order > V_02880C_EARLY_Z_THEN_RE_Z || input->source_format > 2 ||
+       input->exec_on_hier_fail || input->exec_on_noop || input->alpha_to_mask_disable ||
+       input->depth_before_shader || input->conservative_z_export || input->unknown_bits) {
+      return false;
+   }
+
+   *db_shader_control_out =
+      S_02880C_Z_EXPORT_ENABLE(input->z_export_enable) |
+      S_02880C_STENCIL_REF_EXPORT_ENABLE(input->stencil_ref_export_enable) |
+      S_02880C_Z_ORDER(input->z_order) | S_02880C_KILL_ENABLE(input->kill_enable) |
+      S_02880C_MASK_EXPORT_ENABLE(input->mask_export_enable) |
+      S_02880C_DUAL_EXPORT_ENABLE(input->dual_export_enable);
+   return true;
+}
+
+uint32_t *
+terakan_hw_config_draw_terascale_1_write_db_shader_control(uint32_t * const packet,
+                                                            uint32_t const value)
+{
+   return write_context_reg(packet, R_02880C_DB_SHADER_CONTROL, value);
+}
+
 uint32_t *
 terakan_hw_config_draw_terascale_1_write_db_depth_size(uint32_t * const packet,
                                                         uint32_t const pitch_tile_max,
