@@ -26,6 +26,7 @@
 #include "nir/terakan_nir.h"
 #include "terakan_descriptor.h"
 #include "terakan_device.h"
+#include "terakan_hw_config_draw_terascale_1.h"
 #include "terakan_physical_device.h"
 #include "terakan_shader_generation.h"
 
@@ -387,6 +388,55 @@ terakan_shader_impl_compile(terakan_shader_impl * const shader, terakan_device *
       }
       shader->static_state.stage.ps.spi_input_z =
          S_0286D8_PROVIDE_Z_TO_SPI(position_input != nullptr);
+
+      if (chip_info.is_terascale_1) {
+         /* R600/R700 has no SPI_BARYC_CNTL. Build its per-input interpolation selections and
+          * SPI_PS_IN_CONTROL payload from generation-neutral shader IO instead of passing the
+          * Evergreen-shaped state to registers that have different meanings on this generation.
+          */
+         terakan_hw_config_draw_terascale_1_spi_ps_input
+            r700_inputs[TERAKAN_HW_CONFIG_DRAW_TERASCALE_1_SPI_PS_INPUT_COUNT] = {};
+         if (shader->shader.ninput > ARRAY_SIZE(r700_inputs)) {
+            r600_bytecode_clear(&shader->shader.bc);
+            return vk_errorf(device, VK_ERROR_UNKNOWN,
+                             "Too many fragment shader inputs for TeraScale 1 SPI");
+         }
+         for (unsigned input_index = 0; input_index < shader->shader.ninput; ++input_index) {
+            r600_shader_io const & input = shader->shader.input[input_index];
+            r700_inputs[input_index] = {
+               .semantic = static_cast<uint32_t>(input.spi_sid),
+               .gpr = input.gpr,
+               .position = input.varying_slot == VARYING_SLOT_POS,
+               .front_face_or_sample_mask =
+                  input.varying_slot == VARYING_SLOT_FACE ||
+                  input.system_value == SYSTEM_VALUE_SAMPLE_MASK_IN,
+               .sample_id = input.system_value == SYSTEM_VALUE_SAMPLE_ID,
+               .flat = input.interpolate == TGSI_INTERPOLATE_CONSTANT,
+               .centroid =
+                  input.interpolate_location == TGSI_INTERPOLATE_LOC_CENTROID,
+               .linear = input.interpolate == TGSI_INTERPOLATE_LINEAR,
+               .point_sprite = input.varying_slot == VARYING_SLOT_PNTC,
+               .sample = input.interpolate_location == TGSI_INTERPOLATE_LOC_SAMPLE,
+            };
+         }
+
+         terakan_hw_config_draw_terascale_1_spi_ps r700_spi;
+         if (!terakan_hw_config_draw_terascale_1_spi_ps_encode(
+                r700_inputs, shader->shader.ninput, &r700_spi)) {
+            r600_bytecode_clear(&shader->shader.bc);
+            return vk_errorf(device, VK_ERROR_UNKNOWN,
+                             "Invalid fragment shader input allocation for TeraScale 1 SPI");
+         }
+         std::memcpy(shader->static_state.stage.ps.spi_ps_input_cntl, r700_spi.input_control,
+                     sizeof(r700_spi.input_control));
+         shader->static_state.stage.ps.spi_ps_in_control[0] = r700_spi.in_control_0;
+         shader->static_state.stage.ps.spi_ps_in_control[1] = r700_spi.in_control_1;
+         shader->static_state.stage.ps.spi_input_z = r700_spi.input_z;
+         /* Kept zero as software state too, so accidental future common emission is visible in
+          * packet tests rather than looking like a plausible Evergreen barycentric mode.
+          */
+         shader->static_state.stage.ps.spi_baryc_cntl = 0;
+      }
 
       shader->static_state.stage.ps.cb_shader_mask = shader->shader.ps_color_export_mask;
    } break;

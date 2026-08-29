@@ -37,6 +37,86 @@ test_db_depth_view(void)
 }
 
 static void
+test_spi_ps_interpolation(void)
+{
+   struct terakan_hw_config_draw_terascale_1_spi_ps_input const inputs[] = {
+      {.semantic = 0, .gpr = 4, .position = true, .centroid = true},
+      {.semantic = 3, .gpr = 1, .centroid = true},
+      {.semantic = 7, .gpr = 2, .linear = true, .point_sprite = true, .sample = true},
+      {.semantic = 0, .gpr = 5, .front_face_or_sample_mask = true, .flat = true},
+      {.semantic = 0, .gpr = 6, .sample_id = true, .flat = true},
+   };
+   struct terakan_hw_config_draw_terascale_1_spi_ps spi;
+   CHECK(terakan_hw_config_draw_terascale_1_spi_ps_encode(inputs, 5, &spi));
+   CHECK(spi.input_count == 5);
+   CHECK(spi.input_control[0] ==
+         (S_028644_SEMANTIC(0) | S_028644_FLAT_SHADE(1) | S_028644_SEL_CENTROID(1)));
+   CHECK(spi.input_control[1] ==
+         (S_028644_SEMANTIC(3) | S_028644_SEL_CENTROID(1)));
+   CHECK(spi.input_control[2] ==
+         (S_028644_SEMANTIC(7) | S_028644_SEL_LINEAR(1) |
+          S_028644_PT_SPRITE_TEX(1) | S_028644_SEL_SAMPLE(1)));
+   CHECK(spi.input_control[3] == S_028644_FLAT_SHADE(1));
+   CHECK(spi.input_control[4] == S_028644_FLAT_SHADE(1));
+   CHECK(spi.in_control_0 ==
+         (S_0286CC_NUM_INTERP(5) | S_0286CC_POSITION_ENA(1) |
+          S_0286CC_POSITION_CENTROID(1) | S_0286CC_POSITION_ADDR(4) |
+          S_0286CC_BARYC_SAMPLE_CNTL(1) | S_0286CC_PERSP_GRADIENT_ENA(1) |
+          S_0286CC_LINEAR_GRADIENT_ENA(1)));
+   CHECK(spi.in_control_1 ==
+         (S_0286D0_FRONT_FACE_ENA(1) | S_0286D0_FRONT_FACE_ADDR(5) |
+          S_0286D0_FIXED_PT_POSITION_ENA(1) | S_0286D0_FIXED_PT_POSITION_ADDR(6)));
+   CHECK(spi.input_z == S_0286D8_PROVIDE_Z_TO_SPI(1));
+
+   uint32_t packet[14];
+   CHECK(terakan_hw_config_draw_terascale_1_write_spi_ps(packet, &spi) == packet + 14);
+   CHECK(packet[0] == PKT3(PKT3_SET_CONTEXT_REG, 5, 0));
+   CHECK(packet[1] == (R_028644_SPI_PS_INPUT_CNTL_0 - R600_CONTEXT_REG_OFFSET) >> 2);
+   for (uint32_t input_index = 0; input_index < 5; ++input_index) {
+      CHECK(packet[2 + input_index] == spi.input_control[input_index]);
+   }
+   CHECK(packet[7] == PKT3(PKT3_SET_CONTEXT_REG, 2, 0));
+   CHECK(packet[8] == (R_0286CC_SPI_PS_IN_CONTROL_0 - R600_CONTEXT_REG_OFFSET) >> 2);
+   CHECK(packet[9] == spi.in_control_0);
+   CHECK(packet[10] == spi.in_control_1);
+   CHECK(packet[11] == PKT3(PKT3_SET_CONTEXT_REG, 1, 0));
+   CHECK(packet[12] == (R_0286D8_SPI_INPUT_Z - R600_CONTEXT_REG_OFFSET) >> 2);
+   CHECK(packet[13] == spi.input_z);
+
+   /* 0x0286E0 is SPI_FOG_FUNC_SCALE on R600/R700. The exact packet oracle above ends at
+    * SPI_INPUT_Z and therefore proves that no Evergreen SPI_BARYC_CNTL write was appended.
+    */
+}
+
+static void
+test_spi_ps_rejects_invalid_allocations(void)
+{
+   struct terakan_hw_config_draw_terascale_1_spi_ps spi;
+   struct terakan_hw_config_draw_terascale_1_spi_ps_input inputs[2] = {
+      {.gpr = 1, .position = true},
+      {.gpr = 2, .position = true},
+   };
+   CHECK(!terakan_hw_config_draw_terascale_1_spi_ps_encode(inputs, 2, &spi));
+   inputs[1].position = false;
+   inputs[0].gpr = 32;
+   CHECK(!terakan_hw_config_draw_terascale_1_spi_ps_encode(inputs, 2, &spi));
+   CHECK(!terakan_hw_config_draw_terascale_1_spi_ps_encode(
+      inputs, TERAKAN_HW_CONFIG_DRAW_TERASCALE_1_SPI_PS_INPUT_COUNT + 1, &spi));
+
+   CHECK(terakan_hw_config_draw_terascale_1_spi_ps_encode(NULL, 0, &spi));
+   CHECK(spi.in_control_0 == S_0286CC_PERSP_GRADIENT_ENA(1));
+   uint32_t packet[7];
+   CHECK(terakan_hw_config_draw_terascale_1_write_spi_ps(packet, &spi) == packet + 7);
+   CHECK(packet[0] == PKT3(PKT3_SET_CONTEXT_REG, 2, 0));
+   CHECK(packet[1] == (R_0286CC_SPI_PS_IN_CONTROL_0 - R600_CONTEXT_REG_OFFSET) >> 2);
+   CHECK(packet[2] == spi.in_control_0);
+   CHECK(packet[3] == 0);
+   CHECK(packet[4] == PKT3(PKT3_SET_CONTEXT_REG, 1, 0));
+   CHECK(packet[5] == (R_0286D8_SPI_INPUT_Z - R600_CONTEXT_REG_OFFSET) >> 2);
+   CHECK(packet[6] == 0);
+}
+
+static void
 test_db_render_control_override(void)
 {
    uint32_t const db_render_control = S_028D0C_ZPASS_INCREMENT_DISABLE(1);
@@ -349,6 +429,8 @@ test_cb_color_control_and_blend_packets(void)
 int
 main(void)
 {
+   test_spi_ps_interpolation();
+   test_spi_ps_rejects_invalid_allocations();
    test_db_depth_view();
    test_db_render_control_override();
    test_db_render_control_override_classic_r700_baseline();
