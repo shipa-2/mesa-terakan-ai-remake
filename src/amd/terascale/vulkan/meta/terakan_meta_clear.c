@@ -714,59 +714,129 @@ terakan_CmdClearDepthStencilImage(
 
    bool const image_is_3d = image->vk.image_type == VK_IMAGE_TYPE_3D;
 
-   for (uint32_t range_index = 0; range_index < rangeCount; ++range_index) {
-      VkImageSubresourceRange const * const range = &pRanges[range_index];
-      VkImageAspectFlags aspects =
-         range->aspectMask & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT);
-      if (!image_has_stencil) {
-         aspects &= ~VK_IMAGE_ASPECT_STENCIL_BIT;
-      }
-      if (unlikely(aspects == 0)) {
-         continue;
-      }
+   /* The ranges are merged by subresource rather than cleared one at a time. Two draws over the
+    * same subresource with different DB_DEPTH_CONTROL interfere: a depth-only draw following a
+    * stencil-only one leaves the stencil zero, which is exactly the shape
+    * dEQP-VK.api.image_clearing's multiple_subresourcerange variants ask for -- one range naming
+    * only stencil, one only depth, over the same level and layer. Reversing the order made both
+    * come out right, so the second draw was destroying what the first wrote.
+    *
+    * The mechanism behind that is not established. A DB data flush between the draws changes
+    * nothing, so it is not a stale depth cache; setting STENCILWRITEMASK to zero for a depth-only
+    * range changes nothing; binding only the aspect the range clears changes nothing; and the
+    * depth draw's stencil ops are KEEP with STENCIL_ENABLE clear, so on paper it cannot touch
+    * stencil at all. What does work is not issuing the second draw: one draw clearing both aspects
+    * of a subresource gives the right result, and it is what the two draws were meant to add up to
+    * anyway.
+    *
+    * So each subresource is visited once, with the union of the aspects every range asks of it.
+    * Consecutive layers wanting the same aspects share a draw, which is what the single-range case
+    * collapses to.
+    */
+   uint32_t const image_layer_count = image_is_3d ? 1u : image->vk.array_layers;
 
-      uint32_t db_depth_control = 0;
-      if (aspects & VK_IMAGE_ASPECT_DEPTH_BIT) {
-         db_depth_control |= S_028800_Z_ENABLE(true) | S_028800_Z_WRITE_ENABLE(true) |
-                             S_028800_ZFUNC(V_028800_STENCILFUNC_ALWAYS);
-      }
-      if (aspects & VK_IMAGE_ASPECT_STENCIL_BIT) {
-         db_depth_control |= S_028800_STENCIL_ENABLE(1) |
-                             S_028800_STENCILFUNC(V_028800_STENCILFUNC_ALWAYS) |
-                             S_028800_STENCILFAIL(V_028800_STENCIL_REPLACE) |
-                             S_028800_STENCILZPASS(V_028800_STENCIL_REPLACE) |
-                             S_028800_STENCILZFAIL(V_028800_STENCIL_REPLACE);
-      }
-      terakan_meta_config_draw_set_db_depth_control(command_writer, db_depth_control);
+   for (uint32_t level = 0; level < image->vk.mip_levels; ++level) {
+      uint32_t layer = 0;
+      while (layer < image_layer_count) {
+         VkImageAspectFlags aspects = 0;
+         for (uint32_t range_index = 0; range_index < rangeCount; ++range_index) {
+            VkImageSubresourceRange const * const range = &pRanges[range_index];
+            uint32_t const range_level_count =
+               range->levelCount == VK_REMAINING_MIP_LEVELS
+                  ? image->vk.mip_levels - MIN2(range->baseMipLevel, image->vk.mip_levels)
+                  : range->levelCount;
+            if (level < range->baseMipLevel || level - range->baseMipLevel >= range_level_count) {
+               continue;
+            }
+            if (!image_is_3d) {
+               uint32_t const range_layer_count =
+                  range->layerCount == VK_REMAINING_ARRAY_LAYERS
+                     ? image->vk.array_layers - MIN2(range->baseArrayLayer, image->vk.array_layers)
+                     : range->layerCount;
+               if (layer < range->baseArrayLayer ||
+                   layer - range->baseArrayLayer >= range_layer_count) {
+                  continue;
+               }
+            }
+            aspects |= range->aspectMask;
+         }
+         aspects &= VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+         if (!image_has_stencil) {
+            aspects &= ~VK_IMAGE_ASPECT_STENCIL_BIT;
+         }
 
-      struct terakan_image_descriptor_subresource_range subresource_range = {
-         .base_mip_level = range->baseMipLevel,
-         .max_level_count = range->levelCount,
-         .max_depth_or_layer_count = 1,
-      };
-      if (!image_is_3d) {
-         subresource_range.base_z_or_array_layer = range->baseArrayLayer;
-         subresource_range.max_depth_or_layer_count = range->layerCount;
-      }
-      if (unlikely(!terakan_image_descriptor_subresource_range_sanitize(
-             image, &subresource_range, false))) {
-         continue;
-      }
+         /* Extend the run over the layers that want exactly the same aspects, so that a range
+          * covering the whole image stays one draw.
+          */
+         uint32_t layer_count = 1;
+         while (layer + layer_count < image_layer_count) {
+            VkImageAspectFlags next_aspects = 0;
+            for (uint32_t range_index = 0; range_index < rangeCount; ++range_index) {
+               VkImageSubresourceRange const * const range = &pRanges[range_index];
+               uint32_t const range_level_count =
+                  range->levelCount == VK_REMAINING_MIP_LEVELS
+                     ? image->vk.mip_levels - MIN2(range->baseMipLevel, image->vk.mip_levels)
+                     : range->levelCount;
+               if (level < range->baseMipLevel ||
+                   level - range->baseMipLevel >= range_level_count) {
+                  continue;
+               }
+               uint32_t const range_layer_count =
+                  range->layerCount == VK_REMAINING_ARRAY_LAYERS
+                     ? image->vk.array_layers - MIN2(range->baseArrayLayer, image->vk.array_layers)
+                     : range->layerCount;
+               if (layer + layer_count < range->baseArrayLayer ||
+                   layer + layer_count - range->baseArrayLayer >= range_layer_count) {
+                  continue;
+               }
+               next_aspects |= range->aspectMask;
+            }
+            next_aspects &= VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+            if (!image_has_stencil) {
+               next_aspects &= ~VK_IMAGE_ASPECT_STENCIL_BIT;
+            }
+            if (next_aspects != aspects) {
+               break;
+            }
+            ++layer_count;
+         }
 
-      uint32_t const level_count = subresource_range.max_level_count;
-      for (uint32_t level_index = 0; level_index < level_count; ++level_index) {
-         struct terakan_image_descriptor_subresource_range level_range = subresource_range;
-         level_range.base_mip_level += level_index;
-         level_range.max_level_count = 1;
-         if (image_is_3d) {
-            level_range.base_z_or_array_layer = 0;
-            level_range.max_depth_or_layer_count =
-               u_minify(image->vk.extent.depth, level_range.base_mip_level);
+         if (aspects == 0) {
+            layer += layer_count;
+            continue;
+         }
+
+         uint32_t db_depth_control = 0;
+         if (aspects & VK_IMAGE_ASPECT_DEPTH_BIT) {
+            db_depth_control |= S_028800_Z_ENABLE(true) | S_028800_Z_WRITE_ENABLE(true) |
+                                S_028800_ZFUNC(V_028800_STENCILFUNC_ALWAYS);
+         }
+         if (aspects & VK_IMAGE_ASPECT_STENCIL_BIT) {
+            db_depth_control |= S_028800_STENCIL_ENABLE(1) |
+                                S_028800_STENCILFUNC(V_028800_STENCILFUNC_ALWAYS) |
+                                S_028800_STENCILFAIL(V_028800_STENCIL_REPLACE) |
+                                S_028800_STENCILZPASS(V_028800_STENCIL_REPLACE) |
+                                S_028800_STENCILZFAIL(V_028800_STENCIL_REPLACE);
+         }
+         terakan_meta_config_draw_set_db_depth_control(command_writer, db_depth_control);
+
+         struct terakan_image_descriptor_subresource_range level_range = {
+            .base_mip_level = level,
+            .max_level_count = 1,
+            .base_z_or_array_layer = image_is_3d ? 0 : layer,
+            .max_depth_or_layer_count =
+               image_is_3d ? u_minify(image->vk.extent.depth, level) : layer_count,
+         };
+         if (unlikely(!terakan_image_descriptor_subresource_range_sanitize(
+                image, &level_range, false))) {
+            layer += layer_count;
+            continue;
          }
 
          struct terakan_depth_stencil_descriptor descriptor;
          if (unlikely(!terakan_image_create_depth_stencil_descriptor(
                 image, depth_format, image_has_stencil, &level_range, &descriptor))) {
+            layer += layer_count;
             continue;
          }
          terakan_meta_config_draw_set_db_depth_stencil_buffer(command_writer, image->bo,
@@ -777,12 +847,14 @@ terakan_CmdClearDepthStencilImage(
                {
                   {0, 0},
                   {
-                     u_minify(image->vk.extent.width, level_range.base_mip_level),
-                     u_minify(image->vk.extent.height, level_range.base_mip_level),
+                     u_minify(image->vk.extent.width, level),
+                     u_minify(image->vk.extent.height, level),
                   },
                },
          };
          terakan_meta_draw_rect(command_writer, rect, level_range.max_depth_or_layer_count);
+
+         layer += layer_count;
       }
    }
 }

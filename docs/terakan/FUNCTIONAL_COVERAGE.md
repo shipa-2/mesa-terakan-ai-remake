@@ -637,21 +637,39 @@ for the first time: **29925 passing, 155 failing** of 45636. Every remaining
 failure is `clear_depth_stencil_image`, and they split into two defects that were
 localized but not fixed.
 
-**Multi-range clears lose the earlier aspect.** CTS's `multiple_subresourcerange`
-variants pass two ranges over the same subresource, one naming only stencil and
-one only depth. The driver's log shows both draws issued with the right controls
--- the stencil draw with `STENCIL_ENABLE` and `REPLACE`, the depth draw with
-`Z_WRITE_ENABLE` and stencil off -- and the result has the depth right and the
-stencil zero. Reversing the order in which the ranges are processed makes both
-correct, so the second draw destroys what the first wrote, and it is not
-symmetric: depth drawn first survives a following stencil draw.
+**Multi-range clears lost the earlier aspect, and now do not.** CTS's
+`multiple_subresourcerange` variants pass two ranges over the same subresource, one
+naming only stencil and one only depth. The driver's log showed both draws issued
+with the right controls -- the stencil draw with `STENCIL_ENABLE` and `REPLACE`,
+the depth draw with `Z_WRITE_ENABLE` and stencil off -- and the result had the
+depth right and the stencil zero. Reversing the order in which the ranges were
+processed made both correct, so the second draw was destroying what the first
+wrote, and not symmetrically: depth drawn first survived a following stencil draw.
 
-Three explanations were tested and excluded. A `FLUSH_INV_DB_DATA` with a partial
+Four explanations were tested and excluded. A `FLUSH_INV_DB_DATA` with a partial
 flush between the two draws changes nothing, so it is not a stale depth cache.
-Re-emitting `DB_STENCILREFMASK` per range changes nothing, so the write mask is
-not being lost. And the stencil ops of the depth draw are `KEEP` with
-`STENCIL_ENABLE` clear, so on paper it cannot touch stencil at all. This accounts
-for 78 of the 155.
+Re-emitting `DB_STENCILREFMASK` per range changes nothing, and setting its write
+mask to zero for a depth-only range changes nothing either. Binding only the aspect
+a range clears changes nothing. And the stencil ops of the depth draw are `KEEP`
+with `STENCIL_ENABLE` clear, so on paper it cannot touch stencil at all.
+
+What does work is not issuing the second draw. One draw clearing both aspects of a
+subresource gives the right result, and it is what the two draws were meant to add
+up to, so the clear now visits each subresource once with the union of the aspects
+every range asks of it, extending a draw over consecutive layers that want the same
+aspects. **`clear_depth_stencil_image` went from 297 passing / 153 failing to 350 /
+100.** One case changed the other way in the group run,
+`dedicated_allocation...d16_unorm_64x11`; run on its own it fails on the unmodified
+driver too, so it is the extent defect below surfacing differently rather than a
+regression.
+
+The mechanism behind the interference is still not established, and the fix avoids
+it rather than explaining it. `terakan_depth_stencil_clear_ranges` covers the three
+orderings but does **not** fail against the unfixed driver: the interference could
+not be reproduced outside CTS at either 32x32 or 256x256, with either
+`D32_SFLOAT_S8_UINT` or `D16_UNORM_S8_UINT`, with the image filled by an earlier
+clear first, or with sampled usage added. The CTS group is what carries the
+evidence.
 
 **Clears at some extents do not land.** `1x33`, `64x11`, `33x128`, `32x29x3` and
 others read back as zero from a single-range clear that the log shows being issued
@@ -663,10 +681,8 @@ fix the individual case -- but only nine of the group, so 1D tiling is at most
 part of it. Setting `tile_split`, `bankw`, `bankh` and `mtilea` for 1D surfaces as
 well, which is what the reference r600 driver does unconditionally, fixes nothing.
 
-Both are recorded rather than patched. The order dependence of the first is a
-usable workaround and the 2D forcing is a usable one for part of the second, but
-neither has a mechanism behind it yet, and this driver's standard is to understand
-before fixing.
+The second is recorded rather than patched: the 2D forcing is a usable workaround
+for part of it, but there is no mechanism behind it yet.
 
 ### Colour resolve under CTS
 
