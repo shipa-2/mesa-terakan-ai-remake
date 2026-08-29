@@ -701,6 +701,20 @@ makes things dramatically worse -- 100 passing and 350 failing, close to inverte
 -- so whatever is wrong is not simply a missing flush, and that flush is
 destructive where it was tried.
 
+Bumping the surface alignment for every depth image to 64KB changes nothing
+either, which rules out the base address landing where DB cannot use it -- the
+hypothesis the `core` and `dedicated_allocation` twins disagreeing suggested.
+
+The remaining obstacle is that **none of this reproduces outside CTS.** A probe
+that clears a depth image and copies it back was run at the failing extents with
+the failing formats, with the image filled by an earlier clear, with the image
+filled by a buffer copy from a zeroed staging buffer -- which is what CTS's
+`preClearImage` does, and the only structural difference that was left -- and with
+CTS's own barrier shapes. It passes every time. 96 of the 100 failures are stable
+across two full runs, so they are not a coin flip either. Whatever CTS does that
+makes them fail has not been identified, and until it is there is nothing to fix
+against.
+
 ### Colour resolve under CTS
 
 `dEQP-VK.api.copy_and_blit.core.resolve_image`, 240 cases, run against Terakan
