@@ -161,6 +161,20 @@ terakan_shader_spirv_to_nir(struct terakan_device * const device, size_t const s
       nir->info.name = ralloc_strdup(nir, sha1_string);
    }
 
+   /* subpassLoad carries no coordinate of its own: SPIR-V gives OpImageRead on SubpassData a
+    * constant zero, and the fragment's own position is what it is meant to read. Without this
+    * lowering every input attachment read returned the texel at (0, 0) for every fragment, which
+    * failed every renderpass case that reads one --
+    * dEQP-VK.renderpasses.renderpass1.suballocation.formats.*.input.*.draw* was 0 of 318 in each of
+    * its four shapes.
+    *
+    * It runs before nir_lower_sysvals_to_varyings below so that the gl_FragCoord access it
+    * introduces is turned into the varying the backend expects, the same as any other use.
+    */
+   if (nir->info.stage == MESA_SHADER_FRAGMENT) {
+      NIR_PASS(_, nir, nir_lower_input_attachments, &(nir_input_attachment_options){});
+   }
+
    /* SFN expects certain fragment shader system values to be accessed via load_input rather than
     * the system value load intrinsics, make sure that's the case before nir_lower_system_values is
     * done that would otherwise generate system value load intrinsics.

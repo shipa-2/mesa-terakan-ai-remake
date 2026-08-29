@@ -1636,6 +1636,49 @@ if with_tests
         timeout : 10,
       )
 
+      terakan_input_attachment_vertex_spv = custom_target(
+        'terakan_input_attachment.vert.spv',
+        input : 'tests/terakan_input_attachment.vert',
+        output : 'terakan_input_attachment.vert.spv',
+        command : [
+          prog_glslang, '-V', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_input_attachment.vert.spv.d',
+      )
+      terakan_input_attachment_fragment_spv = custom_target(
+        'terakan_input_attachment.frag.spv',
+        input : 'tests/terakan_input_attachment.frag',
+        output : 'terakan_input_attachment.frag.spv',
+        command : [
+          prog_glslang, '-V', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_input_attachment.frag.spv.d',
+      )
+      terakan_input_attachment_test = executable(
+        'terakan_input_attachment_test',
+        ['tests/terakan_input_attachment_test.c'],
+        dependencies : vulkan_loader_dep,
+      )
+      test(
+        'terakan_input_attachment',
+        terakan_input_attachment_test,
+        args : [terakan_input_attachment_vertex_spv, terakan_input_attachment_fragment_spv],
+        depends : [
+          libvulkan_terascale,
+          _dev_icd,
+          terakan_input_attachment_vertex_spv,
+          terakan_input_attachment_fragment_spv,
+        ],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 20,
+      )
+
       terakan_clip_distance_vertex_spv = custom_target(
         'terakan_clip_distance.vert.spv',
         input : 'tests/terakan_clip_distance.vert',

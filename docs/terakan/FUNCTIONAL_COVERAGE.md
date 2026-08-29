@@ -787,6 +787,37 @@ worked; it now writes two, so only the quadrant where both are non-negative
 survives. A driver honouring only the first leaves half the target drawn instead of
 a quarter, and that is what it reports against the unfixed backend.
 
+### Reading an input attachment
+
+`dEQP-VK.renderpasses` was sampled for the first time and the failures concentrated
+on one thing. Running
+`renderpasses.renderpass1.suballocation.formats` in full -- 6450 cases -- gave 3789
+passing and **2544 failing**, and every failure was an `input` attachment case:
+`clear`, `load` and `dont_care` attachments passed 501 of 501 between them.
+
+Within the input cases the split was exact. Every shape whose subpass draws while
+reading an input attachment failed completely -- `draw`, `clear_draw`,
+`draw_use_input_aspect` and `clear_draw_use_input_aspect` were 0 of 318 each --
+while every shape that only clears passed in full, and the `self_dep` shapes sat at
+exactly half.
+
+`subpassLoad` carries no coordinate of its own: SPIR-V gives `OpImageRead` on
+`SubpassData` a constant zero, and the fragment's own position is what it is meant
+to read. `nir_lower_input_attachments` is what supplies that position, and the
+driver was not running it -- so every input attachment read returned the texel at
+(0, 0) for every fragment. It now runs, before
+`nir_lower_sysvals_to_varyings`, so the `gl_FragCoord` access it introduces becomes
+the varying the backend expects like any other.
+
+**That subgroup is now at 6333 passing and 0 failing.** An 11145-case survey across
+twenty groups went from 169 failures to 89, with none broken.
+
+`terakan_input_attachment` fills the source attachment with a value that differs
+per texel and in every channel, so a read that ignores the position produces one
+value everywhere. Against the unfixed driver it reports `(1,2,3,255)` for every
+texel -- the value at (0, 0) -- starting at texel (1, 0), because the first texel is
+deliberately not special and a driver reading only (0, 0) still matches there.
+
 ### Colour resolve under CTS
 
 `dEQP-VK.api.copy_and_blit.core.resolve_image`, 240 cases, run against Terakan
