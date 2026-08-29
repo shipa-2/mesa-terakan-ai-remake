@@ -686,9 +686,12 @@ terakan_nir_image_uav_coord(nir_builder * const b, nir_def * const image_coord,
     * swizzle, so don't initialize the array layer if it's not needed to avoid emitting an ALU
     * instruction for it.
     */
-   if (dim == GLSL_SAMPLER_DIM_3D || is_array) {
+   if (dim == GLSL_SAMPLER_DIM_3D || dim == GLSL_SAMPLER_DIM_CUBE || is_array) {
       uav_coord_num_components = 3;
       uav_coord_components[2] = nir_channel(b, image_coord, dim == GLSL_SAMPLER_DIM_1D ? 1 : 2);
+   } else {
+      uav_coord_num_components = 3;
+      uav_coord_components[2] = nir_imm_zero(b, 1, 32);
    }
 
    return nir_vec(b, uav_coord_components, uav_coord_num_components);

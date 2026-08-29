@@ -1,0 +1,15 @@
+#version 450
+
+layout(local_size_x = 4, local_size_y = 4) in;
+/* A non-array view of one slice of an array image. */
+layout(set = 0, binding = 0, r32ui) uniform uimage2D single_slice;
+/* The negative control: an array view, which selected its slice correctly even before the fix. */
+layout(set = 0, binding = 1, r32ui) uniform uimage2DArray array_view;
+
+void main()
+{
+   const ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+   const uint texel = gl_GlobalInvocationID.y * 4u + gl_GlobalInvocationID.x;
+   imageStore(single_slice, coord, uvec4(0xAAAA0000u | texel));
+   imageStore(array_view, ivec3(coord, 1), uvec4(0xBBBB0000u | texel));
+}

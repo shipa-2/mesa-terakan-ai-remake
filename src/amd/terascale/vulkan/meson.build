@@ -1810,6 +1810,36 @@ if with_tests
         timeout : 20,
       )
 
+      terakan_storage_image_base_slice_spv = custom_target(
+        'terakan_storage_image_base_slice.spv.h',
+        input : 'tests/terakan_storage_image_base_slice.comp',
+        output : 'terakan_storage_image_base_slice.spv.h',
+        command : [
+          prog_glslang, '-V', '-x', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_storage_image_base_slice.spv.h.d',
+      )
+      terakan_storage_image_base_slice_test = executable(
+        'terakan_storage_image_base_slice_test',
+        [
+          'tests/terakan_storage_image_base_slice_test.c',
+          terakan_storage_image_base_slice_spv,
+        ],
+        dependencies : vulkan_loader_dep,
+      )
+      test(
+        'terakan_storage_image_base_slice',
+        terakan_storage_image_base_slice_test,
+        depends : [libvulkan_terascale, _dev_icd],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 20,
+      )
+
       terakan_texture_array_spv = custom_target(
         'terakan_texture_array.spv.h',
         input : 'tests/terakan_texture_array.comp',

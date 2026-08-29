@@ -360,6 +360,50 @@ descriptor set as the negative control: it has no array index to lose, so it
 stays correct under the bug and would only break if the fix disturbed the
 per-binding resource base. The test fails against the unfixed driver.
 
+### Storage image views of a single array slice
+
+`shader_access.*.storage_image.*` failed 216 of its 1470 supported cases, and the
+failing leaves were exact: `1d_base_slice`, `2d_base_slice`, and every `cube`
+leaf. Everything with `_array` in the name passed in full, including
+`1d_array_base_slice`, `2d_array_base_slice` and `cube_array_base_slice`, as did
+plain `1d`, `2d`, `3d` and their `base_mip` variants.
+
+A probe settled it directly: a four-layer array image, a
+`VK_IMAGE_VIEW_TYPE_2D` storage view of one layer, a compute shader writing a
+sentinel, and a read-back of all four layers. The write landed on layer zero for
+every `baseArrayLayer` from 0 to 3.
+
+The colour descriptor was right -- `terakan_image_create_color_descriptor`
+encodes the slice into `CB_COLOR*_VIEW`'s `SLICE_START` -- but the view type
+chose `RESOURCE_TYPE`, and `VK_IMAGE_VIEW_TYPE_2D` asked for `TEXTURE2D`. Under a
+non-array resource type the hardware has no slice to select, so the slice fields
+mean nothing and every write collapsed onto the first slice. Array views were
+unaffected because they ask for `TEXTURE2DARRAY` and supply the layer in the
+coordinate's Z.
+
+Supplying `Z = 0` alone changed nothing, which is what ruled out the coordinate
+as the sole cause and pointed at the resource type. Single-slice views now use
+the array resource type, bounded to one slice by `SLICE_MAX`, and the UAV
+coordinate builder always emits Z -- zero for a non-array view, and the cube face
+for a cube one, which it had been dropping entirely.
+
+**The group is now at 0 failures, from 216** -- 1470 passing of 1470 supported.
+The sampled `binding_model` run went from 566/57 to 573/50, and the whole of
+`shader_access` is clean; what remains is `descriptorset_random`.
+
+Rendering was the risk, since render target views share the colour descriptor. A
+14459-case run over `pipeline.monolithic.render_to_image`,
+`renderpass.suballocation.attachment_allocation` and sampled `api.image_clearing`
+and `api.copy_and_blit` gives 6103 passing and 716 failing both before and after,
+with an identical set of failing cases.
+
+`terakan_storage_image_base_slice` writes through a non-array view of each of the
+four layers in turn, checking that the other three keep their own sentinel clear
+values. An array view written in the same dispatch is the negative control: it
+selected its slice correctly before the fix, so a change that moved the slice by
+the wrong amount or applied the offset twice shows up there rather than passing
+silently. The test fails against the unfixed driver.
+
 ### Colour resolve under CTS
 
 `dEQP-VK.api.copy_and_blit.core.resolve_image`, 240 cases, run against Terakan
