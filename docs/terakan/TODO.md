@@ -193,6 +193,23 @@ classic Gallium R600 driver that has supported this hardware for years).
   Neither function is called from anywhere yet -- see the P0-equivalent item
   above for what wiring them in still needs.
 
+- TeraScale 1 sampler descriptors now use a generation-specific S# encoder in
+  `terakan_sampler_terascale_1.c`, transcribed from `r600_create_sampler_state()`
+  and the field layout in `r600d.h`. In particular, R600/R700 store 6-bit
+  fractional min/max LOD and LOD bias in sampler word 1, while Evergreen uses
+  8-bit fractional min/max LOD in word 1 and puts the primary LOD bias in word
+  2. Evergreen-only `TRUNCATE_COORD`, `DISABLE_CUBE_WRAP`, `PERF_MIP` and
+  `ANISO_BIAS` writes are not copied to R700 fields with unrelated meanings.
+  R700 `Z_FILTER` is independent from `XY_MAG_FILTER` and `XY_MIN_FILTER`.
+  `r600_create_sampler_state()` leaves it at `NONE`, so Terakan does too rather
+  than guessing how one Z field maps to Vulkan's distinct minification and
+  magnification filters. The exact three literal words, including deliberately
+  different XY minification and magnification filters, are covered by
+  `terakan_sampler_terascale_1_test`. The test proves encoding only. It does
+  not prove 3D filtering behavior, the choice of the single Z filter when
+  Vulkan minification and magnification filters differ, border colors, or
+  anisotropic filtering on RV710 because queue submission remains blocked.
+
 - TeraScale 1 (R600/R700) `DB_DEPTH_CONTROL`/`CB_TARGET_MASK`: confirmed to
   need no separate emission path at all, not just no separate
   value-computation logic as first thought. `DB_DEPTH_CONTROL`'s fields
