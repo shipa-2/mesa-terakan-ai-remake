@@ -234,7 +234,12 @@ struct terakan_image_tiling_terascale_1_mip_chain_level {
  * shape, not hardware-specific, so it is not re-derived from the reference the way the tiling math
  * itself is -- r6_surface_init_2d()'s own `nblk_z` and `array_size` play the equivalent roles).
  * Width and height are likewise minified in texels before being divided by block_width/block_height,
- * matching surf_minify()'s npix-to-nblk order for BC and subsampled formats.
+ * matching surf_minify()'s npix-to-nblk order for BC and subsampled formats. surfels_per_block is
+ * normally 1, but is 3 for the linear-only 8_8_8, 16_16_16 and 32_32_32 formats. For those, width
+ * is expanded after texel minification and before the higher-mip power-of-two padding, matching
+ * AddrLib's 3x handling and the existing R8xx/R9xx surface path. The base pitch is additionally
+ * aligned to three times the normal pitch alignment because the descriptor expresses it in texels
+ * with an 8-texel granularity while memory contains three surfels per texel.
  *
  * mip_levels must not exceed TERAKAN_IMAGE_TILING_TERASCALE_1_MAX_MIP_LEVELS, and levels_out must
  * have room for at least that many entries. Returns the total surface size in bytes (surf->bo_size
@@ -243,7 +248,7 @@ struct terakan_image_tiling_terascale_1_mip_chain_level {
 uint64_t terakan_image_tiling_terascale_1_mip_chain_layout(
    uint32_t base_width, uint32_t base_height, uint32_t base_depth_or_array_layers,
    bool depth_minifies_per_level, uint32_t mip_levels, uint32_t block_width,
-   uint32_t block_height, uint32_t bytes_per_element, uint32_t samples,
+   uint32_t block_height, uint32_t surfels_per_block, uint32_t bytes_per_element, uint32_t samples,
    struct terakan_image_tiling_terascale_1_alignments const * alignments_2d,
    struct terakan_image_tiling_terascale_1_alignments const * fixed_or_1d_alignments,
    struct terakan_image_tiling_terascale_1_mip_chain_level * levels_out);

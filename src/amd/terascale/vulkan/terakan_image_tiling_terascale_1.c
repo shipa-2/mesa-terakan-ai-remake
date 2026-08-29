@@ -129,20 +129,24 @@ terakan_image_tiling_terascale_1_mip_chain_layout(
    uint32_t const base_width, uint32_t const base_height,
    uint32_t const base_depth_or_array_layers, bool const depth_minifies_per_level,
    uint32_t const mip_levels, uint32_t const block_width, uint32_t const block_height,
-   uint32_t const bytes_per_element, uint32_t const samples,
+   uint32_t const surfels_per_block, uint32_t const bytes_per_element, uint32_t const samples,
    struct terakan_image_tiling_terascale_1_alignments const * const alignments_2d,
    struct terakan_image_tiling_terascale_1_alignments const * const fixed_or_1d_alignments,
    struct terakan_image_tiling_terascale_1_mip_chain_level * const levels_out)
 {
    assert(mip_levels <= TERAKAN_IMAGE_TILING_TERASCALE_1_MAX_MIP_LEVELS);
    assert(block_width != 0 && block_height != 0);
+   assert(surfels_per_block == 1 || surfels_per_block == 3);
 
    uint64_t offset = 0;
    bool degraded_to_1d = alignments_2d == NULL;
 
    for (uint32_t level = 0; level < mip_levels; ++level) {
-      uint32_t const npix_x =
-         DIV_ROUND_UP(terakan_image_tiling_terascale_1_mip_extent(base_width, level), block_width);
+      uint32_t width_surfels = u_minify(base_width, level) * surfels_per_block;
+      if (level > 0) {
+         width_surfels = util_next_power_of_two(width_surfels);
+      }
+      uint32_t const npix_x = DIV_ROUND_UP(width_surfels, block_width);
       uint32_t const npix_y =
          DIV_ROUND_UP(terakan_image_tiling_terascale_1_mip_extent(base_height, level), block_height);
 
@@ -158,6 +162,19 @@ terakan_image_tiling_terascale_1_mip_chain_layout(
          layout = terakan_image_tiling_terascale_1_level_layout(
             npix_x, npix_y, alignments->pitch_surfels, alignments->height_surfels,
             bytes_per_element, samples, false);
+      }
+
+      if (level == 0 && surfels_per_block == 3) {
+         /* SQ_RESOURCE_WORD0.PITCH is in texels with an 8-texel granularity, while this layout is
+          * in per-channel surfels. Keep the base pitch divisible by both three and the ordinary
+          * power-of-two tiling alignment, as Lib::HwlPreHandleBaseLvl3xPitch does in AddrLib and
+          * terakan_image_surface_aspect_compute() already does for R8xx/R9xx.
+          */
+         uint32_t const pitch_alignment_expand_3x = 3u * alignments->pitch_surfels;
+         layout.aligned_pitch_surfels =
+            ALIGN_NPOT(layout.aligned_pitch_surfels, pitch_alignment_expand_3x);
+         layout.pitch_bytes = layout.aligned_pitch_surfels * bytes_per_element * samples;
+         layout.slice_bytes = (uint64_t)layout.pitch_bytes * layout.aligned_height_surfels;
       }
 
       uint32_t const depth_planes =
