@@ -513,6 +513,43 @@ and the middle two must be quarter and three-quarter mixes. The same blit with
 unmixed source values, so a driver that ignores the filter fails one half or the
 other. It fails against the unfixed driver.
 
+### Why the shader resolve fallback still does not work
+
+`resolve_image` is at 33 failures, and they are now fully accounted for. 24 --
+`whole_array_image`, `whole_array_image_one_region`, `layer_copy_before_resolving`
+and `copy_with_regions_before_resolving` -- fail before the resolve is reached, at
+the intermediate multisample `vkCmdCopyImage` those groups perform first; the
+driver's own log shows a one-layer source copied into five different layers of a
+five-layer destination as five regions, which the whole-surface CP DMA path cannot
+serve and which cross-slice byte copying cannot serve either, because of the bank
+rotation between slices. The other 9 -- `partial` and `with_regions` -- fail at the
+resolve itself, because their source and destination regions sit at different
+offsets and CB_RESOLVE reads and writes one coordinate stream.
+
+The offset case was attempted through the shader path and the attempt is recorded
+here because it narrowed a note that had been vague. A source-offset constant and
+three averaging shaders were written; with them every non-integer resolve failed,
+including cases that pass through the fixed function. Three measurements isolated
+the cause:
+
+- with the offset constant stubbed to zero, the results were unchanged, so the
+  constant plumbing is not at fault;
+- with the averaging shader reduced to a single fetch of sample zero, 52 of the
+  102 supported cases passed -- the fetch, the float export and the destination
+  binding all work;
+- with two fetches of *the same* sample averaged together, 53 passed, so emitting
+  more than one fetch is fine too.
+
+What fails is fetching a sample whose index is not zero. On Evergreen,
+`LowerTexToBackend::lower_txf_ms` does not fetch the sample directly: it reads
+FMASK first and uses the value to translate the sample index into a fragment
+index. The meta resolve binds only the colour resource, with nothing set up for
+that first read, which is the specific form of the older note that the shader
+resolve "did not decode direct sample coordinates correctly". Making it work means
+giving the meta path the FMASK binding the application path already has, not
+writing a different shader; the shaders themselves were reverted rather than left
+in place not working.
+
 ### Colour resolve under CTS
 
 `dEQP-VK.api.copy_and_blit.core.resolve_image`, 240 cases, run against Terakan
