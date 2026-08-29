@@ -13,6 +13,47 @@
 extern "C" {
 #endif
 
+#define TERAKAN_HW_CONFIG_DRAW_TERASCALE_1_SPI_PS_INPUT_COUNT 32
+
+/* R600/R700 selects perspective/linear and center/centroid/sample interpolation in every
+ * SPI_PS_INPUT_CNTL_n entry. Evergreen removed those selections from the per-input words and
+ * introduced SPI_BARYC_CNTL at 0x0286E0 instead. On R600/R700 that address is
+ * SPI_FOG_FUNC_SCALE, so an Evergreen payload must never be emitted there.
+ *
+ * Keep this input generation-neutral. The shader compiler fills it from r600_shader_io, while
+ * this translation unit (which includes only r600d.h) owns the exact R700 field packing.
+ */
+struct terakan_hw_config_draw_terascale_1_spi_ps_input {
+   uint32_t semantic;
+   uint32_t gpr;
+   bool position;
+   bool front_face_or_sample_mask;
+   bool sample_id;
+   bool flat;
+   bool centroid;
+   bool linear;
+   bool point_sprite;
+   bool sample;
+};
+
+struct terakan_hw_config_draw_terascale_1_spi_ps {
+   uint32_t input_count;
+   uint32_t input_control[TERAKAN_HW_CONFIG_DRAW_TERASCALE_1_SPI_PS_INPUT_COUNT];
+   uint32_t in_control_0;
+   uint32_t in_control_1;
+   uint32_t input_z;
+};
+
+bool terakan_hw_config_draw_terascale_1_spi_ps_encode(
+   struct terakan_hw_config_draw_terascale_1_spi_ps_input const * inputs,
+   uint32_t input_count, struct terakan_hw_config_draw_terascale_1_spi_ps * spi_out);
+
+/* Write SPI_PS_INPUT_CNTL_n, SPI_PS_IN_CONTROL_0/1 and SPI_INPUT_Z. Deliberately does not write
+ * 0x0286E0: it is SPI_FOG_FUNC_SCALE on R600/R700, not SPI_BARYC_CNTL.
+ */
+uint32_t * terakan_hw_config_draw_terascale_1_write_spi_ps(
+   uint32_t * packet, struct terakan_hw_config_draw_terascale_1_spi_ps const * spi);
+
 /* Per-draw (as opposed to once-per-command-buffer) TeraScale 1 register emission that genuinely
  * needs its own code, as opposed to the R8xx/R9xx code already working unchanged (see
  * DB_DEPTH_CONTROL/CB_TARGET_MASK in TODO.md) -- either because the register lives at a different

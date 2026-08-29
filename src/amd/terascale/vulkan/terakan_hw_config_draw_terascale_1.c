@@ -23,6 +23,94 @@ write_context_reg(uint32_t * packet, uint32_t const reg, uint32_t const value)
    return packet;
 }
 
+bool
+terakan_hw_config_draw_terascale_1_spi_ps_encode(
+   struct terakan_hw_config_draw_terascale_1_spi_ps_input const * const inputs,
+   uint32_t const input_count,
+   struct terakan_hw_config_draw_terascale_1_spi_ps * const spi_out)
+{
+   if (input_count > TERAKAN_HW_CONFIG_DRAW_TERASCALE_1_SPI_PS_INPUT_COUNT ||
+       (input_count && !inputs)) {
+      return false;
+   }
+
+   *spi_out = (struct terakan_hw_config_draw_terascale_1_spi_ps){.input_count = input_count};
+
+   bool have_position = false, have_front_face = false, have_sample_id = false;
+   uint32_t front_face_gpr = 0;
+   bool need_linear = false;
+   for (uint32_t input_index = 0; input_index < input_count; ++input_index) {
+      struct terakan_hw_config_draw_terascale_1_spi_ps_input const * const input =
+         &inputs[input_index];
+      if (input->semantic > 0xFF || input->gpr > 0x1F ||
+          (input->position && have_position) ||
+          (input->front_face_or_sample_mask && have_front_face &&
+           input->gpr != front_face_gpr) ||
+          (input->sample_id && have_sample_id)) {
+         return false;
+      }
+
+      spi_out->input_control[input_index] =
+         S_028644_SEMANTIC(input->semantic) |
+         S_028644_FLAT_SHADE(input->flat || input->position) |
+         S_028644_SEL_CENTROID(input->centroid) | S_028644_SEL_LINEAR(input->linear) |
+         S_028644_PT_SPRITE_TEX(input->point_sprite) | S_028644_SEL_SAMPLE(input->sample);
+      need_linear |= input->linear;
+
+      if (input->position) {
+         have_position = true;
+         /* This matches r600_update_ps_state(). BARYC_SAMPLE_CNTL is a two-bit R600/R700 field
+          * absent from evergreend.h, and is set to the classic driver's value 1 when position is
+          * requested.
+          */
+         spi_out->in_control_0 |=
+            S_0286CC_POSITION_ENA(1) | S_0286CC_POSITION_CENTROID(input->centroid) |
+            S_0286CC_POSITION_ADDR(input->gpr) | S_0286CC_BARYC_SAMPLE_CNTL(1) |
+            S_0286CC_POSITION_SAMPLE(input->sample);
+         spi_out->input_z = S_0286D8_PROVIDE_Z_TO_SPI(1);
+      }
+      if (input->front_face_or_sample_mask) {
+         have_front_face = true;
+         front_face_gpr = input->gpr;
+         spi_out->in_control_1 |=
+            S_0286D0_FRONT_FACE_ENA(1) | S_0286D0_FRONT_FACE_ADDR(input->gpr);
+      }
+      if (input->sample_id) {
+         have_sample_id = true;
+         spi_out->in_control_1 |= S_0286D0_FIXED_PT_POSITION_ENA(1) |
+                                  S_0286D0_FIXED_PT_POSITION_ADDR(input->gpr);
+      }
+   }
+
+   /* Classic r600_update_ps_state() enables perspective gradients unconditionally and linear
+    * gradients iff a linear input exists. Unlike Evergreen, NUM_INTERP is the complete shader
+    * input count, including system inputs.
+    */
+   spi_out->in_control_0 |= S_0286CC_NUM_INTERP(input_count) |
+                            S_0286CC_PERSP_GRADIENT_ENA(1) |
+                            S_0286CC_LINEAR_GRADIENT_ENA(need_linear);
+   return true;
+}
+
+uint32_t *
+terakan_hw_config_draw_terascale_1_write_spi_ps(
+   uint32_t * packet, struct terakan_hw_config_draw_terascale_1_spi_ps const * const spi)
+{
+   if (spi->input_count) {
+      *packet++ = PKT3(PKT3_SET_CONTEXT_REG, spi->input_count, 0);
+      *packet++ = (R_028644_SPI_PS_INPUT_CNTL_0 - R600_CONTEXT_REG_OFFSET) >> 2;
+      for (uint32_t input_index = 0; input_index < spi->input_count; ++input_index) {
+         *packet++ = spi->input_control[input_index];
+      }
+   }
+
+   *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 2, 0);
+   *packet++ = (R_0286CC_SPI_PS_IN_CONTROL_0 - R600_CONTEXT_REG_OFFSET) >> 2;
+   *packet++ = spi->in_control_0;
+   *packet++ = spi->in_control_1;
+   return write_context_reg(packet, R_0286D8_SPI_INPUT_Z, spi->input_z);
+}
+
 uint32_t *
 terakan_hw_config_draw_terascale_1_write_db_depth_view(uint32_t * const packet,
                                                         uint32_t const value)
