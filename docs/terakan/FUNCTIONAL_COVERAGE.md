@@ -439,6 +439,37 @@ every `binding_model` group other than `descriptorset_random` is now clean.
 different routes -- a resource slot resolved at compile time against an index
 register loaded at run time -- and each had its own way of losing the index.
 
+### Update after bind, withdrawn
+
+`descriptorset_random` was still failing 1187 of its 2752 supported cases after
+the indexing fixes, and slicing it gave a clean answer. Holding everything else
+constant, the simplest configuration passed 52 of 52 without update after bind and
+15 of 52 with it.
+
+A probe confirmed the mechanism directly: bind a descriptor set, record the
+command buffer, then rewrite the descriptors, and the shader reads the old ones.
+
+There is no descriptor heap to point the hardware at. TeraScale takes its
+resources as SQ resource constants, and `terakan_CmdBindDescriptorSets` reads the
+contents of the descriptor set and writes them into the command stream as register
+state. That is a snapshot taken at record time, and the six
+`descriptorBinding*UpdateAfterBind` features were advertised over it.
+
+Supporting it would mean recording, for every descriptor written into the stream
+from an update-after-bind binding, where in the indirect buffer it landed, and
+rewriting those dwords from the set's current contents at every submission --
+every submission, because a command buffer may be submitted more than once. That
+is a real design and not a small one. Until it exists the features are withdrawn.
+
+**`descriptorset_random` went to 2103 passing / 649 failing, from 1565 / 1187**,
+with the not-supported count unchanged at 32396 -- the tests do not skip when the
+feature is absent, they stop asking for it. Update after bind is now neutral in
+the results, failing 23% of cases with the flag and 23% without.
+
+What remains is sampled images combined with non-constant indexing:
+`sampledimg` with `constant` passes 104 of 104, while `unifindexed` fails 42% and
+`dynindexed` 35%. Without sampled images the same cells fail 17% and 6%.
+
 ### Colour resolve under CTS
 
 `dEQP-VK.api.copy_and_blit.core.resolve_image`, 240 cases, run against Terakan

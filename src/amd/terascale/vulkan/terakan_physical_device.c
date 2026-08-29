@@ -783,12 +783,29 @@ terakan_physical_device_get_capabilities(
    features_out->shaderInputAttachmentArrayNonUniformIndexing = true;
    features_out->shaderUniformTexelBufferArrayNonUniformIndexing = true;
    features_out->shaderStorageTexelBufferArrayNonUniformIndexing = true;
-   features_out->descriptorBindingUniformBufferUpdateAfterBind = true;
-   features_out->descriptorBindingSampledImageUpdateAfterBind = true;
-   features_out->descriptorBindingStorageImageUpdateAfterBind = true;
-   features_out->descriptorBindingStorageBufferUpdateAfterBind = true;
-   features_out->descriptorBindingUniformTexelBufferUpdateAfterBind = true;
-   features_out->descriptorBindingStorageTexelBufferUpdateAfterBind = true;
+   /* Update after bind was advertised and does not work, because the driver has no descriptor
+    * heap to point the hardware at. TeraScale takes its resources as SQ resource constants, and
+    * terakan_CmdBindDescriptorSets reads the contents of the descriptor set and writes them into
+    * the command stream as register state. That is a snapshot taken at record time, so an update
+    * made afterwards is never seen -- a probe that bound a set, recorded the command buffer, then
+    * rewrote the descriptors read the stale ones back.
+    *
+    * The measurement matches: in dEQP-VK.binding_model.descriptorset_random the simplest
+    * configuration passes 52 of 52 without update after bind and 15 of 52 with it, the only
+    * difference between the two.
+    *
+    * Supporting it would mean recording, for every descriptor written into the stream from an
+    * update-after-bind binding, where in the indirect buffer it landed, and rewriting those dwords
+    * from the set's current contents at submission -- for every submission, since a command buffer
+    * may be submitted more than once. That is a real design and not a small one; until it exists,
+    * the feature is not supported.
+    */
+   features_out->descriptorBindingUniformBufferUpdateAfterBind = false;
+   features_out->descriptorBindingSampledImageUpdateAfterBind = false;
+   features_out->descriptorBindingStorageImageUpdateAfterBind = false;
+   features_out->descriptorBindingStorageBufferUpdateAfterBind = false;
+   features_out->descriptorBindingUniformTexelBufferUpdateAfterBind = false;
+   features_out->descriptorBindingStorageTexelBufferUpdateAfterBind = false;
    features_out->descriptorBindingUpdateUnusedWhilePending = true;
    features_out->descriptorBindingPartiallyBound = true;
    features_out->descriptorBindingVariableDescriptorCount = true;
