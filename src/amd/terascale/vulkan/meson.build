@@ -1810,6 +1810,36 @@ if with_tests
         timeout : 20,
       )
 
+      terakan_texture_array_spv = custom_target(
+        'terakan_texture_array.spv.h',
+        input : 'tests/terakan_texture_array.comp',
+        output : 'terakan_texture_array.spv.h',
+        command : [
+          prog_glslang, '-V', '-x', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_texture_array.spv.h.d',
+      )
+      terakan_texture_array_test = executable(
+        'terakan_texture_array_test',
+        [
+          'tests/terakan_texture_array_test.c',
+          terakan_texture_array_spv,
+        ],
+        dependencies : vulkan_loader_dep,
+      )
+      test(
+        'terakan_texture_array',
+        terakan_texture_array_test,
+        depends : [libvulkan_terascale, _dev_icd],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 20,
+      )
+
       terakan_blit_mixed_regions_test = executable(
         'terakan_blit_mixed_regions_test',
         ['tests/terakan_blit_mixed_regions_test.c'],
