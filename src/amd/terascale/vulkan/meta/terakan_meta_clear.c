@@ -681,6 +681,23 @@ terakan_CmdClearDepthStencilImage(
    struct terakan_gfx_command_writer * const command_writer =
       terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx;
 
+   /* The clear is a draw through DB, but Vulkan places vkCmdClearDepthStencilImage in the transfer
+    * stage, so the barrier an application raises afterwards names VK_PIPELINE_STAGE_TRANSFER_BIT
+    * and carries nothing to tell terakan_barrier that DB has to be flushed -- its
+    * VK_PIPELINE_STAGE_2_CLEAR_BIT branch does emit the flush, but that stage is not what a
+    * Vulkan 1.0 barrier says. The transfer branch consumes this field instead, and nothing was
+    * setting it, so the write could still be sitting in the DB caches when the image was read
+    * back.
+    *
+    * That is what made the clear look extent-dependent: the failures were never deterministic. Two
+    * runs of the same 1098-case list disagreed on seven of them, and the cases that failed were the
+    * small images, which is where a not-yet-flushed tile is most likely to still be in the cache
+    * when the copy reads it.
+    */
+   command_writer->post_depth_stencil_image_copy_write_barrier_actions |=
+      TERAKAN_BARRIER_ACTION_FLUSH_INV_DB_DATA | TERAKAN_BARRIER_ACTION_FLUSH_INV_DB_META |
+      TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_PS;
+
    struct terakan_meta_config_draw_begin_options const meta_begin_options = {
       .vgt_primitive_type = V_008958_DI_PT_RECTLIST,
       .cb_and_db_shader_control_mode = TERAKAN_META_CONFIG_DRAW_BEGIN_CB_MODE_DYNAMIC,
@@ -857,6 +874,7 @@ terakan_CmdClearDepthStencilImage(
          layer += layer_count;
       }
    }
+
 }
 
 VKAPI_ATTR void VKAPI_CALL

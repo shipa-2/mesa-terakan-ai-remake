@@ -671,18 +671,35 @@ not be reproduced outside CTS at either 32x32 or 256x256, with either
 clear first, or with sampled usage added. The CTS group is what carries the
 evidence.
 
-**Clears at some extents do not land.** `1x33`, `64x11`, `33x128`, `32x29x3` and
-others read back as zero from a single-range clear that the log shows being issued
-with the right extent and a descriptor whose `DB_DEPTH_SIZE` and `DB_DEPTH_SLICE`
-decode correctly. These images differ from the passing ones in one visible way:
-they are small enough that the base level degrades to `ARRAY_1D_TILED_THIN1`,
-while a 256x256 image stays 2D-tiled. Forcing depth surfaces to stay 2D-tiled does
-fix the individual case -- but only nine of the group, so 1D tiling is at most
-part of it. Setting `tile_split`, `bankw`, `bankh` and `mtilea` for 1D surfaces as
-well, which is what the reference r600 driver does unconditionally, fixes nothing.
+**The rest do not fail deterministically, which is the finding.** `1x33`, `64x11`,
+`33x128`, `32x29x3` and others read back as zero from a single-range clear that the
+log shows being issued with the right extent and a descriptor whose
+`DB_DEPTH_SIZE` and `DB_DEPTH_SLICE` decode correctly -- but **two runs of the same
+1098-case list disagree on seven of them**. So this is not addressing. It is
+ordering or visibility: the clear's writes are sometimes not where the read-back
+looks.
 
-The second is recorded rather than patched: the 2D forcing is a usable workaround
-for part of it, but there is no mechanism behind it yet.
+Instrumenting the tiling mode of every clear and correlating it with the result
+gives a clean split -- **2D-tiled surfaces pass 94 of 94, 1D-tiled ones pass 256 of
+356** -- but 1D tiling here is a proxy for a small image rather than a cause, and a
+small image is where a tile still sitting in the DB caches is most likely to be
+read before it lands. Forcing depth surfaces to stay 2D-tiled fixes an individual
+case and nine of the group; setting `tile_split`, `bankw`, `bankh` and `mtilea` for
+1D surfaces as the reference r600 driver does unconditionally fixes nothing.
+
+Two things about the barrier path came out of this. `terakan_barrier` consumes
+`post_depth_stencil_image_copy_write_barrier_actions` on a transfer-stage barrier,
+and **nothing in the driver was setting it** -- its
+`VK_PIPELINE_STAGE_2_CLEAR_BIT` branch does emit the DB flush, but a Vulkan 1.0
+barrier after `vkCmdClearDepthStencilImage` names `VK_PIPELINE_STAGE_TRANSFER_BIT`,
+not that. The clear now sets it. That is correct by construction and it does not
+move the numbers, so it is kept on the strength of the requirement rather than of
+the test, as the query flush is.
+
+And emitting the same DB flush unconditionally at the end of the clear instead
+makes things dramatically worse -- 100 passing and 350 failing, close to inverted
+-- so whatever is wrong is not simply a missing flush, and that flush is
+destructive where it was tried.
 
 ### Colour resolve under CTS
 
