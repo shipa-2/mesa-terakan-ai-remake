@@ -630,6 +630,44 @@ directions with every surfel of the image distinct, so a copy landing on the wro
 surfel shows as a displaced value rather than a plausible one. It fails against the
 unfixed driver.
 
+### What is left in image clearing, and what it is not
+
+With the three-component work done, `dEQP-VK.api.image_clearing` was run in full
+for the first time: **29925 passing, 155 failing** of 45636. Every remaining
+failure is `clear_depth_stencil_image`, and they split into two defects that were
+localized but not fixed.
+
+**Multi-range clears lose the earlier aspect.** CTS's `multiple_subresourcerange`
+variants pass two ranges over the same subresource, one naming only stencil and
+one only depth. The driver's log shows both draws issued with the right controls
+-- the stencil draw with `STENCIL_ENABLE` and `REPLACE`, the depth draw with
+`Z_WRITE_ENABLE` and stencil off -- and the result has the depth right and the
+stencil zero. Reversing the order in which the ranges are processed makes both
+correct, so the second draw destroys what the first wrote, and it is not
+symmetric: depth drawn first survives a following stencil draw.
+
+Three explanations were tested and excluded. A `FLUSH_INV_DB_DATA` with a partial
+flush between the two draws changes nothing, so it is not a stale depth cache.
+Re-emitting `DB_STENCILREFMASK` per range changes nothing, so the write mask is
+not being lost. And the stencil ops of the depth draw are `KEEP` with
+`STENCIL_ENABLE` clear, so on paper it cannot touch stencil at all. This accounts
+for 78 of the 155.
+
+**Clears at some extents do not land.** `1x33`, `64x11`, `33x128`, `32x29x3` and
+others read back as zero from a single-range clear that the log shows being issued
+with the right extent and a descriptor whose `DB_DEPTH_SIZE` and `DB_DEPTH_SLICE`
+decode correctly. These images differ from the passing ones in one visible way:
+they are small enough that the base level degrades to `ARRAY_1D_TILED_THIN1`,
+while a 256x256 image stays 2D-tiled. Forcing depth surfaces to stay 2D-tiled does
+fix the individual case -- but only nine of the group, so 1D tiling is at most
+part of it. Setting `tile_split`, `bankw`, `bankh` and `mtilea` for 1D surfaces as
+well, which is what the reference r600 driver does unconditionally, fixes nothing.
+
+Both are recorded rather than patched. The order dependence of the first is a
+usable workaround and the 2D forcing is a usable one for part of the second, but
+neither has a mechanism behind it yet, and this driver's standard is to understand
+before fixing.
+
 ### Colour resolve under CTS
 
 `dEQP-VK.api.copy_and_blit.core.resolve_image`, 240 cases, run against Terakan
