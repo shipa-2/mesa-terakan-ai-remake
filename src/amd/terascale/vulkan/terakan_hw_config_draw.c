@@ -1291,19 +1291,26 @@ terakan_hw_config_draw_emit_db_render_control(
     * compatibility audit in TODO.md. R600/R700's real DB_RENDER_CONTROL lives at R_028D0C, paired
     * with DB_RENDER_OVERRIDE in a single write; this entry owns emitting both for TeraScale 1 so the
     * two independently-dirty-tracked R8xx/R9xx entries below don't each try to emit half a packet
-    * pair. Every current caller leaves both values at their all-zero default (this driver has no
-    * dynamic per-draw DB_RENDER_CONTROL/DB_RENDER_OVERRIDE logic yet, for either generation), so
-    * this only needs to carry those two tracked values through, not compute anything new.
+    * pair. The currently all-zero Evergreen software values are not the R700 hardware baseline:
+    * r600_emit_db_misc_state() disables ZPASS increments and forces HiZ/HiS off when queries and
+    * HTILE are absent. The generation-specific encoder supplies those values and rejects any
+    * future nonzero Evergreen-shaped state until its semantics are ported explicitly.
     */
    if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
+      uint32_t db_render_control, db_render_override;
+      if (!terakan_hw_config_draw_terascale_1_db_render_control_override_encode(
+             command_writer->hw_config_draw.db_render_control_,
+             command_writer->hw_config_draw.db_render_override_, &db_render_control,
+             &db_render_override)) {
+         return;
+      }
       uint32_t * packet = terakan_gfx_command_writer_emit(
          command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG, 2 + 2);
       if (unlikely(packet == NULL)) {
          return;
       }
       packet = terakan_hw_config_draw_terascale_1_write_db_render_control_override(
-         packet, command_writer->hw_config_draw.db_render_control_,
-         command_writer->hw_config_draw.db_render_override_);
+         packet, db_render_control, db_render_override);
       terakan_gfx_command_writer_emit_done(command_writer, packet);
       return;
    }
