@@ -204,16 +204,19 @@ terakan_hw_config_shared_terascale_1_write_sq_config(
     */
    *packet++ = PKT3(PKT3_SET_CONFIG_REG, 1, 0);
    *packet++ = (R_008C00_SQ_CONFIG - R600_CONFIG_REG_OFFSET) >> 2;
-   *packet++ = S_008C00_VC_ENABLE(info->has_vertex_cache) | S_008C00_EXPORT_SRC_C(1) |
-              S_008C00_DX9_CONSTS(0) | S_008C00_ALU_INST_PREFER_VECTOR(1) | S_008C00_PS_PRIO(0) |
+   *packet++ = S_008C00_VC_ENABLE(info->has_vertex_cache) | S_008C00_DX9_CONSTS(0) |
+              S_008C00_ALU_INST_PREFER_VECTOR(1) | S_008C00_PS_PRIO(0) |
               S_008C00_VS_PRIO(1) | S_008C00_GS_PRIO(2) | S_008C00_ES_PRIO(3);
 
-   /* One PKT3_SET_CONFIG_REG covering all four consecutive registers 0x8C08-0x8C14; SQ_GPR_RESOURCE_
-    * MGMT_1 at 0x8C04 is deliberately not part of this run -- see the comment on
-    * terakan_hw_config_shared_terascale_1_sq_config_info.
+   /* One PKT3_SET_CONFIG_REG covering all five consecutive R600/R700 registers 0x8C04-0x8C14.
+    * There is no SQ_GPR_RESOURCE_MGMT_3 on this generation: 0x8C0C is
+    * SQ_THREAD_RESOURCE_MGMT, unlike Evergreen's register with the same address.
     */
-   *packet++ = PKT3(PKT3_SET_CONFIG_REG, 4, 0);
-   *packet++ = (R_008C08_SQ_GPR_RESOURCE_MGMT_2 - R600_CONFIG_REG_OFFSET) >> 2;
+   *packet++ = PKT3(PKT3_SET_CONFIG_REG, 5, 0);
+   *packet++ = (R_008C04_SQ_GPR_RESOURCE_MGMT_1 - R600_CONFIG_REG_OFFSET) >> 2;
+   *packet++ = S_008C04_NUM_PS_GPRS(info->num_ps_gprs) |
+               S_008C04_NUM_VS_GPRS(info->num_vs_gprs) |
+               S_008C04_NUM_CLAUSE_TEMP_GPRS(info->num_temp_gprs);
    *packet++ = S_008C08_NUM_GS_GPRS(info->num_gs_gprs) | S_008C08_NUM_ES_GPRS(info->num_es_gprs);
    *packet++ = S_008C0C_NUM_PS_THREADS(info->num_ps_threads) |
               S_008C0C_NUM_VS_THREADS(info->num_vs_threads) |

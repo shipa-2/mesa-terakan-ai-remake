@@ -156,7 +156,7 @@ classic Gallium R600 driver that has supported this hardware for years).
 - TeraScale 1 (R600/R700) "begin command buffer" register atom: the whole of
   `r600_init_atom_start_cs()` (`src/gallium/drivers/r600/r600_state.c`), split
   across two functions. `terakan_hw_config_shared_terascale_1_write_sq_config()`
-  writes `SQ_CONFIG`/`SQ_GPR_RESOURCE_MGMT_2`/`SQ_THREAD_RESOURCE_MGMT`/
+  writes `SQ_CONFIG`/`SQ_GPR_RESOURCE_MGMT_1`/`SQ_GPR_RESOURCE_MGMT_2`/`SQ_THREAD_RESOURCE_MGMT`/
   `SQ_STACK_RESOURCE_MGMT_1`/`SQ_STACK_RESOURCE_MGMT_2`, the block
   `chip_info->terascale_1`'s fields feed directly.
   `terakan_hw_config_shared_terascale_1_write_context_defaults()` writes
@@ -180,7 +180,14 @@ classic Gallium R600 driver that has supported this hardware for years).
   `terakan_hw_config_shared_terascale_1_test` checks the exact packet bytes
   against RV710's real reference values (`r600_state.c`) for the R700 path,
   dword for dword, plus the R600 branch's distinct values and total length,
-  rather than the driver's own logic reproduced back at itself. Streaming
+  rather than checking the driver's own logic reproduced back at itself,
+  including the family baseline PS/VS/clause-temporary GPR partition in
+  `SQ_GPR_RESOURCE_MGMT_1`. There is intentionally no
+  `SQ_GPR_RESOURCE_MGMT_3`: address `0x8C0C` is thread management on this
+  generation. Dynamic GPR redistribution for shaders exceeding the family
+  baseline (`r600_adjust_gprs()`) is still unported and must be implemented or
+  such shaders rejected before queue submission can be enabled; the baseline
+  packet alone does not prove arbitrary shader GPR allocations safe. Streaming
   output is out of scope (see TODO.md's existing R8xx/R9xx item for it), so
   the reference function's streamout-conditional stores are not written.
   Neither function is called from anywhere yet -- see the P0-equivalent item
