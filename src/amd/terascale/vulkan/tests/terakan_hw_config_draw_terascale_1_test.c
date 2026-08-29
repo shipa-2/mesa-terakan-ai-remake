@@ -82,6 +82,76 @@ test_db_render_control_override_classic_r700_baseline(void)
    CHECK(packets[3] == db_render_override);
 }
 
+static struct terakan_hw_config_draw_terascale_1_db_shader_control_input
+representative_db_shader_control_input(void)
+{
+   return (struct terakan_hw_config_draw_terascale_1_db_shader_control_input){
+      .z_export_enable = true,
+      .stencil_ref_export_enable = true,
+      .z_order = V_02880C_EARLY_Z_THEN_LATE_Z,
+      .kill_enable = true,
+      .mask_export_enable = true,
+      .dual_export_enable = true,
+      .source_format = 2,
+   };
+}
+
+static void
+test_db_shader_control(void)
+{
+   struct terakan_hw_config_draw_terascale_1_db_shader_control_input input =
+      representative_db_shader_control_input();
+   uint32_t value;
+   CHECK(terakan_hw_config_draw_terascale_1_db_shader_control_encode(&input, &value));
+   CHECK(value ==
+         (S_02880C_Z_EXPORT_ENABLE(1) | S_02880C_STENCIL_REF_EXPORT_ENABLE(1) |
+          S_02880C_Z_ORDER(V_02880C_EARLY_Z_THEN_LATE_Z) | S_02880C_KILL_ENABLE(1) |
+          S_02880C_MASK_EXPORT_ENABLE(1) | S_02880C_DUAL_EXPORT_ENABLE(1)));
+
+   /* DB_SOURCE_FORMAT=2 is deliberately absent from the R700 value. It is a valid Evergreen
+    * software-side export description, but r600d.h has no corresponding register field.
+    */
+   CHECK((value & (UINT32_C(3) << 13)) == 0);
+
+   uint32_t packet[3];
+   CHECK(terakan_hw_config_draw_terascale_1_write_db_shader_control(packet, value) == packet + 3);
+   CHECK(packet[0] == PKT3(PKT3_SET_CONTEXT_REG, 1, 0));
+   CHECK(packet[1] == (R_02880C_DB_SHADER_CONTROL - R600_CONTEXT_REG_OFFSET) >> 2);
+   CHECK(packet[2] == value);
+}
+
+static void
+test_db_shader_control_rejects_evergreen_only_fields(void)
+{
+   struct terakan_hw_config_draw_terascale_1_db_shader_control_input input =
+      representative_db_shader_control_input();
+   uint32_t value;
+
+   input.exec_on_hier_fail = true;
+   CHECK(!terakan_hw_config_draw_terascale_1_db_shader_control_encode(&input, &value));
+   input.exec_on_hier_fail = false;
+   input.exec_on_noop = true;
+   CHECK(!terakan_hw_config_draw_terascale_1_db_shader_control_encode(&input, &value));
+   input.exec_on_noop = false;
+   input.alpha_to_mask_disable = true;
+   CHECK(!terakan_hw_config_draw_terascale_1_db_shader_control_encode(&input, &value));
+   input.alpha_to_mask_disable = false;
+   input.depth_before_shader = true;
+   CHECK(!terakan_hw_config_draw_terascale_1_db_shader_control_encode(&input, &value));
+   input.depth_before_shader = false;
+   input.conservative_z_export = 1;
+   CHECK(!terakan_hw_config_draw_terascale_1_db_shader_control_encode(&input, &value));
+   input.conservative_z_export = 0;
+   input.source_format = 3;
+   CHECK(!terakan_hw_config_draw_terascale_1_db_shader_control_encode(&input, &value));
+   input.source_format = 2;
+   input.z_order = 4;
+   CHECK(!terakan_hw_config_draw_terascale_1_db_shader_control_encode(&input, &value));
+   input.z_order = V_02880C_EARLY_Z_THEN_LATE_Z;
+   input.unknown_bits = UINT32_C(1) << 31;
+   CHECK(!terakan_hw_config_draw_terascale_1_db_shader_control_encode(&input, &value));
+}
+
 static void
 test_db_depth_size(void)
 {
@@ -282,6 +352,8 @@ main(void)
    test_db_depth_view();
    test_db_render_control_override();
    test_db_render_control_override_classic_r700_baseline();
+   test_db_shader_control();
+   test_db_shader_control_rejects_evergreen_only_fields();
    test_db_depth_size();
    test_db_depth_base_info();
    test_db_alpha_to_mask();

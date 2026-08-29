@@ -61,6 +61,36 @@ bool terakan_hw_config_draw_terascale_1_db_render_control_override_encode(
 uint32_t * terakan_hw_config_draw_terascale_1_write_db_render_control_override(
    uint32_t * packet, uint32_t db_render_control, uint32_t db_render_override);
 
+/* DB_SHADER_CONTROL has a shared address and six shared field positions, but the remainder of the
+ * Evergreen payload is not R700 state. Keep the input field-based so this translation unit can
+ * encode the R700 register without including evergreend.h. `source_format` is validated but not
+ * emitted: classic r600_update_db_shader_control() selects only DUAL_EXPORT_ENABLE on R700, while
+ * DB_SOURCE_FORMAT exists only on Evergreen. The other trailing fields are rejected until their
+ * semantics are ported; notably, conservative-Z belongs in R700 DB_RENDER_CONTROL.
+ */
+struct terakan_hw_config_draw_terascale_1_db_shader_control_input {
+   bool z_export_enable;
+   bool stencil_ref_export_enable;
+   uint32_t z_order;
+   bool kill_enable;
+   bool mask_export_enable;
+   bool dual_export_enable;
+   uint32_t source_format;
+   bool exec_on_hier_fail;
+   bool exec_on_noop;
+   bool alpha_to_mask_disable;
+   bool depth_before_shader;
+   uint32_t conservative_z_export;
+   uint32_t unknown_bits;
+};
+
+bool terakan_hw_config_draw_terascale_1_db_shader_control_encode(
+   struct terakan_hw_config_draw_terascale_1_db_shader_control_input const * input,
+   uint32_t * db_shader_control_out);
+
+uint32_t * terakan_hw_config_draw_terascale_1_write_db_shader_control(uint32_t * packet,
+                                                                       uint32_t value);
+
 /* PKT3_SET_CONTEXT_REG(DB_DEPTH_SIZE), 1 dword. R_028000_DB_DEPTH_SIZE has no R8xx/R9xx equivalent
  * at this offset or in this shape: it packs PITCH_TILE_MAX (10 bits) and SLICE_TILE_MAX (20 bits,
  * the whole slice's tile count, not a separate height field) into one register, where R8xx/R9xx
