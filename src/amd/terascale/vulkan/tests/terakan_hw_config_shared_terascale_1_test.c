@@ -27,6 +27,9 @@
  */
 static struct terakan_hw_config_shared_terascale_1_sq_config_info const rv710_info = {
    .has_vertex_cache = false,
+   .num_ps_gprs = 192,
+   .num_vs_gprs = 56,
+   .num_temp_gprs = 4,
    .num_gs_gprs = 0,
    .num_es_gprs = 0,
    .num_ps_threads = 136,
@@ -60,19 +63,22 @@ test_sq_config_packets(void)
     */
    CHECK(packets[0] == PKT3(PKT3_SET_CONFIG_REG, 1, 0));
    CHECK(packets[1] == (R_008C00_SQ_CONFIG - R600_CONFIG_REG_OFFSET) >> 2);
-   CHECK(packets[2] == (S_008C00_EXPORT_SRC_C(1) | S_008C00_ALU_INST_PREFER_VECTOR(1) |
-                        S_008C00_VS_PRIO(1) | S_008C00_GS_PRIO(2) | S_008C00_ES_PRIO(3)));
+   CHECK(packets[2] == (S_008C00_ALU_INST_PREFER_VECTOR(1) | S_008C00_VS_PRIO(1) |
+                        S_008C00_GS_PRIO(2) | S_008C00_ES_PRIO(3)));
 
-   /* GPR_RESOURCE_MGMT_2, THREAD_RESOURCE_MGMT, STACK_RESOURCE_MGMT_1/2, one PKT3_SET_CONFIG_REG
-    * covering all four consecutive registers.
+   /* GPR_RESOURCE_MGMT_1/2, THREAD_RESOURCE_MGMT, STACK_RESOURCE_MGMT_1/2, one
+    * PKT3_SET_CONFIG_REG covering all five consecutive R600/R700 registers. 0x8C0C is thread
+    * management here, not Evergreen GPR_RESOURCE_MGMT_3.
     */
-   CHECK(packets[3] == PKT3(PKT3_SET_CONFIG_REG, 4, 0));
-   CHECK(packets[4] == (R_008C08_SQ_GPR_RESOURCE_MGMT_2 - R600_CONFIG_REG_OFFSET) >> 2);
-   CHECK(packets[5] == 0);
-   CHECK(packets[6] == (S_008C0C_NUM_PS_THREADS(136) | S_008C0C_NUM_VS_THREADS(48) |
+   CHECK(packets[3] == PKT3(PKT3_SET_CONFIG_REG, 5, 0));
+   CHECK(packets[4] == (R_008C04_SQ_GPR_RESOURCE_MGMT_1 - R600_CONFIG_REG_OFFSET) >> 2);
+   CHECK(packets[5] == (S_008C04_NUM_PS_GPRS(192) | S_008C04_NUM_VS_GPRS(56) |
+                        S_008C04_NUM_CLAUSE_TEMP_GPRS(4)));
+   CHECK(packets[6] == 0);
+   CHECK(packets[7] == (S_008C0C_NUM_PS_THREADS(136) | S_008C0C_NUM_VS_THREADS(48) |
                         S_008C0C_NUM_GS_THREADS(4) | S_008C0C_NUM_ES_THREADS(4)));
-   CHECK(packets[7] == (S_008C10_NUM_PS_STACK_ENTRIES(128) | S_008C10_NUM_VS_STACK_ENTRIES(128)));
-   CHECK(packets[8] == 0);
+   CHECK(packets[8] == (S_008C10_NUM_PS_STACK_ENTRIES(128) | S_008C10_NUM_VS_STACK_ENTRIES(128)));
+   CHECK(packets[9] == 0);
 }
 
 /* R700 (RV710 is R700) writes 191 dwords: two blocks (PA_SC_EDGERULE and SX_MISC) exist only for

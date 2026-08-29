@@ -24,6 +24,7 @@
 #include "terakan_hw_config_sqk.h"
 
 #include "terakan_command_buffer.h"
+#include "terakan_resource_descriptor_terascale_1.h"
 
 #include "amd/terascale/common/terascale_wddm.h"
 #include "gallium/drivers/r600/evergreend.h"
@@ -839,14 +840,56 @@ terakan_hw_config_sqk_emit_bound_resource(
    bool const is_multisampled =
       is_texture && (G_030000_DIM(descriptor[0]) == V_030000_SQ_TEX_DIM_2D_MSAA ||
                      G_030000_DIM(descriptor[0]) == V_030000_SQ_TEX_DIM_2D_ARRAY_MSAA);
+   bool const is_terascale_1 =
+      terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1;
    /* Based on how DRM Radeon checks whether the mip BO is provided.
     * Images in Terakan always have base level subresources, so the relative mip address is never 0.
     */
-   bool const relocate_mips_or_fmask =
-      is_texture && (!is_multisampled || G_03000C_MIP_ADDRESS(descriptor[3]) != 0);
+   bool const relocate_mips_or_fmask = is_texture && (is_terascale_1 || !is_multisampled ||
+                                                      G_03000C_MIP_ADDRESS(descriptor[3]) != 0);
 
-   unsigned const descriptor_dword_count =
-      sizeof(struct terakan_resource_descriptor) / sizeof(uint32_t);
+   unsigned descriptor_dword_count = sizeof(struct terakan_resource_descriptor) / sizeof(uint32_t);
+   uint32_t const * descriptor_to_emit = descriptor;
+   uint32_t descriptor_terascale_1[TERAKAN_RESOURCE_DESCRIPTOR_TERASCALE_1_DWORDS];
+   if (is_terascale_1) {
+      descriptor_dword_count = TERAKAN_RESOURCE_DESCRIPTOR_TERASCALE_1_DWORDS;
+      if (is_texture) {
+         struct terakan_resource_texture_descriptor_terascale_1_info const info = {
+            .dim = G_030000_DIM(descriptor[0]),
+            .tile_mode = G_030004_ARRAY_MODE(descriptor[1]),
+            .tile_type = G_030000_NON_DISP_TILING_ORDER(descriptor[0]),
+            .pitch = G_030000_PITCH(descriptor[0]),
+            .width = G_030000_TEX_WIDTH(descriptor[0]),
+            .height = G_030004_TEX_HEIGHT(descriptor[1]),
+            .depth = G_030004_TEX_DEPTH(descriptor[1]),
+            .data_format = G_03001C_DATA_FORMAT(descriptor[7]),
+            .base_address = descriptor[2],
+            /* TeraScale 1 fetches MSAA samples directly and has no Evergreen FMASK lookup. The
+             * classic R600 descriptor points the unused mip word back at the base level.
+             */
+            .mip_address = is_multisampled ? descriptor[2] : descriptor[3],
+            .format_comp = {G_030010_FORMAT_COMP_X(descriptor[4]),
+                            G_030010_FORMAT_COMP_Y(descriptor[4]),
+                            G_030010_FORMAT_COMP_Z(descriptor[4]),
+                            G_030010_FORMAT_COMP_W(descriptor[4])},
+            .num_format = G_030010_NUM_FORMAT_ALL(descriptor[4]),
+            .srf_mode = G_030010_SRF_MODE_ALL(descriptor[4]),
+            .force_degamma = G_030010_FORCE_DEGAMMA(descriptor[4]),
+            .endian_swap = G_030010_ENDIAN_SWAP(descriptor[4]),
+            .dst_sel = {G_030010_DST_SEL_X(descriptor[4]), G_030010_DST_SEL_Y(descriptor[4]),
+                        G_030010_DST_SEL_Z(descriptor[4]), G_030010_DST_SEL_W(descriptor[4])},
+            .base_level = G_030010_BASE_LEVEL(descriptor[4]),
+            .last_level = G_030014_LAST_LEVEL(descriptor[5]),
+            .base_array = G_030014_BASE_ARRAY(descriptor[5]),
+            .last_array = G_030014_LAST_ARRAY(descriptor[5]),
+            .max_aniso = G_030018_MAX_ANISO_RATIO(descriptor[6]),
+         };
+         terakan_resource_texture_descriptor_terascale_1_encode(&info, descriptor_terascale_1);
+      } else {
+         terakan_resource_buffer_descriptor_terascale_1_encode(descriptor, descriptor_terascale_1);
+      }
+      descriptor_to_emit = descriptor_terascale_1;
+   }
 
    uint32_t * packet = terakan_gfx_command_writer_emit_with_bo(
       command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG, 2 + descriptor_dword_count,
@@ -855,14 +898,19 @@ terakan_hw_config_sqk_emit_bound_resource(
       return NULL;
    }
 
-   *packet++ = PKT3(PKT3_SET_RESOURCE, descriptor_dword_count, 0) | shader_type_flag;
-   *packet++ = descriptor_dword_count * resource_hw_index;
-   uint32_t * const packet_descriptor = packet;
-   memcpy(packet_descriptor, descriptor, sizeof(uint32_t) * descriptor_dword_count);
+   uint32_t * const packet_descriptor = packet + 2;
+   if (is_terascale_1) {
+      packet = terakan_resource_descriptor_terascale_1_write_set_packet(
+         packet, resource_hw_index, shader_type_flag, descriptor_to_emit);
+   } else {
+      *packet++ = PKT3(PKT3_SET_RESOURCE, descriptor_dword_count, 0) | shader_type_flag;
+      *packet++ = descriptor_dword_count * resource_hw_index;
+      memcpy(packet, descriptor_to_emit, sizeof(uint32_t) * descriptor_dword_count);
+      packet += descriptor_dword_count;
+   }
    if (!is_texture) {
       packet_descriptor[TERAKAN_RESOURCE_BUFFER_PRIORITY_WORD] = 0;
    }
-   packet += descriptor_dword_count;
 
    uint32_t const bo_reference = terakan_bo_reference_writer_add_reference(
       &command_writer->base.bo_reference_writer, resource->bo, true, false,
@@ -954,8 +1002,10 @@ terakan_hw_config_sqk_emit_modified_resources_fragment(
       uint32_t * const packet_descriptor = terakan_hw_config_sqk_emit_bound_resource(
          command_writer, resource_hw_index, &config->resources_fs_[resource_index], 0);
       if (BITSET_TEST(config->resources_last_used_as_uncached_fs_, resource_index) &&
+          !terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1 &&
           likely(packet_descriptor != NULL) &&
-          G_03001C_TYPE(packet_descriptor[7]) == V_03001C_SQ_TEX_VTX_VALID_BUFFER) {
+          G_03001C_TYPE(config->resources_fs_[resource_index].descriptor.resource[7]) ==
+             V_03001C_SQ_TEX_VTX_VALID_BUFFER) {
          packet_descriptor[3] |= S_03000C_UNCACHED(true);
       }
    }
@@ -985,8 +1035,10 @@ terakan_hw_config_sqk_emit_modified_resources_compute(
          command_writer, resource_hw_index, &config->resources_cs_[resource_index],
          TERAKAN_PACKET3_COMPUTE);
       if (BITSET_TEST(config->resources_last_used_as_uncached_cs_, resource_index) &&
+          !terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1 &&
           likely(packet_descriptor != NULL) &&
-          G_03001C_TYPE(packet_descriptor[7]) == V_03001C_SQ_TEX_VTX_VALID_BUFFER) {
+          G_03001C_TYPE(config->resources_cs_[resource_index].descriptor.resource[7]) ==
+             V_03001C_SQ_TEX_VTX_VALID_BUFFER) {
          packet_descriptor[3] |= S_03000C_UNCACHED(true);
       }
    }

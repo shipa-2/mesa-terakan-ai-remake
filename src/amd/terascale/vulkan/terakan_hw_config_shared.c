@@ -106,6 +106,9 @@ terakan_hw_config_shared_indirect_buffer_begun(
       }
       struct terakan_hw_config_shared_terascale_1_sq_config_info const sq_config_info = {
          .has_vertex_cache = chip_info->has_vertex_cache,
+         .num_ps_gprs = chip_info->terascale_1.num_ps_gprs,
+         .num_vs_gprs = chip_info->terascale_1.num_vs_gprs,
+         .num_temp_gprs = chip_info->terascale_1.num_temp_gprs,
          .num_gs_gprs = chip_info->terascale_1.num_gs_gprs,
          .num_es_gprs = chip_info->terascale_1.num_es_gprs,
          .num_ps_threads = chip_info->terascale_1.num_ps_threads,

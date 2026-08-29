@@ -156,7 +156,7 @@ classic Gallium R600 driver that has supported this hardware for years).
 - TeraScale 1 (R600/R700) "begin command buffer" register atom: the whole of
   `r600_init_atom_start_cs()` (`src/gallium/drivers/r600/r600_state.c`), split
   across two functions. `terakan_hw_config_shared_terascale_1_write_sq_config()`
-  writes `SQ_CONFIG`/`SQ_GPR_RESOURCE_MGMT_2`/`SQ_THREAD_RESOURCE_MGMT`/
+  writes `SQ_CONFIG`/`SQ_GPR_RESOURCE_MGMT_1`/`SQ_GPR_RESOURCE_MGMT_2`/`SQ_THREAD_RESOURCE_MGMT`/
   `SQ_STACK_RESOURCE_MGMT_1`/`SQ_STACK_RESOURCE_MGMT_2`, the block
   `chip_info->terascale_1`'s fields feed directly.
   `terakan_hw_config_shared_terascale_1_write_context_defaults()` writes
@@ -180,11 +180,57 @@ classic Gallium R600 driver that has supported this hardware for years).
   `terakan_hw_config_shared_terascale_1_test` checks the exact packet bytes
   against RV710's real reference values (`r600_state.c`) for the R700 path,
   dword for dword, plus the R600 branch's distinct values and total length,
-  rather than the driver's own logic reproduced back at itself. Streaming
+  rather than checking the driver's own logic reproduced back at itself,
+  including the family baseline PS/VS/clause-temporary GPR partition in
+  `SQ_GPR_RESOURCE_MGMT_1`. There is intentionally no
+  `SQ_GPR_RESOURCE_MGMT_3`: address `0x8C0C` is thread management on this
+  generation. Dynamic GPR redistribution for shaders exceeding the family
+  baseline (`r600_adjust_gprs()`) is still unported and must be implemented or
+  such shaders rejected before queue submission can be enabled; the baseline
+  packet alone does not prove arbitrary shader GPR allocations safe. Streaming
   output is out of scope (see TODO.md's existing R8xx/R9xx item for it), so
   the reference function's streamout-conditional stores are not written.
   Neither function is called from anywhere yet -- see the P0-equivalent item
   above for what wiring them in still needs.
+
+- TeraScale 1 sampler descriptors now use a generation-specific S# encoder in
+  `terakan_sampler_terascale_1.c`, transcribed from `r600_create_sampler_state()`
+  and the field layout in `r600d.h`. In particular, R600/R700 store 6-bit
+  fractional min/max LOD and LOD bias in sampler word 1, while Evergreen uses
+  8-bit fractional min/max LOD in word 1 and puts the primary LOD bias in word
+  2. Evergreen-only `TRUNCATE_COORD`, `DISABLE_CUBE_WRAP`, `PERF_MIP` and
+  `ANISO_BIAS` writes are not copied to R700 fields with unrelated meanings.
+  R700 `Z_FILTER` is independent from `XY_MAG_FILTER` and `XY_MIN_FILTER`.
+  `r600_create_sampler_state()` leaves it at `NONE`, so Terakan does too rather
+  than guessing how one Z field maps to Vulkan's distinct minification and
+  magnification filters. The exact three literal words, including deliberately
+  different XY minification and magnification filters, are covered by
+  `terakan_sampler_terascale_1_test`. The test proves encoding only. It does
+  not prove 3D filtering behavior, the choice of the single Z filter when
+  Vulkan minification and magnification filters differ, border colors, or
+  anisotropic filtering on RV710 because queue submission remains blocked.
+
+- TeraScale 1 sampled-resource and buffer T# packet encoding now translates
+  Terakan's Evergreen-shaped software descriptors at emission time, only in
+  the `is_terascale_1` branch. R600/R700 `PKT3_SET_RESOURCE` uses seven dwords
+  per slot rather than Evergreen's eight, so both the packet count and the
+  resource-slot offset use a stride of 7. Image fields are rearranged according
+  to `r600_create_sampler_view_custom()` and `r600d.h`: `TILE_MODE` and
+  `TILE_TYPE` move to word 0, `DATA_FORMAT` to word 1, and validity plus maximum
+  anisotropy to word 6. Array activation is expressed by the R700 `DIM` value
+  (`*_ARRAY`), with `BASE_ARRAY` and `LAST_ARRAY` retained in word 5; there is
+  no Evergreen word-7 resource layout to reuse. For multisampled resources the
+  R700 mip word points at the base surface, matching direct pre-Evergreen sample
+  fetch rather than treating Evergreen FMASK as a mip address. Buffer words
+  0-3 retain the common SQ vertex-constant layout, words 4-5 are zero as in
+  `texture_buffer_sampler_view()`, and validity moves to word 6. The exact
+  seven descriptor dwords and complete nine-dword packet are checked by
+  `terakan_resource_descriptor_terascale_1_test` for a tiled 2D array image,
+  with a separate buffer case. The test proves construction, not texture
+  sampling or array/MSAA addressing on RV710. R700's equivalent of Evergreen's
+  buffer `UNCACHED` bit is not named in `r600d.h`, so the existing runtime
+  uncached override is deliberately not applied on TeraScale 1 pending cache
+  coherency research.
 
 - TeraScale 1 (R600/R700) `DB_DEPTH_CONTROL`/`CB_TARGET_MASK`: confirmed to
   need no separate emission path at all, not just no separate
