@@ -470,6 +470,49 @@ What remains is sampled images combined with non-constant indexing:
 `sampledimg` with `constant` passes 104 of 104, while `unifindexed` fails 42% and
 `dynindexed` 35%. Without sampled images the same cells fail 17% and 6%.
 
+### 3D blits with a linear filter
+
+The full `blit_image` group was run for the first time -- 129193 cases -- and
+failed 273. All 273 were `all_formats.color.3d` with `linear_stripes_z`, the
+variants whose content varies along depth, and nothing else in the group failed
+at all.
+
+The blit path sampled every source as a 2D array and selected the nearest slice.
+That is right for an array, where there is nothing between two layers, and wrong
+for a 3D image, where depth is a continuous axis and `VK_FILTER_LINEAR` has to
+interpolate along it.
+
+Three things were missing and all three were needed:
+
+- the source is described as a 3D resource rather than a 2D array;
+- the sampler's `Z_FILTER` is set to linear -- it is a field of its own, and a
+  linear XY filter does not touch it;
+- the pixel shader takes a depth coordinate, which the hand-written 2D one has no
+  way to accept.
+
+The last is the first meta shader written as NIR because it was needed rather than
+as a demonstration. It reads its constants straight out of the constant cache
+through `load_ubo_vec4`, naming the hardware buffer, which meant recording kcache
+and sampler use in `terakan_meta_nir_compile` alongside the resource slots.
+
+A 3D resource descriptor has no equivalent of `BASE_ARRAY` -- the slices of a
+tiled 3D image are interleaved, so a depth range cannot be selected by re-basing
+-- so it covers the whole mip and the depth coordinate is normalized over that,
+exactly as X and Y are normalized over the mip's width and height. Normalizing
+over the region's own depth range instead was the first attempt, and it broke the
+five partial-range cases of `blit_image.simple_tests` while fixing the rest.
+
+**`blit_image` is now at 0 failures over all 129193 cases**, 19136 passing of
+19136 supported. Disabling the depth filter brings back exactly 273 failures, the
+same number.
+
+`terakan_blit_3d_depth_filter` blits a two-slice source into four destination
+slices, so the destination slices land at source depths 0.25, 0.75, 1.25 and 1.75
+and the middle two must be quarter and three-quarter mixes. The same blit with
+`VK_FILTER_NEAREST` is the negative control: it must keep producing the two
+unmixed source values, so a driver that ignores the filter fails one half or the
+other. It fails against the unfixed driver.
+
 ### Colour resolve under CTS
 
 `dEQP-VK.api.copy_and_blit.core.resolve_image`, 240 cases, run against Terakan

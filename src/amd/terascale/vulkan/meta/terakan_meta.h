@@ -139,6 +139,12 @@ enum terakan_meta_shader_index {
     */
    TERAKAN_META_SHADER_RESOLVE_SAMPLE_ZERO_PS,
 
+   /* Samples a 3D source with a per-draw depth coordinate, so that the hardware filters between
+    * depth slices. The ordinary blit shader samples the source as a 2D array, which has no depth
+    * filter. Built as NIR; see meta/terakan_meta_nir.c.
+    */
+   TERAKAN_META_SHADER_BLIT_IMAGE_3D_PS,
+
    TERAKAN_META_SHADER_COUNT,
 };
 

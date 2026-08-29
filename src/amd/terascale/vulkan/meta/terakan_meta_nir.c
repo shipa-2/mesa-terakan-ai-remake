@@ -76,11 +76,34 @@ terakan_meta_nir_compile(struct terakan_device * const device, nir_shader * cons
    nir_foreach_function_impl (impl, nir) {
       nir_foreach_block (block, impl) {
          nir_foreach_instr (instr, block) {
-            if (instr->type != nir_instr_type_tex) {
-               continue;
+            switch (instr->type) {
+            case nir_instr_type_tex: {
+               nir_tex_instr const * const tex = nir_instr_as_tex(instr);
+               BITSET_SET(shader_out->sqk_usage.resources, tex->texture_index);
+               /* A fetch addresses the resource directly; only a filtered sample reads a sampler,
+                * and binding one that the shader never uses would keep a slot alive for nothing.
+                */
+               if (tex->op != nir_texop_txf && tex->op != nir_texop_txf_ms) {
+                  shader_out->sqk_usage.samplers |= BITFIELD_BIT(tex->sampler_index);
+               }
+               break;
             }
-            nir_tex_instr const * const tex = nir_instr_as_tex(instr);
-            BITSET_SET(shader_out->sqk_usage.resources, tex->texture_index);
+            case nir_instr_type_intrinsic: {
+               nir_intrinsic_instr const * const intrin = nir_instr_as_intrinsic(instr);
+               /* Meta NIR reads its constants straight out of the constant cache, naming the
+                * hardware buffer itself, so the buffer it locks has to be recorded here -- the
+                * application path records kcache use while lowering descriptor sets, which meta NIR
+                * does not go through.
+                */
+               if (intrin->intrinsic == nir_intrinsic_load_ubo_vec4) {
+                  shader_out->sqk_usage.kcache |=
+                     (uint16_t)BITFIELD_BIT(nir_src_as_uint(intrin->src[0]));
+               }
+               break;
+            }
+            default:
+               break;
+            }
          }
       }
    }
@@ -178,7 +201,86 @@ terakan_meta_nir_build_resolve_sample_zero_ps(struct terakan_device const * cons
    return b->shader;
 }
 
+
+/* The blit's scale and offset constants, matching the layout terakan_meta_blit_image.c writes into
+ * the constant cache. The first four are shared with the hand-written 2D shader and keep their
+ * positions; the depth coordinate is a fifth, constant for a draw because each draw covers one
+ * destination slice.
+ */
+enum {
+   TERAKAN_META_NIR_BLIT_CONST_SCALE_X,
+   TERAKAN_META_NIR_BLIT_CONST_OFF_X,
+   TERAKAN_META_NIR_BLIT_CONST_SCALE_Y,
+   TERAKAN_META_NIR_BLIT_CONST_OFF_Y,
+   TERAKAN_META_NIR_BLIT_CONST_COORD_Z,
+};
+
+nir_shader *
+terakan_meta_nir_build_blit_image_3d_ps(struct terakan_device const * const device)
+{
+   nir_builder builder = nir_builder_init_simple_shader(
+      MESA_SHADER_FRAGMENT, &terakan_device_physical_device(device)->nir_options_fs,
+      "terakan_meta_blit_image_3d_ps");
+   nir_builder * const b = &builder;
+
+   nir_variable * const position = nir_variable_create(
+      b->shader, nir_var_shader_in, glsl_vec4_type(), "gl_FragCoord");
+   position->data.location = VARYING_SLOT_POS;
+   position->data.interpolation = INTERP_MODE_NOPERSPECTIVE;
+   b->shader->info.inputs_read = BITFIELD64_BIT(VARYING_SLOT_POS);
+   nir_def * const frag_coord = nir_load_var(b, position);
+
+   /* Both vec4s of the constants are read: the first holds the four scale and offset values, the
+    * second the depth coordinate in its x.
+    */
+   nir_def * const scale_off = nir_load_ubo_vec4(
+      b, 4, 32, nir_imm_int(b, TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS), nir_imm_int(b, 0));
+   nir_def * const depth = nir_load_ubo_vec4(
+      b, 4, 32, nir_imm_int(b, TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS), nir_imm_int(b, 1));
+
+   /* Same mapping the 2D shader applies, with the fragment's own position as the destination
+    * coordinate: the constants are already divided by the source mip extent, so this lands in
+    * normalized texture space.
+    */
+   nir_def * const u =
+      nir_ffma(b, nir_channel(b, frag_coord, 0),
+               nir_channel(b, scale_off, TERAKAN_META_NIR_BLIT_CONST_SCALE_X),
+               nir_channel(b, scale_off, TERAKAN_META_NIR_BLIT_CONST_OFF_X));
+   nir_def * const v =
+      nir_ffma(b, nir_channel(b, frag_coord, 1),
+               nir_channel(b, scale_off, TERAKAN_META_NIR_BLIT_CONST_SCALE_Y),
+               nir_channel(b, scale_off, TERAKAN_META_NIR_BLIT_CONST_OFF_Y));
+   nir_def * const w =
+      nir_channel(b, depth, TERAKAN_META_NIR_BLIT_CONST_COORD_Z - 4);
+
+   /* A 3D resource with a linear Z filter, which is the whole point: the source of a 3D blit is
+    * otherwise sampled as a 2D array, and an array has no depth to filter along, so a linear blit
+    * got the nearest slice.
+    */
+   nir_tex_instr * const sample = nir_tex_instr_create(b->shader, 1);
+   sample->op = nir_texop_tex;
+   sample->sampler_dim = GLSL_SAMPLER_DIM_3D;
+   sample->is_array = false;
+   sample->dest_type = nir_type_float32;
+   sample->coord_components = 3;
+   sample->texture_index = TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META;
+   sample->sampler_index = TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META;
+   sample->src[0] = nir_tex_src_for_ssa(nir_tex_src_coord, nir_vec3(b, u, v, w));
+   nir_def_init(&sample->instr, &sample->def, 4, 32);
+   nir_builder_instr_insert(b, &sample->instr);
+
+   nir_variable * const colour = nir_variable_create(
+      b->shader, nir_var_shader_out, glsl_vec4_type(), "colour");
+   colour->data.location = FRAG_RESULT_DATA0;
+   colour->data.driver_location = 0;
+   nir_store_var(b, colour, &sample->def, 0xF);
+
+   b->shader->info.outputs_written = BITFIELD64_BIT(FRAG_RESULT_DATA0);
+   return b->shader;
+}
+
 terakan_meta_nir_builder const terakan_meta_nir_builders[TERAKAN_META_SHADER_COUNT] = {
    [TERAKAN_META_SHADER_DUMMY_OPAQUE_PS] = terakan_meta_nir_build_opaque_ps,
    [TERAKAN_META_SHADER_RESOLVE_SAMPLE_ZERO_PS] = terakan_meta_nir_build_resolve_sample_zero_ps,
+   [TERAKAN_META_SHADER_BLIT_IMAGE_3D_PS] = terakan_meta_nir_build_blit_image_3d_ps,
 };

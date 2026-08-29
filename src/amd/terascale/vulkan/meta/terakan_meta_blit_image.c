@@ -27,6 +27,14 @@ enum {
    TERAKAN_META_BLIT_CONST_OFF_Y,
 
    TERAKAN_META_BLIT_CONSTS_COUNT,
+
+   /* The 3D shader reads its constants as two vec4s, so the depth coordinate starts the second one
+    * rather than following the fourth value. The first four keep their positions, which is what
+    * lets the hand-written 2D shader go on reading them unchanged.
+    */
+   TERAKAN_META_BLIT_CONST_COORD_Z = 4,
+
+   TERAKAN_META_BLIT_CONSTS_3D_COUNT = 8,
 };
 
 static uint32_t const terakan_meta_blit_image_ps_r8xx[] = {
@@ -210,7 +218,7 @@ struct terakan_meta_shader const terakan_meta_blit_image_ps = {
 
 static void
 terakan_meta_blit_set_fs_sampler(struct terakan_gfx_command_writer * const command_writer,
-                                  VkFilter const filter)
+                                  VkFilter const filter, bool const filter_depth)
 {
    struct terakan_hw_config_sqk * const sqk = &command_writer->hw_config_sqk;
    uint32_t * const sampler =
@@ -220,8 +228,14 @@ terakan_meta_blit_set_fs_sampler(struct terakan_gfx_command_writer * const comma
    uint32_t const xy_filter = terakan_sampler_translate_filter(filter, false);
    uint32_t const clamp = terakan_sampler_translate_address_mode(VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
 
+   /* Z_FILTER is a field of its own: a linear XY filter does nothing along depth, which is exactly
+    * why a 3D linear blit came out as the nearest slice. It is left at point for everything else,
+    * where the third coordinate selects an array layer and must not be interpolated.
+    */
    sampler[0] = S_03C000_CLAMP_X(clamp) | S_03C000_CLAMP_Y(clamp) | S_03C000_CLAMP_Z(clamp) |
                 S_03C000_XY_MAG_FILTER(xy_filter) | S_03C000_XY_MIN_FILTER(xy_filter) |
+                S_03C000_Z_FILTER(filter_depth ? V_03C000_SQ_TEX_Z_FILTER_LINEAR
+                                               : V_03C000_SQ_TEX_Z_FILTER_POINT) |
                 S_03C000_MIP_FILTER(V_03C000_SQ_TEX_XY_FILTER_POINT) |
                 S_03C000_BORDER_COLOR_TYPE(V_03C000_SQ_TEX_BORDER_COLOR_TRANS_BLACK);
    sampler[1] = S_03C004_MIN_LOD(0) | S_03C004_MAX_LOD(0x3ff);
@@ -366,7 +380,8 @@ terakan_meta_blit_region_to_copy(VkImageBlit2 const * const blit, bool const for
 static void
 terakan_meta_blit_image_region_draw(struct terakan_gfx_command_writer * const command_writer,
                                     VkBlitImageInfo2 const * const blit_info,
-                                    VkImageBlit2 const * const region)
+                                    VkImageBlit2 const * const region,
+                                    uint32_t const * const xy_constants)
 {
    struct terakan_image const * const dst_image =
       terakan_image_from_handle(blit_info->dstImage);
@@ -388,6 +403,17 @@ terakan_meta_blit_image_region_draw(struct terakan_gfx_command_writer * const co
     */
    bool const src_is_3d = src_image->vk.image_type == VK_IMAGE_TYPE_3D;
    bool const dst_is_3d = dst_image->vk.image_type == VK_IMAGE_TYPE_3D;
+
+   /* Sampling the source as a 2D array gives the nearest slice whatever the filter asks for, which
+    * is correct for an array -- there is nothing between two layers -- and wrong for a 3D image,
+    * where VK_FILTER_LINEAR must interpolate along depth as well. Only that case needs the 3D
+    * resource, the depth-filtering sampler and the shader that takes a depth coordinate.
+    */
+   bool const filter_depth = src_is_3d && blit_info->filter == VK_FILTER_LINEAR;
+   terakan_meta_config_draw_set_sq_pgm_ps(command_writer,
+                                          filter_depth ? TERAKAN_META_SHADER_BLIT_IMAGE_3D_PS
+                                                       : TERAKAN_META_SHADER_BLIT_IMAGE_PS);
+   terakan_meta_blit_set_fs_sampler(command_writer, blit_info->filter, filter_depth);
    int32_t const src_z_begin =
       src_is_3d ? region->srcOffsets[0].z : (int32_t)region->srcSubresource.baseArrayLayer;
    int32_t const src_z_end =
@@ -447,9 +473,25 @@ terakan_meta_blit_image_region_draw(struct terakan_gfx_command_writer * const co
       }
 
       struct terakan_resource_descriptor src_descriptor;
-      if (unlikely(!terakan_image_create_resource_descriptor(&src_descriptor_create_info,
-                                                             V_030000_SQ_TEX_DIM_2D_ARRAY, NULL,
-                                                             &src_descriptor))) {
+      /* A 3D resource descriptor has no equivalent of BASE_ARRAY -- the slices of a tiled 3D image
+       * are interleaved, so the depth range cannot be moved by re-basing -- and it therefore always
+       * covers the whole mip. The depth coordinate is normalized over that, exactly as X and Y are
+       * normalized over the mip's width and height. Normalizing over the region's own depth range
+       * instead is what broke the partial-range cases of blit_image.simple_tests on the first
+       * attempt.
+       */
+      uint32_t const src_mip_depth =
+         u_minify(src_image->vk.extent.depth, region->srcSubresource.mipLevel);
+      struct terakan_image_descriptor_create_info src_sample_create_info =
+         src_descriptor_create_info;
+      if (filter_depth) {
+         src_sample_create_info.subresource_range.base_z_or_array_layer = 0;
+         src_sample_create_info.subresource_range.max_depth_or_layer_count = src_mip_depth;
+      }
+      if (unlikely(!terakan_image_create_resource_descriptor(
+                      &src_sample_create_info,
+                      filter_depth ? V_030000_SQ_TEX_DIM_3D : V_030000_SQ_TEX_DIM_2D_ARRAY, NULL,
+                      &src_descriptor))) {
          continue;
       }
 
@@ -481,12 +523,35 @@ terakan_meta_blit_image_region_draw(struct terakan_gfx_command_writer * const co
             break;
          }
 
-         src_descriptor.resource[5] =
-            (src_descriptor.resource[5] & C_030014_BASE_ARRAY) |
-            S_030014_BASE_ARRAY(src_descriptor_base_array +
-                                terakan_meta_blit_depth_source_slice(src_z_begin, src_z_end,
-                                                                     dst_z_begin, dst_z_end,
-                                                                     dst_slice, src_slice_count));
+         if (filter_depth) {
+            /* The depth coordinate is constant for the draw, since a draw covers one destination
+             * slice, so it goes in with the constants rather than being interpolated. It is
+             * normalized over the sampled depth range, which is what the descriptor covers, the
+             * same way the X and Y constants are normalized over the source mip extent.
+             */
+            float scale_z, off_z;
+            terakan_meta_blit_region_scale_off(src_z_begin, src_z_end, dst_z_begin, dst_z_end,
+                                               &scale_z, &off_z);
+            float const dst_center = (float)(MIN2(dst_z_begin, dst_z_end) + (int32_t)dst_slice) +
+                                     0.5F;
+            float const src_z = dst_center * scale_z + off_z;
+            uint32_t constants_3d[TERAKAN_META_BLIT_CONSTS_3D_COUNT] = {0};
+            memcpy(constants_3d, xy_constants,
+                   sizeof(uint32_t) * TERAKAN_META_BLIT_CONSTS_COUNT);
+            constants_3d[TERAKAN_META_BLIT_CONST_COORD_Z] =
+               fui(src_z / (float)src_mip_depth);
+            if (unlikely(!terakan_meta_config_draw_set_kcache_push_constants(
+                   command_writer, sizeof(constants_3d), constants_3d, false, true))) {
+               break;
+            }
+         } else {
+            src_descriptor.resource[5] =
+               (src_descriptor.resource[5] & C_030014_BASE_ARRAY) |
+               S_030014_BASE_ARRAY(src_descriptor_base_array +
+                                   terakan_meta_blit_depth_source_slice(src_z_begin, src_z_end,
+                                                                        dst_z_begin, dst_z_end,
+                                                                        dst_slice, src_slice_count));
+         }
 
          terakan_meta_config_draw_set_cb_rtvs_and_db_shader_control(
             command_writer, 0xF, &dst_image->bo, &dst_descriptor, NULL,
@@ -618,8 +683,9 @@ terakan_CmdBlitImage2(VkCommandBuffer const commandBuffer,
          terakan_meta_config_draw_begin(command_writer, &meta_begin_options);
          terakan_meta_config_draw_set_sq_pgm_vs(
             command_writer, TERAKAN_META_SHADER_POSITION_AND_LAYER_FROM_INDEX_VS);
-         terakan_meta_config_draw_set_sq_pgm_ps(command_writer, TERAKAN_META_SHADER_BLIT_IMAGE_PS);
-         terakan_meta_blit_set_fs_sampler(command_writer, pBlitImageInfo->filter);
+         /* The pixel shader and the sampler are chosen per region rather than here: a blit may mix
+          * regions that need the 3D depth filter with regions that must not have it.
+          */
          command_writer->meta_blit_draw_session_active = true;
       }
 
@@ -663,7 +729,7 @@ terakan_CmdBlitImage2(VkCommandBuffer const commandBuffer,
          };
          terakan_meta_config_draw_set_kcache_push_constants(command_writer, sizeof(constants),
                                                             constants, false, true);
-         terakan_meta_blit_image_region_draw(command_writer, pBlitImageInfo, region);
+         terakan_meta_blit_image_region_draw(command_writer, pBlitImageInfo, region, constants);
       }
 
       command_writer->post_color_image_copy_write_barrier_actions |=

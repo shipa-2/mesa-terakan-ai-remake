@@ -1853,6 +1853,23 @@ if with_tests
         timeout : 20,
       )
 
+      terakan_blit_3d_depth_filter_test = executable(
+        'terakan_blit_3d_depth_filter_test',
+        ['tests/terakan_blit_3d_depth_filter_test.c'],
+        dependencies : vulkan_loader_dep,
+      )
+      test(
+        'terakan_blit_3d_depth_filter',
+        terakan_blit_3d_depth_filter_test,
+        depends : [libvulkan_terascale, _dev_icd],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 20,
+      )
+
       terakan_texture_array_spv = custom_target(
         'terakan_texture_array.spv.h',
         input : 'tests/terakan_texture_array.comp',

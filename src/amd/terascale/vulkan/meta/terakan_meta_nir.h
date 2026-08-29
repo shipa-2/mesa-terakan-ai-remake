@@ -32,6 +32,10 @@ struct nir_shader * terakan_meta_nir_build_opaque_ps(struct terakan_device const
 struct nir_shader * terakan_meta_nir_build_resolve_sample_zero_ps(
    struct terakan_device const * device);
 
+/* Samples a 3D source with a per-draw depth coordinate so the hardware filters between slices. */
+struct nir_shader * terakan_meta_nir_build_blit_image_3d_ps(
+   struct terakan_device const * device);
+
 /* Builds the NIR for one meta shader. */
 typedef struct nir_shader * (*terakan_meta_nir_builder)(struct terakan_device const * device);
 
