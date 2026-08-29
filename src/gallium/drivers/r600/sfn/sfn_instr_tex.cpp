@@ -579,8 +579,15 @@ TexInstr::emit_buf_txf(nir_tex_instr *tex, Inputs& src, Shader& shader)
    auto& vf = shader.value_factory();
    auto dst = vf.dest_vec4(tex->def, pin_group);
 
+   /* A sampled buffer is indexed through the texture rather than the sampler -- it has no sampler
+    * at all -- so an array of them arrives here carrying texture_offset. Only sampler_offset was
+    * read, which is what GL's combined samplers produce, so under Vulkan the index was dropped and
+    * every element of the array fetched from the array's base resource slot.
+    */
    PRegister tex_offset = nullptr;
-   if (src.sampler_offset)
+   if (src.texture_offset)
+      tex_offset = shader.emit_load_to_register(src.texture_offset);
+   else if (src.sampler_offset)
       tex_offset = shader.emit_load_to_register(src.sampler_offset);
 
    auto *real_dst = &dst;

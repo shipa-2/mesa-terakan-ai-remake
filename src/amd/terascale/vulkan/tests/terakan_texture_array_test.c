@@ -17,8 +17,14 @@
  * all 51 of their cases in dEQP-VK.binding_model.shader_access while arrays of uniform texel buffers
  * failed 84 of 108.
  *
+ * A dynamically uniform index took a different route to the same failure. The lowering turns it into
+ * nir_tex_src_texture_offset, but the backend's buffer fetch read only nir_tex_src_sampler_offset --
+ * which is what GL's combined samplers produce -- so the index was dropped there instead and every
+ * element again fetched from the array's base slot. A sampled buffer has no sampler to index
+ * through, so the texture offset is the only one it can carry.
+ *
  * The array elements view the same buffer at four different offsets, so the four fetches must return
- * four different words rather than one word four times. The non-array binding alongside them is the
+ * four different words rather than one word four times. Both index forms are read here. The non-array binding alongside them is the
  * negative control: it shares the shader and the descriptor set but has no array index to lose, so
  * it stays correct under the bug and would only break if the fix disturbed the per-binding resource
  * base.
@@ -127,7 +133,7 @@ main(void)
    VkQueue queue;
    vkGetDeviceQueue(device, 0, 0, &queue);
 
-   VkDeviceSize const buffer_sizes[2] = {SOURCE_WORDS * sizeof(uint32_t), 128};
+   VkDeviceSize const buffer_sizes[2] = {SOURCE_WORDS * sizeof(uint32_t), 256};
    VkBufferUsageFlags const buffer_usages[2] = {VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT,
                                                 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT};
    VkBuffer buffers[2];
@@ -156,7 +162,7 @@ main(void)
    for (uint32_t i = 0; i < SOURCE_WORDS; ++i) {
       maps[0][i] = source_word(i);
    }
-   memset(maps[1], 0xEE, 128);
+   memset(maps[1], 0xEE, 256);
 
    /* Element i views word 4*i, chosen so that a wrong index is off by more than one word and cannot
     * be mistaken for a rounding or granularity artefact.
@@ -233,7 +239,7 @@ main(void)
    VkDescriptorBufferInfo const dst_buffer_info = {
       .buffer = buffers[1],
       .offset = 0,
-      .range = 128,
+      .range = 256,
    };
    VkWriteDescriptorSet const writes[3] = {
       {
@@ -305,7 +311,7 @@ main(void)
    vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
    vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_layout, 0, 1,
                            &descriptor_set, 0, NULL);
-   vkCmdDispatch(command_buffer, 1, 1, 1);
+   vkCmdDispatch(command_buffer, ARRAY_ELEMENTS, 1, 1);
    VkMemoryBarrier const memory_barrier = {
       .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
       .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
@@ -331,12 +337,19 @@ main(void)
       uint32_t const expected = source_word(i * 4);
       uint32_t const got = maps[1][i * 4];
       if (got != expected) {
-         fprintf(stderr, "array_src[%u]: expected 0x%08X, got 0x%08X\n", i, expected, got);
+         fprintf(stderr, "array_src[%u] constant index: expected 0x%08X, got 0x%08X\n", i, expected,
+                 got);
+         failed = true;
+      }
+      uint32_t const dynamic_got = maps[1][(8 + i) * 4];
+      if (dynamic_got != expected) {
+         fprintf(stderr, "array_src[%u] dynamic index: expected 0x%08X, got 0x%08X\n", i, expected,
+                 dynamic_got);
          failed = true;
       }
    }
    uint32_t const single_expected = source_word(SINGLE_WORD);
-   uint32_t const single_got = maps[1][ARRAY_ELEMENTS * 4];
+   uint32_t const single_got = maps[1][4 * 4];
    if (single_got != single_expected) {
       fprintf(stderr, "single_src (control): expected 0x%08X, got 0x%08X\n", single_expected,
               single_got);

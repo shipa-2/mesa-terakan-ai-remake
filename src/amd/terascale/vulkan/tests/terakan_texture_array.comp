@@ -10,13 +10,22 @@ layout(set = 0, binding = 0) uniform utextureBuffer array_src[4];
  * shifted the per-binding resource base, would move this one too.
  */
 layout(set = 0, binding = 1) uniform utextureBuffer single_src;
-layout(set = 0, binding = 2, std430) writeonly buffer Dst { uvec4 v[8]; } dst;
+layout(set = 0, binding = 2, std430) writeonly buffer Dst { uvec4 v[16]; } dst;
 
 void main()
 {
-   dst.v[0] = texelFetch(array_src[0], 0);
-   dst.v[1] = texelFetch(array_src[1], 0);
-   dst.v[2] = texelFetch(array_src[2], 0);
-   dst.v[3] = texelFetch(array_src[3], 0);
-   dst.v[4] = texelFetch(single_src, 0);
+   /* Dynamically uniform rather than constant: the two reach the hardware by different routes, a
+    * resource slot resolved at compile time against an index register loaded at run time, and each
+    * has had its own way of losing the index.
+    */
+   const uint workgroup = gl_WorkGroupID.x;
+   dst.v[8u + workgroup] = texelFetch(array_src[workgroup], 0);
+
+   if (workgroup == 0u) {
+      dst.v[0] = texelFetch(array_src[0], 0);
+      dst.v[1] = texelFetch(array_src[1], 0);
+      dst.v[2] = texelFetch(array_src[2], 0);
+      dst.v[3] = texelFetch(array_src[3], 0);
+      dst.v[4] = texelFetch(single_src, 0);
+   }
 }

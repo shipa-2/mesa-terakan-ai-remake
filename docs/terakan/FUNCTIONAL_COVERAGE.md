@@ -404,6 +404,41 @@ selected its slice correctly before the fix, so a change that moved the slice by
 the wrong amount or applied the offset twice shows up there rather than passing
 silently. The test fails against the unfixed driver.
 
+### Dynamically indexed arrays of uniform texel buffers
+
+The constant-index fix left the other half. A dynamically uniform index --
+`texelFetch(src[gl_WorkGroupID.x], 0)` -- still read element zero from all four
+elements.
+
+The driver's lowering was doing its part: it turns a non-constant array index into
+`nir_tex_src_texture_offset`, and instrumenting confirmed the offset arrived in
+the backend as a real register. `TexInstr::emit_buf_txf` then dropped it, because
+it read only `src.sampler_offset`:
+
+```c
+PRegister tex_offset = nullptr;
+if (src.sampler_offset)
+   tex_offset = shader.emit_load_to_register(src.sampler_offset);
+```
+
+That is what GL produces, where samplers are combined with textures. A sampled
+buffer has no sampler at all, so under Vulkan the only offset it can carry is the
+texture one, and the fetch fell back to the array's base resource slot. The
+buffer fetch now prefers `texture_offset` and keeps `sampler_offset` as the
+fallback, which leaves the GL path unchanged.
+
+This was found while looking for the cause of `descriptorset_random`, whose
+failures concentrated on the dynamically indexed variants: `constant` passed 67 of
+104 while `unifindexed` passed 267 of 848 and `dynindexed` 310 of 848.
+
+**`descriptorset_random` went from 1000 passing / 1752 failing to 1565 / 1187**
+over its full 35148 cases. `api.buffer_view` is at 411 passing and 0 failing, and
+every `binding_model` group other than `descriptorset_random` is now clean.
+
+`terakan_texture_array` reads both index forms, since they reach the hardware by
+different routes -- a resource slot resolved at compile time against an index
+register loaded at run time -- and each had its own way of losing the index.
+
 ### Colour resolve under CTS
 
 `dEQP-VK.api.copy_and_blit.core.resolve_image`, 240 cases, run against Terakan
