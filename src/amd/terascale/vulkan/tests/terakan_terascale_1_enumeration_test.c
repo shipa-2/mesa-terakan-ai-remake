@@ -161,28 +161,17 @@ check_r700_image_layouts(VkDevice const device)
    bc1.extent = (VkExtent3D){1023, 511, 1};
    bc1.mipLevels = 4;
 
-   VkImageCreateInfo unsupported_3x = linear;
-   unsupported_3x.format = VK_FORMAT_R8G8B8_UNORM;
+   VkImageCreateInfo expand_3x = linear;
+   expand_3x.format = VK_FORMAT_R32G32B32_SFLOAT;
+   expand_3x.extent = (VkExtent3D){81, 5, 1};
+   expand_3x.mipLevels = 2;
 
    uint32_t failures = 0;
    failures += check_r700_image_layout(device, &linear, "linear RGBA8", true);
    failures += check_r700_image_layout(device, &optimal, "2D-tiled RGBA8 mip chain", false);
    failures += check_r700_image_layout(device, &bc1, "2D-tiled BC1 mip chain", false);
-
-   VkImage unsupported_image = VK_NULL_HANDLE;
-   VkResult const unsupported_result =
-      vkCreateImage(device, &unsupported_3x, NULL, &unsupported_image);
-   if (unsupported_result != VK_ERROR_FORMAT_NOT_SUPPORTED) {
-      fprintf(stderr,
-              "  3-byte R700 layout returned %d, expected VK_ERROR_FORMAT_NOT_SUPPORTED\n",
-              unsupported_result);
-      if (unsupported_result == VK_SUCCESS) {
-         vkDestroyImage(device, unsupported_image, NULL);
-      }
-      ++failures;
-   } else {
-      fprintf(stderr, "  unsupported 3-byte R700 layout was rejected safely\n");
-   }
+   failures +=
+      check_r700_image_layout(device, &expand_3x, "linear R32G32B32 mip chain", false);
    return failures;
 }
 

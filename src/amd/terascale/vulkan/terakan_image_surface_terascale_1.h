@@ -25,13 +25,11 @@ struct terakan_physical_device;
  * test before this layout can be treated as rendering-validated.
  *
  * Block-compressed and subsampled formats minify in texels first, then convert to blocks using
- * terascale_format_block_texels_log2, matching surf_minify() in the classic radeon winsys. Returns
- * false for 3x-expand formats (8_8_8, 16_16_16, 32_32_32):
- * terakan_image_tiling_terascale_1_mip_chain_layout() minifies its base width directly, with no
- * parameter to apply the per-channel-surfel expansion at the point in its per-level loop the AddrLib
- * convention requires (minify in texel units first, expand to surfels only afterward -- see
- * terakan_image_surface_aspect_compute()'s own comment quoting it), so handling these correctly
- * needs either a new parameter on that function or a different composition, not yet done.
+ * terascale_format_block_texels_log2, matching surf_minify() in the classic radeon winsys.
+ * Linear-only 3x-expand formats (8_8_8, 16_16_16, 32_32_32) likewise minify in texels first, then
+ * expand width to three per-channel surfels before higher-mip power-of-two padding. Their base pitch
+ * is made divisible by three times the ordinary alignment so the descriptor's texel pitch and the
+ * memory surfel pitch describe the same row.
  *
  * Does not compute FMASK/CMASK metadata: neither is implemented for any generation this driver
  * supports (see the P0 list in TODO.md), so surface_out's .fmask/.cmask stay zeroed, matching what

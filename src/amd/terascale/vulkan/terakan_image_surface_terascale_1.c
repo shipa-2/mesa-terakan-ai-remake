@@ -28,20 +28,8 @@ terakan_image_surface_compute_aspect_terascale_1(
    unsigned const bytes_per_block = terascale_format_bytes_per_block[aspect_format];
    assert(bytes_per_block != 0);
    surface_aspect_out->bytes_per_block = bytes_per_block;
-   /* 3x-expand formats (8_8_8, 16_16_16, 32_32_32) are not handled here -- see the header comment.
-    * The AddrLib convention (per terakan_image_surface_aspect_compute()'s own comment quoting it:
-    * "multiply 3 first, then do the appropriate paddings") minifies the mip chain in texel units
-    * and only expands to per-channel surfels afterward, for the pitch/tiling math specifically, not
-    * before; terakan_image_tiling_terascale_1_mip_chain_layout() has no parameter to apply that
-    * multiplication at the right point in its own internal per-level loop, and pre-multiplying the
-    * base width before calling it (as an earlier draft of this function did) rounds the surfel
-    * count to a power of two instead of the texel count for level > 0, which is wrong. Bailing out
-    * explicitly avoids silently applying the block-format path to a different expansion rule.
-    */
-   if (terakan_format_is_expand_3x(bytes_per_block)) {
-      return false;
-   }
-   unsigned const bytes_per_element = bytes_per_block;
+   unsigned const surfels_per_block = terakan_format_surfels_per_block(bytes_per_block);
+   unsigned const bytes_per_element = bytes_per_block / surfels_per_block;
 
    uint8_t const * const block_texels_log2 = terascale_format_block_texels_log2[aspect_format];
    uint32_t const block_width = 1u << block_texels_log2[0];
@@ -78,7 +66,8 @@ terakan_image_surface_compute_aspect_terascale_1(
    uint64_t const size_bytes = terakan_image_tiling_terascale_1_mip_chain_layout(
       image_create_info->extent.width, image_create_info->extent.height,
       is_3d ? image_create_info->extent.depth : image_create_info->arrayLayers, is_3d,
-      image_create_info->mipLevels, block_width, block_height, bytes_per_element, samples,
+      image_create_info->mipLevels, block_width, block_height, surfels_per_block, bytes_per_element,
+      samples,
       array_mode == TERAKAN_IMAGE_TILING_TERASCALE_1_ARRAY_2D_TILED_THIN1 ? &alignments_2d : NULL,
       &alignments_1d_or_fixed, levels);
 

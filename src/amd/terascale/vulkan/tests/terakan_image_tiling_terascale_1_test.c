@@ -250,7 +250,7 @@ test_mip_chain_layout_no_degrade(void)
     */
    struct terakan_image_tiling_terascale_1_mip_chain_level levels[3];
    uint64_t const total = terakan_image_tiling_terascale_1_mip_chain_layout(
-      300, 50, 1, false, 3, 1, 1, 4, 1, &rv710_2d_alignments_bpe4,
+      300, 50, 1, false, 3, 1, 1, 1, 4, 1, &rv710_2d_alignments_bpe4,
       &rv710_1d_alignments_bpe4, levels);
 
    CHECK(!levels[0].is_1d_tiled_thin1_or_fixed);
@@ -289,7 +289,7 @@ test_mip_chain_layout_degrades(void)
     */
    struct terakan_image_tiling_terascale_1_mip_chain_level levels[2];
    uint64_t const total = terakan_image_tiling_terascale_1_mip_chain_layout(
-      100, 50, 1, false, 2, 1, 1, 4, 1, &rv710_2d_alignments_bpe4,
+      100, 50, 1, false, 2, 1, 1, 1, 4, 1, &rv710_2d_alignments_bpe4,
       &rv710_1d_alignments_bpe4, levels);
 
    CHECK(levels[0].is_1d_tiled_thin1_or_fixed);
@@ -317,7 +317,7 @@ test_mip_chain_layout_fixed_1d(void)
     */
    struct terakan_image_tiling_terascale_1_mip_chain_level levels[2];
    uint64_t const total = terakan_image_tiling_terascale_1_mip_chain_layout(
-      50, 30, 1, false, 2, 1, 1, 4, 1, NULL, &rv710_1d_alignments_bpe4, levels);
+      50, 30, 1, false, 2, 1, 1, 1, 4, 1, NULL, &rv710_1d_alignments_bpe4, levels);
 
    CHECK(levels[0].is_1d_tiled_thin1_or_fixed);
    CHECK(levels[0].offset_bytes == 0);
@@ -336,7 +336,7 @@ test_mip_chain_layout_array_layers(void)
     */
    struct terakan_image_tiling_terascale_1_mip_chain_level levels[1];
    uint64_t const total = terakan_image_tiling_terascale_1_mip_chain_layout(
-      300, 50, 3, false, 1, 1, 1, 4, 1, &rv710_2d_alignments_bpe4,
+      300, 50, 3, false, 1, 1, 1, 1, 4, 1, &rv710_2d_alignments_bpe4,
       &rv710_1d_alignments_bpe4, levels);
    CHECK(total == 98304 * 3);
    CHECK(levels[0].slice_bytes == 98304);
@@ -353,7 +353,7 @@ test_mip_chain_layout_3d_depth(void)
     */
    struct terakan_image_tiling_terascale_1_mip_chain_level levels[2];
    uint64_t const total = terakan_image_tiling_terascale_1_mip_chain_layout(
-      300, 50, 3, true, 2, 1, 1, 4, 1, &rv710_2d_alignments_bpe4,
+      300, 50, 3, true, 2, 1, 1, 1, 4, 1, &rv710_2d_alignments_bpe4,
       &rv710_1d_alignments_bpe4, levels);
    /* Level 0: slice 98304 * 3 depth planes = 294912, already a multiple of the 8192-byte base BO
     * alignment. Level 1: slice 32768 * 1 depth plane = 32768.
@@ -379,7 +379,7 @@ test_mip_chain_layout_block_compressed(void)
          RV710_GROUP_BYTES, 8, 1, false);
    struct terakan_image_tiling_terascale_1_mip_chain_level levels[4];
    uint64_t const total = terakan_image_tiling_terascale_1_mip_chain_layout(
-      1023, 511, 1, false, 4, 4, 4, 8, 1, &alignments_2d, &alignments_1d, levels);
+      1023, 511, 1, false, 4, 4, 4, 1, 8, 1, &alignments_2d, &alignments_1d, levels);
 
    CHECK(levels[0].aligned_pitch_surfels == 256);
    CHECK(levels[0].aligned_height_surfels == 128);
@@ -397,6 +397,40 @@ test_mip_chain_layout_block_compressed(void)
    CHECK(total == 262144 + 65536 + 16384 + 4096);
 }
 
+static void
+test_mip_chain_layout_expand_3x(void)
+{
+   /* Linear R32G32B32 on the real RV710 topology stores three 4-byte surfels per texel. Width is
+    * expanded only after texel minification. At level 0, 81 texels become 243 surfels, then the
+    * descriptor-facing base-pitch rule aligns to 3 * 128 = 384 surfels. The 5-row slice is 7680
+    * bytes and is already 512-byte aligned. At level 1, 40 texels become 120 surfels and are then
+    * power-of-two padded to 128; the base-only 3x pitch rule no longer applies. Height 2 is already
+    * a power of two, so the second slice is 1024 bytes.
+    *
+    * This distinguishes the fix from treating a 12-byte RGB texel as one element (which gives a
+    * 64-surfel pitch alignment and a 192-surfel base pitch), applying mip power-of-two padding
+    * before expanding (which gives 256 surfels at level 1), and omitting the base 3x pitch rule
+    * (which gives a 256-surfel base pitch).
+    */
+   struct terakan_image_tiling_terascale_1_alignments const linear_bpe4 =
+      terakan_image_tiling_terascale_1_alignments_linear_aligned(RV710_GROUP_BYTES, 4);
+   struct terakan_image_tiling_terascale_1_mip_chain_level levels[2];
+   uint64_t const total = terakan_image_tiling_terascale_1_mip_chain_layout(
+      81, 5, 1, false, 2, 1, 1, 3, 4, 1, NULL, &linear_bpe4, levels);
+
+   CHECK(levels[0].offset_bytes == 0);
+   CHECK(levels[0].aligned_pitch_surfels == 384);
+   CHECK(levels[0].aligned_height_surfels == 5);
+   CHECK(levels[0].pitch_bytes == 1536);
+   CHECK(levels[0].slice_bytes == 7680);
+   CHECK(levels[1].offset_bytes == 7680);
+   CHECK(levels[1].aligned_pitch_surfels == 128);
+   CHECK(levels[1].aligned_height_surfels == 2);
+   CHECK(levels[1].pitch_bytes == 512);
+   CHECK(levels[1].slice_bytes == 1024);
+   CHECK(total == 8704);
+}
+
 int
 main(void)
 {
@@ -412,5 +446,6 @@ main(void)
    test_mip_chain_layout_array_layers();
    test_mip_chain_layout_3d_depth();
    test_mip_chain_layout_block_compressed();
+   test_mip_chain_layout_expand_3x();
    return 0;
 }
