@@ -76,6 +76,7 @@ gpu_tests=(
   terakan_texture_array
   terakan_blit_3d_depth_filter
   terakan_clear_expand_3x
+  terakan_copy_expand_3x
   terakan_storage_image_base_slice
   terakan_blit_mixed_regions
   terakan_clip_distance

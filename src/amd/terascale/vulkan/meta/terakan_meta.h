@@ -151,6 +151,15 @@ enum terakan_meta_shader_index {
     */
    TERAKAN_META_SHADER_CLEAR_EXPAND_3X_PS,
 
+   /* Copies a 3x-expanded image, fetching the three components one at a time rather than as a
+    * single three-component element -- this hardware does not fetch 8_8_8 or 16_16_16 from a
+    * buffer correctly. One variant per surfel size, because the fetch format is part of the
+    * instruction. Built as NIR; see meta/terakan_meta_nir.c.
+    */
+   TERAKAN_META_SHADER_COPY_EXPAND_3X_8_PS,
+   TERAKAN_META_SHADER_COPY_EXPAND_3X_16_PS,
+   TERAKAN_META_SHADER_COPY_EXPAND_3X_32_PS,
+
    TERAKAN_META_SHADER_COUNT,
 };
 

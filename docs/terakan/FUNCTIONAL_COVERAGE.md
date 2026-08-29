@@ -581,16 +581,13 @@ shape passed.
 **The subset is now at 10300 passing and 1200 failing, from 9700 / 1800** -- 600
 fixed with no case moving the other way.
 
-The remaining 1200 are exactly the one- and two-byte-surfel scaled formats, and
-they are not clear failures. A probe settled it: the image's own memory held the
-correct bytes -- `11 22 33` repeated across the width for a clear of (17, 34, 51)
--- while `vkCmdCopyImageToBuffer` on the same image returned `00 ff ff` repeating,
-which is exactly what the tests report. Reading a three-component image with one-
-or two-byte surfels back to a buffer fetches it as `8_8_8` or `16_16_16` from a
-buffer, and this hardware does not do that correctly -- the same limitation
-already recorded for `api.buffer_view` and `vertex_input`. Those cases cannot pass
-until that path fetches single components instead, which the NIR meta path now
-makes writable.
+The 1200 that remained after this were exactly the one- and two-byte-surfel scaled
+formats, and they were not clear failures at all. A probe settled it: the image's
+own memory held the correct bytes -- `11 22 33` repeated across the width for a
+clear of (17, 34, 51) -- while `vkCmdCopyImageToBuffer` on the same image returned
+`00 ff ff` repeating, which is exactly what the tests report. That is a separate
+defect in the copy, fixed next; with it fixed **the subset is at 11500 passing and
+0 failing**, from 9700 / 1800.
 
 `terakan_clear_expand_3x` therefore reads the image's memory directly rather than
 copying it out, since a test built on the copy would fail for a reason unrelated
@@ -599,6 +596,39 @@ across the width, and that the number of bytes that changed equals three surfels
 per texel over every texel of every slice -- which catches a clear that stopped
 after one row or one slice, and equally one that ran past the end. It fails
 against the unfixed driver.
+
+### Copying three-component images with small surfels
+
+The 3x copy shader fetched all three components at once, as `8_8_8`, `16_16_16` or
+`32_32_32`. Only the last of those works. This hardware returns completely invalid
+values for three-component 8- and 16-bit buffer fetches -- the limitation already
+recorded for `api.buffer_view` and `vertex_input`, and one that
+`terakan_nir_load_raw_resource_buffer` asserts against, so the driver knew about it
+in one place while relying on it in another.
+
+Every copy of a one- or two-byte-surfel three-component image therefore read
+nonsense, and because `api.image_clearing` verifies by copying the image out, it
+also made correct clears of those formats look broken.
+
+The components are now fetched one at a time, which avoids the format entirely.
+The fetch format is part of the instruction rather than of the descriptor, so
+there is one shader per surfel size; all three are built as NIR, and the source
+descriptor becomes a plain byte-addressed buffer. Requesting the load at the
+surfel's own width produced a `u2u8`, which the backend does not accept, so it is
+loaded as a single component of the right format and kept 32-bit throughout.
+
+**The 8- and 16-bit three-component subset of `api.copy_and_blit` went from 24800
+passing / 232 failing to 25032 / 0**, and the three-component `api.image_clearing`
+subset from 9700 / 1800 to 11500 / 0. Nothing moved the other way; the one
+remaining failure in the wider run, a BC3 block reinterpretation, fails identically
+before and after.
+
+`terakan_copy_expand_3x` checks each surfel size twice. A clear followed by a
+read-back isolates the image-to-buffer direction against a value the clear test
+covers independently, and a pattern uploaded and read back exercises both
+directions with every surfel of the image distinct, so a copy landing on the wrong
+surfel shows as a displaced value rather than a plausible one. It fails against the
+unfixed driver.
 
 ### Colour resolve under CTS
 

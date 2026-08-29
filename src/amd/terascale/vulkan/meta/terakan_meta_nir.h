@@ -40,6 +40,14 @@ struct nir_shader * terakan_meta_nir_build_blit_image_3d_ps(
 struct nir_shader * terakan_meta_nir_build_clear_expand_3x_ps(
    struct terakan_device const * device);
 
+/* Copies a 3x-expanded image one component at a time, one variant per surfel size. */
+struct nir_shader * terakan_meta_nir_build_copy_expand_3x_8_ps(
+   struct terakan_device const * device);
+struct nir_shader * terakan_meta_nir_build_copy_expand_3x_16_ps(
+   struct terakan_device const * device);
+struct nir_shader * terakan_meta_nir_build_copy_expand_3x_32_ps(
+   struct terakan_device const * device);
+
 /* Builds the NIR for one meta shader. */
 typedef struct nir_shader * (*terakan_meta_nir_builder)(struct terakan_device const * device);
 

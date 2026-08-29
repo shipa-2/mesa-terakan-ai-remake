@@ -36,6 +36,7 @@
 
 #include "terakan_meta.h"
 #include "terakan_descriptor.h"
+#include "nir/terakan_nir.h"
 
 #include "terakan_device.h"
 #include "terakan_physical_device.h"
@@ -98,6 +99,8 @@ terakan_meta_nir_compile(struct terakan_device * const device, nir_shader * cons
                if (intrin->intrinsic == nir_intrinsic_load_ubo_vec4) {
                   shader_out->sqk_usage.kcache |=
                      (uint16_t)BITFIELD_BIT(nir_src_as_uint(intrin->src[0]));
+               } else if (intrin->intrinsic == nir_intrinsic_load_buffer_resource_r600) {
+                  BITSET_SET(shader_out->sqk_usage.resources, nir_intrinsic_id_base(intrin));
                }
                break;
             }
@@ -343,9 +346,122 @@ terakan_meta_nir_build_clear_expand_3x_ps(struct terakan_device const * const de
    return b->shader;
 }
 
+
+/* The 3x copy constants, matching what terakan_meta_copy_expand_3x.c writes. All three are in
+ * surfels.
+ */
+enum {
+   TERAKAN_META_NIR_COPY_3X_CONST_SRC_PITCH,
+   TERAKAN_META_NIR_COPY_3X_CONST_DST_PITCH,
+   TERAKAN_META_NIR_COPY_3X_CONST_DST_OFFSET,
+};
+
+/* The hand-written 3x copy shader fetches all three components in one go, as 8_8_8, 16_16_16 or
+ * 32_32_32. Only the last of those works: this hardware returns completely invalid values for
+ * three-component 8- and 16-bit buffer fetches, which terakan_nir_load_raw_resource_buffer asserts
+ * against and which the driver already records for api.buffer_view and vertex_input. So copying a
+ * three-component image with one- or two-byte surfels read nonsense, and because
+ * dEQP-VK.api.image_clearing verifies by copying the image out, it also made every such clear look
+ * broken when the clear itself was correct.
+ *
+ * Fetching the components one at a time avoids the broken format entirely. The fetch format is part
+ * of the instruction rather than of the descriptor, so there is one variant per surfel size.
+ */
+static nir_shader *
+terakan_meta_nir_build_copy_expand_3x_ps(struct terakan_device const * const device,
+                                         unsigned const bytes_per_surfel, char const * const name)
+{
+   nir_builder builder = nir_builder_init_simple_shader(
+      MESA_SHADER_FRAGMENT, &terakan_device_physical_device(device)->nir_options_fs, "%s", name);
+   nir_builder * const b = &builder;
+
+   nir_variable * const position = nir_variable_create(
+      b->shader, nir_var_shader_in, glsl_vec4_type(), "gl_FragCoord");
+   position->data.location = VARYING_SLOT_POS;
+   position->data.interpolation = INTERP_MODE_NOPERSPECTIVE;
+   b->shader->info.inputs_read = BITFIELD64_BIT(VARYING_SLOT_POS);
+   nir_def * const frag_coord = nir_load_var(b, position);
+
+   nir_def * const constants = nir_load_ubo_vec4(
+      b, 4, 32, nir_imm_int(b, TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS), nir_imm_int(b, 0));
+
+   /* One fragment per texel, three surfels either side of it. */
+   nir_def * const x3 = nir_imul_imm(b, nir_f2u32(b, nir_channel(b, frag_coord, 0)), 3);
+   nir_def * const y = nir_f2u32(b, nir_channel(b, frag_coord, 1));
+   nir_def * const source_surfel = nir_iadd(
+      b, nir_imul(b, y, nir_channel(b, constants, TERAKAN_META_NIR_COPY_3X_CONST_SRC_PITCH)), x3);
+   nir_def * const destination_surfel = nir_iadd(
+      b,
+      nir_iadd(b, nir_channel(b, constants, TERAKAN_META_NIR_COPY_3X_CONST_DST_OFFSET),
+               nir_imul(b, y,
+                        nir_channel(b, constants, TERAKAN_META_NIR_COPY_3X_CONST_DST_PITCH))),
+      x3);
+
+   /* The surfel is loaded as a single component of its own width and kept 32-bit throughout: the
+    * narrowing terakan_nir_load_raw_resource_buffer applies would produce a u2u8, which the backend
+    * does not accept, and nothing here needs the narrow type anyway.
+    */
+   enum pipe_format surfel_format;
+   switch (bytes_per_surfel) {
+   case 1:
+      surfel_format = PIPE_FORMAT_R8_UINT;
+      break;
+   case 2:
+      surfel_format = PIPE_FORMAT_R16_UINT;
+      break;
+   default:
+      assert(bytes_per_surfel == 4);
+      surfel_format = PIPE_FORMAT_R32_UINT;
+      break;
+   }
+
+   nir_def * const undef = nir_undef(b, 1, 32);
+   nir_def * const uav_array_index = nir_imm_zero(b, 1, 32);
+   for (unsigned component = 0; component < 3; ++component) {
+      nir_def * const value = nir_load_buffer_resource_r600(
+         b, 1, 32, nir_imm_zero(b, 1, 32),
+         nir_imul_imm(b, nir_iadd_imm(b, source_surfel, component), bytes_per_surfel),
+         .access = ACCESS_CAN_REORDER,
+         .id_base = TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META, .base = 0,
+         .component = 0, .format = surfel_format);
+      nir_uav_instr_r600(b, uav_array_index, nir_iadd_imm(b, destination_surfel, component), value,
+                         undef, .uav_op_r600 = V_RAT_INST_STORE_TYPED, .access = 0, .id_base = 0);
+   }
+
+   nir_variable * const dummy = nir_variable_create(
+      b->shader, nir_var_shader_out, glsl_vec4_type(), "dummy");
+   dummy->data.location = FRAG_RESULT_DATA0;
+   dummy->data.driver_location = 0;
+   nir_store_var(b, dummy, nir_imm_vec4(b, 0.0f, 0.0f, 0.0f, 0.0f), 0xF);
+   b->shader->info.outputs_written = BITFIELD64_BIT(FRAG_RESULT_DATA0);
+
+   return b->shader;
+}
+
+nir_shader *
+terakan_meta_nir_build_copy_expand_3x_8_ps(struct terakan_device const * const device)
+{
+   return terakan_meta_nir_build_copy_expand_3x_ps(device, 1, "terakan_meta_copy_expand_3x_8_ps");
+}
+
+nir_shader *
+terakan_meta_nir_build_copy_expand_3x_16_ps(struct terakan_device const * const device)
+{
+   return terakan_meta_nir_build_copy_expand_3x_ps(device, 2, "terakan_meta_copy_expand_3x_16_ps");
+}
+
+nir_shader *
+terakan_meta_nir_build_copy_expand_3x_32_ps(struct terakan_device const * const device)
+{
+   return terakan_meta_nir_build_copy_expand_3x_ps(device, 4, "terakan_meta_copy_expand_3x_32_ps");
+}
+
 terakan_meta_nir_builder const terakan_meta_nir_builders[TERAKAN_META_SHADER_COUNT] = {
    [TERAKAN_META_SHADER_DUMMY_OPAQUE_PS] = terakan_meta_nir_build_opaque_ps,
    [TERAKAN_META_SHADER_RESOLVE_SAMPLE_ZERO_PS] = terakan_meta_nir_build_resolve_sample_zero_ps,
    [TERAKAN_META_SHADER_BLIT_IMAGE_3D_PS] = terakan_meta_nir_build_blit_image_3d_ps,
    [TERAKAN_META_SHADER_CLEAR_EXPAND_3X_PS] = terakan_meta_nir_build_clear_expand_3x_ps,
+   [TERAKAN_META_SHADER_COPY_EXPAND_3X_8_PS] = terakan_meta_nir_build_copy_expand_3x_8_ps,
+   [TERAKAN_META_SHADER_COPY_EXPAND_3X_16_PS] = terakan_meta_nir_build_copy_expand_3x_16_ps,
+   [TERAKAN_META_SHADER_COPY_EXPAND_3X_32_PS] = terakan_meta_nir_build_copy_expand_3x_32_ps,
 };

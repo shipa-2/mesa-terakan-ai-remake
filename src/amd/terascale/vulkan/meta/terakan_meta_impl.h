@@ -495,28 +495,16 @@ bool terakan_meta_copy_buffer_image_translate_region_image(
  * of a 3x-expanded image accepting the index in surfels.
  */
 static inline struct terakan_resource_descriptor
-terakan_meta_transfer_expand_3x_resource(unsigned const bytes_per_surfel)
+terakan_meta_transfer_expand_3x_resource(UNUSED unsigned const bytes_per_surfel)
 {
-   enum terascale_format_index data_format;
-   switch (bytes_per_surfel) {
-   case 1:
-      data_format = TERASCALE_FORMAT_INDEX_8_8_8;
-      break;
-   case 2:
-      data_format = TERASCALE_FORMAT_INDEX_16_16_16;
-      break;
-   case 4:
-      data_format = TERASCALE_FORMAT_INDEX_32_32_32;
-      break;
-   default:
-      assert(!"Unsupported 3x-expanded format surfel byte count");
-      data_format = TERASCALE_FORMAT_INDEX_INVALID;
-   }
-
+   /* Addressed in bytes, with the fetch format named by the shader instruction rather than by the
+    * descriptor. It used to carry DATA_FORMAT 8_8_8, 16_16_16 or 32_32_32 so that one fetch could
+    * return all three components at once, but this hardware returns completely invalid values for
+    * the first two, so the components are fetched one at a time instead.
+    */
    return (struct terakan_resource_descriptor){
       .resource = {
-         [2] = S_030008_STRIDE(bytes_per_surfel) | S_030008_DATA_FORMAT(data_format) |
-               S_030008_NUM_FORMAT_ALL(TERASCALE_FORMAT_SQ_NUM_FORMAT_INT),
+         [2] = S_030008_STRIDE(1),
          [3] = S_03000C_DST_SEL_X(TERASCALE_SWIZZLE_X) | S_03000C_DST_SEL_Y(TERASCALE_SWIZZLE_Y) |
                S_03000C_DST_SEL_Z(TERASCALE_SWIZZLE_Z) | S_03000C_DST_SEL_W(TERASCALE_SWIZZLE_1),
          [7] = S_03001C_TYPE(V_03001C_SQ_TEX_VTX_VALID_BUFFER),

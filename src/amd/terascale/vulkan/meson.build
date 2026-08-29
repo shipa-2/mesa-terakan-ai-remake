@@ -1889,6 +1889,23 @@ if with_tests
         timeout : 20,
       )
 
+      terakan_copy_expand_3x_test = executable(
+        'terakan_copy_expand_3x_test',
+        ['tests/terakan_copy_expand_3x_test.c'],
+        dependencies : vulkan_loader_dep,
+      )
+      test(
+        'terakan_copy_expand_3x',
+        terakan_copy_expand_3x_test,
+        depends : [libvulkan_terascale, _dev_icd],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 20,
+      )
+
       terakan_clear_expand_3x_test = executable(
         'terakan_clear_expand_3x_test',
         ['tests/terakan_clear_expand_3x_test.c'],

@@ -363,7 +363,8 @@ struct terakan_meta_shader const terakan_meta_copy_expand_3x_ps = {
 };
 
 static void
-terakan_meta_copy_expand_3x_begin(struct terakan_gfx_command_writer * const command_writer)
+terakan_meta_copy_expand_3x_begin(struct terakan_gfx_command_writer * const command_writer,
+                                  unsigned const bytes_per_surfel)
 {
    command_writer->post_color_image_copy_write_barrier_actions |=
       TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_UAV | TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_PS;
@@ -376,7 +377,23 @@ terakan_meta_copy_expand_3x_begin(struct terakan_gfx_command_writer * const comm
    terakan_meta_config_draw_begin(command_writer, &meta_begin_options);
    terakan_meta_config_draw_set_sq_pgm_vs(command_writer,
                                           TERAKAN_META_SHADER_POSITION_FROM_INDEX_VS);
-   terakan_meta_config_draw_set_sq_pgm_ps(command_writer, TERAKAN_META_SHADER_COPY_EXPAND_3X_PS);
+   /* One shader per surfel size: the fetch format is part of the instruction, not of the
+    * descriptor.
+    */
+   enum terakan_meta_shader_index copy_shader;
+   switch (bytes_per_surfel) {
+   case 1:
+      copy_shader = TERAKAN_META_SHADER_COPY_EXPAND_3X_8_PS;
+      break;
+   case 2:
+      copy_shader = TERAKAN_META_SHADER_COPY_EXPAND_3X_16_PS;
+      break;
+   default:
+      assert(bytes_per_surfel == 4);
+      copy_shader = TERAKAN_META_SHADER_COPY_EXPAND_3X_32_PS;
+      break;
+   }
+   terakan_meta_config_draw_set_sq_pgm_ps(command_writer, copy_shader);
 }
 
 void
@@ -384,8 +401,6 @@ terakan_meta_copy_expand_3x_buffer_to_image(
    struct terakan_gfx_command_writer * const command_writer,
    VkCopyBufferToImageInfo2 const * const copy_buffer_to_image_info)
 {
-   terakan_meta_copy_expand_3x_begin(command_writer);
-
    struct terakan_image const * const image =
       terakan_image_from_handle(copy_buffer_to_image_info->dstImage);
    struct terakan_buffer const * const buffer =
@@ -393,6 +408,7 @@ terakan_meta_copy_expand_3x_buffer_to_image(
 
    unsigned const bytes_per_block = image->surface.aspects[0].bytes_per_block;
    unsigned const bytes_per_surfel = bytes_per_block / 3u;
+   terakan_meta_copy_expand_3x_begin(command_writer, bytes_per_surfel);
    /* The image descriptor base is the slice origin. */
    struct terakan_color_descriptor image_descriptor =
       terakan_meta_transfer_expand_3x_uav(bytes_per_surfel);
@@ -493,8 +509,6 @@ terakan_meta_copy_expand_3x_image_to_buffer(
    struct terakan_gfx_command_writer * const command_writer,
    VkCopyImageToBufferInfo2 const * const copy_image_to_buffer_info)
 {
-   terakan_meta_copy_expand_3x_begin(command_writer);
-
    uint8_t const pipe_interleave_bytes_log2 =
       terakan_gfx_command_writer_physical_device(command_writer)
          ->tiling_info.pipe_interleave_bytes_log2;
@@ -506,6 +520,7 @@ terakan_meta_copy_expand_3x_image_to_buffer(
 
    unsigned const bytes_per_block = image->surface.aspects[0].bytes_per_block;
    unsigned const bytes_per_surfel = bytes_per_block / 3u;
+   terakan_meta_copy_expand_3x_begin(command_writer, bytes_per_surfel);
    /* The buffer descriptor base is the rectangle origin aligned to the pipe interleave. */
    struct terakan_color_descriptor buffer_descriptor =
       terakan_meta_transfer_expand_3x_uav(bytes_per_surfel);
@@ -632,8 +647,6 @@ void
 terakan_meta_copy_expand_3x_image(struct terakan_gfx_command_writer * const command_writer,
                                   VkCopyImageInfo2 const * const copy_image_info)
 {
-   terakan_meta_copy_expand_3x_begin(command_writer);
-
    struct terakan_image const * const src_image =
       terakan_image_from_handle(copy_image_info->srcImage);
    struct terakan_image const * const dst_image =
@@ -649,6 +662,7 @@ terakan_meta_copy_expand_3x_image(struct terakan_gfx_command_writer * const comm
       return;
    }
    uint8_t const src_bytes_per_surfel = src_surface_aspect->bytes_per_block / 3u;
+   terakan_meta_copy_expand_3x_begin(command_writer, src_bytes_per_surfel);
 
    struct terakan_image_descriptor_subresource_range src_subresource_range = {.max_level_count = 1};
    struct terakan_image_descriptor_subresource_range dst_subresource_range = {.max_level_count = 1};
