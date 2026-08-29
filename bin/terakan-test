@@ -71,6 +71,7 @@ gpu_tests=(
   terakan_image_bounds
   terakan_image_gather
   terakan_uniform_texel_buffer
+  terakan_texture_array
   terakan_blit_mixed_regions
   terakan_clip_distance
   terakan_depth_readback

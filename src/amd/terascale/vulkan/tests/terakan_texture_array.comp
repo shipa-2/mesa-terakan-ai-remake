@@ -1,0 +1,22 @@
+#version 450
+
+/* Element i of the array is a view of the same buffer starting at word 4*i, so a correct fetch
+ * returns four distinct values and a collapsed one returns element zero four times.
+ */
+layout(local_size_x = 1) in;
+layout(set = 0, binding = 0) uniform utextureBuffer array_src[4];
+/* The control: a texel buffer that is not an array, at a later binding, viewing word 20. It must
+ * keep reading its own descriptor -- a fix that folded an array index into the wrong place, or
+ * shifted the per-binding resource base, would move this one too.
+ */
+layout(set = 0, binding = 1) uniform utextureBuffer single_src;
+layout(set = 0, binding = 2, std430) writeonly buffer Dst { uvec4 v[8]; } dst;
+
+void main()
+{
+   dst.v[0] = texelFetch(array_src[0], 0);
+   dst.v[1] = texelFetch(array_src[1], 0);
+   dst.v[2] = texelFetch(array_src[2], 0);
+   dst.v[3] = texelFetch(array_src[3], 0);
+   dst.v[4] = texelFetch(single_src, 0);
+}

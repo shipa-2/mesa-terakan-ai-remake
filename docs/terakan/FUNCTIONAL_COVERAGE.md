@@ -319,6 +319,47 @@ single-channel expansion to (x, 0, 0, 1) and four-channel byte order, and report
 the all-zero case specifically. It fails with that diagnostic against the
 unfixed driver.
 
+### Arrays of uniform texel buffers
+
+`dEQP-VK.binding_model` was sampled for the first time -- 4904 cases, 558 passing
+and 65 failing -- and the failures split cleanly. 84 of the 108 supported
+`shader_access.*.uniform_texel_buffer.*.descriptor_array` cases failed while
+arrays of combined image samplers passed all 51 of theirs.
+
+A minimal probe reproduced it exactly: four `VkBufferView`s of one buffer at four
+offsets, bound as `uniform utextureBuffer src[4]`, and all four `texelFetch`
+calls returned element zero. The compiled NIR showed why -- all four fetches
+carried texture index 2, the binding's base, with nothing added.
+
+The cause is in core NIR rather than the driver. `nir_chase_binding` collects the
+array indices of a descriptor array only when the descriptor is an image or a
+sampler:
+
+```c
+bool is_image = glsl_type_is_image(type) || glsl_type_is_sampler(type);
+```
+
+A separate texture -- GLSL's `textureBuffer` and `texture2D`, SPIR-V's
+`OpTypeImage` with `Sampled=1` and no sampler attached -- is `GLSL_TYPE_TEXTURE`
+and matches neither, so the array deref chases back to the binding with
+`num_indices == 0`. `terakan_nir_get_binding` then sees no array index, and every
+element resolves to the same hardware resource slot.
+
+A uniform texel buffer is the only descriptor type with no combined
+image-sampler form, which is why it was the one that could not avoid the
+separate-texture path and the only one that showed the bug.
+`terakan_nir_chase_binding` wraps the helper and performs the same walk for the
+type it skips.
+
+**The group is now at 0 failures, from 84** -- 108 passing of 108 supported. The
+sampled `binding_model` run went from 558/65 to 566/57 with no case changing in
+the other direction.
+
+`terakan_texture_array` covers it, with a non-array texel buffer in the same
+descriptor set as the negative control: it has no array index to lose, so it
+stays correct under the bug and would only break if the fix disturbed the
+per-binding resource base. The test fails against the unfixed driver.
+
 ### Colour resolve under CTS
 
 `dEQP-VK.api.copy_and_blit.core.resolve_image`, 240 cases, run against Terakan

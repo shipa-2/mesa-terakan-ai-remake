@@ -183,12 +183,53 @@ struct terakan_nir_binding {
    unsigned array_index_range_last;
 };
 
+/* nir_chase_binding collects the array indices of a descriptor array only when the descriptor is an
+ * image or a sampler -- glsl_type_is_image() || glsl_type_is_sampler(). A separate texture, which is
+ * what GLSL's textureBuffer and texture2D and SPIR-V's OpTypeImage with Sampled=1 become when no
+ * sampler is attached to them, is GLSL_TYPE_TEXTURE and matches neither, so every element of such an
+ * array chases back to the same binding carrying no index at all. The elements then all resolve to
+ * the same hardware resource slot, and the shader reads element zero whichever one it asked for:
+ * dEQP-VK.binding_model.shader_access.*.uniform_texel_buffer.*descriptor_array* failed 84 of its 108
+ * cases, the 24 that passed being the ones that happened to index element zero.
+ *
+ * Combined image samplers are unaffected -- they are GLSL_TYPE_SAMPLER, and their arrays pass all 51
+ * of their cases -- which is why this only ever showed up on texel buffers, the one descriptor type
+ * that has no combined form.
+ */
+static nir_binding
+terakan_nir_chase_binding(nir_src const src)
+{
+   nir_binding binding = nir_chase_binding(src);
+   if (binding.num_indices != 0 || src.ssa->parent_instr->type != nir_instr_type_deref ||
+       !glsl_type_is_texture(glsl_without_array(nir_src_as_deref(src)->type))) {
+      return binding;
+   }
+   /* Same walk nir_chase_binding performs, with the same innermost-first index order, applied to the
+    * type it skips.
+    */
+   nir_src chase = src;
+   while (chase.ssa->parent_instr->type == nir_instr_type_deref) {
+      nir_deref_instr * const deref = nir_src_as_deref(chase);
+      if (deref->deref_type == nir_deref_type_var) {
+         break;
+      }
+      if (deref->deref_type == nir_deref_type_array) {
+         if (binding.num_indices == ARRAY_SIZE(binding.indices)) {
+            return (nir_binding){0};
+         }
+         binding.indices[binding.num_indices++] = deref->arr.index;
+      }
+      chase = deref->parent;
+   }
+   return binding;
+}
+
 static bool
 terakan_nir_get_binding(nir_src const src, VkDescriptorType const expected_type,
                         struct terakan_pipeline_layout const * const layout,
                         nir_shader * const shader, struct terakan_nir_binding * const binding_out)
 {
-   nir_binding const binding = nir_chase_binding(src);
+   nir_binding const binding = terakan_nir_chase_binding(src);
    assert(binding.success);
    if (unlikely(!binding.success)) {
       return false;
