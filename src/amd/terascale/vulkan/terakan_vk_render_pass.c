@@ -167,12 +167,17 @@ terakan_CmdBeginRendering(VkCommandBuffer const commandBuffer,
                                                 &depth_stencil_attachment_descriptor, &depth_bound,
                                                 &stencil_bound);
       if (depth_bound || stencil_bound) {
+         /* vk_image_view::extent is already the extent of the view's own mip level -- the common
+          * runtime sets it from vk_image_mip_level_extent(image, base_mip_level). Minifying it
+          * again by that level halved the render area for every level past the first, so a render
+          * pass with a depth attachment targeting mip N was scissored to a 2^N-th of the image and
+          * most of it was never drawn. Only the depth path did this; the colour one takes the
+          * bound from the descriptor's DIM, which is built from the level.
+          */
          uint32_t const depth_stencil_attachment_width =
-            u_minify(depth_stencil_attachment_view->vk.extent.width,
-                     depth_stencil_attachment_view->vk.base_mip_level);
+            depth_stencil_attachment_view->vk.extent.width;
          uint32_t const depth_stencil_attachment_height =
-            u_minify(depth_stencil_attachment_view->vk.extent.height,
-                     depth_stencil_attachment_view->vk.base_mip_level);
+            depth_stencil_attachment_view->vk.extent.height;
          render_area_upper_bound[0] =
             MIN2(render_area_upper_bound[0], depth_stencil_attachment_width);
          render_area_upper_bound[1] =

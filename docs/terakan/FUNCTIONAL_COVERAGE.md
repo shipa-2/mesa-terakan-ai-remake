@@ -715,6 +715,40 @@ across two full runs, so they are not a coin flip either. Whatever CTS does that
 makes them fail has not been identified, and until it is there is nothing to fix
 against.
 
+### The render area of a mip level with a depth attachment
+
+`dEQP-VK.pipeline.monolithic.render_to_image` was run for the first time and failed
+**422 of its 1245 supported cases**. The split was exact: every failure was a
+`mipmap` case, and every `mipmap` case with a depth or stencil attachment failed,
+while `small` and `huge` -- which are single-level -- passed 685 of 685, and the
+colour-only `mipmap` cases passed too.
+
+`vk_image_view::extent` is already the extent of the view's own mip level; the
+common runtime sets it from `vk_image_mip_level_extent(image, base_mip_level)`.
+The render pass minified it *again* by that same level when clamping the render
+area to the depth attachment, so a pass targeting mip N was scissored to a 2^N-th
+of the level and everything outside that corner was never drawn. Only the depth
+path did this -- the colour one takes its bound from the descriptor's `DIM`, which
+is built from the level, and was right.
+
+The disabled depth test is what identified it. Forcing `Z_ENABLE` off did not make
+the case pass, which ruled out the obvious reading that the depth buffer held
+garbage and the test was rejecting fragments, and left the render area as the only
+thing a depth attachment contributes to the colour path.
+
+**`render_to_image` is now at 0 failures, from 422**, 1245 passing of 1245
+supported. Across a 14459-case run over `render_to_image`,
+`renderpass.suballocation.attachment_allocation` and sampled `api.image_clearing`
+and `api.copy_and_blit`, this and the clear work in the same session take the
+totals from 6103 passing / 716 failing to **6796 / 23**.
+
+`terakan_render_area_mip` needs no shaders to see it: a load-op clear is itself
+scissored by the render area, so a render pass that only clears its colour
+attachment at mip 2 of a 64x64 image, with a depth attachment bound at the same
+level, already exposes the whole bound. The level is filled with another value
+first, so a partially cleared level cannot read as a fully cleared one. Against the
+unfixed driver it reports the first unwritten texel at x = 4, which is 16 >> 2.
+
 ### Colour resolve under CTS
 
 `dEQP-VK.api.copy_and_blit.core.resolve_image`, 240 cases, run against Terakan

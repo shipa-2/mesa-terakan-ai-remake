@@ -1889,6 +1889,23 @@ if with_tests
         timeout : 20,
       )
 
+      terakan_render_area_mip_test = executable(
+        'terakan_render_area_mip_test',
+        ['tests/terakan_render_area_mip_test.c'],
+        dependencies : vulkan_loader_dep,
+      )
+      test(
+        'terakan_render_area_mip',
+        terakan_render_area_mip_test,
+        depends : [libvulkan_terascale, _dev_icd],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 20,
+      )
+
       terakan_depth_stencil_clear_ranges_test = executable(
         'terakan_depth_stencil_clear_ranges_test',
         ['tests/terakan_depth_stencil_clear_ranges_test.c'],
