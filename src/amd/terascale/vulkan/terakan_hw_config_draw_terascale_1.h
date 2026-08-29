@@ -45,17 +45,18 @@ extern "C" {
 uint32_t * terakan_hw_config_draw_terascale_1_write_db_depth_view(uint32_t * packet,
                                                                     uint32_t value);
 
-/* PKT3_SET_CONTEXT_REG_SEQ(DB_RENDER_CONTROL, DB_RENDER_OVERRIDE), 2 dwords. Takes caller-computed
- * values rather than a fixed default, matching the DB_DEPTH_CONTROL/CB_TARGET_MASK convention, even
- * though every current R8xx/R9xx caller of the equivalent function only ever passes
- * TERAKAN_HW_CONFIG_DRAW_DEFAULT_DB_RENDER_CONTROL/_DB_RENDER_OVERRIDE (both 0): this driver has no
- * dynamic per-draw DB_RENDER_CONTROL/DB_RENDER_OVERRIDE logic at all yet, for either generation --
- * no occlusion query hazard handling, no HTILE, no depth/stencil-through-CB flush path -- so a
- * TeraScale 1 port has nothing beyond that same all-zero baseline to port either. There is no
- * DB_RENDER_OVERRIDE2 equivalent on R600/R700 at all (r600d.h defines no such register, and
- * r600_state.c's r600_emit_db_misc_state() never emits a third register here), so unlike R8xx/R9xx
- * this is only two registers, not three -- confirmed against r600_state.c's
- * r600_emit_db_misc_state(), not guessed from the header alone.
+/* Convert the currently all-zero Evergreen software state to the actual no-query, no-HTILE R700
+ * baseline from r600_emit_db_misc_state(). Nonzero Evergreen state is rejected because its fields
+ * are not register-compatible with R700 and the corresponding query/HTILE/copy paths have not been
+ * ported. There is no DB_RENDER_OVERRIDE2 equivalent on R600/R700.
+ */
+bool terakan_hw_config_draw_terascale_1_db_render_control_override_encode(
+   uint32_t evergreen_db_render_control, uint32_t evergreen_db_render_override,
+   uint32_t * db_render_control_out, uint32_t * db_render_override_out);
+
+/* PKT3_SET_CONTEXT_REG_SEQ(DB_RENDER_CONTROL, DB_RENDER_OVERRIDE), 2 dwords. Values must already
+ * be R700-shaped, normally produced by the encoder above. This two-register sequence is confirmed
+ * against r600_emit_db_misc_state(), not inferred from the adjacent register addresses.
  */
 uint32_t * terakan_hw_config_draw_terascale_1_write_db_render_control_override(
    uint32_t * packet, uint32_t db_render_control, uint32_t db_render_override);

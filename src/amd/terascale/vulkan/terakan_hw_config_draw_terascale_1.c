@@ -30,6 +30,26 @@ terakan_hw_config_draw_terascale_1_write_db_depth_view(uint32_t * const packet,
    return write_context_reg(packet, R_028004_DB_DEPTH_VIEW, value);
 }
 
+bool
+terakan_hw_config_draw_terascale_1_db_render_control_override_encode(
+   uint32_t const evergreen_db_render_control, uint32_t const evergreen_db_render_override,
+   uint32_t * const db_render_control_out, uint32_t * const db_render_override_out)
+{
+   if (evergreen_db_render_control || evergreen_db_render_override) {
+      return false;
+   }
+
+   /* Exact no-query, no-HTILE branch of r600_emit_db_misc_state(). Occlusion queries, HTILE,
+    * depth/stencil copy and conservative-Z export are separate unported state transitions.
+    */
+   *db_render_control_out = S_028D0C_ZPASS_INCREMENT_DISABLE(1);
+   *db_render_override_out =
+      S_028D10_FORCE_HIZ_ENABLE(V_028D10_FORCE_DISABLE) |
+      S_028D10_FORCE_HIS_ENABLE0(V_028D10_FORCE_DISABLE) |
+      S_028D10_FORCE_HIS_ENABLE1(V_028D10_FORCE_DISABLE);
+   return true;
+}
+
 uint32_t *
 terakan_hw_config_draw_terascale_1_write_db_render_control_override(
    uint32_t * packet, uint32_t const db_render_control, uint32_t const db_render_override)

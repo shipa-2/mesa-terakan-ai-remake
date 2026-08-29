@@ -55,20 +55,31 @@ test_db_render_control_override(void)
 }
 
 static void
-test_db_render_control_override_default_matches_r8xx_baseline(void)
+test_db_render_control_override_classic_r700_baseline(void)
 {
-   /* Every current R8xx/R9xx caller only ever passes the all-zero default -- see
-    * TERAKAN_HW_CONFIG_DRAW_DEFAULT_DB_RENDER_CONTROL/_DB_RENDER_OVERRIDE in
-    * terakan_hw_config_draw.h -- since this driver has no dynamic per-draw DB_RENDER_CONTROL/
-    * DB_RENDER_OVERRIDE logic for either generation yet. Checked explicitly here so a future
-    * R8xx/R9xx default change doesn't silently stop matching what TeraScale 1 assumes.
+   uint32_t db_render_control, db_render_override;
+   CHECK(terakan_hw_config_draw_terascale_1_db_render_control_override_encode(
+      0, 0, &db_render_control, &db_render_override));
+   CHECK(db_render_control == S_028D0C_ZPASS_INCREMENT_DISABLE(1));
+   CHECK(db_render_override ==
+         (S_028D10_FORCE_HIZ_ENABLE(V_028D10_FORCE_DISABLE) |
+          S_028D10_FORCE_HIS_ENABLE0(V_028D10_FORCE_DISABLE) |
+          S_028D10_FORCE_HIS_ENABLE1(V_028D10_FORCE_DISABLE)));
+
+   /* Nonzero inputs are Evergreen register payloads, not abstract state. Reject both independently
+    * so a future caller cannot accidentally pass colliding fields through to R700.
     */
+   CHECK(!terakan_hw_config_draw_terascale_1_db_render_control_override_encode(
+      1, 0, &db_render_control, &db_render_override));
+   CHECK(!terakan_hw_config_draw_terascale_1_db_render_control_override_encode(
+      0, 1, &db_render_control, &db_render_override));
+
    uint32_t packets[4];
-   uint32_t * const end =
-      terakan_hw_config_draw_terascale_1_write_db_render_control_override(packets, 0, 0);
+   uint32_t * const end = terakan_hw_config_draw_terascale_1_write_db_render_control_override(
+      packets, S_028D0C_ZPASS_INCREMENT_DISABLE(1), db_render_override);
    CHECK(end == packets + 4);
-   CHECK(packets[2] == 0);
-   CHECK(packets[3] == 0);
+   CHECK(packets[2] == S_028D0C_ZPASS_INCREMENT_DISABLE(1));
+   CHECK(packets[3] == db_render_override);
 }
 
 static void
@@ -270,7 +281,7 @@ main(void)
 {
    test_db_depth_view();
    test_db_render_control_override();
-   test_db_render_control_override_default_matches_r8xx_baseline();
+   test_db_render_control_override_classic_r700_baseline();
    test_db_depth_size();
    test_db_depth_base_info();
    test_db_alpha_to_mask();
