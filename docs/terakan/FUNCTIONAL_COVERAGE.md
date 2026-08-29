@@ -749,6 +749,44 @@ level, already exposes the whole bound. The level is filled with another value
 first, so a partially cleared level cannot read as a fully cleared one. Against the
 unfixed driver it reports the first unwritten texel at x = 4, which is 16 >> 2.
 
+### More than one clip distance
+
+`dEQP-VK.clipping` was run for the first time and failed 67 of its 100 supported
+cases. `clipping.user_defined` accounted for 59 of them, and the split named the
+defect on its own: `clip_distance.vert.1` passed and `.2` through `.8` failed,
+`clip_distance_dynamic_index` passed at one and two and failed above, and every
+`clip_cull_distance` case failed. Exactly one clip distance worked.
+
+The registers were right -- `PA_CL_VS_OUT_CNTL` came out as `0x00400003` for two
+distances, which is `CLIP_DIST_ENA_0|1` with `CCDIST0_VEC_ENA` -- and so was the
+backend's own write mask. The assembly showed what was wrong:
+
+```
+Translate EXPORT POS 1 R1.z___
+Translate EXPORT POS 2 R1._w__
+```
+
+Two position exports for the two distances of one array. The backend gives every
+store to a position slot its own export and takes the next free slot each time, so
+the second distance landed in POS2 -- `CCDIST1`, the slot for distances four to
+seven, whose enable is not even set -- and had no effect. Under GL the array
+arrives vectorized into a single store and the counter happens to be right; under
+Vulkan `gl_ClipDistance` is a compact array and stays one store per element, which
+neither `nir_opt_vectorize_io`, `nir_opt_vectorize_io_vars`,
+`nir_lower_clip_cull_distance_to_vec4s` nor `nir_lower_clip_cull_distance_array_vars`
+merges -- the last returns true while leaving the compact variable alone.
+
+The slot now follows the location rather than the arrival order, so both stores
+export to POS1 with complementary component masks and the hardware composes them.
+
+**`clipping` is at 100 passing and 0 failing, from 33 / 67.** An 11145-case survey
+across twenty groups shows 67 fixed and none broken.
+
+`terakan_clip_distance` covered one distance, which is the only case that ever
+worked; it now writes two, so only the quadrant where both are non-negative
+survives. A driver honouring only the first leaves half the target drawn instead of
+a quarter, and that is what it reports against the unfixed backend.
+
 ### Colour resolve under CTS
 
 `dEQP-VK.api.copy_and_blit.core.resolve_image`, 240 cases, run against Terakan

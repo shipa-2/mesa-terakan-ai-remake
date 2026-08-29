@@ -227,13 +227,20 @@ VertexExportForFs::emit_varying_pos(const store_loc& store_info,
    case VARYING_SLOT_POS:
       break;
    case VARYING_SLOT_CLIP_DIST0:
-   case VARYING_SLOT_CLIP_DIST1:
-      m_cc_dist_mask |= write_mask
-                        << (4 * (store_info.location - VARYING_SLOT_CLIP_DIST0));
-      m_clip_dist_write |= write_mask
-                           << (4 * (store_info.location - VARYING_SLOT_CLIP_DIST0));
-      export_slot = m_cur_clip_pos++;
+   case VARYING_SLOT_CLIP_DIST1: {
+      int const clip_index = store_info.location - VARYING_SLOT_CLIP_DIST0;
+      m_cc_dist_mask |= write_mask << (4 * clip_index);
+      m_clip_dist_write |= write_mask << (4 * clip_index);
+      /* The slot follows the location, not the order the stores arrive in. A slot written by more
+       * than one store -- which is what a compact gl_ClipDistance array gives when its elements
+       * are not vectorized, as they are not under Vulkan -- used to take a new slot per store, so
+       * the second distance of one array landed in CCDIST1 and had no effect.
+       */
+      if (m_clip_pos_slot[clip_index] < 0)
+         m_clip_pos_slot[clip_index] = m_cur_clip_pos++;
+      export_slot = m_clip_pos_slot[clip_index];
       break;
+   }
    default:
       sfn_log << SfnLog::err << __func__ << "Unsupported location " << store_info.location
               << "\n";

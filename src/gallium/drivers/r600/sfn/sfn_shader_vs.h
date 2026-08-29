@@ -86,6 +86,8 @@ private:
    uint8_t m_cc_dist_mask{0};
    uint8_t m_clip_dist_write{0};
    int m_cur_clip_pos{1};
+   /* The position export slot already handed out for each of CLIP_DIST0 and CLIP_DIST1, or -1. */
+   int m_clip_pos_slot[2]{-1, -1};
    bool m_writes_point_size{false};
    bool m_out_misc_write{false};
    bool m_vs_out_layer{false};

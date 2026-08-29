@@ -3,12 +3,23 @@
  * SPDX-License-Identifier: MIT
  */
 
-/* Regression test for shaderClipDistance: draws a fullscreen triangle whose vertex shader sets
- * gl_ClipDistance[0] to the clip-space X coordinate. The left half of the render target (negative
- * clip distance) must be clipped away and keep the clear color; the right half (non-negative clip
- * distance) must be rasterized with the fragment shader's solid color. This exercises the
- * PA_CL_VS_OUT_CNTL CCDIST0/CCDIST1 export path in terakan_shader_sfn.cpp end to end on real
- * hardware, not just that the pipeline compiles.
+/* Regression test for shaderClipDistance with more than one distance.
+ *
+ * The vertex shader writes gl_ClipDistance[0] = clip-space X and gl_ClipDistance[1] = clip-space Y,
+ * so only the quadrant where both are non-negative is rasterized and the other three keep the clear
+ * colour.
+ *
+ * It used to cover one distance, which is the only case that worked. The backend gave every
+ * store to a position slot its own export and took the next free slot each time, so the two
+ * distances of one gl_ClipDistance array became two exports, POS1 and POS2 -- and POS2 is CCDIST1,
+ * the slot for distances four to seven, whose enable is not even set. The second distance therefore
+ * had no effect at all. Under GL the array arrives vectorized into a single store and the counter
+ * happens to be right; under Vulkan a compact array stays one store per element.
+ *
+ * The slot now follows the location rather than the order the stores arrive in, so both go to POS1
+ * with complementary component masks and the hardware composes them.
+ * dEQP-VK.clipping.user_defined failed 59 of its 64 cases before this and none after; the whole
+ * dEQP-VK.clipping group went from 33 passing / 67 failing to 100 / 0.
  */
 
 #include <vulkan/vulkan.h>
@@ -445,7 +456,8 @@ main(int argc, char ** argv)
    for (uint32_t y = 0; y < kHeight; ++y) {
       for (uint32_t x = 0; x < kWidth; ++x) {
          uint8_t const * const pixel = readback.mapping + (y * kWidth + x) * 4;
-         uint8_t const * const expected = x < kWidth / 2 ? kClearColor : kDrawColor;
+         uint8_t const * const expected =
+            (x < kWidth / 2 || y < kHeight / 2) ? kClearColor : kDrawColor;
          bool const pixel_matches = std::memcmp(pixel, expected, 4) == 0;
          pass &= pixel_matches;
          if (!pixel_matches) {
