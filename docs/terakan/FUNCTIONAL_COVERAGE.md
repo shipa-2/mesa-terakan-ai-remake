@@ -873,6 +873,46 @@ because they exercise the path that already worked: a change breaking division
 outright rather than only the non-power-of-two case moves them too. Against the
 unfixed driver instance 2 at divisor 3 reads element 1, which is `2 >> 1`.
 
+### Depth and stencil resolve by minimum and maximum
+
+`renderpasses.renderpass2.depth_stencil_resolve` was run in full -- 18003 cases --
+and gave 3273 passing and **684 failing**. The tested aspect's resolve mode decides
+it: `zero` passes 1080 of 1080 and `none` 630 of 630, while `min` fails 270 of 1050
+and `max` 390 of 1050.
+
+The reason the split is not cleaner is that the reduce is not happening at all.
+Every depth case returns the same value whatever the mode and the sample count:
+
+```
+min, 2 samples: got 0.0399939, expected 0.02
+max, 2 samples: got 0.0399939, expected 0.04   <- passes
+min, 4 samples: got 0.0399939, expected 0.02
+max, 4 samples: got 0.0399939, expected 0.32
+min, 8 samples: got 0.0399939, expected 0.02
+max, 8 samples: got 0.0399939, expected 0.32
+```
+
+0.0399939 is one sample's depth. The two cases that pass -- depth `max` at two
+samples, stencil `min` -- pass because that one sample happens to be the answer
+there.
+
+The programs are not the problem: each fetches as many samples as the source has
+and folds them with `MIN_DX10` or `MAX_DX10`, and the source is bound as
+`SQ_TEX_DIM_2D_ARRAY_MSAA`. What they do differently from everything that works is
+how they ask for a sample. They issue a direct `SQ_TEX_INST_LD` with the sample
+index in the coordinate's W, while the compiler's `LowerTexToBackend::lower_txf_ms`
+emits a two-step form on Evergreen: a first read of the sample-to-fragment mapping,
+then the fetch. The application path takes that form and works --
+`terakan_depth_msaa_fetch` reads every sample of a multisample depth image through
+`texelFetch(sampler2DMS, ...)` and passes at 2, 4 and 8 samples.
+
+So the direct encoding does not select the sample, and the same limitation is what
+stopped the colour shader resolve earlier in this file: there too, fetching sample
+zero worked and any other index did not. Twelve hand-assembled reduce programs are
+affected, and the fix for all of them is the same -- write them as NIR with
+`txf_ms` and let the backend emit the form that works, which the meta NIR path now
+makes straightforward.
+
 ### Colour resolve under CTS
 
 `dEQP-VK.api.copy_and_blit.core.resolve_image`, 240 cases, run against Terakan
