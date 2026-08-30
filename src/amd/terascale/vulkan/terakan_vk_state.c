@@ -666,6 +666,15 @@ terakan_vk_state_dynamic_apply_rs_depth_bias_factors(
 }
 
 static void
+terakan_vk_state_dynamic_apply_rs_line_width(
+   struct terakan_gfx_command_writer * const command_writer)
+{
+   terakan_app_config_draw_set_pa_su_line_width(
+      &command_writer->app_config_draw,
+      command_writer->base.command_buffer->vk.dynamic_graphics_state.rs.line.width);
+}
+
+static void
 terakan_vk_state_dynamic_apply_rs_line_stipple_enable(
    struct terakan_gfx_command_writer * const command_writer)
 {
@@ -988,6 +997,7 @@ static terakan_vk_state_dynamic_apply_function const
          terakan_vk_state_dynamic_apply_rs_depth_bias_factors,
       [MESA_VK_DYNAMIC_RS_LINE_STIPPLE_ENABLE] =
          terakan_vk_state_dynamic_apply_rs_line_stipple_enable,
+      [MESA_VK_DYNAMIC_RS_LINE_WIDTH] = terakan_vk_state_dynamic_apply_rs_line_width,
       [MESA_VK_DYNAMIC_RS_LINE_STIPPLE] = terakan_vk_state_dynamic_apply_rs_line_stipple,
       [MESA_VK_DYNAMIC_MS_RASTERIZATION_SAMPLES] =
          terakan_vk_state_dynamic_apply_ms_rasterization_samples,

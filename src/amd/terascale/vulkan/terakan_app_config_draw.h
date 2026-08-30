@@ -153,6 +153,7 @@ enum terakan_app_config_draw_entry {
    TERAKAN_APP_CONFIG_DRAW_ENTRY_PA_SU_SC_MODE_CNTL,
    TERAKAN_APP_CONFIG_DRAW_ENTRY_PA_CL_VTE_CNTL,
    /* Depends on VGT_PRIMITIVE_TYPE, SQ_PGM_PRE_RASTERIZATION. */
+   TERAKAN_APP_CONFIG_DRAW_ENTRY_PA_SU_LINE_CNTL,
    TERAKAN_APP_CONFIG_DRAW_ENTRY_PA_SC_LINE_STIPPLE,
    /* Depends on PA_SU_SC_MODE_CNTL. */
    TERAKAN_APP_CONFIG_DRAW_ENTRY_PA_SU_POLY_OFFSET,
@@ -358,6 +359,9 @@ struct terakan_app_config_draw {
          bool geometry_shader_enable;
       } from_apply_sq_pgm_pre_rasterization;
    } pa_sc_line_stipple_;
+
+   /* PA_SU_LINE_CNTL: the line width, in eighths of a pixel. */
+   uint32_t pa_su_line_cntl_;
 
    struct {
       struct terakan_hw_config_draw_pa_su_poly_offset poly_offset;
@@ -1011,6 +1015,26 @@ terakan_app_config_draw_set_pa_su_sc_mode_cntl(struct terakan_app_config_draw * 
 {
    terakan_app_config_draw_set_fields_(config, TERAKAN_APP_CONFIG_DRAW_ENTRY_PA_SU_SC_MODE_CNTL,
                                        &config->pa_su_sc_mode_cntl_, keep_mask, value);
+}
+
+/* `width` is VkPipelineRasterizationStateCreateInfo::lineWidth, or the value of
+ * vkCmdSetLineWidth.
+ */
+static inline void
+terakan_app_config_draw_set_pa_su_line_width(struct terakan_app_config_draw * const config,
+                                             float const width)
+{
+   /* The hardware field counts eighths of a pixel and saturates at the widest line it can express;
+    * maxLineWidth is reported from the same limit, so a legal width never reaches the clamp.
+    */
+   uint32_t const eighths =
+      (uint32_t)MIN2(MAX2(width, 0.0f) * 8.0f + 0.5f, (float)0xFFFFu);
+   uint32_t const value = S_028A08_WIDTH(eighths);
+   if (config->pa_su_line_cntl_ == value) {
+      return;
+   }
+   config->pa_su_line_cntl_ = value;
+   terakan_app_config_draw_set_pending(config, TERAKAN_APP_CONFIG_DRAW_ENTRY_PA_SU_LINE_CNTL);
 }
 
 static inline void

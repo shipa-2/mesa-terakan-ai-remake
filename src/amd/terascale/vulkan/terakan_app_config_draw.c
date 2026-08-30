@@ -941,6 +941,14 @@ terakan_app_config_draw_apply_pa_cl_vte_cntl(
 }
 
 static void
+terakan_app_config_draw_apply_pa_su_line_cntl(
+   struct terakan_gfx_command_writer * const command_writer)
+{
+   terakan_hw_config_draw_set_pa_su_line_cntl(&command_writer->hw_config_draw,
+                                              command_writer->app_config_draw.pa_su_line_cntl_);
+}
+
+static void
 terakan_app_config_draw_apply_pa_sc_line_stipple(
    struct terakan_gfx_command_writer * const command_writer)
 {
@@ -2117,6 +2125,8 @@ static terakan_app_config_apply_function const
       [TERAKAN_APP_CONFIG_DRAW_ENTRY_PA_SU_SC_MODE_CNTL] =
          terakan_app_config_draw_apply_pa_su_sc_mode_cntl,
       [TERAKAN_APP_CONFIG_DRAW_ENTRY_PA_CL_VTE_CNTL] = terakan_app_config_draw_apply_pa_cl_vte_cntl,
+      [TERAKAN_APP_CONFIG_DRAW_ENTRY_PA_SU_LINE_CNTL] =
+         terakan_app_config_draw_apply_pa_su_line_cntl,
       [TERAKAN_APP_CONFIG_DRAW_ENTRY_PA_SC_LINE_STIPPLE] =
          terakan_app_config_draw_apply_pa_sc_line_stipple,
       [TERAKAN_APP_CONFIG_DRAW_ENTRY_PA_SU_POLY_OFFSET] =

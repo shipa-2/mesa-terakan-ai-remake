@@ -818,6 +818,31 @@ value everywhere. Against the unfixed driver it reports `(1,2,3,255)` for every
 texel -- the value at (0, 0) -- starting at texel (1, 0), because the first texel is
 deliberately not special and a driver reading only (0, 0) still matches there.
 
+### Line width
+
+`PA_SU_LINE_CNTL` was emitted as a constant, with a `TODO: Expose line width
+configuration` beside it, while `wideLines` was advertised as supported. Neither
+the pipeline's `lineWidth` nor `vkCmdSetLineWidth` reached the hardware, so every
+line came out one pixel wide.
+
+`dEQP-VK.dynamic_state` -- 671 cases, small enough to run whole -- failed 13 of its
+122 supported ones, and all thirteen were line width: the eight
+`monolithic.line_width` shapes that switch between a static and a dynamic width,
+`monolithic.rs_state.line_width`, and the four `monolithic.image` cases.
+
+The register is now a settable entry rather than a constant, fed from the
+pipeline's static width or from the dynamic state, the same way line stipple
+already was. The field counts eighths of a pixel, which is why the old constant
+read `1 << 3`.
+
+**`dynamic_state` is now at 122 passing and 0 failing.** The 11145-case survey went
+from 89 failures to 76, with none broken.
+
+`terakan_line_width` draws a horizontal line and counts the covered rows, which is
+the width. Width one is checked alongside width four, because the eighths encoding
+makes a scaling mistake easy and a four arriving as thirty-two or as a half would
+both show up. Against the unfixed driver both width-four cases report one row.
+
 ### Colour resolve under CTS
 
 `dEQP-VK.api.copy_and_blit.core.resolve_image`, 240 cases, run against Terakan

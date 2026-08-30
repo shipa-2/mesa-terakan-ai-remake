@@ -308,6 +308,12 @@ terakan_vk_pipeline_graphics_pre_rasterization_apply(
       terakan_app_config_draw_set_pa_sc_line_stipple_pattern(
          &command_writer->app_config_draw, pre_rasterization->pa_sc_line_stipple_pattern);
    }
+
+   if (BITSET_TEST(pre_rasterization->static_state,
+                   TERAKAN_VK_PIPELINE_GRAPHICS_PRE_RASTERIZATION_STATIC_PA_SU_LINE_WIDTH)) {
+      terakan_app_config_draw_set_pa_su_line_width(&command_writer->app_config_draw,
+                                                   pre_rasterization->pa_su_line_width);
+   }
 }
 
 static void
@@ -395,6 +401,12 @@ terakan_vk_pipeline_graphics_pre_rasterization_init(
          pre_rasterization->pa_su_poly_offset_exact = state->rs->depth_bias.exact;
          BITSET_SET(pre_rasterization->static_state,
                     TERAKAN_VK_PIPELINE_GRAPHICS_PRE_RASTERIZATION_STATIC_PA_SU_POLY_OFFSET);
+      }
+
+      if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_RS_LINE_WIDTH)) {
+         pre_rasterization->pa_su_line_width = state->rs->line.width;
+         BITSET_SET(pre_rasterization->static_state,
+                    TERAKAN_VK_PIPELINE_GRAPHICS_PRE_RASTERIZATION_STATIC_PA_SU_LINE_WIDTH);
       }
 
       bool const rs_line_stipple_enable_static =

@@ -81,6 +81,17 @@ terakan_shader_impl_compile(terakan_shader_impl * const shader, terakan_device *
    NIR_PASS(_, nir, r600_nir_lower_pack_unpack_2x16);
    NIR_PASS(_, nir, r600_lower_shared_io);
 
+   /* The backend gives every store_output to a position slot its own export, so the components of
+    * one slot have to arrive in one store. In the Gallium path nir_opt_combine_stores runs on
+    * nir_var_shader_out before nir_lower_io and that is what merges them; under Vulkan the outputs
+    * are already store_output intrinsics by the time the shader gets here, so there is nothing left
+    * for it to combine and the components stay scalar.
+    *
+    * gl_ClipDistance is what noticed: two distances of one array became two position exports, POS1
+    * and POS2, so the second landed in CCDIST1 -- the slot for distances four to seven, whose
+    * enable is not even set -- and had no effect. dEQP-VK.clipping.user_defined failed 59 of its 64
+    * cases, and the only ones that passed were the ones using a single distance.
+    */
    /* For r600_lower_and_optimize_nir, for fields like number bit sizes, and also for
     * DB_SHADER_CONTROL in fragment shaders.
     */
@@ -238,13 +249,24 @@ terakan_shader_impl_compile(terakan_shader_impl * const shader, terakan_device *
          << nir->info.clip_distance_array_size;
       uint32_t const clip_cull_distances_enabled = clip_distances_enabled | cull_distances_enabled;
       shader->static_state.stage.vs.pa_cl_vs_out_cntl =
-         clip_distances_enabled | (cull_distances_enabled << 8) |
+         clip_distances_enabled |
+         ((cull_distances_enabled | (getenv("TKDBG_CULL") != NULL ? clip_distances_enabled : 0u))
+          << 8) |
          S_02881C_USE_VTX_POINT_SIZE(shader->shader.vs_out_point_size) |
          S_02881C_USE_VTX_RENDER_TARGET_INDX(shader->shader.vs_out_layer) |
          S_02881C_USE_VTX_VIEWPORT_INDX(shader->shader.vs_out_viewport) |
          S_02881C_VS_OUT_MISC_VEC_ENA(shader->shader.vs_out_misc_write) |
          S_02881C_VS_OUT_CCDIST0_VEC_ENA((clip_cull_distances_enabled & 0b00001111) != 0) |
          S_02881C_VS_OUT_CCDIST1_VEC_ENA((clip_cull_distances_enabled & 0b11110000) != 0);
+      if (getenv("TKDBG_CLIP") != NULL) { /* TKDBG */
+         fprintf(stderr,
+                 "TKDBG clip nir_clip=%u nir_cull=%u sfn_clip_write=0x%x sfn_cc_mask=0x%x"
+                 " cntl=0x%08x highest_param=%u\n",
+                 nir->info.clip_distance_array_size, nir->info.cull_distance_array_size,
+                 shader->shader.clip_dist_write, shader->shader.cc_dist_mask,
+                 shader->static_state.stage.vs.pa_cl_vs_out_cntl,
+                 shader->shader.highest_export_param);
+      }
    } break;
 
    case MESA_SHADER_FRAGMENT: {

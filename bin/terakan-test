@@ -83,6 +83,7 @@ gpu_tests=(
   terakan_blit_mixed_regions
   terakan_clip_distance
   terakan_input_attachment
+  terakan_line_width
   terakan_depth_readback
   terakan_depth_msaa_fetch
   terakan_color_msaa_fetch_2x

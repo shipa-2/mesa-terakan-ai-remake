@@ -405,14 +405,14 @@ terakan_hw_config_draw_emit_constant(struct terakan_gfx_command_writer * const c
       0, /* R_0288EC_SQ_LDS_ALLOC_PS */
 
       TERAKAN_HW_CONFIG_DRAW_EMIT_CONSTANT_RANGE(R_028A00_PA_SU_POINT_SIZE,
-                                                 R_028A08_PA_SU_LINE_CNTL),
+                                                 R_028A04_PA_SU_POINT_MINMAX),
       /* R_028A00_PA_SU_POINT_SIZE */
       S_028A00_HEIGHT((uint32_t)1 << 3) | S_028A00_WIDTH((uint32_t)1 << 3),
       /* R_028A04_PA_SU_POINT_MINMAX */
       S_028A04_MAX_SIZE(0xFFFF),
-      /* R_028A08_PA_SU_LINE_CNTL */
-      /* TODO(Triang3l): Expose line width configuration. */
-      S_028A08_WIDTH((uint32_t)1 << 3),
+      /* R_028A08_PA_SU_LINE_CNTL is no longer constant: it carries the line width, which an
+       * application sets statically or dynamically and which wideLines promises to honour.
+       */
 
       TERAKAN_HW_CONFIG_DRAW_EMIT_CONSTANT_RANGE(R_028A14_VGT_HOS_CNTL,
                                                  R_028A3C_VGT_GROUP_VECT_1_FMT_CNTL),
@@ -1093,6 +1093,14 @@ terakan_hw_config_draw_emit_pa_cl_vte_cntl(struct terakan_gfx_command_writer * c
 {
    terakan_hw_config_draw_emit_context_register(command_writer, R_028818_PA_CL_VTE_CNTL,
                                                 command_writer->hw_config_draw.pa_cl_vte_cntl_);
+}
+
+static void
+terakan_hw_config_draw_emit_pa_su_line_cntl(
+   struct terakan_gfx_command_writer * const command_writer)
+{
+   terakan_hw_config_draw_emit_context_register(command_writer, R_028A08_PA_SU_LINE_CNTL,
+                                                command_writer->hw_config_draw.pa_su_line_cntl_);
 }
 
 static void
@@ -2023,6 +2031,8 @@ static terakan_hw_config_draw_emit_function const
       [TERAKAN_HW_CONFIG_DRAW_ENTRY_PA_SU_SC_MODE_CNTL] =
          terakan_hw_config_draw_emit_pa_su_sc_mode_cntl,
       [TERAKAN_HW_CONFIG_DRAW_ENTRY_PA_CL_VTE_CNTL] = terakan_hw_config_draw_emit_pa_cl_vte_cntl,
+      [TERAKAN_HW_CONFIG_DRAW_ENTRY_PA_SU_LINE_CNTL] =
+         terakan_hw_config_draw_emit_pa_su_line_cntl,
       [TERAKAN_HW_CONFIG_DRAW_ENTRY_PA_SC_LINE_STIPPLE] =
          terakan_hw_config_draw_emit_pa_sc_line_stipple,
       [TERAKAN_HW_CONFIG_DRAW_ENTRY_PA_SC_MODE_CNTL_0] =
@@ -2174,6 +2184,7 @@ terakan_hw_config_draw_reset(struct terakan_hw_config_draw * const config)
 
    config->pa_cl_vte_cntl_ = TERAKAN_HW_CONFIG_DRAW_DEFAULT_PA_CL_VTE_CNTL;
 
+   config->pa_su_line_cntl_ = TERAKAN_HW_CONFIG_DRAW_DEFAULT_PA_SU_LINE_CNTL;
    config->pa_sc_line_stipple_ = TERAKAN_HW_CONFIG_DRAW_DEFAULT_PA_SC_LINE_STIPPLE;
 
    config->pa_sc_mode_cntl_0_ = TERAKAN_HW_CONFIG_DRAW_DEFAULT_PA_SC_MODE_CNTL_0;

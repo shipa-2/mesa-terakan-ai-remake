@@ -311,6 +311,9 @@ enum terakan_hw_config_draw_cb_color_control_rop3 : uint8_t {
  */
 #define TERAKAN_HW_CONFIG_DRAW_DEFAULT_PA_SC_LINE_STIPPLE S_028A0C_AUTO_RESET_CNTL(2)
 
+/* VkPipelineRasterizationStateCreateInfo lineWidth = 1.0. The field counts eighths of a pixel. */
+#define TERAKAN_HW_CONFIG_DRAW_DEFAULT_PA_SU_LINE_CNTL S_028A08_WIDTH(1u << 3)
+
 /* VkPipelineMultisampleStateCreateInfo rasterizationSamples = min (VK_SAMPLE_COUNT_1_BIT)
  * No VkPipelineRasterizationLineStateCreateInfo, no VkPipelineSampleLocationsStateCreateInfoEXT
  */
@@ -432,6 +435,7 @@ enum terakan_hw_config_draw_entry {
    TERAKAN_HW_CONFIG_DRAW_ENTRY_PA_CL_CLIP_CNTL,
    TERAKAN_HW_CONFIG_DRAW_ENTRY_PA_SU_SC_MODE_CNTL,
    TERAKAN_HW_CONFIG_DRAW_ENTRY_PA_CL_VTE_CNTL,
+   TERAKAN_HW_CONFIG_DRAW_ENTRY_PA_SU_LINE_CNTL,
    TERAKAN_HW_CONFIG_DRAW_ENTRY_PA_SC_LINE_STIPPLE,
    TERAKAN_HW_CONFIG_DRAW_ENTRY_PA_SC_MODE_CNTL_0,
    TERAKAN_HW_CONFIG_DRAW_ENTRY_PA_SC_MODE_CNTL_1,
@@ -542,6 +546,7 @@ struct terakan_hw_config_draw {
 
    uint32_t pa_cl_vte_cntl_;
 
+   uint32_t pa_su_line_cntl_;
    uint32_t pa_sc_line_stipple_;
 
    uint32_t pa_sc_mode_cntl_0_;
@@ -987,6 +992,14 @@ terakan_hw_config_draw_set_pa_cl_vte_cntl(struct terakan_hw_config_draw * const 
 {
    terakan_hw_config_draw_set_single_register_(config, TERAKAN_HW_CONFIG_DRAW_ENTRY_PA_CL_VTE_CNTL,
                                                &config->pa_cl_vte_cntl_, value);
+}
+
+static inline void
+terakan_hw_config_draw_set_pa_su_line_cntl(struct terakan_hw_config_draw * const config,
+                                           uint32_t const value)
+{
+   terakan_hw_config_draw_set_single_register_(
+      config, TERAKAN_HW_CONFIG_DRAW_ENTRY_PA_SU_LINE_CNTL, &config->pa_su_line_cntl_, value);
 }
 
 static inline void
