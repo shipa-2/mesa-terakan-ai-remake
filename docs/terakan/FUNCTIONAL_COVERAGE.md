@@ -1528,6 +1528,37 @@ value creation would reject is not an answer.
 
 **143 failures to 0.**
 
+### imageSize on a storage image
+
+`dEQP-VK.image.image_size` failed **every one of its 96 supported cases**, and not by
+producing a wrong number: the compute pipeline failed to create. With shader debugging on,
+SFN says `Unsupported instruction: deref_var (image image2D)` -- nothing lowered
+`image_deref_size`, so the image deref reached the backend.
+
+A storage image is bound as an SQ resource as well as a UAV, which the format code calls
+out size queries as one of the reasons for, so `imageSize` is the same
+`TEX_GET_TEXTURE_RESINFO` the sampled path already uses. The binding lowering now builds
+that texture instruction for `image_deref_size` and `image_deref_samples`, resolving the
+binding exactly as it resolves one for an ordinary texture instruction. **96 failures to
+24.**
+
+The 24 left split by view type, and the split names the second defect: `1d_array` and
+`2d_array` failed exactly their one-layer cases -- `1x1`, `7x1`, `1x1x1`, `7x1x1` -- and
+passed every multi-layer one, reporting a layer count of **zero**.
+`terakan_image_create_resource_descriptor` described a view of one array layer as a
+non-array image, on the grounds that the addressing is the same. It is not the same to a
+size query: the hardware reports a layer count only for an array descriptor. Keeping the
+array dimensionality the caller asked for takes it to **12**.
+
+The last 12 are `cube_array`, which report zero layers for a different reason again. Their
+descriptor is `SQ_TEX_DIM_CUBEMAP`, and the hardware does not report a layer count for a
+cube either. SFN knows this -- its `txs` leaves the third component unwritten for a cube
+array and reads the count from Gallium's texture-info constant buffer, which Terakan does
+not have -- and relabelling the query as a 2D array does not help, because the descriptor
+is still a cube. A storage cube array does not need cube addressing at all, so the way out
+is a second resource descriptor for it, shaped as a 2D array of six slices per cube; that
+is a change to the image view rather than to the query, and it is what these need.
+
 ### Colour resolve under CTS
 
 `dEQP-VK.api.copy_and_blit.core.resolve_image`, 240 cases, run against Terakan

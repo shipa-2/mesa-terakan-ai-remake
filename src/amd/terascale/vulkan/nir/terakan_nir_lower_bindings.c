@@ -1290,6 +1290,72 @@ terakan_nir_lower_bindings_instr_image_deref_load(
    nir_instr_remove(&intrin->instr);
 }
 
+/* `imageSize` and `imageSamples`, which reach this pass as `image_deref_size` and
+ * `image_deref_samples` and which nothing lowered: the image deref survived into the backend,
+ * where SFN reported "Unsupported instruction: deref_var (image image2D)" and the pipeline failed
+ * to create. Every one of the 96 supported `dEQP-VK.image.image_size` cases failed that way.
+ *
+ * A storage image is bound as an SQ resource as well as a UAV -- the format code calls out size
+ * queries as one of the reasons -- so the query is the same `TEX_GET_TEXTURE_RESINFO` the sampled
+ * path already uses, and is built here as a texture instruction whose binding is resolved exactly
+ * as `terakan_nir_lower_bindings_instr_tex` resolves one.
+ */
+static void
+terakan_nir_lower_bindings_instr_image_deref_query(
+   nir_builder * const b, nir_intrinsic_instr * const intrin,
+   struct terakan_nir_lower_bindings_state * const state)
+{
+   bool const is_samples = intrin->intrinsic == nir_intrinsic_image_deref_samples;
+   enum glsl_sampler_dim const image_dim = nir_intrinsic_image_dim(intrin);
+
+   struct terakan_nir_binding binding;
+   if (unlikely(!terakan_nir_get_binding(intrin->src[0],
+                                         terakan_nir_image_descriptor_type(image_dim),
+                                         state->layout, b->shader, &binding))) {
+      terakan_nir_lower_bindings_instr_to_null(&intrin->instr);
+      return;
+   }
+
+   b->cursor = nir_before_instr(&intrin->instr);
+
+   gl_shader_stage const stage = b->shader->info.stage;
+   uint8_t const resource_index_base = binding.set->first_shader_resources[stage] +
+                                       binding.set_binding->first_shader_resources[stage];
+   BITSET_SET_RANGE(state->sqk_usage->resources,
+                    resource_index_base + binding.array_index_range_first,
+                    resource_index_base + binding.array_index_range_last);
+
+   bool const array_index_is_dynamic =
+      binding.array_index != NULL &&
+      binding.array_index->parent_instr->type != nir_instr_type_load_const;
+   unsigned const src_count = (is_samples ? 0u : 1u) + (array_index_is_dynamic ? 1u : 0u);
+   nir_tex_instr * const query = nir_tex_instr_create(b->shader, src_count);
+   query->op = is_samples ? nir_texop_texture_samples : nir_texop_txs;
+   query->sampler_dim = image_dim;
+   query->is_array = nir_intrinsic_image_array(intrin);
+   query->dest_type = nir_type_int32;
+   query->texture_index = resource_index_base;
+   query->sampler_index = 0;
+   if (binding.array_index != NULL && !array_index_is_dynamic) {
+      query->texture_index +=
+         nir_instr_as_load_const(binding.array_index->parent_instr)->value[0].u32;
+   }
+   unsigned src_index = 0;
+   if (!is_samples) {
+      /* `imageSize` has no level, and a storage image has only the one it was viewed at. */
+      query->src[src_index++] = nir_tex_src_for_ssa(nir_tex_src_lod, nir_imm_int(b, 0));
+   }
+   if (array_index_is_dynamic) {
+      query->src[src_index++] =
+         nir_tex_src_for_ssa(nir_tex_src_texture_offset, binding.array_index);
+   }
+   nir_def_init(&query->instr, &query->def, intrin->def.num_components, 32);
+   nir_builder_instr_insert(b, &query->instr);
+
+   nir_def_rewrite_uses(&intrin->def, nir_u2uN(b, &query->def, intrin->def.bit_size));
+   nir_instr_remove(&intrin->instr);
+}
+
 static void
 terakan_nir_lower_bindings_instr_image_deref_store(
    nir_builder * const b, nir_intrinsic_instr * const intrin,
@@ -1474,6 +1540,11 @@ terakan_nir_lower_bindings_instr(nir_builder * const b, nir_instr * const instr,
       case nir_intrinsic_image_deref_store:
          terakan_nir_lower_bindings_instr_image_deref_store(b, intrin, state);
          return true;
+      case nir_intrinsic_image_deref_size:
+      case nir_intrinsic_image_deref_samples:
+         terakan_nir_lower_bindings_instr_image_deref_query(b, intrin, state);
+         break;
+
       case nir_intrinsic_image_deref_atomic:
       case nir_intrinsic_image_deref_atomic_swap:
          terakan_nir_lower_bindings_instr_image_deref_atomic(b, intrin, state);

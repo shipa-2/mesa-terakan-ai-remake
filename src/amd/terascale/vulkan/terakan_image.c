@@ -1317,12 +1317,22 @@ terakan_image_create_resource_descriptor(
    uint32_t hw_dimensionality;
    bool const is_multisampled = desired_dimensionality == V_030000_SQ_TEX_DIM_2D_MSAA ||
                                 desired_dimensionality == V_030000_SQ_TEX_DIM_2D_ARRAY_MSAA;
+   /* A view of one array layer used to be described as a non-array image, on the grounds that the
+    * addressing is the same. It is not the same to a size query: `TEX_GET_TEXTURE_RESINFO` reports
+    * a layer count only for an array descriptor, so `imageSize` on a one-layer array returned zero
+    * layers -- `dEQP-VK.image.image_size.1d_array` and `.2d_array` failed exactly their `x1` cases
+    * and passed every multi-layer one. The caller's request is kept instead.
+    */
+   bool const desired_is_array = desired_dimensionality == V_030000_SQ_TEX_DIM_1D_ARRAY ||
+                                 desired_dimensionality == V_030000_SQ_TEX_DIM_2D_ARRAY ||
+                                 desired_dimensionality == V_030000_SQ_TEX_DIM_2D_ARRAY_MSAA;
    if (is_multisampled) {
       if (image->vk.samples <= VK_SAMPLE_COUNT_1_BIT) {
          return false;
       }
-      hw_dimensionality = origin_level_depth_or_array_layers > 1 ? V_030000_SQ_TEX_DIM_2D_ARRAY_MSAA
-                                                                 : V_030000_SQ_TEX_DIM_2D_MSAA;
+      hw_dimensionality = desired_is_array || origin_level_depth_or_array_layers > 1
+                             ? V_030000_SQ_TEX_DIM_2D_ARRAY_MSAA
+                             : V_030000_SQ_TEX_DIM_2D_MSAA;
    } else {
       if (image->vk.samples > VK_SAMPLE_COUNT_1_BIT) {
          return false;
@@ -1332,7 +1342,7 @@ terakan_image_create_resource_descriptor(
       case V_030000_SQ_TEX_DIM_1D_ARRAY:
          if (surface_origin_level->array_mode <= V_028C70_ARRAY_LINEAR_ALIGNED &&
              likely(origin_level_view_height <= 1)) {
-            hw_dimensionality = origin_level_depth_or_array_layers > 1
+            hw_dimensionality = desired_is_array || origin_level_depth_or_array_layers > 1
                                    ? V_030000_SQ_TEX_DIM_1D_ARRAY
                                    : V_030000_SQ_TEX_DIM_1D;
             break;
@@ -1341,8 +1351,9 @@ terakan_image_create_resource_descriptor(
          FALLTHROUGH;
       case V_030000_SQ_TEX_DIM_2D:
       case V_030000_SQ_TEX_DIM_2D_ARRAY:
-         hw_dimensionality = origin_level_depth_or_array_layers > 1 ? V_030000_SQ_TEX_DIM_2D_ARRAY
-                                                                    : V_030000_SQ_TEX_DIM_2D;
+         hw_dimensionality = desired_is_array || origin_level_depth_or_array_layers > 1
+                                ? V_030000_SQ_TEX_DIM_2D_ARRAY
+                                : V_030000_SQ_TEX_DIM_2D;
          break;
       case V_030000_SQ_TEX_DIM_3D:
          hw_dimensionality = V_030000_SQ_TEX_DIM_3D;
