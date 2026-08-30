@@ -196,6 +196,40 @@ terakan_hw_config_draw_terascale_1_write_pa_sc_mode(uint32_t * const packet,
    return write_context_reg(packet, R_028A4C_PA_SC_MODE_CNTL, value);
 }
 
+bool
+terakan_hw_config_draw_terascale_1_pa_su_poly_offset_db_fmt_encode(
+   uint32_t const evergreen_value, uint32_t * const r700_value_out)
+{
+   uint32_t const known_bits = S_028DF8_POLY_OFFSET_NEG_NUM_DB_BITS(UINT8_MAX) |
+                               S_028DF8_POLY_OFFSET_DB_IS_FLOAT_FMT(1);
+   if (!r700_value_out || (evergreen_value & ~known_bits)) {
+      return false;
+   }
+   *r700_value_out = evergreen_value;
+   return true;
+}
+
+uint32_t *
+terakan_hw_config_draw_terascale_1_write_pa_su_poly_offset_db_fmt(uint32_t * const packet,
+                                                                  uint32_t const value)
+{
+   return write_context_reg(packet, R_028DF8_PA_SU_POLY_OFFSET_DB_FMT_CNTL, value);
+}
+
+uint32_t *
+terakan_hw_config_draw_terascale_1_write_pa_su_poly_offset(
+   uint32_t * packet, uint32_t const clamp, uint32_t const scale, uint32_t const offset)
+{
+   *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 5, 0);
+   *packet++ = (R_028DFC_PA_SU_POLY_OFFSET_CLAMP - R600_CONTEXT_REG_OFFSET) >> 2;
+   *packet++ = clamp;
+   *packet++ = scale;
+   *packet++ = offset;
+   *packet++ = scale;
+   *packet++ = offset;
+   return packet;
+}
+
 uint32_t *
 terakan_hw_config_draw_terascale_1_write_db_depth_view(uint32_t * const packet,
                                                         uint32_t const value)

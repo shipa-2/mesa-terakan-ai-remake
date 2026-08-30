@@ -109,6 +109,20 @@ bool terakan_hw_config_draw_terascale_1_pa_sc_mode_encode(
 uint32_t * terakan_hw_config_draw_terascale_1_write_pa_sc_mode(uint32_t * packet,
                                                                 uint32_t value);
 
+/* R700 moves the complete polygon-offset block from Evergreen's 0x028B78..0x028B8C to
+ * 0x028DF8..0x028E0C. DB_FMT_CNTL's two fields have identical positions in both headers, while
+ * clamp/scale/offset are raw IEEE-754 dwords. Validate the former and isolate all address changes
+ * here so the shared Evergreen path stays untouched.
+ */
+bool terakan_hw_config_draw_terascale_1_pa_su_poly_offset_db_fmt_encode(
+   uint32_t evergreen_value, uint32_t * r700_value_out);
+
+uint32_t * terakan_hw_config_draw_terascale_1_write_pa_su_poly_offset_db_fmt(
+   uint32_t * packet, uint32_t value);
+
+uint32_t * terakan_hw_config_draw_terascale_1_write_pa_su_poly_offset(
+   uint32_t * packet, uint32_t clamp, uint32_t scale, uint32_t offset);
+
 /* Per-draw (as opposed to once-per-command-buffer) TeraScale 1 register emission that genuinely
  * needs its own code, as opposed to the R8xx/R9xx code already working unchanged (see
  * DB_DEPTH_CONTROL/CB_TARGET_MASK in TODO.md) -- either because the register lives at a different

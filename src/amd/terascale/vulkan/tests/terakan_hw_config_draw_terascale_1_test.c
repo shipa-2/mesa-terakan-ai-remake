@@ -476,6 +476,41 @@ test_pa_sc_mode(void)
    CHECK(packet[2] == expected);
 }
 
+static void
+test_pa_su_poly_offset(void)
+{
+   uint32_t const db_fmt_evergreen = UINT32_C(0xE9) | (UINT32_C(1) << 8);
+   uint32_t db_fmt_r700;
+   CHECK(terakan_hw_config_draw_terascale_1_pa_su_poly_offset_db_fmt_encode(
+      db_fmt_evergreen, &db_fmt_r700));
+   CHECK(db_fmt_r700 == (S_028DF8_POLY_OFFSET_NEG_NUM_DB_BITS(0xE9) |
+                         S_028DF8_POLY_OFFSET_DB_IS_FLOAT_FMT(1)));
+   CHECK(!terakan_hw_config_draw_terascale_1_pa_su_poly_offset_db_fmt_encode(
+      db_fmt_evergreen | (UINT32_C(1) << 9), &db_fmt_r700));
+
+   uint32_t db_fmt_packet[3];
+   CHECK(terakan_hw_config_draw_terascale_1_write_pa_su_poly_offset_db_fmt(
+            db_fmt_packet, db_fmt_r700) == db_fmt_packet + 3);
+   CHECK(db_fmt_packet[0] == PKT3(PKT3_SET_CONTEXT_REG, 1, 0));
+   CHECK(db_fmt_packet[1] ==
+         (R_028DF8_PA_SU_POLY_OFFSET_DB_FMT_CNTL - R600_CONTEXT_REG_OFFSET) >> 2);
+   CHECK(db_fmt_packet[2] == db_fmt_r700);
+
+   uint32_t const clamp = UINT32_C(0x3E800000);
+   uint32_t const scale = UINT32_C(0x40A00000);
+   uint32_t const offset = UINT32_C(0xC0600000);
+   uint32_t packet[7];
+   CHECK(terakan_hw_config_draw_terascale_1_write_pa_su_poly_offset(
+            packet, clamp, scale, offset) == packet + 7);
+   CHECK(packet[0] == PKT3(PKT3_SET_CONTEXT_REG, 5, 0));
+   CHECK(packet[1] == (R_028DFC_PA_SU_POLY_OFFSET_CLAMP - R600_CONTEXT_REG_OFFSET) >> 2);
+   CHECK(packet[2] == clamp);
+   CHECK(packet[3] == scale);
+   CHECK(packet[4] == offset);
+   CHECK(packet[5] == scale);
+   CHECK(packet[6] == offset);
+}
+
 static struct terakan_hw_config_draw_terascale_1_cb_color_input
 representative_cb_color_input(void)
 {
@@ -638,6 +673,7 @@ main(void)
    test_pa_sc_aa_mask();
    test_pa_sc_aa_config_sample_locs();
    test_pa_sc_mode();
+   test_pa_su_poly_offset();
    test_cb_color_encode();
    test_cb_color_encode_rejects_unported_surfaces();
    test_cb_color_packets();

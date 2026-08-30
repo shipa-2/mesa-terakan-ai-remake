@@ -1179,6 +1179,22 @@ static void
 terakan_hw_config_draw_emit_pa_su_poly_offset_db_fmt_cntl(
    struct terakan_gfx_command_writer * const command_writer)
 {
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
+      uint32_t value_r700;
+      if (!terakan_hw_config_draw_terascale_1_pa_su_poly_offset_db_fmt_encode(
+             command_writer->hw_config_draw.pa_su_poly_offset_db_fmt_cntl_, &value_r700)) {
+         return;
+      }
+      uint32_t * packet = terakan_gfx_command_writer_emit(
+         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG, 3);
+      if (unlikely(packet == NULL)) {
+         return;
+      }
+      packet =
+         terakan_hw_config_draw_terascale_1_write_pa_su_poly_offset_db_fmt(packet, value_r700);
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
+      return;
+   }
    terakan_hw_config_draw_emit_context_register(
       command_writer, R_028B78_PA_SU_POLY_OFFSET_DB_FMT_CNTL,
       command_writer->hw_config_draw.pa_su_poly_offset_db_fmt_cntl_);
@@ -1188,6 +1204,24 @@ static void
 terakan_hw_config_draw_emit_pa_su_poly_offset(
    struct terakan_gfx_command_writer * const command_writer)
 {
+   struct terakan_hw_config_draw_pa_su_poly_offset const * const poly_offset =
+      &command_writer->hw_config_draw.pa_su_poly_offset_;
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
+      uint32_t clamp, scale, offset;
+      memcpy(&clamp, &poly_offset->clamp, sizeof(clamp));
+      memcpy(&scale, &poly_offset->slope_scale_per_16th_subpixel, sizeof(scale));
+      memcpy(&offset, &poly_offset->constant_offset, sizeof(offset));
+      uint32_t * packet = terakan_gfx_command_writer_emit(
+         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG, 7);
+      if (unlikely(packet == NULL)) {
+         return;
+      }
+      packet = terakan_hw_config_draw_terascale_1_write_pa_su_poly_offset(
+         packet, clamp, scale, offset);
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
+      return;
+   }
+
    uint32_t * packet = terakan_gfx_command_writer_emit(
       command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG, 2 + 1 + 2 * 2);
    if (unlikely(packet == NULL)) {
@@ -1195,8 +1229,6 @@ terakan_hw_config_draw_emit_pa_su_poly_offset(
    }
    *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1 + 2 * 2, 0);
    *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028B7C_PA_SU_POLY_OFFSET_CLAMP);
-   struct terakan_hw_config_draw_pa_su_poly_offset const * const poly_offset =
-      &command_writer->hw_config_draw.pa_su_poly_offset_;
    memcpy(packet++, &poly_offset->clamp, sizeof(float));
    for (unsigned face = 0; face <= 1; ++face) {
       memcpy(packet++, &poly_offset->slope_scale_per_16th_subpixel, sizeof(float));

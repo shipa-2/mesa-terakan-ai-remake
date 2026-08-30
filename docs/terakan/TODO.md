@@ -288,6 +288,15 @@ classic Gallium R600 driver that has supported this hardware for years).
   changed. This is packet construction only: alpha-to-coverage rendering has
   not run on RV710 while queue submission remains blocked.
 
+- TeraScale 1 (R700) polygon offset/depth bias: the two independently tracked
+  software entries now target R700's actual `PA_SU_POLY_OFFSET` block at
+  0x028DF8-0x028E0C rather than Evergreen's unrelated 0x028B78-0x028B8C
+  range. `DB_FMT_CNTL` is passed only after validating the two field ranges
+  that are bit-identical in `r600d.h` and `evergreend.h`; clamp, front/back
+  scale and offset preserve their raw IEEE-754 dwords and the ordering used by
+  `r600_emit_polygon_offset()`. The exact CPU packet is covered, but depth-bias
+  rasterization has not been submitted or read back on RV710.
+
 - TeraScale 1 (R700) `DB_SHADER_CONTROL`: the runtime emitter no longer sends
   the full Evergreen payload merely because both generations place the
   register at `0x02880C`. Direct comparison of `r600d.h` and `evergreend.h`
