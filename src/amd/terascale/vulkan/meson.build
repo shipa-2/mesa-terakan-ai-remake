@@ -123,6 +123,8 @@ libterakan_files = files(
   'terakan_hw_config_draw.h',
   'terakan_hw_config_compute.c',
   'terakan_hw_config_compute.h',
+  'terakan_hw_config_compute_terascale_1.c',
+  'terakan_hw_config_compute_terascale_1.h',
   'terakan_hw_config_loop_constants.c',
   'terakan_hw_config_loop_constants.h',
   'terakan_hw_config_shared.c',
@@ -362,6 +364,20 @@ if with_tests
     c_args : c_msvc_compat_args,
   )
   test('terakan_hw_config_loop_constants', terakan_hw_config_loop_constants_test)
+
+  terakan_hw_config_compute_terascale_1_test = executable(
+    'terakan_hw_config_compute_terascale_1_test',
+    [
+      'terakan_hw_config_compute_terascale_1.c',
+      'tests/terakan_hw_config_compute_terascale_1_test.c',
+    ],
+    include_directories : [
+      inc_include,
+      inc_src,
+    ],
+    c_args : c_msvc_compat_args,
+  )
+  test('terakan_hw_config_compute_terascale_1', terakan_hw_config_compute_terascale_1_test)
 
   terakan_hw_config_shared_terascale_1_test = executable(
     'terakan_hw_config_shared_terascale_1_test',

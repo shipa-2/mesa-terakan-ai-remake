@@ -5,6 +5,7 @@
 #include "terakan_hw_config_compute.h"
 
 #include "terakan_command_buffer.h"
+#include "terakan_hw_config_compute_terascale_1.h"
 #include "terakan_physical_device.h"
 
 #include "amd/terascale/common/terascale_wddm.h"
@@ -233,6 +234,16 @@ void
 terakan_hw_config_compute_emit_modified(struct terakan_gfx_command_writer * const command_writer)
 {
    struct terakan_hw_config_compute * const config = &command_writer->hw_config_compute;
+
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
+      /* This file's compute-mode, LS, SPI and dispatch packets are all Evergreen-shaped. R700
+       * register selection remains unresearched, so consume software dirtiness without emitting
+       * packets that target absent or unrelated registers.
+       */
+      assert(terakan_hw_config_compute_terascale_1_packet_dwords() == 0);
+      BITSET_ZERO(config->entries_modified_);
+      return;
+   }
 
    unsigned entry_index;
    BITSET_FOREACH_SET (entry_index, config->entries_modified_,
