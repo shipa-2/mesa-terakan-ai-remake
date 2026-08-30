@@ -230,6 +230,61 @@ terakan_hw_config_draw_terascale_1_write_pa_su_poly_offset(
    return packet;
 }
 
+bool
+terakan_hw_config_draw_terascale_1_sq_pgm_resources_encode(
+   uint32_t const evergreen_resources, uint32_t * const r700_resources_out)
+{
+   uint32_t const known_bits = S_028850_NUM_GPRS(UINT8_MAX) |
+                               S_028850_STACK_SIZE(UINT8_MAX) | S_028850_DX10_CLAMP(1) |
+                               S_028850_UNCACHED_FIRST_INST(1) | S_028850_CLAMP_CONSTS(1);
+   if (!r700_resources_out || (evergreen_resources & ~known_bits)) {
+      return false;
+   }
+   *r700_resources_out = evergreen_resources;
+   return true;
+}
+
+uint32_t *
+terakan_hw_config_draw_terascale_1_write_sq_pgm_fs(uint32_t * const packet,
+                                                    uint32_t const program_va_shr8)
+{
+   return write_context_reg(packet, R_028894_SQ_PGM_START_FS, program_va_shr8);
+}
+
+uint32_t *
+terakan_hw_config_draw_terascale_1_write_sq_pgm_vs(
+   uint32_t * packet, uint32_t const program_va_shr8, uint32_t const resources)
+{
+   packet = write_context_reg(packet, R_028858_SQ_PGM_START_VS, program_va_shr8);
+   return write_context_reg(packet, R_028868_SQ_PGM_RESOURCES_VS, resources);
+}
+
+uint32_t *
+terakan_hw_config_draw_terascale_1_write_sq_pgm_ps(
+   uint32_t * packet, uint32_t const program_va_shr8, uint32_t const resources,
+   uint32_t const exports)
+{
+   packet = write_context_reg(packet, R_028840_SQ_PGM_START_PS, program_va_shr8);
+   *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 2, 0);
+   *packet++ = (R_028850_SQ_PGM_RESOURCES_PS - R600_CONTEXT_REG_OFFSET) >> 2;
+   *packet++ = resources;
+   *packet++ = exports;
+   return packet;
+}
+
+uint32_t *
+terakan_hw_config_draw_terascale_1_write_spi_vs_out_id(
+   uint32_t * packet, uint32_t const count, uint32_t const * const values)
+{
+   assert(count != 0 && count <= 10 && values != NULL);
+   *packet++ = PKT3(PKT3_SET_CONTEXT_REG, count, 0);
+   *packet++ = (R_028614_SPI_VS_OUT_ID_0 - R600_CONTEXT_REG_OFFSET) >> 2;
+   for (uint32_t index = 0; index < count; ++index) {
+      *packet++ = values[index];
+   }
+   return packet;
+}
+
 uint32_t *
 terakan_hw_config_draw_terascale_1_write_db_depth_view(uint32_t * const packet,
                                                         uint32_t const value)

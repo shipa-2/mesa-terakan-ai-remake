@@ -123,6 +123,23 @@ uint32_t * terakan_hw_config_draw_terascale_1_write_pa_su_poly_offset_db_fmt(
 uint32_t * terakan_hw_config_draw_terascale_1_write_pa_su_poly_offset(
    uint32_t * packet, uint32_t clamp, uint32_t scale, uint32_t offset);
 
+/* The first SQ_PGM_RESOURCES word has compatible NUM_GPRS/STACK_SIZE/DX10_CLAMP/
+ * UNCACHED_FIRST_INST/CLAMP_CONSTS positions, but nearby fields and all register addresses differ.
+ * Accept only that proven subset; Evergreen RESOURCES_2 rounding/denorm state has no port here and
+ * must be zero before these writers are used.
+ */
+bool terakan_hw_config_draw_terascale_1_sq_pgm_resources_encode(
+   uint32_t evergreen_resources, uint32_t * r700_resources_out);
+
+uint32_t * terakan_hw_config_draw_terascale_1_write_sq_pgm_fs(uint32_t * packet,
+                                                               uint32_t program_va_shr8);
+uint32_t * terakan_hw_config_draw_terascale_1_write_sq_pgm_vs(
+   uint32_t * packet, uint32_t program_va_shr8, uint32_t resources);
+uint32_t * terakan_hw_config_draw_terascale_1_write_sq_pgm_ps(
+   uint32_t * packet, uint32_t program_va_shr8, uint32_t resources, uint32_t exports);
+uint32_t * terakan_hw_config_draw_terascale_1_write_spi_vs_out_id(
+   uint32_t * packet, uint32_t count, uint32_t const * values);
+
 /* Per-draw (as opposed to once-per-command-buffer) TeraScale 1 register emission that genuinely
  * needs its own code, as opposed to the R8xx/R9xx code already working unchanged (see
  * DB_DEPTH_CONTROL/CB_TARGET_MASK in TODO.md) -- either because the register lives at a different

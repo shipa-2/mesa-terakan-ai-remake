@@ -511,6 +511,58 @@ test_pa_su_poly_offset(void)
    CHECK(packet[6] == offset);
 }
 
+static void
+test_sq_pgm_bindings(void)
+{
+   uint32_t const evergreen_resources = UINT32_C(37) | (UINT32_C(11) << 8) |
+                                        (UINT32_C(1) << 21) | (UINT32_C(1) << 28);
+   uint32_t resources;
+   CHECK(terakan_hw_config_draw_terascale_1_sq_pgm_resources_encode(evergreen_resources,
+                                                                    &resources));
+   CHECK(resources == (S_028850_NUM_GPRS(37) | S_028850_STACK_SIZE(11) |
+                       S_028850_DX10_CLAMP(1) | S_028850_UNCACHED_FIRST_INST(1)));
+   CHECK(!terakan_hw_config_draw_terascale_1_sq_pgm_resources_encode(
+      evergreen_resources | (UINT32_C(1) << 23), &resources));
+
+   uint32_t fs_packet[3];
+   CHECK(terakan_hw_config_draw_terascale_1_write_sq_pgm_fs(fs_packet, 0x12345) ==
+         fs_packet + 3);
+   CHECK(fs_packet[0] == PKT3(PKT3_SET_CONTEXT_REG, 1, 0));
+   CHECK(fs_packet[1] == (R_028894_SQ_PGM_START_FS - R600_CONTEXT_REG_OFFSET) >> 2);
+   CHECK(fs_packet[2] == 0x12345);
+
+   uint32_t vs_packet[6];
+   CHECK(terakan_hw_config_draw_terascale_1_write_sq_pgm_vs(vs_packet, 0x23456, resources) ==
+         vs_packet + 6);
+   CHECK(vs_packet[0] == PKT3(PKT3_SET_CONTEXT_REG, 1, 0));
+   CHECK(vs_packet[1] == (R_028858_SQ_PGM_START_VS - R600_CONTEXT_REG_OFFSET) >> 2);
+   CHECK(vs_packet[2] == 0x23456);
+   CHECK(vs_packet[3] == PKT3(PKT3_SET_CONTEXT_REG, 1, 0));
+   CHECK(vs_packet[4] == (R_028868_SQ_PGM_RESOURCES_VS - R600_CONTEXT_REG_OFFSET) >> 2);
+   CHECK(vs_packet[5] == resources);
+
+   uint32_t const exports = S_028854_EXPORT_COLORS(3) | S_028854_EXPORT_Z(1);
+   uint32_t ps_packet[7];
+   CHECK(terakan_hw_config_draw_terascale_1_write_sq_pgm_ps(
+            ps_packet, 0x34567, resources, exports) == ps_packet + 7);
+   CHECK(ps_packet[0] == PKT3(PKT3_SET_CONTEXT_REG, 1, 0));
+   CHECK(ps_packet[1] == (R_028840_SQ_PGM_START_PS - R600_CONTEXT_REG_OFFSET) >> 2);
+   CHECK(ps_packet[2] == 0x34567);
+   CHECK(ps_packet[3] == PKT3(PKT3_SET_CONTEXT_REG, 2, 0));
+   CHECK(ps_packet[4] == (R_028850_SQ_PGM_RESOURCES_PS - R600_CONTEXT_REG_OFFSET) >> 2);
+   CHECK(ps_packet[5] == resources);
+   CHECK(ps_packet[6] == exports);
+
+   uint32_t const out_ids[2] = {UINT32_C(0x03020100), UINT32_C(0x07060504)};
+   uint32_t out_id_packet[4];
+   CHECK(terakan_hw_config_draw_terascale_1_write_spi_vs_out_id(out_id_packet, 2, out_ids) ==
+         out_id_packet + 4);
+   CHECK(out_id_packet[0] == PKT3(PKT3_SET_CONTEXT_REG, 2, 0));
+   CHECK(out_id_packet[1] == (R_028614_SPI_VS_OUT_ID_0 - R600_CONTEXT_REG_OFFSET) >> 2);
+   CHECK(out_id_packet[2] == out_ids[0]);
+   CHECK(out_id_packet[3] == out_ids[1]);
+}
+
 static struct terakan_hw_config_draw_terascale_1_cb_color_input
 representative_cb_color_input(void)
 {
@@ -674,6 +726,7 @@ main(void)
    test_pa_sc_aa_config_sample_locs();
    test_pa_sc_mode();
    test_pa_su_poly_offset();
+   test_sq_pgm_bindings();
    test_cb_color_encode();
    test_cb_color_encode_rejects_unported_surfaces();
    test_cb_color_packets();

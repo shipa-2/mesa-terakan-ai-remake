@@ -297,6 +297,18 @@ classic Gallium R600 driver that has supported this hardware for years).
   `r600_emit_polygon_offset()`. The exact CPU packet is covered, but depth-bias
   rasterization has not been submitted or read back on RV710.
 
+- TeraScale 1 (R700) application VS/PS and fetch-shader binding now uses the
+  non-contiguous R700 `SQ_PGM_START`/`SQ_PGM_RESOURCES`/`SQ_PGM_EXPORTS`
+  addresses from `r600_update_vs_state()`, `r600_update_ps_state()` and
+  `r600_emit_vertex_fetch_shader()`. The first resource word is accepted only
+  for the field subset proven compatible in both headers; Evergreen
+  `RESOURCES_2` must remain zero because R700 has no corresponding per-stage
+  float-control word. R700 `SPI_VS_OUT_ID_0` also starts at 0x028614 rather
+  than Evergreen's 0x02861C. Exact CPU packets cover VS, PS, FS and VS output
+  IDs, but shader execution is not proved until queue submit and readback are
+  enabled. LS/HS/ES/GS binding remains explicitly outside this completed
+  subset.
+
 - TeraScale 1 (R700) `DB_SHADER_CONTROL`: the runtime emitter no longer sends
   the full Evergreen payload merely because both generations place the
   register at `0x02880C`. Direct comparison of `r600d.h` and `evergreend.h`
