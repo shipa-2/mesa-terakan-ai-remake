@@ -87,6 +87,7 @@ gpu_tests=(
   terakan_attrib_divisor
   terakan_depth_readback
   terakan_depth_msaa_fetch
+  terakan_sample_id_depth
   terakan_color_msaa_fetch_2x
   terakan_color_msaa_fetch_4x
   terakan_color_msaa_fetch_8x

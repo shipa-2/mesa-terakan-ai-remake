@@ -948,9 +948,14 @@ it goes from 904/119 to **952/71**, with a per-case diff confirming 48 fixed and
 regressed. The reverted NIR reduce programs were re-tested on top of the fix and are
 still unnecessary: the hand-written ones give the identical 248/0.
 
-The coverage gap that hid this is still worth closing: `terakan_depth_msaa_fetch`
-clears its image to a single value and expects every sample to equal it, so it never
-distinguished samples and would have passed with the sample index ignored.
+The coverage gap that hid this is closed by `terakan_sample_id_depth`, which is the
+probe turned into a driver test: one draw, no `sampleShadingEnable`, `gl_FragDepth`
+written from `gl_SampleID`, and all four samples read back with
+`texelFetch(sampler2DMS, ...)`. It covers both halves the resolve needs, unlike
+`terakan_depth_msaa_fetch`, which clears its image to a single value and expects every
+sample to equal it -- so it never distinguished samples and passed with the sample
+index ignored. Against the unfixed driver `terakan_sample_id_depth` reads 0.1 from all
+four samples, which is exactly the shape of the CTS failures.
 
 ### Colour resolve under CTS
 
