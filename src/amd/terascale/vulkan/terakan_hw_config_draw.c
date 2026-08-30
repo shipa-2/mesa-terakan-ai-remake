@@ -853,6 +853,21 @@ terakan_hw_config_draw_emit_sq_pgm_pre_vs_stage(
       return;
    }
 
+   bool const is_terascale_1 =
+      terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1;
+   uint32_t resources_r700 = 0;
+   if (is_terascale_1) {
+      /* R600/R700 has ES and GS, but no LS or HS. Also, its START and RESOURCES registers are
+       * separated by three intervening registers rather than consecutive with RESOURCES_2.
+       */
+      if (register_start == R_0288D0_SQ_PGM_START_LS ||
+          register_start == R_0288B8_SQ_PGM_START_HS || shader->sq_pgm_resources[1] != 0 ||
+          !terakan_hw_config_draw_terascale_1_sq_pgm_resources_encode(
+             shader->sq_pgm_resources[0], &resources_r700)) {
+         return;
+      }
+   }
+
    /* `SQ_PGM_START_*`, `SQ_PGM_RESOURCES_*` and `SQ_PGM_RESOURCES_2_*` are consecutive for every
     * one of these stages, so all three are written by one `SET_CONTEXT_REG`.
     */
@@ -871,7 +886,7 @@ terakan_hw_config_draw_emit_sq_pgm_pre_vs_stage(
                  "Pre-VS vertex pipeline stages must have consecutive SQ_PGM_START, "
                  "SQ_PGM_RESOURCES and SQ_PGM_RESOURCES_2 registers");
    uint32_t const register_count = 3;
-   uint32_t const packet_dwords = 2 + register_count;
+   uint32_t const packet_dwords = is_terascale_1 ? 6 : 2 + register_count;
 
    uint32_t * packet = terakan_gfx_command_writer_emit_with_bo(
       command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG, packet_dwords, 1, 1, 0);
@@ -879,12 +894,25 @@ terakan_hw_config_draw_emit_sq_pgm_pre_vs_stage(
       return;
    }
 
-   *packet++ = PKT3(PKT3_SET_CONTEXT_REG, register_count, 0);
-   *packet++ = TERAKAN_CONTEXT_REG_OFFSET(register_start);
-   uint32_t const * const packet_pgm_start = packet;
-   *packet++ = shader->program_va_shr8;
-   *packet++ = shader->sq_pgm_resources[0];
-   *packet++ = shader->sq_pgm_resources[1];
+   uint32_t const * packet_pgm_start;
+   if (is_terascale_1) {
+      packet_pgm_start = packet + 2;
+      if (register_start == R_02888C_SQ_PGM_START_ES) {
+         packet = terakan_hw_config_draw_terascale_1_write_sq_pgm_es(
+            packet, shader->program_va_shr8, resources_r700);
+      } else {
+         assert(register_start == R_028874_SQ_PGM_START_GS);
+         packet = terakan_hw_config_draw_terascale_1_write_sq_pgm_gs(
+            packet, shader->program_va_shr8, resources_r700);
+      }
+   } else {
+      *packet++ = PKT3(PKT3_SET_CONTEXT_REG, register_count, 0);
+      *packet++ = TERAKAN_CONTEXT_REG_OFFSET(register_start);
+      packet_pgm_start = packet;
+      *packet++ = shader->program_va_shr8;
+      *packet++ = shader->sq_pgm_resources[0];
+      *packet++ = shader->sq_pgm_resources[1];
+   }
    terakan_gfx_command_writer_add_relocation(
       command_writer, &packet, packet_pgm_start, *packet_pgm_start, patch_id,
       terakan_bo_reference_writer_add_reference(&command_writer->base.bo_reference_writer,

@@ -306,8 +306,13 @@ classic Gallium R600 driver that has supported this hardware for years).
   float-control word. R700 `SPI_VS_OUT_ID_0` also starts at 0x028614 rather
   than Evergreen's 0x02861C. Exact CPU packets cover VS, PS, FS and VS output
   IDs, but shader execution is not proved until queue submit and readback are
-  enabled. LS/HS/ES/GS binding remains explicitly outside this completed
-  subset.
+  enabled. ES/GS binding now likewise uses R700's non-consecutive
+  `SQ_PGM_START_ES/GS` and `SQ_PGM_RESOURCES_ES/GS` pairs transcribed from
+  `r600_update_es_state()`/`r600_update_gs_state()`, rather than Evergreen's
+  three-register blocks at colliding addresses. Exact CPU packets cover both
+  stages. LS/HS remain rejected because TeraScale 1 has no tessellator; the
+  geometry ring setup and VGT GS mode are still unported, so this does not yet
+  establish a working geometry-shader pipeline.
 
 - TeraScale 1 no longer replays the Evergreen-only draw-constant array after
   the dedicated per-indirect-buffer begin atom. That atom already transcribes

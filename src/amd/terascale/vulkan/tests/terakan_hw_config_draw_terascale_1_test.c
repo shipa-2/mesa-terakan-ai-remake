@@ -553,6 +553,26 @@ test_sq_pgm_bindings(void)
    CHECK(ps_packet[5] == resources);
    CHECK(ps_packet[6] == exports);
 
+   uint32_t es_packet[6];
+   CHECK(terakan_hw_config_draw_terascale_1_write_sq_pgm_es(
+            es_packet, 0x45678, resources) == es_packet + 6);
+   CHECK(es_packet[0] == PKT3(PKT3_SET_CONTEXT_REG, 1, 0));
+   CHECK(es_packet[1] == (R_028880_SQ_PGM_START_ES - R600_CONTEXT_REG_OFFSET) >> 2);
+   CHECK(es_packet[2] == 0x45678);
+   CHECK(es_packet[3] == PKT3(PKT3_SET_CONTEXT_REG, 1, 0));
+   CHECK(es_packet[4] == (R_028890_SQ_PGM_RESOURCES_ES - R600_CONTEXT_REG_OFFSET) >> 2);
+   CHECK(es_packet[5] == resources);
+
+   uint32_t gs_packet[6];
+   CHECK(terakan_hw_config_draw_terascale_1_write_sq_pgm_gs(
+            gs_packet, 0x56789, resources) == gs_packet + 6);
+   CHECK(gs_packet[0] == PKT3(PKT3_SET_CONTEXT_REG, 1, 0));
+   CHECK(gs_packet[1] == (R_02886C_SQ_PGM_START_GS - R600_CONTEXT_REG_OFFSET) >> 2);
+   CHECK(gs_packet[2] == 0x56789);
+   CHECK(gs_packet[3] == PKT3(PKT3_SET_CONTEXT_REG, 1, 0));
+   CHECK(gs_packet[4] == (R_02887C_SQ_PGM_RESOURCES_GS - R600_CONTEXT_REG_OFFSET) >> 2);
+   CHECK(gs_packet[5] == resources);
+
    uint32_t const out_ids[2] = {UINT32_C(0x03020100), UINT32_C(0x07060504)};
    uint32_t out_id_packet[4];
    CHECK(terakan_hw_config_draw_terascale_1_write_spi_vs_out_id(out_id_packet, 2, out_ids) ==

@@ -324,6 +324,22 @@ terakan_hw_config_draw_terascale_1_write_sq_pgm_ps(
 }
 
 uint32_t *
+terakan_hw_config_draw_terascale_1_write_sq_pgm_es(
+   uint32_t * packet, uint32_t const program_va_shr8, uint32_t const resources)
+{
+   packet = write_context_reg(packet, R_028880_SQ_PGM_START_ES, program_va_shr8);
+   return write_context_reg(packet, R_028890_SQ_PGM_RESOURCES_ES, resources);
+}
+
+uint32_t *
+terakan_hw_config_draw_terascale_1_write_sq_pgm_gs(
+   uint32_t * packet, uint32_t const program_va_shr8, uint32_t const resources)
+{
+   packet = write_context_reg(packet, R_02886C_SQ_PGM_START_GS, program_va_shr8);
+   return write_context_reg(packet, R_02887C_SQ_PGM_RESOURCES_GS, resources);
+}
+
+uint32_t *
 terakan_hw_config_draw_terascale_1_write_spi_vs_out_id(
    uint32_t * packet, uint32_t const count, uint32_t const * const values)
 {
