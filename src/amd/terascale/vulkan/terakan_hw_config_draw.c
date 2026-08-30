@@ -1396,17 +1396,79 @@ static void
 terakan_hw_config_draw_emit_db_depth_stencil_buffer(
    struct terakan_gfx_command_writer * const command_writer)
 {
-   /* The whole R_028040_DB_Z_INFO..R_02805C_DB_DEPTH_SLICE range this function writes is
+   /* The whole R_028040_DB_Z_INFO..R_02805C_DB_DEPTH_SLICE range the Evergreen path writes is
     * R_028040_CB_COLOR0_BASE..R_02805C_CB_COLOR7_BASE (render target addresses) on R600/R700 -- the
     * single most dangerous offset collision found in the TeraScale 1 CB/DB/PA/SPI/SQ register
     * compatibility audit (TODO.md). R600/R700 also binds depth and stencil through one combined
     * surface and base address (R_02800C_DB_DEPTH_BASE) rather than R8xx/R9xx's four independent
-    * read/write Z/stencil base registers, and DB_DEPTH_INFO's ARRAY_MODE field needs real tiling
-    * information this driver doesn't have for TeraScale 1 yet (terakan_image.c's surface/macro-tile
-    * address math -- see TODO.md), so this is not yet portable at all, not merely unguarded. Must
-    * never fall through to the code below for TeraScale 1.
+    * read/write Z/stencil base registers. The depth-only single-sample subset is translated below;
+    * stencil and multisample descriptors are explicitly unbound until their packed R700 surface
+    * allocation is ported. Must never fall through to the Evergreen code below for TeraScale 1.
     */
    if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
+      struct terakan_bo const * const bo =
+         command_writer->hw_config_draw.db_depth_stencil_buffer_.bo;
+      struct terakan_depth_stencil_descriptor const * const descriptor =
+         &command_writer->hw_config_draw.db_depth_stencil_buffer_.descriptor;
+      bool depth_bound, stencil_bound;
+      terakan_depth_stencil_descriptor_is_bound(bo, descriptor, &depth_bound, &stencil_bound);
+
+      enum terakan_hw_config_draw_terascale_1_db_depth_format format =
+         TERAKAN_HW_CONFIG_DRAW_TERASCALE_1_DB_DEPTH_INVALID;
+      switch (G_028040_FORMAT(descriptor->z_info)) {
+      case V_028040_Z_16:
+         format = TERAKAN_HW_CONFIG_DRAW_TERASCALE_1_DB_DEPTH_16;
+         break;
+      case V_028040_Z_24:
+         format = TERAKAN_HW_CONFIG_DRAW_TERASCALE_1_DB_DEPTH_24;
+         break;
+      case V_028040_Z_32_FLOAT:
+         format = TERAKAN_HW_CONFIG_DRAW_TERASCALE_1_DB_DEPTH_32_FLOAT;
+         break;
+      default:
+         break;
+      }
+
+      struct terakan_hw_config_draw_terascale_1_db_depth depth;
+      struct terakan_hw_config_draw_terascale_1_db_depth_input const input = {
+         .base = descriptor->z_base,
+         .pitch_tile_max = G_028058_PITCH_TILE_MAX(descriptor->size),
+         .height_tile_max = G_028058_HEIGHT_TILE_MAX(descriptor->size),
+         .slice_tile_max = G_02805C_SLICE_TILE_MAX(descriptor->slice),
+         .slice_start = G_028008_SLICE_START(descriptor->view),
+         .slice_max = G_028008_SLICE_MAX(descriptor->view),
+         .format = format,
+         .array_mode = G_028040_ARRAY_MODE(descriptor->z_info),
+         .zrange_precision = G_028040_ZRANGE_PRECISION(descriptor->z_info),
+         .samples_log2 = G_028040_NUM_SAMPLES(descriptor->z_info),
+      };
+      if (!depth_bound || stencil_bound ||
+          !terakan_hw_config_draw_terascale_1_db_depth_encode(&input, &depth)) {
+         uint32_t * packet = terakan_gfx_command_writer_emit(
+            command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG, 3);
+         if (unlikely(packet == NULL)) {
+            return;
+         }
+         packet = terakan_hw_config_draw_terascale_1_write_db_depth_unbound(packet);
+         terakan_gfx_command_writer_emit_done(command_writer, packet);
+         return;
+      }
+
+      uint32_t * packet = terakan_gfx_command_writer_emit_with_bo(
+         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG, 13, 1, 1, 0);
+      if (unlikely(packet == NULL)) {
+         return;
+      }
+      uint32_t * const packet_start = packet;
+      packet = terakan_hw_config_draw_terascale_1_write_db_depth(packet, &depth);
+
+      uint32_t const bo_reference = terakan_bo_reference_writer_add_reference(
+         &command_writer->base.bo_reference_writer, bo, true, true,
+         TERAKAN_BO_PRIORITY_DEPTH_BUFFER);
+      terakan_gfx_command_writer_add_relocation(
+         command_writer, &packet, &packet_start[8], packet_start[8],
+         TERASCALE_WDDM_PATCH_IDS_DB_Z_STENCIL_BASE, bo_reference);
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
       return;
    }
 

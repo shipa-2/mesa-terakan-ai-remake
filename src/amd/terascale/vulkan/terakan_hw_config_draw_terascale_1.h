@@ -155,6 +155,53 @@ uint32_t * terakan_hw_config_draw_terascale_1_write_db_depth_base_info(uint32_t 
                                                                         uint32_t db_depth_base,
                                                                         uint32_t db_depth_info);
 
+enum terakan_hw_config_draw_terascale_1_db_depth_format {
+   TERAKAN_HW_CONFIG_DRAW_TERASCALE_1_DB_DEPTH_INVALID,
+   TERAKAN_HW_CONFIG_DRAW_TERASCALE_1_DB_DEPTH_16,
+   TERAKAN_HW_CONFIG_DRAW_TERASCALE_1_DB_DEPTH_24,
+   TERAKAN_HW_CONFIG_DRAW_TERASCALE_1_DB_DEPTH_32_FLOAT,
+};
+
+struct terakan_hw_config_draw_terascale_1_db_depth_input {
+   uint32_t base;
+   uint32_t pitch_tile_max;
+   uint32_t height_tile_max;
+   uint32_t slice_tile_max;
+   uint32_t slice_start;
+   uint32_t slice_max;
+   enum terakan_hw_config_draw_terascale_1_db_depth_format format;
+   uint32_t array_mode;
+   bool zrange_precision;
+   uint32_t samples_log2;
+};
+
+struct terakan_hw_config_draw_terascale_1_db_depth {
+   uint32_t base;
+   uint32_t size;
+   uint32_t view;
+   uint32_t info;
+   uint32_t prefetch_limit;
+};
+
+/* Encode the depth-only, single-sampled subset of r600_init_depth_surface(). R700's packed
+ * depth/stencil formats and multisample layout are deliberately rejected until their shared
+ * allocation has been ported; the caller must unbind DB when this returns false.
+ */
+bool terakan_hw_config_draw_terascale_1_db_depth_encode(
+   struct terakan_hw_config_draw_terascale_1_db_depth_input const * input,
+   struct terakan_hw_config_draw_terascale_1_db_depth * depth_out);
+
+/* Writes SIZE, VIEW, BASE/INFO and PREFETCH_LIMIT in the order used by
+ * r600_emit_framebuffer_state(). The relocated BASE payload is dword 8 of the 13-dword stream.
+ */
+uint32_t * terakan_hw_config_draw_terascale_1_write_db_depth(
+   uint32_t * packet, struct terakan_hw_config_draw_terascale_1_db_depth const * depth);
+
+uint32_t * terakan_hw_config_draw_terascale_1_write_db_depth_prefetch_limit(uint32_t * packet,
+                                                                             uint32_t value);
+
+uint32_t * terakan_hw_config_draw_terascale_1_write_db_depth_unbound(uint32_t * packet);
+
 /* R700 DB_ALPHA_TO_MASK has the same ENABLE/OFFSET field positions as Evergreen, but lives at
  * R_028D44 rather than R_028B70. Classic r600_create_blend_state_mode() always uses the regular
  * 2,2,2,2 offsets, so take only the API-visible enable here rather than carrying an
