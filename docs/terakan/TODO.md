@@ -121,6 +121,54 @@ classic Gallium R600 driver that has supported this hardware for years).
 
 ## Completed and regression-covered
 
+- Multisample correctness, closed as a group. Seven defects, each with a probe or
+  a CTS delta and a negative control; the measurements are in
+  `docs/terakan/FUNCTIONAL_COVERAGE.md`.
+
+  - **Per-sample fragment invocation.** `PS_ITER_SAMPLES` was derived from
+    `sampleShadingEnable` alone, so a shader reading `SampleId` -- which the
+    specification says always runs per sample -- ran once per fragment and every
+    sample got sample zero's value. That is what the depth and stencil min/max
+    resolve failures were, and it also overturned two earlier conclusions about
+    the resolve shaders and the hardware, both corrected in the coverage document.
+  - **`gl_FragCoord` under sample shading**, which must be the sample's position.
+    `SPI_PS_IN_CONTROL_0.POSITION_SAMPLE` is now set both from the shader (when it
+    reads `SampleId`) and from the pipeline (when `minSampleShading` is what makes
+    it per-sample). At two samples the hardware does not honour it; four and eight
+    do.
+  - **RTV metadata coherency for the shader resolve**, which samples the source as
+    a texture and bypasses CB, so `FLUSH_INV_CB_RTV_META` has to run first.
+  - **Compression on multisample images that are read as textures.** An integer
+    colour attachment is sampled by the shader resolve, and an input attachment is
+    sampled by `nir_lower_input_attachments`, whether or not the application asked
+    for `VK_IMAGE_USAGE_SAMPLED_BIT`; both now disable compression the way a
+    sampled image already did.
+  - **The multisample depth/stencil clear**, which rasterized single-sample and so
+    wrote one quarter of a 4x surface. Covered by
+    `terakan_depth_stencil_clear_multisample`, which reports 3072 of 4096 samples
+    unwritten against the unfixed driver.
+  - **Custom sample locations at one sample**, withdrawn from
+    `sampleLocationSampleCounts`: the registers are right and the sample does not
+    move, measured against four placements in x and in y.
+  - **A GPU hang sampling `r32g32b32_sfloat`**, which aborted whole CTS runs.
+    `32_32_32` was the only unpacked three-channel format left advertising a
+    texture fetch; it is a vertex fetch format, and the surface's row is three
+    times as wide in surfels as the descriptor's texel pitch claims.
+
+  A 2641-case multisample and renderpass sample went from 119 failures to 0, and
+  an 8630-case stride sample of the whole suite now runs to the end instead of
+  aborting.
+
+- Integer sampler border colours: `VK_BORDER_COLOR_INT_OPAQUE_BLACK` and `_WHITE`
+  now use the per-sampler border colour registers with the integer values, which
+  every 8-bit and 16-bit integer format needed. Reaching that path for the first
+  time lost the device -- it emitted `PKT3_SET_CTL_CONST` for what are
+  configuration registers, underflowing the offset -- so the packet is corrected
+  too. `pipeline.monolithic.sampler` went from 406 failures to 243 over a
+  30340-case sample, and every one of the 243 left is an unnormalized-coordinate
+  case: `S_03C000_FORCE_UNNORMALIZED` is Cayman-only and nothing normalizes the
+  coordinates in the shader, which is the open half.
+
 - TeraScale 1 (R600/R700) physical device enumeration and property reporting:
   chip family recognition now covers `CHIP_R600`..`CHIP_RV740`, not just
   `CHIP_CEDAR`..`CHIP_ARUBA`. `terakan_physical_device_chip_info` gained a
