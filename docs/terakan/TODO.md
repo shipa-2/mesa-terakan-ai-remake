@@ -689,6 +689,13 @@ classic Gallium R600 driver that has supported this hardware for years).
   bytes-per-block path and omission of the base-pitch rule; real RV710 also
   creates, lays out, allocates and binds a two-level R32G32B32 image. This is
   not a sampled or render-target readback, since submit remains blocked.
+  The same oracle now also checks the exact absolute surfel and byte addresses
+  produced by the generation-neutral clear/copy NIR convention
+  `level_offset + y * aligned_pitch + 3 * x + component`, for an interior
+  texel and the last real texel of both levels, including the remaining row
+  padding. This proves that the R700 layout and the meta-shader address units
+  agree on paper; it still does not prove that R700 UAV execution observes
+  those addresses until queue submission is enabled and read back.
   The second review mistake was a copy-paste error passing
   `bytes_per_element * surfels_per_block`
   (i.e. `bytes_per_block` again) to three tiling calls instead of the
