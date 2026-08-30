@@ -688,7 +688,15 @@ terakan_hw_config_shared_compute_emit_modified(
       config->is_compute_active_ = true;
       terakan_hw_config_shared_set_common_modified_for_draw_compute_switch(config);
 
-      if (!terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_r9xx) {
+      struct terakan_physical_device_chip_info const * const chip_info =
+         &terakan_gfx_command_writer_physical_device(command_writer)->chip_info;
+      if (chip_info->is_terascale_1) {
+         /* 0x008E2C is Evergreen SQ_LDS_RESOURCE_MGMT, but r600d.h defines no register there.
+          * TeraScale 1 compute allocation remains unsupported rather than targeting an unrelated
+          * register merely because is_r9xx is false for both R700 and Evergreen.
+          */
+         assert(terakan_hw_config_shared_terascale_1_compute_lds_packet_dwords() == 0);
+      } else if (!chip_info->is_r9xx) {
          terakan_hw_config_shared_emit_config_register(
             command_writer, R_008E2C_SQ_LDS_RESOURCE_MGMT,
             S_008E2C_NUM_LS_LDS(TERAKAN_LIMITS_HW_LDS_SIMD_DWORD_COUNT));

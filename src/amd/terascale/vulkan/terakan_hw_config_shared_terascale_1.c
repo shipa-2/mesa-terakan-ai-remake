@@ -229,3 +229,9 @@ terakan_hw_config_shared_terascale_1_write_sq_config(
 
    return packet;
 }
+
+uint32_t
+terakan_hw_config_shared_terascale_1_compute_lds_packet_dwords(void)
+{
+   return 0;
+}
