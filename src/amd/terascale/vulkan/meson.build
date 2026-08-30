@@ -1636,6 +1636,49 @@ if with_tests
         timeout : 10,
       )
 
+      terakan_attrib_divisor_vertex_spv = custom_target(
+        'terakan_attrib_divisor.vert.spv',
+        input : 'tests/terakan_attrib_divisor.vert',
+        output : 'terakan_attrib_divisor.vert.spv',
+        command : [
+          prog_glslang, '-V', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_attrib_divisor.vert.spv.d',
+      )
+      terakan_attrib_divisor_fragment_spv = custom_target(
+        'terakan_attrib_divisor.frag.spv',
+        input : 'tests/terakan_attrib_divisor.frag',
+        output : 'terakan_attrib_divisor.frag.spv',
+        command : [
+          prog_glslang, '-V', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_attrib_divisor.frag.spv.d',
+      )
+      terakan_attrib_divisor_test = executable(
+        'terakan_attrib_divisor_test',
+        ['tests/terakan_attrib_divisor_test.c'],
+        dependencies : vulkan_loader_dep,
+      )
+      test(
+        'terakan_attrib_divisor',
+        terakan_attrib_divisor_test,
+        args : [terakan_attrib_divisor_vertex_spv, terakan_attrib_divisor_fragment_spv],
+        depends : [
+          libvulkan_terascale,
+          _dev_icd,
+          terakan_attrib_divisor_vertex_spv,
+          terakan_attrib_divisor_fragment_spv,
+        ],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 20,
+      )
+
       terakan_line_width_vertex_spv = custom_target(
         'terakan_line_width.vert.spv',
         input : 'tests/terakan_line_width.vert',

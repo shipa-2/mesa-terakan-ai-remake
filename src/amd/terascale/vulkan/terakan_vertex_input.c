@@ -819,6 +819,15 @@ terakan_vertex_input_create_fs_code(
                } else {
                   new_indexing->instance_division_info =
                      util_compute_fast_udiv_info(attribute_divisor, 32, 32);
+                  /* The multiplication is the division: the shifts and the increment only
+                   * condition its input and output. Requesting the surrounding operations without
+                   * it left the index shifted rather than divided, so every divisor that is not a
+                   * power of two fetched the wrong instance --
+                   * dEQP-VK.draw.renderpass.instanced with divisor 20 failed all 96 of its cases
+                   * while 0, 1, 2 and 4 passed all of theirs.
+                   */
+                  new_indexing->alu_ops_remaining |= BITFIELD_BIT(
+                     TERAKAN_VERTEX_INPUT_INDEXING_ALU_OP_INSTANCE_DIVISION_MULTIPLY_HIGH);
                   if (new_indexing->instance_division_info.pre_shift != 0) {
                      new_indexing->alu_ops_remaining |= BITFIELD_BIT(
                         TERAKAN_VERTEX_INPUT_INDEXING_ALU_OP_INSTANCE_DIVISION_PRE_SHIFT);

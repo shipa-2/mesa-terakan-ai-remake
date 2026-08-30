@@ -843,6 +843,36 @@ the width. Width one is checked alongside width four, because the eighths encodi
 makes a scaling mistake easy and a four arriving as thirty-two or as a half would
 both show up. Against the unfixed driver both width-four cases report one row.
 
+### Vertex attribute divisors that are not powers of two
+
+The instance index is divided by the attribute divisor in the fetch shader, with
+the multiply-high algorithm `util_compute_fast_udiv_info` describes. The
+multiplication *is* the division -- the pre-shift, the increment and the post-shift
+only condition its input and output -- and the driver requested each of those
+surrounding operations while never requesting the multiplication itself. The index
+came out shifted rather than divided.
+
+Powers of two take a separate path that shifts on purpose, so they were right, and
+that is why it went unnoticed. `dEQP-VK.draw.renderpass.instanced` passed all 96 of
+its cases at each of the divisors 0, 1, 2 and 4, and failed all 96 at divisor 20:
+
+```
+divisor=0    96 pass    0 fail
+divisor=1    96 pass    0 fail
+divisor=2    96 pass    0 fail
+divisor=4    96 pass    0 fail
+divisor=20    0 pass   96 fail
+```
+
+**That group is now at 528 passing and 0 failing, from 431 / 97.**
+
+`terakan_attrib_divisor` draws one line per instance at the instance's own row,
+coloured from an attribute the divisor selects, so a wrong quotient shows as a row
+holding another element's colour. Divisors one and two are checked alongside three
+because they exercise the path that already worked: a change breaking division
+outright rather than only the non-power-of-two case moves them too. Against the
+unfixed driver instance 2 at divisor 3 reads element 1, which is `2 >> 1`.
+
 ### Colour resolve under CTS
 
 `dEQP-VK.api.copy_and_blit.core.resolve_image`, 240 cases, run against Terakan
