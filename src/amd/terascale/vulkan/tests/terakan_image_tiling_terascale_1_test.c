@@ -429,6 +429,37 @@ test_mip_chain_layout_expand_3x(void)
    CHECK(levels[1].pitch_bytes == 512);
    CHECK(levels[1].slice_bytes == 1024);
    CHECK(total == 8704);
+
+   /* The generation-neutral NIR clear/copy shaders address a component in surfels as
+    *
+    *   level_offset + y * aligned_pitch + 3 * x + component.
+    *
+    * Keep the R700 layout side of that contract explicit. At level 0, texel (7, 3), component 0
+    * starts at surfel 3*384 + 3*7 = 1173, and the last component of the last real texel (80, 4)
+    * is surfel 1778. The slice contains 1920 surfels, so 141 padding surfels remain after it.
+    */
+   uint64_t const level_0_offset_surfels = levels[0].offset_bytes / 4u;
+   uint64_t const level_0_texel_7_3 =
+      level_0_offset_surfels + 3u * levels[0].aligned_pitch_surfels + 3u * 7u;
+   CHECK(level_0_texel_7_3 == 1173);
+   CHECK(level_0_texel_7_3 * 4u == 4692);
+   uint64_t const level_0_last_component =
+      level_0_offset_surfels + 4u * levels[0].aligned_pitch_surfels + 3u * 80u + 2u;
+   CHECK(level_0_last_component == 1778);
+   CHECK((levels[0].offset_bytes + levels[0].slice_bytes) / 4u - level_0_last_component - 1u ==
+         141);
+
+   /* Level 1 begins at byte 7680 / surfel 1920. Its real extent is 40x2 texels while its pitch is
+    * 128 surfels. Thus texel (39, 1), component 2 is absolute surfel 2167 (byte 8668), leaving 8
+    * surfels / 32 bytes of row-tail padding before the full chain ends at byte 8704.
+    */
+   uint64_t const level_1_offset_surfels = levels[1].offset_bytes / 4u;
+   CHECK(level_1_offset_surfels == 1920);
+   uint64_t const level_1_last_component =
+      level_1_offset_surfels + levels[1].aligned_pitch_surfels + 3u * 39u + 2u;
+   CHECK(level_1_last_component == 2167);
+   CHECK(level_1_last_component * 4u == 8668);
+   CHECK(total / 4u - level_1_last_component - 1u == 8);
 }
 
 int
