@@ -110,7 +110,15 @@ terakan_shader_nir_options_init(enum radeon_family const family,
       .has_bfm = gfx_level >= EVERGREEN,
       .has_bitfield_select = gfx_level >= EVERGREEN,
       .force_indirect_unrolling_sampler = gfx_level < EVERGREEN,
-      .vertex_id_zero_based = gfx_level >= EVERGREEN,
+      /* Terakan puts the base into `VGT_INDX_OFFSET` and fetches with
+       * `SQ_VTX_FETCH_NO_INDEX_OFFSET`, so R0.X -- what SFN returns for both
+       * `load_vertex_id` and `load_vertex_id_zero_base` -- already includes it, which is exactly
+       * what Vulkan's `VertexIndex` is. Asking NIR to treat the vertex id as zero-based makes it
+       * lower `load_vertex_id` to `load_vertex_id_zero_base + load_first_vertex` and count the
+       * base twice. Classic r600 sets this because OpenGL's `gl_VertexID` is zero-based and it
+       * fetches with `SQ_VTX_FETCH_VERTEX_DATA` instead.
+       */
+      .vertex_id_zero_based = false,
 
       .max_unroll_iterations = 32,
       .max_unroll_iterations_aggressive = 128,

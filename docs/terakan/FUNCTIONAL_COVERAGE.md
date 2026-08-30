@@ -1400,6 +1400,52 @@ layer-index case, remain and need the meta draw the `TODO` in
 `image_to_image` is unchanged at 4 failures, all of them the known offset-resolve
 residue.
 
+### gl_VertexIndex counted the base twice
+
+`dEQP-VK.draw.*.indexed_draw` failed **every one of its 144 supported cases**, in both the
+render pass and the dynamic rendering variants, including the plainest
+`draw_indexed_triangle_list`. The stride sample of the whole suite had only ever caught
+three of them.
+
+The images say what it is. The geometry is right -- a 76x76 square where the reference
+has 77x77, one pixel of edge -- and the colour is wrong: red where blue is expected. The
+test's vertex shader explains itself:
+
+```glsl
+gl_Position = in_position;
+if (gl_VertexIndex == in_refVertexIndex)
+    out_color = in_color;   // blue
+else
+    out_color = vec4(1.0, 0.0, 0.0, 1.0);
+```
+
+Every vertex is blue and every pixel came out red, so `gl_VertexIndex` never matched the
+vertex it belonged to.
+
+Terakan puts the draw's base into `VGT_INDX_OFFSET` and fetches attributes with
+`SQ_VTX_FETCH_NO_INDEX_OFFSET`, which is the choice `terakan_vertex_input.c` documents:
+"In Vulkan and OpenGL, `gl_VertexIndex` or `gl_VertexID` includes the base, so it's more
+straightforward to use `VGT_INDX_OFFSET`". R0.X therefore already carries the base, and
+SFN returns R0.X for `load_vertex_id`.
+
+`terakan_shader_nir_options_init` set `vertex_id_zero_based` for Evergreen and newer,
+copying classic r600 -- which sets it because OpenGL's `gl_VertexID` is zero-based and it
+fetches with `SQ_VTX_FETCH_VERTEX_DATA` instead. With it set, `nir_lower_system_values`
+rewrites `load_vertex_id` into `load_vertex_id_zero_base + load_first_vertex`, and
+`load_first_vertex` is the driver constant holding the same base. The base was added a
+second time.
+
+Clearing it takes the group to **144 of 144 passing**. `terakan_shader_generation_test`
+asserted the old value and is corrected with it, which is what caught the flag being
+generation-dependent rather than simply wrong.
+
+After the fix the whole `dEQP-VK.draw` group stands at 3362 passing and 107 failing of
+29392; there is no clean before-figure for the whole group, because that baseline run was
+abandoned once it became clear it would cost more than it was worth. The 480-case
+`indexed_draw` list was measured both ways and is the evidence, and a 27033-case stride
+survey goes 36 failures to **32** with none new.
+
+
 ### Colour resolve under CTS
 
 `dEQP-VK.api.copy_and_blit.core.resolve_image`, 240 cases, run against Terakan
