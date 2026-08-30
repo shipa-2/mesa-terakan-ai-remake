@@ -584,6 +584,39 @@ test_sq_pgm_bindings(void)
 }
 
 static void
+test_gpr_baseline_admission(void)
+{
+   /* RV710's exact begin-atom partition from r600_init_atom_start_cs(). The packet carrying these
+    * values is checked independently by terakan_hw_config_shared_terascale_1_test; this oracle
+    * checks the draw admission boundary against that packet rather than reproducing repartitioning
+    * that Terakan does not emit yet.
+    */
+   struct terakan_hw_config_draw_terascale_1_gpr_counts const rv710_baseline = {
+      .ps = 192,
+      .vs = 56,
+      .gs = 0,
+      .es = 0,
+   };
+   struct terakan_hw_config_draw_terascale_1_gpr_counts required = rv710_baseline;
+   CHECK(terakan_hw_config_draw_terascale_1_gprs_fit_baseline(&required, &rv710_baseline));
+
+   ++required.ps;
+   CHECK(!terakan_hw_config_draw_terascale_1_gprs_fit_baseline(&required, &rv710_baseline));
+   required = rv710_baseline;
+   ++required.vs;
+   CHECK(!terakan_hw_config_draw_terascale_1_gprs_fit_baseline(&required, &rv710_baseline));
+   required = rv710_baseline;
+   required.gs = 1;
+   CHECK(!terakan_hw_config_draw_terascale_1_gprs_fit_baseline(&required, &rv710_baseline));
+   required = rv710_baseline;
+   required.es = 1;
+   CHECK(!terakan_hw_config_draw_terascale_1_gprs_fit_baseline(&required, &rv710_baseline));
+
+   CHECK(!terakan_hw_config_draw_terascale_1_gprs_fit_baseline(NULL, &rv710_baseline));
+   CHECK(!terakan_hw_config_draw_terascale_1_gprs_fit_baseline(&required, NULL));
+}
+
+static void
 test_draw_constant_packet_is_empty(void)
 {
    /* terakan_hw_config_shared_terascale_1_test checks the exact non-empty replacement packet.
@@ -798,6 +831,7 @@ main(void)
    test_pa_sc_mode();
    test_pa_su_poly_offset();
    test_sq_pgm_bindings();
+   test_gpr_baseline_admission();
    test_draw_constant_packet_is_empty();
    test_absent_vgt_controls();
    test_ring_itemsize_is_begin_atom_only();

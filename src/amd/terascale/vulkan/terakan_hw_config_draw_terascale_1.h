@@ -15,6 +15,21 @@ extern "C" {
 
 #define TERAKAN_HW_CONFIG_DRAW_TERASCALE_1_SPI_PS_INPUT_COUNT 32
 
+/* r600_adjust_gprs() may repartition this fixed-size pool when a shader exceeds the family
+ * baseline. Terakan doesn't perform that live repartition yet because it also requires the
+ * associated WAIT_3D_IDLE ordering to be validated. Until then, reject a draw unless every bound
+ * hardware stage fits the exact baseline already written by the begin atom. This is intentionally
+ * more conservative than the classic driver, but prevents SQ_PGM_RESOURCES_*.NUM_GPRS from
+ * exceeding SQ_GPR_RESOURCE_MGMT*.NUM_*_GPRS, which r600_adjust_gprs() documents as a GPU lockup.
+ */
+struct terakan_hw_config_draw_terascale_1_gpr_counts {
+   uint32_t ps, vs, gs, es;
+};
+
+bool terakan_hw_config_draw_terascale_1_gprs_fit_baseline(
+   struct terakan_hw_config_draw_terascale_1_gpr_counts const * required,
+   struct terakan_hw_config_draw_terascale_1_gpr_counts const * baseline);
+
 /* R600/R700 selects perspective/linear and center/centroid/sample interpolation in every
  * SPI_PS_INPUT_CNTL_n entry. Evergreen removed those selections from the per-input words and
  * introduced SPI_BARYC_CNTL at 0x0286E0 instead. On R600/R700 that address is

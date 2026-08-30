@@ -1322,6 +1322,12 @@ void terakan_hw_config_draw_set_cb_color(struct terakan_hw_config_draw * config,
 
 struct terakan_gfx_command_writer;
 
+/* Validate that all currently bound R600/R700 graphics shaders fit the fixed GPR partition written
+ * by the begin atom. This is called only from the explicit TeraScale 1 branch before a draw.
+ */
+bool terakan_hw_config_draw_terascale_1_bound_gprs_fit_baseline(
+   struct terakan_gfx_command_writer const * command_writer);
+
 /* Emits packets setting registers that never change. */
 void terakan_hw_config_draw_emit_constant(struct terakan_gfx_command_writer * command_writer);
 

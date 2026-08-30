@@ -13,6 +13,17 @@
 #include "gallium/drivers/r600/r600d_common.h"
 
 #include <assert.h>
+#include <stddef.h>
+
+bool
+terakan_hw_config_draw_terascale_1_gprs_fit_baseline(
+   struct terakan_hw_config_draw_terascale_1_gpr_counts const * const required,
+   struct terakan_hw_config_draw_terascale_1_gpr_counts const * const baseline)
+{
+   return required != NULL && baseline != NULL && required->ps <= baseline->ps &&
+          required->vs <= baseline->vs && required->gs <= baseline->gs &&
+          required->es <= baseline->es;
+}
 
 static uint32_t *
 write_context_reg(uint32_t * packet, uint32_t const reg, uint32_t const value)

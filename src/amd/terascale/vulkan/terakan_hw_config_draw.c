@@ -565,6 +565,44 @@ terakan_hw_config_draw_emit_constant(struct terakan_gfx_command_writer * const c
 typedef void (*terakan_hw_config_draw_emit_function)(
    struct terakan_gfx_command_writer * command_writer);
 
+bool
+terakan_hw_config_draw_terascale_1_bound_gprs_fit_baseline(
+   struct terakan_gfx_command_writer const * const command_writer)
+{
+   struct terakan_physical_device_chip_info const * const chip_info =
+      &terakan_gfx_command_writer_physical_device(command_writer)->chip_info;
+   assert(chip_info->is_terascale_1);
+
+   struct terakan_shader_static const * vs = command_writer->hw_config_draw.sq_pgm_vs_;
+   if (vs == NULL) {
+      vs = &terakan_gfx_command_writer_device(command_writer)
+               ->meta_shaders[TERAKAN_META_SHADER_DUMMY_NAN_VS];
+   }
+   struct terakan_shader_static const * ps = command_writer->hw_config_draw.sq_pgm_ps_;
+   if (ps == NULL) {
+      ps = &terakan_gfx_command_writer_device(command_writer)
+               ->meta_shaders[TERAKAN_META_SHADER_DUMMY_OPAQUE_PS];
+   }
+
+   struct terakan_hw_config_draw_terascale_1_gpr_counts const required = {
+      .ps = G_028844_NUM_GPRS(ps->sq_pgm_resources[0]),
+      .vs = G_028844_NUM_GPRS(vs->sq_pgm_resources[0]),
+      .gs = command_writer->hw_config_draw.sq_pgm_gs_ != NULL
+               ? G_028844_NUM_GPRS(command_writer->hw_config_draw.sq_pgm_gs_->sq_pgm_resources[0])
+               : 0,
+      .es = command_writer->hw_config_draw.sq_pgm_es_ != NULL
+               ? G_028844_NUM_GPRS(command_writer->hw_config_draw.sq_pgm_es_->sq_pgm_resources[0])
+               : 0,
+   };
+   struct terakan_hw_config_draw_terascale_1_gpr_counts const baseline = {
+      .ps = chip_info->terascale_1.num_ps_gprs,
+      .vs = chip_info->terascale_1.num_vs_gprs,
+      .gs = chip_info->terascale_1.num_gs_gprs,
+      .es = chip_info->terascale_1.num_es_gprs,
+   };
+   return terakan_hw_config_draw_terascale_1_gprs_fit_baseline(&required, &baseline);
+}
+
 static void
 terakan_hw_config_draw_emit_vgt_index_offset(
    struct terakan_gfx_command_writer * const command_writer)

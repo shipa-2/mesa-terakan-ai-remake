@@ -232,14 +232,23 @@ classic Gallium R600 driver that has supported this hardware for years).
   including the family baseline PS/VS/clause-temporary GPR partition in
   `SQ_GPR_RESOURCE_MGMT_1`. There is intentionally no
   `SQ_GPR_RESOURCE_MGMT_3`: address `0x8C0C` is thread management on this
-  generation. Dynamic GPR redistribution for shaders exceeding the family
-  baseline (`r600_adjust_gprs()`) is still unported and must be implemented or
-  such shaders rejected before queue submission can be enabled; the baseline
-  packet alone does not prove arbitrary shader GPR allocations safe. Streaming
+  generation. Draw recording now checks the GPR count of every bound hardware
+  stage against this exact per-family partition before emitting any draw packet.
+  A shader exceeding its stage's baseline makes command-buffer recording fail,
+  preventing the lockup `r600_adjust_gprs()` documents when
+  `SQ_PGM_RESOURCES_*.NUM_GPRS` exceeds `SQ_GPR_RESOURCE_MGMT*.NUM_*_GPRS`.
+  Live redistribution remains unported: unlike the classic driver, Terakan does
+  not yet emit the replacement allocation with the required `WAIT_3D_IDLE`, so
+  it conservatively rejects some shader combinations the hardware could run.
+  The CPU oracle checks equality at the RV710 limit and all four first-invalid
+  values; changing the PS comparison from `<=` to `<` makes the equality case
+  abort. No draw was submitted to RV710, so the baseline packet plus admission
+  check still does not prove shader execution. Streaming
   output is out of scope (see TODO.md's existing R8xx/R9xx item for it), so
   the reference function's streamout-conditional stores are not written.
-  Neither function is called from anywhere yet -- see the P0-equivalent item
-  above for what wiring them in still needs.
+  Both functions are wired through
+  `terakan_hw_config_shared_indirect_buffer_begun()` for TeraScale 1; the
+  queue-submit guard remains because this state has not executed on RV710.
 
 - TeraScale 1 sampler descriptors now use a generation-specific S# encoder in
   `terakan_sampler_terascale_1.c`, transcribed from `r600_create_sampler_state()`

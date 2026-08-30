@@ -663,6 +663,17 @@ void terakan_gfx_command_writer_emit_event_write_eop_discarding_data(
 static inline void
 terakan_gfx_command_writer_before_hw_draw(struct terakan_gfx_command_writer * const command_writer)
 {
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1 &&
+       !command_writer->hw_config_shared.is_compute_active_ &&
+       !terakan_hw_config_draw_terascale_1_bound_gprs_fit_baseline(command_writer)) {
+      /* r600_adjust_gprs() explicitly documents a GPU lockup if a program requests more GPRs than
+       * its SQ_GPR_RESOURCE_MGMT allocation. Live redistribution and its WAIT_3D_IDLE ordering are
+       * not hardware-validated in Terakan yet, so fail command-buffer recording conservatively.
+       */
+      vk_command_buffer_set_error(&command_writer->base.command_buffer->vk, VK_ERROR_UNKNOWN);
+      return;
+   }
+
    /* TODO(Triang3l): Maybe insert barriers after emitting the configuration changes in command
     * emission, not before, so configuration changes are not blocked by the barriers in the CP, and
     * new work can begin as soon as possible.
