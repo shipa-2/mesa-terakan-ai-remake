@@ -399,6 +399,14 @@ classic Gallium R600 driver that has supported this hardware for years).
   is therefore exactly zero dwords and its dirty mask is consumed without
   touching hardware. Storage buffer/image execution remains unsupported.
 
+- TeraScale 1 command recording suppresses the whole Evergreen compute-state
+  emitter. Its `SQ_DYN_GPR_RESOURCE_LIMIT_1`, compute-flavoured `VGT_GS_MODE`,
+  `VGT_SHADER_STAGES_EN`, `SPI_COMPUTE_*`, `SQ_PGM_*_LS`, `SQ_LDS_ALLOC` and
+  `VGT_COMPUTE_*` packets are not a register-compatible R700 compute path.
+  Until classic R600 supplies an exact replacement, the generation-specific
+  packet is exactly zero dwords and the dirty bits are consumed. This prevents
+  corrupt recording but deliberately does not provide R700 compute support.
+
 - TeraScale 1 (R700) `DB_SHADER_CONTROL`: the runtime emitter no longer sends
   the full Evergreen payload merely because both generations place the
   register at `0x02880C`. Direct comparison of `r600d.h` and `evergreend.h`

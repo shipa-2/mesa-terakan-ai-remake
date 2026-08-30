@@ -32,6 +32,7 @@ done
 cpu_tests=(
   terakan_sfn_lowering
   terakan_hw_config_loop_constants
+  terakan_hw_config_compute_terascale_1
   terakan_hw_config_shared_terascale_1
   terakan_sampler_terascale_1
   terakan_resource_descriptor_terascale_1
