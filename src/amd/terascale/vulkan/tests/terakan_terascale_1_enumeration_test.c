@@ -385,6 +385,22 @@ main(void)
          fprintf(stderr, "  apiVersion is 0\n");
          ++failures;
       }
+      VkPhysicalDeviceSampleLocationsPropertiesEXT sample_location_properties = {
+         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SAMPLE_LOCATIONS_PROPERTIES_EXT,
+      };
+      VkPhysicalDeviceProperties2 properties_2 = {
+         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+         .pNext = &sample_location_properties,
+      };
+      vkGetPhysicalDeviceProperties2(physical_devices[device_index], &properties_2);
+      if (device_name_is_r700(properties.deviceName) &&
+          (sample_location_properties.maxSampleLocationGridSize.width != 1 ||
+           sample_location_properties.maxSampleLocationGridSize.height != 1)) {
+         fprintf(stderr, "  R700 sample-location grid is %ux%u, expected 1x1\n",
+                 sample_location_properties.maxSampleLocationGridSize.width,
+                 sample_location_properties.maxSampleLocationGridSize.height);
+         ++failures;
+      }
 
       float const priority = 1.0F;
       VkDeviceQueueCreateInfo const queue_info = {

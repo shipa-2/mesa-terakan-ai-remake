@@ -54,6 +54,120 @@ bool terakan_hw_config_draw_terascale_1_spi_ps_encode(
 uint32_t * terakan_hw_config_draw_terascale_1_write_spi_ps(
    uint32_t * packet, struct terakan_hw_config_draw_terascale_1_spi_ps const * spi);
 
+/* R600/R700 has one 8-bit sample mask per pixel in R_028C48_PA_SC_AA_MASK. Classic
+ * r600_emit_sample_mask() repeats the API-visible low byte for all four pixels. Evergreen uses
+ * R_028C3C for its one-dword form, but that address is R_028C3C_CB_CLRCMP_MSK on R600/R700, so the
+ * shared emitter must not be used even though the payload itself has the same repeated shape.
+ */
+uint32_t terakan_hw_config_draw_terascale_1_pa_sc_aa_mask_encode(uint32_t sample_mask);
+
+uint32_t * terakan_hw_config_draw_terascale_1_write_pa_sc_aa_mask(uint32_t * packet,
+                                                                   uint32_t value);
+
+/* RV6xx/RV7xx has one sample-location pattern shared by the four pixels of a 2x2 quad, stored in
+ * two context registers rather than R8xx's four pixel-specific register groups. The physical
+ * device therefore advertises a 1x1 programmable grid on TeraScale 1. The encoder still verifies
+ * that its internal [sample][pixel] input was replicated, so a future caller can't silently drop
+ * per-pixel differences.
+ */
+struct terakan_hw_config_draw_terascale_1_pa_sc_aa {
+   uint32_t config;
+   uint32_t sample_locs[2];
+};
+
+bool terakan_hw_config_draw_terascale_1_pa_sc_aa_encode(
+   uint32_t sample_count_log2, uint32_t max_sample_dist, bool aa_mask_centroid_determine,
+   uint8_t const sample_locs[16][4],
+   struct terakan_hw_config_draw_terascale_1_pa_sc_aa * aa_out);
+
+/* Writes the two PA_SC_AA_SAMPLE_LOCS_MCTX dwords followed by PA_SC_AA_CONFIG, matching the order
+ * in r600_emit_msaa_state() for R700. R600's configuration-register sample locations remain out of
+ * scope while R600 logical-device creation is blocked.
+ */
+uint32_t * terakan_hw_config_draw_terascale_1_write_pa_sc_aa(
+   uint32_t * packet, struct terakan_hw_config_draw_terascale_1_pa_sc_aa const * aa);
+
+/* Evergreen splits rasterizer mode state between PA_SC_MODE_CNTL_0 at 0x028A48 and
+ * PA_SC_MODE_CNTL_1 at 0x028A4C. R700 has one differently-shaped PA_SC_MODE_CNTL at 0x028A4C;
+ * 0x028A48 is PA_SC_MPASS_PS_CNTL there. Keep the input semantic so the R700-only translation unit
+ * owns every field position and can reject any future unported Evergreen state.
+ */
+struct terakan_hw_config_draw_terascale_1_pa_sc_mode_input {
+   bool msaa_enable;
+   bool line_stipple_enable;
+   bool viewport_scissor_enable;
+   bool ps_iter_sample;
+   bool is_rv770;
+   uint32_t unknown_mode_0_bits;
+   uint32_t unknown_mode_1_bits;
+};
+
+bool terakan_hw_config_draw_terascale_1_pa_sc_mode_encode(
+   struct terakan_hw_config_draw_terascale_1_pa_sc_mode_input const * input,
+   uint32_t * mode_out);
+
+uint32_t * terakan_hw_config_draw_terascale_1_write_pa_sc_mode(uint32_t * packet,
+                                                                uint32_t value);
+
+/* R700 moves the complete polygon-offset block from Evergreen's 0x028B78..0x028B8C to
+ * 0x028DF8..0x028E0C. DB_FMT_CNTL's two fields have identical positions in both headers, while
+ * clamp/scale/offset are raw IEEE-754 dwords. Validate the former and isolate all address changes
+ * here so the shared Evergreen path stays untouched.
+ */
+bool terakan_hw_config_draw_terascale_1_pa_su_poly_offset_db_fmt_encode(
+   uint32_t evergreen_value, uint32_t * r700_value_out);
+
+uint32_t * terakan_hw_config_draw_terascale_1_write_pa_su_poly_offset_db_fmt(
+   uint32_t * packet, uint32_t value);
+
+uint32_t * terakan_hw_config_draw_terascale_1_write_pa_su_poly_offset(
+   uint32_t * packet, uint32_t clamp, uint32_t scale, uint32_t offset);
+
+/* The first SQ_PGM_RESOURCES word has compatible NUM_GPRS/STACK_SIZE/DX10_CLAMP/
+ * UNCACHED_FIRST_INST/CLAMP_CONSTS positions, but nearby fields and all register addresses differ.
+ * Accept only that proven subset; Evergreen RESOURCES_2 rounding/denorm state has no port here and
+ * must be zero before these writers are used.
+ */
+bool terakan_hw_config_draw_terascale_1_sq_pgm_resources_encode(
+   uint32_t evergreen_resources, uint32_t * r700_resources_out);
+
+/* The classic R600/R700 baseline is emitted by the per-indirect-buffer begin atom. The separate
+ * Evergreen draw-constant packet must therefore contain exactly zero dwords on TeraScale 1.
+ */
+uint32_t terakan_hw_config_draw_terascale_1_constant_packet_dwords(void);
+
+/* Evergreen tessellation-stage controls have no R600/R700 registers. A disabled tracked value is
+ * represented by an empty packet; anything else is unsupported rather than reinterpreted.
+ */
+bool terakan_hw_config_draw_terascale_1_absent_vgt_control_encode(
+   uint32_t value, uint32_t * packet_dwords_out);
+
+/* The begin atom clears the real R600/R700 ring-item-size block. Evergreen ring indices and
+ * addresses are not reusable; until their users are ported, accept only an all-zero state.
+ */
+bool terakan_hw_config_draw_terascale_1_ring_itemsize_encode(
+   uint32_t const * itemsize_dwords, uint32_t itemsize_count, uint32_t * packet_dwords_out);
+
+/* R600/R700 has PS/VS/GS/ES boolean-constant stages 0..3, but no Evergreen LS stage 4. */
+bool terakan_hw_config_draw_terascale_1_absent_ls_bool_const_encode(
+   uint32_t value, uint32_t * packet_dwords_out);
+
+/* R600/R700 has no Evergreen CB_IMMEDn_BASE UAV immediate-address block. */
+uint32_t terakan_hw_config_draw_terascale_1_cb_immed_packet_dwords(void);
+
+uint32_t * terakan_hw_config_draw_terascale_1_write_sq_pgm_fs(uint32_t * packet,
+                                                               uint32_t program_va_shr8);
+uint32_t * terakan_hw_config_draw_terascale_1_write_sq_pgm_vs(
+   uint32_t * packet, uint32_t program_va_shr8, uint32_t resources);
+uint32_t * terakan_hw_config_draw_terascale_1_write_sq_pgm_ps(
+   uint32_t * packet, uint32_t program_va_shr8, uint32_t resources, uint32_t exports);
+uint32_t * terakan_hw_config_draw_terascale_1_write_sq_pgm_es(
+   uint32_t * packet, uint32_t program_va_shr8, uint32_t resources);
+uint32_t * terakan_hw_config_draw_terascale_1_write_sq_pgm_gs(
+   uint32_t * packet, uint32_t program_va_shr8, uint32_t resources);
+uint32_t * terakan_hw_config_draw_terascale_1_write_spi_vs_out_id(
+   uint32_t * packet, uint32_t count, uint32_t const * values);
+
 /* Per-draw (as opposed to once-per-command-buffer) TeraScale 1 register emission that genuinely
  * needs its own code, as opposed to the R8xx/R9xx code already working unchanged (see
  * DB_DEPTH_CONTROL/CB_TARGET_MASK in TODO.md) -- either because the register lives at a different

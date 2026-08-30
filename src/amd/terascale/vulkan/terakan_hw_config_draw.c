@@ -316,6 +316,16 @@ terakan_hw_config_draw_emit_context_register(
 void
 terakan_hw_config_draw_emit_constant(struct terakan_gfx_command_writer * const command_writer)
 {
+   /* terakan_hw_config_shared_indirect_buffer_begun() has already emitted the complete classic
+    * r600_init_atom_start_cs() context baseline for TeraScale 1. Replaying this function's
+    * Evergreen array would not merely duplicate it: SQ_LDS_ALLOC, SQ_PGM_RESOURCES_FS,
+    * DB_SRESULTS_COMPARE_STATE and SQ_DYN_GPR_RESOURCE_LIMIT occupy unrelated R600/R700 registers.
+    */
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
+      assert(terakan_hw_config_draw_terascale_1_constant_packet_dwords() == 0);
+      return;
+   }
+
 #define TERAKAN_HW_CONFIG_DRAW_EMIT_CONSTANT_SINGLE(address, value)                                \
    PKT3(PKT3_SET_CONTEXT_REG, 1, 0), TERAKAN_CONTEXT_REG_OFFSET(address), (value)
 
@@ -664,6 +674,13 @@ static void
 terakan_hw_config_draw_emit_vgt_shader_stages_en(
    struct terakan_gfx_command_writer * const command_writer)
 {
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
+      uint32_t packet_dwords;
+      assert(terakan_hw_config_draw_terascale_1_absent_vgt_control_encode(
+         command_writer->hw_config_draw.vgt_shader_stages_en_, &packet_dwords));
+      assert(packet_dwords == 0);
+      return;
+   }
    terakan_hw_config_draw_emit_context_register(
       command_writer, R_028B54_VGT_SHADER_STAGES_EN,
       command_writer->hw_config_draw.vgt_shader_stages_en_);
@@ -673,6 +690,13 @@ static void
 terakan_hw_config_draw_emit_vgt_ls_hs_config(
    struct terakan_gfx_command_writer * const command_writer)
 {
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
+      uint32_t packet_dwords;
+      assert(terakan_hw_config_draw_terascale_1_absent_vgt_control_encode(
+         command_writer->hw_config_draw.vgt_ls_hs_config_, &packet_dwords));
+      assert(packet_dwords == 0);
+      return;
+   }
    terakan_hw_config_draw_emit_context_register(
       command_writer, R_028B58_VGT_LS_HS_CONFIG,
       command_writer->hw_config_draw.vgt_ls_hs_config_);
@@ -681,6 +705,13 @@ terakan_hw_config_draw_emit_vgt_ls_hs_config(
 static void
 terakan_hw_config_draw_emit_vgt_tf_param(struct terakan_gfx_command_writer * const command_writer)
 {
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
+      uint32_t packet_dwords;
+      assert(terakan_hw_config_draw_terascale_1_absent_vgt_control_encode(
+         command_writer->hw_config_draw.vgt_tf_param_, &packet_dwords));
+      assert(packet_dwords == 0);
+      return;
+   }
    terakan_hw_config_draw_emit_context_register(command_writer, R_028B6C_VGT_TF_PARAM,
                                                 command_writer->hw_config_draw.vgt_tf_param_);
 }
@@ -701,10 +732,16 @@ terakan_hw_config_draw_emit_sq_pgm_fs(struct terakan_gfx_command_writer * const 
       bo = device->meta_shaders_bo;
       va_shr8 = device->meta_shaders_empty_fetch_va_shr8;
    }
-   *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
-   *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_0288A4_SQ_PGM_START_FS);
-   uint32_t const * const packet_pgm_start = packet;
-   *packet++ = va_shr8;
+   uint32_t const * packet_pgm_start;
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
+      packet_pgm_start = packet + 2;
+      packet = terakan_hw_config_draw_terascale_1_write_sq_pgm_fs(packet, va_shr8);
+   } else {
+      *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
+      *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_0288A4_SQ_PGM_START_FS);
+      packet_pgm_start = packet;
+      *packet++ = va_shr8;
+   }
    terakan_gfx_command_writer_add_relocation(
       command_writer, &packet, packet_pgm_start, *packet_pgm_start,
       TERASCALE_WDDM_PATCH_IDS_SQ_PGM_START_FS,
@@ -726,8 +763,22 @@ terakan_hw_config_draw_emit_sq_pgm_vs(struct terakan_gfx_command_writer * const 
    uint32_t const spi_vs_out_id_count =
       G_0286C4_VS_EXPORT_COUNT(shader->stage.vs.spi_vs_out_config) / 4 + 1;
 
+   bool const is_terascale_1 =
+      terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1;
+   uint32_t resources_r700 = 0;
+   if (is_terascale_1 &&
+       (shader->sq_pgm_resources[1] != 0 ||
+        !terakan_hw_config_draw_terascale_1_sq_pgm_resources_encode(
+           shader->sq_pgm_resources[0], &resources_r700))) {
+      return;
+   }
+
    uint32_t const packet_dwords =
-      2 + ((R_028864_SQ_PGM_RESOURCES_2_VS - R_02885C_SQ_PGM_START_VS) / sizeof(uint32_t) + 1) +
+      (is_terascale_1
+          ? 6
+          : 2 + ((R_028864_SQ_PGM_RESOURCES_2_VS - R_02885C_SQ_PGM_START_VS) /
+                    sizeof(uint32_t) +
+                 1)) +
       /* R_02861C_SPI_VS_OUT_ID_[0-9] */
       2 + spi_vs_out_id_count +
       /* R_0286C4_SPI_VS_OUT_CONFIG */
@@ -741,15 +792,22 @@ terakan_hw_config_draw_emit_sq_pgm_vs(struct terakan_gfx_command_writer * const 
       return;
    }
 
-   *packet++ =
-      PKT3(PKT3_SET_CONTEXT_REG,
-           (R_028864_SQ_PGM_RESOURCES_2_VS - R_02885C_SQ_PGM_START_VS) / sizeof(uint32_t) + 1, 0);
-   *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_02885C_SQ_PGM_START_VS);
-   uint32_t const * const packet_pgm_start = packet;
-   *packet++ = shader->program_va_shr8;
-   /* TODO(Triang3l): `USE_LS_CONSTS`. */
-   *packet++ = shader->sq_pgm_resources[0];
-   *packet++ = shader->sq_pgm_resources[1];
+   uint32_t const * packet_pgm_start;
+   if (is_terascale_1) {
+      packet_pgm_start = packet + 2;
+      packet = terakan_hw_config_draw_terascale_1_write_sq_pgm_vs(
+         packet, shader->program_va_shr8, resources_r700);
+   } else {
+      *packet++ = PKT3(
+         PKT3_SET_CONTEXT_REG,
+         (R_028864_SQ_PGM_RESOURCES_2_VS - R_02885C_SQ_PGM_START_VS) / sizeof(uint32_t) + 1, 0);
+      *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_02885C_SQ_PGM_START_VS);
+      packet_pgm_start = packet;
+      *packet++ = shader->program_va_shr8;
+      /* TODO(Triang3l): `USE_LS_CONSTS`. */
+      *packet++ = shader->sq_pgm_resources[0];
+      *packet++ = shader->sq_pgm_resources[1];
+   }
    terakan_gfx_command_writer_add_relocation(
       command_writer, &packet, packet_pgm_start, *packet_pgm_start,
       TERASCALE_WDDM_PATCH_IDS_SQ_PGM_START_VS,
@@ -757,10 +815,15 @@ terakan_hw_config_draw_emit_sq_pgm_vs(struct terakan_gfx_command_writer * const 
                                                 shader->program_bo, true, false,
                                                 TERAKAN_BO_PRIORITY_SHADER_BINARY));
 
-   *packet++ = PKT3(PKT3_SET_CONTEXT_REG, spi_vs_out_id_count, 0);
-   *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_02861C_SPI_VS_OUT_ID_0);
-   memcpy(packet, shader->stage.vs.spi_vs_out_id, sizeof(uint32_t) * spi_vs_out_id_count);
-   packet += spi_vs_out_id_count;
+   if (is_terascale_1) {
+      packet = terakan_hw_config_draw_terascale_1_write_spi_vs_out_id(
+         packet, spi_vs_out_id_count, shader->stage.vs.spi_vs_out_id);
+   } else {
+      *packet++ = PKT3(PKT3_SET_CONTEXT_REG, spi_vs_out_id_count, 0);
+      *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_02861C_SPI_VS_OUT_ID_0);
+      memcpy(packet, shader->stage.vs.spi_vs_out_id, sizeof(uint32_t) * spi_vs_out_id_count);
+      packet += spi_vs_out_id_count;
+   }
 
    *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
    *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_0286C4_SPI_VS_OUT_CONFIG);
@@ -790,6 +853,21 @@ terakan_hw_config_draw_emit_sq_pgm_pre_vs_stage(
       return;
    }
 
+   bool const is_terascale_1 =
+      terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1;
+   uint32_t resources_r700 = 0;
+   if (is_terascale_1) {
+      /* R600/R700 has ES and GS, but no LS or HS. Also, its START and RESOURCES registers are
+       * separated by three intervening registers rather than consecutive with RESOURCES_2.
+       */
+      if (register_start == R_0288D0_SQ_PGM_START_LS ||
+          register_start == R_0288B8_SQ_PGM_START_HS || shader->sq_pgm_resources[1] != 0 ||
+          !terakan_hw_config_draw_terascale_1_sq_pgm_resources_encode(
+             shader->sq_pgm_resources[0], &resources_r700)) {
+         return;
+      }
+   }
+
    /* `SQ_PGM_START_*`, `SQ_PGM_RESOURCES_*` and `SQ_PGM_RESOURCES_2_*` are consecutive for every
     * one of these stages, so all three are written by one `SET_CONTEXT_REG`.
     */
@@ -808,7 +886,7 @@ terakan_hw_config_draw_emit_sq_pgm_pre_vs_stage(
                  "Pre-VS vertex pipeline stages must have consecutive SQ_PGM_START, "
                  "SQ_PGM_RESOURCES and SQ_PGM_RESOURCES_2 registers");
    uint32_t const register_count = 3;
-   uint32_t const packet_dwords = 2 + register_count;
+   uint32_t const packet_dwords = is_terascale_1 ? 6 : 2 + register_count;
 
    uint32_t * packet = terakan_gfx_command_writer_emit_with_bo(
       command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG, packet_dwords, 1, 1, 0);
@@ -816,12 +894,25 @@ terakan_hw_config_draw_emit_sq_pgm_pre_vs_stage(
       return;
    }
 
-   *packet++ = PKT3(PKT3_SET_CONTEXT_REG, register_count, 0);
-   *packet++ = TERAKAN_CONTEXT_REG_OFFSET(register_start);
-   uint32_t const * const packet_pgm_start = packet;
-   *packet++ = shader->program_va_shr8;
-   *packet++ = shader->sq_pgm_resources[0];
-   *packet++ = shader->sq_pgm_resources[1];
+   uint32_t const * packet_pgm_start;
+   if (is_terascale_1) {
+      packet_pgm_start = packet + 2;
+      if (register_start == R_02888C_SQ_PGM_START_ES) {
+         packet = terakan_hw_config_draw_terascale_1_write_sq_pgm_es(
+            packet, shader->program_va_shr8, resources_r700);
+      } else {
+         assert(register_start == R_028874_SQ_PGM_START_GS);
+         packet = terakan_hw_config_draw_terascale_1_write_sq_pgm_gs(
+            packet, shader->program_va_shr8, resources_r700);
+      }
+   } else {
+      *packet++ = PKT3(PKT3_SET_CONTEXT_REG, register_count, 0);
+      *packet++ = TERAKAN_CONTEXT_REG_OFFSET(register_start);
+      packet_pgm_start = packet;
+      *packet++ = shader->program_va_shr8;
+      *packet++ = shader->sq_pgm_resources[0];
+      *packet++ = shader->sq_pgm_resources[1];
+   }
    terakan_gfx_command_writer_add_relocation(
       command_writer, &packet, packet_pgm_start, *packet_pgm_start, patch_id,
       terakan_bo_reference_writer_add_reference(&command_writer->base.bo_reference_writer,
@@ -876,8 +967,20 @@ terakan_hw_config_draw_emit_sq_pgm_ps(struct terakan_gfx_command_writer * const 
    bool const is_terascale_1 =
       terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1;
 
+   uint32_t resources_r700 = 0;
+   if (is_terascale_1 &&
+       (shader->sq_pgm_resources[1] != 0 ||
+        !terakan_hw_config_draw_terascale_1_sq_pgm_resources_encode(
+           shader->sq_pgm_resources[0], &resources_r700))) {
+      return;
+   }
+
    uint32_t const packet_dwords =
-      2 + ((R_02884C_SQ_PGM_EXPORTS_PS - R_028840_SQ_PGM_START_PS) / sizeof(uint32_t) + 1) +
+      (is_terascale_1
+          ? 7
+          : 2 + ((R_02884C_SQ_PGM_EXPORTS_PS - R_028840_SQ_PGM_START_PS) /
+                    sizeof(uint32_t) +
+                 1)) +
       /* SPI_PS_INPUT_CNTL_n, SPI_PS_IN_CONTROL_0/1 and SPI_INPUT_Z. */
       (interpolator_count != 0 ? 2 + interpolator_count : 0) + 4 + 3 +
       /* SPI_BARYC_CNTL exists only on Evergreen and newer. R700 has SPI_FOG_FUNC_SCALE at the
@@ -893,15 +996,22 @@ terakan_hw_config_draw_emit_sq_pgm_ps(struct terakan_gfx_command_writer * const 
       return;
    }
 
-   *packet++ =
-      PKT3(PKT3_SET_CONTEXT_REG,
-           (R_02884C_SQ_PGM_EXPORTS_PS - R_028840_SQ_PGM_START_PS) / sizeof(uint32_t) + 1, 0);
-   *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028840_SQ_PGM_START_PS);
-   uint32_t const * const packet_pgm_start = packet;
-   *packet++ = shader->program_va_shr8;
-   *packet++ = shader->sq_pgm_resources[0];
-   *packet++ = shader->sq_pgm_resources[1];
-   *packet++ = shader->stage.ps.sq_pgm_exports_ps;
+   uint32_t const * packet_pgm_start;
+   if (is_terascale_1) {
+      packet_pgm_start = packet + 2;
+      packet = terakan_hw_config_draw_terascale_1_write_sq_pgm_ps(
+         packet, shader->program_va_shr8, resources_r700, shader->stage.ps.sq_pgm_exports_ps);
+   } else {
+      *packet++ = PKT3(
+         PKT3_SET_CONTEXT_REG,
+         (R_02884C_SQ_PGM_EXPORTS_PS - R_028840_SQ_PGM_START_PS) / sizeof(uint32_t) + 1, 0);
+      *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028840_SQ_PGM_START_PS);
+      packet_pgm_start = packet;
+      *packet++ = shader->program_va_shr8;
+      *packet++ = shader->sq_pgm_resources[0];
+      *packet++ = shader->sq_pgm_resources[1];
+      *packet++ = shader->stage.ps.sq_pgm_exports_ps;
+   }
    terakan_gfx_command_writer_add_relocation(
       command_writer, &packet, packet_pgm_start, *packet_pgm_start,
       TERASCALE_WDDM_PATCH_IDS_SQ_PGM_START_PS,
@@ -954,6 +1064,15 @@ terakan_hw_config_draw_emit_sq_ring_itemsize(
    struct terakan_gfx_command_writer * const command_writer)
 {
    struct terakan_hw_config_draw * const config = &command_writer->hw_config_draw;
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
+      uint32_t packet_dwords;
+      assert(terakan_hw_config_draw_terascale_1_ring_itemsize_encode(
+         config->sq_ring_itemsize_.itemsize_dwords, TERAKAN_SHADER_RING_INDEX_COUNT,
+         &packet_dwords));
+      assert(packet_dwords == 0);
+      config->sq_ring_itemsize_.modified_bits = 0;
+      return;
+   }
    if (unlikely(!config->sq_ring_itemsize_.modified_bits)) {
       /* Don't do an empty emission. */
       return;
@@ -993,6 +1112,13 @@ static void
 terakan_hw_config_draw_emit_sq_bool_const_ls(
    struct terakan_gfx_command_writer * const command_writer)
 {
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
+      uint32_t packet_dwords;
+      assert(terakan_hw_config_draw_terascale_1_absent_ls_bool_const_encode(
+         command_writer->hw_config_draw.sq_bool_const_ls_, &packet_dwords));
+      assert(packet_dwords == 0);
+      return;
+   }
    uint32_t * packet = terakan_gfx_command_writer_emit(
       command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG, 2 + 1);
    if (unlikely(packet == NULL)) {
@@ -1112,9 +1238,49 @@ terakan_hw_config_draw_emit_pa_sc_line_stipple(
 }
 
 static void
+terakan_hw_config_draw_emit_pa_sc_mode_terascale_1(
+   struct terakan_gfx_command_writer * const command_writer)
+{
+   struct terakan_physical_device_chip_info const * const chip_info =
+      &terakan_gfx_command_writer_physical_device(command_writer)->chip_info;
+   uint32_t const mode_0 = command_writer->hw_config_draw.pa_sc_mode_cntl_0_;
+   uint32_t const mode_1 = command_writer->hw_config_draw.pa_sc_mode_cntl_1_;
+   uint32_t const known_mode_0_bits =
+      S_028A48_MSAA_ENABLE(1) | S_028A48_VPORT_SCISSOR_ENABLE(1) |
+      S_028A48_LINE_STIPPLE_ENABLE(1);
+   uint32_t const known_mode_1_bits = TERAKAN_HW_CONFIG_DRAW_PA_SC_MODE_CNTL_1_CONSTANT |
+                                      EG_S_028A4C_PS_ITER_SAMPLE(1);
+   struct terakan_hw_config_draw_terascale_1_pa_sc_mode_input const input = {
+      .msaa_enable = (mode_0 & S_028A48_MSAA_ENABLE(1)) != 0,
+      .line_stipple_enable = (mode_0 & S_028A48_LINE_STIPPLE_ENABLE(1)) != 0,
+      .viewport_scissor_enable = (mode_0 & S_028A48_VPORT_SCISSOR_ENABLE(1)) != 0,
+      .ps_iter_sample = (mode_1 & EG_S_028A4C_PS_ITER_SAMPLE(1)) != 0,
+      .is_rv770 = chip_info->chip_family == CHIP_RV770,
+      .unknown_mode_0_bits = mode_0 & ~known_mode_0_bits,
+      .unknown_mode_1_bits = mode_1 & ~known_mode_1_bits,
+   };
+   uint32_t mode_r700;
+   if (!terakan_hw_config_draw_terascale_1_pa_sc_mode_encode(&input, &mode_r700)) {
+      return;
+   }
+
+   uint32_t * packet = terakan_gfx_command_writer_emit(
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG, 3);
+   if (unlikely(packet == NULL)) {
+      return;
+   }
+   packet = terakan_hw_config_draw_terascale_1_write_pa_sc_mode(packet, mode_r700);
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
+}
+
+static void
 terakan_hw_config_draw_emit_pa_sc_mode_cntl_0(
    struct terakan_gfx_command_writer * const command_writer)
 {
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
+      terakan_hw_config_draw_emit_pa_sc_mode_terascale_1(command_writer);
+      return;
+   }
    terakan_hw_config_draw_emit_context_register(command_writer, R_028A48_PA_SC_MODE_CNTL_0,
                                                 command_writer->hw_config_draw.pa_sc_mode_cntl_0_);
 }
@@ -1123,6 +1289,14 @@ static void
 terakan_hw_config_draw_emit_pa_sc_mode_cntl_1(
    struct terakan_gfx_command_writer * const command_writer)
 {
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
+      /* MODE_CNTL_0 and MODE_CNTL_1 are independently dirty-tracked software entries but combine
+       * into one R700 register. Emit the complete current value from either entry; if both are
+       * dirty this deliberately writes the same value twice rather than relying on entry order.
+       */
+      terakan_hw_config_draw_emit_pa_sc_mode_terascale_1(command_writer);
+      return;
+   }
    terakan_hw_config_draw_emit_context_register(command_writer, R_028A4C_PA_SC_MODE_CNTL_1,
                                                 command_writer->hw_config_draw.pa_sc_mode_cntl_1_);
 }
@@ -1131,6 +1305,22 @@ static void
 terakan_hw_config_draw_emit_pa_su_poly_offset_db_fmt_cntl(
    struct terakan_gfx_command_writer * const command_writer)
 {
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
+      uint32_t value_r700;
+      if (!terakan_hw_config_draw_terascale_1_pa_su_poly_offset_db_fmt_encode(
+             command_writer->hw_config_draw.pa_su_poly_offset_db_fmt_cntl_, &value_r700)) {
+         return;
+      }
+      uint32_t * packet = terakan_gfx_command_writer_emit(
+         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG, 3);
+      if (unlikely(packet == NULL)) {
+         return;
+      }
+      packet =
+         terakan_hw_config_draw_terascale_1_write_pa_su_poly_offset_db_fmt(packet, value_r700);
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
+      return;
+   }
    terakan_hw_config_draw_emit_context_register(
       command_writer, R_028B78_PA_SU_POLY_OFFSET_DB_FMT_CNTL,
       command_writer->hw_config_draw.pa_su_poly_offset_db_fmt_cntl_);
@@ -1140,6 +1330,24 @@ static void
 terakan_hw_config_draw_emit_pa_su_poly_offset(
    struct terakan_gfx_command_writer * const command_writer)
 {
+   struct terakan_hw_config_draw_pa_su_poly_offset const * const poly_offset =
+      &command_writer->hw_config_draw.pa_su_poly_offset_;
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
+      uint32_t clamp, scale, offset;
+      memcpy(&clamp, &poly_offset->clamp, sizeof(clamp));
+      memcpy(&scale, &poly_offset->slope_scale_per_16th_subpixel, sizeof(scale));
+      memcpy(&offset, &poly_offset->constant_offset, sizeof(offset));
+      uint32_t * packet = terakan_gfx_command_writer_emit(
+         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG, 7);
+      if (unlikely(packet == NULL)) {
+         return;
+      }
+      packet = terakan_hw_config_draw_terascale_1_write_pa_su_poly_offset(
+         packet, clamp, scale, offset);
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
+      return;
+   }
+
    uint32_t * packet = terakan_gfx_command_writer_emit(
       command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG, 2 + 1 + 2 * 2);
    if (unlikely(packet == NULL)) {
@@ -1147,8 +1355,6 @@ terakan_hw_config_draw_emit_pa_su_poly_offset(
    }
    *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1 + 2 * 2, 0);
    *packet++ = TERAKAN_CONTEXT_REG_OFFSET(R_028B7C_PA_SU_POLY_OFFSET_CLAMP);
-   struct terakan_hw_config_draw_pa_su_poly_offset const * const poly_offset =
-      &command_writer->hw_config_draw.pa_su_poly_offset_;
    memcpy(packet++, &poly_offset->clamp, sizeof(float));
    for (unsigned face = 0; face <= 1; ++face) {
       memcpy(packet++, &poly_offset->slope_scale_per_16th_subpixel, sizeof(float));
@@ -1174,8 +1380,30 @@ terakan_hw_config_draw_emit_pa_sc_aa_config_sample_locs(
 {
    struct terakan_hw_config_draw const * const config = &command_writer->hw_config_draw;
 
-   bool const is_r9xx =
-      terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_r9xx;
+   struct terakan_physical_device_chip_info const * const chip_info =
+      &terakan_gfx_command_writer_physical_device(command_writer)->chip_info;
+
+   if (chip_info->is_terascale_1) {
+      uint32_t const evergreen_config = config->pa_sc_aa_config_sample_locs_.config;
+      struct terakan_hw_config_draw_terascale_1_pa_sc_aa aa;
+      if (!terakan_hw_config_draw_terascale_1_pa_sc_aa_encode(
+             G_028BE0_MSAA_NUM_SAMPLES(evergreen_config),
+             G_028BE0_MAX_SAMPLE_DIST(evergreen_config),
+             G_028BE0_AA_MASK_CENTROID_DTMN(evergreen_config),
+             config->pa_sc_aa_config_sample_locs_.sample_locs, &aa)) {
+         return;
+      }
+      uint32_t * packet = terakan_gfx_command_writer_emit(
+         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG, 7);
+      if (unlikely(packet == NULL)) {
+         return;
+      }
+      packet = terakan_hw_config_draw_terascale_1_write_pa_sc_aa(packet, &aa);
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
+      return;
+   }
+
+   bool const is_r9xx = chip_info->is_r9xx;
 
    uint32_t pa_sc_aa_config = config->pa_sc_aa_config_sample_locs_.config;
    if (!is_r9xx) {
@@ -1277,8 +1505,23 @@ terakan_hw_config_draw_emit_pa_sc_aa_mask(struct terakan_gfx_command_writer * co
     * architecture generations. Per-pixel setting is not exposed because it's currently not needed.
     */
 
-   bool const is_r9xx =
-      terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_r9xx;
+   struct terakan_physical_device_chip_info const * const chip_info =
+      &terakan_gfx_command_writer_physical_device(command_writer)->chip_info;
+
+   if (chip_info->is_terascale_1) {
+      uint32_t * packet = terakan_gfx_command_writer_emit(
+         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG, 3);
+      if (unlikely(packet == NULL)) {
+         return;
+      }
+      packet = terakan_hw_config_draw_terascale_1_write_pa_sc_aa_mask(
+         packet, terakan_hw_config_draw_terascale_1_pa_sc_aa_mask_encode(
+                    command_writer->hw_config_draw.pa_sc_aa_mask_));
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
+      return;
+   }
+
+   bool const is_r9xx = chip_info->is_r9xx;
 
    unsigned const quad_dword_count = is_r9xx ? 2 : 1;
 
@@ -1809,6 +2052,14 @@ terakan_hw_config_draw_emit_cb_color_control(
 static void
 terakan_hw_config_draw_emit_cb_immed(struct terakan_gfx_command_writer * const command_writer)
 {
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
+      /* R600/R700 has no CB_IMMEDn_BASE block. Storage images/buffers are not ported there, and
+       * set_all_modified() marks all twelve entries even for an ordinary graphics draw.
+       */
+      assert(terakan_hw_config_draw_terascale_1_cb_immed_packet_dwords() == 0);
+      command_writer->hw_config_draw.cb_immed_.modified_bits = 0;
+      return;
+   }
    struct terakan_device const * const device = terakan_gfx_command_writer_device(command_writer);
    uint64_t const uav_bytes_per_element_log2 =
       command_writer->hw_config_draw.cb_immed_.uav_bytes_per_element_log2;
