@@ -316,6 +316,16 @@ terakan_hw_config_draw_emit_context_register(
 void
 terakan_hw_config_draw_emit_constant(struct terakan_gfx_command_writer * const command_writer)
 {
+   /* terakan_hw_config_shared_indirect_buffer_begun() has already emitted the complete classic
+    * r600_init_atom_start_cs() context baseline for TeraScale 1. Replaying this function's
+    * Evergreen array would not merely duplicate it: SQ_LDS_ALLOC, SQ_PGM_RESOURCES_FS,
+    * DB_SRESULTS_COMPARE_STATE and SQ_DYN_GPR_RESOURCE_LIMIT occupy unrelated R600/R700 registers.
+    */
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
+      assert(terakan_hw_config_draw_terascale_1_constant_packet_dwords() == 0);
+      return;
+   }
+
 #define TERAKAN_HW_CONFIG_DRAW_EMIT_CONSTANT_SINGLE(address, value)                                \
    PKT3(PKT3_SET_CONTEXT_REG, 1, 0), TERAKAN_CONTEXT_REG_OFFSET(address), (value)
 

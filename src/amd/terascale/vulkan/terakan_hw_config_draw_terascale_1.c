@@ -244,6 +244,12 @@ terakan_hw_config_draw_terascale_1_sq_pgm_resources_encode(
    return true;
 }
 
+uint32_t
+terakan_hw_config_draw_terascale_1_constant_packet_dwords(void)
+{
+   return 0;
+}
+
 uint32_t *
 terakan_hw_config_draw_terascale_1_write_sq_pgm_fs(uint32_t * const packet,
                                                     uint32_t const program_va_shr8)

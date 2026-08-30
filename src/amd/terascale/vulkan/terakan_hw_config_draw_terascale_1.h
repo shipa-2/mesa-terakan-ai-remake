@@ -131,6 +131,11 @@ uint32_t * terakan_hw_config_draw_terascale_1_write_pa_su_poly_offset(
 bool terakan_hw_config_draw_terascale_1_sq_pgm_resources_encode(
    uint32_t evergreen_resources, uint32_t * r700_resources_out);
 
+/* The classic R600/R700 baseline is emitted by the per-indirect-buffer begin atom. The separate
+ * Evergreen draw-constant packet must therefore contain exactly zero dwords on TeraScale 1.
+ */
+uint32_t terakan_hw_config_draw_terascale_1_constant_packet_dwords(void);
+
 uint32_t * terakan_hw_config_draw_terascale_1_write_sq_pgm_fs(uint32_t * packet,
                                                                uint32_t program_va_shr8);
 uint32_t * terakan_hw_config_draw_terascale_1_write_sq_pgm_vs(

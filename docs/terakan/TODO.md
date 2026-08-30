@@ -309,6 +309,15 @@ classic Gallium R600 driver that has supported this hardware for years).
   enabled. LS/HS/ES/GS binding remains explicitly outside this completed
   subset.
 
+- TeraScale 1 no longer replays the Evergreen-only draw-constant array after
+  the dedicated per-indirect-buffer begin atom. That atom already transcribes
+  the complete applicable `r600_init_atom_start_cs()` baseline and has an exact
+  packet oracle. Replaying the later array was actively unsafe: its
+  `SQ_LDS_ALLOC`, `SQ_PGM_RESOURCES_FS`, `DB_SRESULTS_COMPARE_STATE` and
+  `SQ_DYN_GPR_RESOURCE_LIMIT` offsets name unrelated registers on R600/R700.
+  The per-draw constant packet is therefore exactly zero dwords on TeraScale 1;
+  this has not been submitted to RV710 while the queue guard remains active.
+
 - TeraScale 1 (R700) `DB_SHADER_CONTROL`: the runtime emitter no longer sends
   the full Evergreen payload merely because both generations place the
   register at `0x02880C`. Direct comparison of `r600d.h` and `evergreend.h`

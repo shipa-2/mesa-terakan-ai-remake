@@ -563,6 +563,16 @@ test_sq_pgm_bindings(void)
    CHECK(out_id_packet[3] == out_ids[1]);
 }
 
+static void
+test_draw_constant_packet_is_empty(void)
+{
+   /* terakan_hw_config_shared_terascale_1_test checks the exact non-empty replacement packet.
+    * Here the exact per-draw packet oracle is zero: allowing the Evergreen constant array after
+    * that packet would overwrite several unrelated R700 registers at colliding addresses.
+    */
+   CHECK(terakan_hw_config_draw_terascale_1_constant_packet_dwords() == 0);
+}
+
 static struct terakan_hw_config_draw_terascale_1_cb_color_input
 representative_cb_color_input(void)
 {
@@ -727,6 +737,7 @@ main(void)
    test_pa_sc_mode();
    test_pa_su_poly_offset();
    test_sq_pgm_bindings();
+   test_draw_constant_packet_is_empty();
    test_cb_color_encode();
    test_cb_color_encode_rejects_unported_surfaces();
    test_cb_color_packets();
