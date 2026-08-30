@@ -1157,15 +1157,32 @@ planes the CB never wrote came back as zero, which the test reports as "Got unco
 pixel, where covered samples were expected". Treating `INPUT_ATTACHMENT` usage as
 sampled, the way integer formats already are, removes all 12 of those.
 
-Together the group goes from 45 failures to **29**, all now "Got less unique colors
-than requested through minSampleShading" and still rising with the fraction. On the
-2641-case multisample and renderpass sample the count reaches **0**, down from 119 at
-the start of this work.
+Together those took the group from 45 failures to 29, all of them "Got less unique
+colors than requested through minSampleShading" and still rising with the fraction.
 
-What is left is those 29, 6 `sample_locations_ext` and one `std_sample_locations`.
-The CTS reads its per-sample images through `subpassLoad` with the sample index in a
-push constant, so a dynamically indexed multisample input attachment read is the next
-thing to probe.
+The third one was in the shader above too, in what it does *not* do: `sampleId` is
+never used, so NIR drops the `SampleId` read and `per_sample_invocation` comes out
+false. The shader still runs per sample -- `minSampleShading` alone arranges that --
+but the translation cannot see pipeline state, so `POSITION_SAMPLE` was not set. It is
+now patched into `SPI_PS_IN_CONTROL_0` after the fragment shader is translated, next to
+where the per-sample invocation itself is decided; that is safe because SPI supplies
+the position in the same GPRs whichever location it is taken at, and the shader belongs
+to one pipeline. **45 failures down to 8.**
+
+The eight that remain are all two samples with `minSampleShading` at 0.75 or 1.0, and
+they are hardware. At two samples `POSITION_SAMPLE` does not move `FragCoord`: the
+probe reads `(8, 8)` from both samples with the standard locations and reads `(8, 8)`
+from both again with custom locations placed at 0.0625 and 0.9375, while the same probe
+at four samples returns the four standard positions exactly. The registers are right in
+both cases -- `POSITION_ENA` and `POSITION_SAMPLE` set, `PA_SC_MODE_CNTL_1.PS_ITER_SAMPLE`
+set, `PA_SC_AA_CONFIG` carrying `MSAA_NUM_SAMPLES = 1` and `MAX_SAMPLE_DIST = 4` -- and
+the shader really does run per sample there, since `gl_SampleID` reads back 0 and 1.
+Only the position stays at the centre.
+
+Across the 2010-case sample-shading and sample-location run this is 52 failures down to
+**15**: 8 `min_sample_shading`, 6 `sample_locations_ext` and one `std_sample_locations`,
+with 37 fixed and none regressed. The 2641-case multisample and renderpass sample stays
+at **0**, down from 119 where this work started.
 
 ### Colour resolve under CTS
 

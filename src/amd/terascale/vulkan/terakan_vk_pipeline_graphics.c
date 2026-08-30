@@ -1329,6 +1329,23 @@ terakan_vk_pipeline_graphics_create(struct terakan_device * const device,
       pipeline->fragment_shading.db_eqaa_ps_iter_max_invocation_samples_log2 = 0;
    }
 
+   /* And whichever way the shader ends up running per sample, `FragCoord` is the sample's position
+    * rather than the pixel's centre. The translation sets `POSITION_SAMPLE` for a shader that reads
+    * `SampleId` or `SamplePosition`, but a shader can be invoked per sample without mentioning
+    * either -- `minSampleShading` alone does it, and that is pipeline state the translation cannot
+    * see. Patching the register here is safe because `SPI` supplies the position in the same GPRs
+    * whichever location it is taken at, and the shader belongs to this pipeline alone.
+    */
+   if ((compiled_shader_stages & VK_SHADER_STAGE_FRAGMENT_BIT) && state.ms != NULL &&
+       state.ms->sample_shading_enable && isgreater(state.ms->min_sample_shading, 0.0f)) {
+      uint32_t * const spi_ps_in_control_0 =
+         &pipeline->shaders[MESA_SHADER_FRAGMENT].static_state.stage.ps.spi_ps_in_control[0];
+      if (G_0286CC_POSITION_ENA(*spi_ps_in_control_0)) {
+         *spi_ps_in_control_0 = (*spi_ps_in_control_0 & C_0286CC_POSITION_CENTROID) |
+                                S_0286CC_POSITION_SAMPLE(1);
+      }
+   }
+
    bool const fetch_shader_is_static =
       BITSET_TEST(pipeline->vertex_input.static_state,
                   TERAKAN_VK_PIPELINE_GRAPHICS_VERTEX_INPUT_STATIC_SQ_PGM_FETCH);
