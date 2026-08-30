@@ -53,6 +53,12 @@ uint32_t * terakan_resource_descriptor_terascale_1_write_set_packet(
    uint32_t * packet, uint32_t resource_hw_index, uint32_t shader_type_flag,
    uint32_t const descriptor[TERAKAN_RESOURCE_DESCRIPTOR_TERASCALE_1_DWORDS]);
 
+/* R600/R700 has no Evergreen SQ_TEX_RESOURCE_CLEAR control constant. Valid Vulkan draws don't
+ * access unbound descriptors, so no replacement packet is needed until null descriptors or another
+ * feature requiring an explicit invalid resource are implemented for TeraScale 1.
+ */
+uint32_t terakan_resource_descriptor_terascale_1_clear_packet_dwords(void);
+
 #ifdef __cplusplus
 }
 #endif

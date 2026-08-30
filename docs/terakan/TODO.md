@@ -287,7 +287,14 @@ classic Gallium R600 driver that has supported this hardware for years).
   sampling or array/MSAA addressing on RV710. R700's equivalent of Evergreen's
   buffer `UNCACHED` bit is not named in `r600d.h`, so the existing runtime
   uncached override is deliberately not applied on TeraScale 1 pending cache
-  coherency research.
+  coherency research. The first-draw and per-slot unbind paths also no longer
+  emit Evergreen `SQ_TEX_RESOURCE_CLEAR` at control-constant address `0x03FF04`:
+  no such constant exists in `r600d.h`, and the classic R600/R700 state path
+  never writes it. The exact TeraScale 1 clear packet is therefore zero dwords.
+  This is sufficient for valid draws, which cannot access an unbound descriptor;
+  null-descriptor support would need a real invalid R700 T# descriptor rather
+  than reviving the Evergreen clear packet. No resource fetch has executed on
+  RV710 while queue submission remains guarded.
 
 - TeraScale 1 (R600/R700) `DB_DEPTH_CONTROL`/`CB_TARGET_MASK`: confirmed to
   need no separate emission path at all, not just no separate

@@ -21,6 +21,8 @@
 int
 main(void)
 {
+   CHECK(terakan_resource_descriptor_terascale_1_clear_packet_dwords() == 0);
+
    struct terakan_resource_texture_descriptor_terascale_1_info const texture_info = {
       .dim = V_038000_SQ_TEX_DIM_2D_ARRAY,
       .tile_mode = V_038000_ARRAY_2D_TILED_THIN1,

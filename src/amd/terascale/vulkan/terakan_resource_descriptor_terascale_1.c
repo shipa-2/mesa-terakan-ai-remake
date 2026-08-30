@@ -64,3 +64,9 @@ terakan_resource_descriptor_terascale_1_write_set_packet(
    memcpy(packet, descriptor, TERAKAN_RESOURCE_DESCRIPTOR_TERASCALE_1_DWORDS * sizeof(uint32_t));
    return packet + TERAKAN_RESOURCE_DESCRIPTOR_TERASCALE_1_DWORDS;
 }
+
+uint32_t
+terakan_resource_descriptor_terascale_1_clear_packet_dwords(void)
+{
+   return 0;
+}

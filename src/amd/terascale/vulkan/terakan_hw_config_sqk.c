@@ -648,7 +648,13 @@ terakan_hw_config_sqk_begin_emitting_first_draw_dispatch_in_indirect_buffer(
 
    config->modified_in_sw_vs_as_other_hw_stage_ = config->stages_[MESA_SHADER_VERTEX].modified;
 
-   {
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
+      /* SQ_TEX_RESOURCE_CLEAR at 0x03FF04 exists only on Evergreen and newer. r600d.h has no such
+       * control constant, and the classic R600/R700 state path never emits it. Its usual per-stage
+       * descriptor updates are sufficient for valid draws, which don't access unbound slots.
+       */
+      assert(terakan_resource_descriptor_terascale_1_clear_packet_dwords() == 0);
+   } else {
       uint32_t * packet = terakan_gfx_command_writer_emit(
          command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG, 2 + 1);
       if (likely(packet != NULL)) {
@@ -824,6 +830,10 @@ static void
 terakan_hw_config_sqk_emit_unbound_resource(
    struct terakan_gfx_command_writer * const command_writer, uint32_t const resource_hw_index)
 {
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
+      assert(terakan_resource_descriptor_terascale_1_clear_packet_dwords() == 0);
+      return;
+   }
    uint32_t * packet = terakan_gfx_command_writer_emit(
       command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG, 2 + 1);
    if (unlikely(packet == NULL)) {
