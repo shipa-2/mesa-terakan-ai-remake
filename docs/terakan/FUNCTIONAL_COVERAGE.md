@@ -1318,6 +1318,34 @@ The 27033-case survey, which had been aborting, now runs to the end, and the thr
 versions of the check read 62, 52 and finally **51 failing** of 2874 passing, with no
 case going from passing to failing at any step.
 
+### A render pass resolve used the image's format, not the view's
+
+`dEQP-VK.image.mutable` was run in full -- 10118 cases -- and gave 9584 passing and
+**534 failing**. Two axes separate them completely. Every failure is a
+`draw_copy_resolve` variant, and within those the format pair decides it:
+
+| image format | view format | pass | fail |
+|---|---|---:|---:|
+| integer | integer | 160 | 104 |
+| integer | normalized or float | 146 | 202 |
+| normalized or float | integer | 120 | 228 |
+| normalized or float | normalized or float | 348 | 0 |
+
+An integer format anywhere in the pair fails; neither being integer always passes. That
+is the resolve's own split -- `CB_RESOLVE` averages, Vulkan resolves an integer format
+by selecting a sample, so integer formats take the shader path -- and the group is
+exactly the one that renders through a *view* whose format differs from the image's.
+
+`terakan_EndRendering` recorded only the two `VkImage` handles for a colour resolve and
+called `terakan_CmdResolveImage2`, which reads the number type from
+`image->format_info`. Vulkan resolves according to the attachment's view, so a `unorm`
+image rendered through a `uint` view was averaged and a `uint` image rendered through a
+`unorm` view was sample-selected, each the opposite of what was asked for.
+
+The resolve now takes the two view formats, with `VK_FORMAT_UNDEFINED` meaning the
+image's own -- which is what `vkCmdResolveImage` passes, since it resolves images and
+has no view. **`image.mutable` goes to 10118 of 10118 passing.**
+
 ### Colour resolve under CTS
 
 `dEQP-VK.api.copy_and_blit.core.resolve_image`, 240 cases, run against Terakan

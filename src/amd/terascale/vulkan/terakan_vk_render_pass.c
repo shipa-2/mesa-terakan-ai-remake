@@ -274,6 +274,8 @@ terakan_CmdBeginRendering(VkCommandBuffer const commandBuffer,
                container_of(color_attachment_view->vk.image, struct terakan_image, vk));
             resolve->dst_image = terakan_image_to_handle(
                container_of(resolve_view->vk.image, struct terakan_image, vk));
+            resolve->src_view_format = color_attachment_view->vk.format;
+            resolve->dst_view_format = resolve_view->vk.format;
             resolve->src_subresource = (VkImageSubresourceLayers){
                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
                .mipLevel = color_attachment_view->vk.base_mip_level,
@@ -425,7 +427,8 @@ terakan_CmdEndRendering(VkCommandBuffer const commandBuffer)
             .regionCount = 1,
             .pRegions = &region,
          };
-         terakan_CmdResolveImage2(commandBuffer, &resolve_info);
+         terakan_meta_resolve_color(commandBuffer, &resolve_info, resolve->src_view_format,
+                                    resolve->dst_view_format);
       }
 
       struct terakan_rendering_color_resolve const * const depth_stencil_resolve =
