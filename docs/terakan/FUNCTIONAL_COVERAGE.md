@@ -1010,13 +1010,15 @@ renderpass sample it goes 50 to **25**, 25 fixed with none regressed; everything
 there is `pipeline.monolithic.multisample`. The cost is the fast-clear and compression
 bandwidth on integer multisample attachments only.
 
-### Multisample stencil in pipeline.multisample.misc
+### The multisample depth and stencil clear rasterized single-sample
 
 `pipeline.monolithic.multisample.misc` -- the `VK_EXT_multisampled_render_to_single_sampled`
 test file run without the extension -- was run in full, 1390 cases, giving 505 passing
 and **594 failing**. 522 of the failures are "Incorrect multisampled rendering for
 stencil attachment" and the other 72 name the stencil attachment alongside colour
-attachment 3.
+attachment 3. The cause was `vkCmdClearDepthStencilImage` rasterizing single-sample;
+the route to it is kept below because seven plausible explanations were excluded first,
+and each exclusion is a probe worth not repeating.
 
 The format axis is absolute: `d16_unorm` passes 268 of 268, and every format with a
 stencil aspect fails -- `d24_unorm_s8_uint` 81/205, `d32_sfloat_s8_uint` 75/198,
@@ -1029,7 +1031,7 @@ defect: the stencil formats fail at roughly the same rate with `ds_resolve_max`,
 The resolved stencil image the test logs is noise -- 255, 21, 1, 0, 175, 239 and more
 across one 65x55 image, where two values are expected.
 
-Excluded so far, each by a probe that passes:
+Excluded, each by a probe that passes:
 
 - Multisample stencil rendering and per-sample fetch. A 4-sample `S8_UINT` attachment
   written under a `gl_SampleMask` push constant with `VK_STENCIL_OP_REPLACE` reads back
@@ -1057,11 +1059,34 @@ Excluded so far, each by a probe that passes:
   does and what has no depth analogue. Four pipelines, one per quadrant, with references
   0x10, 0x20, 0x30 and 0x40 read back exactly those values in their quadrants.
 
-Every shape simpler than the test itself passes. What is left unreplicated is the
-multi-pass structure: several passes carrying the stencil forward with
-`VK_ATTACHMENT_LOAD_OP_LOAD`, the stencil bound as an input attachment (that subgroup
-fails every stencil case), and the `useGarbageAttachment` variants. Building that is
-the next step.
+- `VK_STENCIL_OP_INCREMENT_AND_CLAMP`, which is the operation these tests use and which
+  none of the earlier probes did. Clearing to 0x33 and incrementing gives 0x34.
+
+The one thing every one of those probes had in common was
+`VK_ATTACHMENT_LOAD_OP_CLEAR`. These tests set `clearBeforeRenderPass`: they clear the
+attachment with `vkCmdClearDepthStencilImage` and then use
+`VK_ATTACHMENT_LOAD_OP_LOAD`, so that the area outside the render area can be verified
+too. Adding that to the probe reproduced the failure immediately, and printing the
+surface showed what it was:
+
+```
+stencil cleared to 0x33 = 51 before the pass, sample mask 0, nothing drawn
+ 51  51  51  51  51  51  51  54  54  54  54  54  54
+ 54  54  54  54  54  54  54  54  54  54  54  54  54
+ 51  51  51  51  51  51  51  54  54  54  54  54  54
+ 54  54  54  54  54  54  54  54  54  54  54  54  54
+ ...
+```
+
+The clear reached one quarter of the 4-sample surface, in the tile-interleaved pattern
+the samples are laid out in; the rest kept whatever was in memory.
+`terakan_CmdClearDepthStencilImage` builds its
+`terakan_meta_config_draw_begin_options` without `msaa_num_samples_log2`, so its
+rectangle rasterizes single-sample whatever the image is -- unlike the colour clear and
+the attachment clear, both of which set it from `image->vk.samples`.
+
+Setting it takes `pipeline.monolithic.multisample.misc` from 505/594 to **1099 passing
+and 0 failing** of 1390.
 
 ### Colour resolve under CTS
 
