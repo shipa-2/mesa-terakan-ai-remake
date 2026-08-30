@@ -1180,9 +1180,13 @@ the shader really does run per sample there, since `gl_SampleID` reads back 0 an
 Only the position stays at the centre.
 
 Across the 2010-case sample-shading and sample-location run this is 52 failures down to
-**15**: 8 `min_sample_shading`, 6 `sample_locations_ext` and one `std_sample_locations`,
-with 37 fixed and none regressed. The 2641-case multisample and renderpass sample stays
-at **0**, down from 119 where this work started.
+**15**, with 37 fixed and none regressed, and all fifteen are that same two-sample
+behaviour: 8 `min_sample_shading` at two samples, and the other seven are
+`sample_locations_ext.verify_interpolation.samples_2*` and
+`std_sample_locations.verify_interpolation.samples_2_invariable`, which check that
+interpolation happens at the sample and so need exactly the capability that is missing.
+Four and eight samples pass every one of them. The 2641-case multisample and renderpass
+sample stays at **0**, down from 119 where this work started.
 
 ### Colour resolve under CTS
 
