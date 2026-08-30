@@ -165,6 +165,37 @@ terakan_hw_config_draw_terascale_1_write_pa_sc_aa(
    return write_context_reg(packet, R_028C04_PA_SC_AA_CONFIG, aa->config);
 }
 
+bool
+terakan_hw_config_draw_terascale_1_pa_sc_mode_encode(
+   struct terakan_hw_config_draw_terascale_1_pa_sc_mode_input const * const input,
+   uint32_t * const mode_out)
+{
+   if (!input || !mode_out || input->unknown_mode_0_bits || input->unknown_mode_1_bits) {
+      return false;
+   }
+
+   /* Baseline and the RV770-only sample-shading workaround are transcribed from
+    * r600_create_rs_state(). FORCE_EOV_* and R700_ZMM_LINE_OFFSET are not present in Terakan's
+    * Evergreen-shaped software state at compatible positions, so they must be supplied here.
+    */
+   *mode_out = S_028A4C_MSAA_ENABLE(input->msaa_enable) |
+               S_028A4C_LINE_STIPPLE_ENABLE(input->line_stipple_enable) |
+               S_028A4C_FORCE_EOV_CNTDWN_ENABLE(1) | S_028A4C_FORCE_EOV_REZ_ENABLE(1) |
+               S_028A4C_PS_ITER_SAMPLE(input->ps_iter_sample) |
+               S_028A4C_R700_ZMM_LINE_OFFSET(1) |
+               S_028A4C_R700_VPORT_SCISSOR_ENABLE(input->viewport_scissor_enable) |
+               S_028A4C_TILE_COVER_DISABLE(input->is_rv770 && input->msaa_enable &&
+                                           input->ps_iter_sample);
+   return true;
+}
+
+uint32_t *
+terakan_hw_config_draw_terascale_1_write_pa_sc_mode(uint32_t * const packet,
+                                                     uint32_t const value)
+{
+   return write_context_reg(packet, R_028A4C_PA_SC_MODE_CNTL, value);
+}
+
 uint32_t *
 terakan_hw_config_draw_terascale_1_write_db_depth_view(uint32_t * const packet,
                                                         uint32_t const value)

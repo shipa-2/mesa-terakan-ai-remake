@@ -87,6 +87,28 @@ bool terakan_hw_config_draw_terascale_1_pa_sc_aa_encode(
 uint32_t * terakan_hw_config_draw_terascale_1_write_pa_sc_aa(
    uint32_t * packet, struct terakan_hw_config_draw_terascale_1_pa_sc_aa const * aa);
 
+/* Evergreen splits rasterizer mode state between PA_SC_MODE_CNTL_0 at 0x028A48 and
+ * PA_SC_MODE_CNTL_1 at 0x028A4C. R700 has one differently-shaped PA_SC_MODE_CNTL at 0x028A4C;
+ * 0x028A48 is PA_SC_MPASS_PS_CNTL there. Keep the input semantic so the R700-only translation unit
+ * owns every field position and can reject any future unported Evergreen state.
+ */
+struct terakan_hw_config_draw_terascale_1_pa_sc_mode_input {
+   bool msaa_enable;
+   bool line_stipple_enable;
+   bool viewport_scissor_enable;
+   bool ps_iter_sample;
+   bool is_rv770;
+   uint32_t unknown_mode_0_bits;
+   uint32_t unknown_mode_1_bits;
+};
+
+bool terakan_hw_config_draw_terascale_1_pa_sc_mode_encode(
+   struct terakan_hw_config_draw_terascale_1_pa_sc_mode_input const * input,
+   uint32_t * mode_out);
+
+uint32_t * terakan_hw_config_draw_terascale_1_write_pa_sc_mode(uint32_t * packet,
+                                                                uint32_t value);
+
 /* Per-draw (as opposed to once-per-command-buffer) TeraScale 1 register emission that genuinely
  * needs its own code, as opposed to the R8xx/R9xx code already working unchanged (see
  * DB_DEPTH_CONTROL/CB_TARGET_MASK in TODO.md) -- either because the register lives at a different

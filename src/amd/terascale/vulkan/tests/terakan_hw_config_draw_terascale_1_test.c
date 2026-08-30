@@ -438,6 +438,44 @@ test_pa_sc_aa_config_sample_locs(void)
    CHECK(!terakan_hw_config_draw_terascale_1_pa_sc_aa_encode(3, 16, true, sample_locs, &aa));
 }
 
+static void
+test_pa_sc_mode(void)
+{
+   struct terakan_hw_config_draw_terascale_1_pa_sc_mode_input input = {
+      .msaa_enable = true,
+      .line_stipple_enable = true,
+      .viewport_scissor_enable = true,
+      .ps_iter_sample = true,
+   };
+   uint32_t mode;
+   CHECK(terakan_hw_config_draw_terascale_1_pa_sc_mode_encode(&input, &mode));
+   uint32_t const expected = S_028A4C_MSAA_ENABLE(1) | S_028A4C_LINE_STIPPLE_ENABLE(1) |
+                             S_028A4C_FORCE_EOV_CNTDWN_ENABLE(1) |
+                             S_028A4C_FORCE_EOV_REZ_ENABLE(1) | S_028A4C_PS_ITER_SAMPLE(1) |
+                             S_028A4C_R700_ZMM_LINE_OFFSET(1) |
+                             S_028A4C_R700_VPORT_SCISSOR_ENABLE(1);
+   CHECK(mode == expected);
+
+   input.is_rv770 = true;
+   CHECK(terakan_hw_config_draw_terascale_1_pa_sc_mode_encode(&input, &mode));
+   CHECK(mode == (expected | S_028A4C_TILE_COVER_DISABLE(1)));
+   input.msaa_enable = false;
+   CHECK(terakan_hw_config_draw_terascale_1_pa_sc_mode_encode(&input, &mode));
+   CHECK((mode & S_028A4C_TILE_COVER_DISABLE(1)) == 0);
+
+   input.unknown_mode_0_bits = UINT32_C(1) << 31;
+   CHECK(!terakan_hw_config_draw_terascale_1_pa_sc_mode_encode(&input, &mode));
+   input.unknown_mode_0_bits = 0;
+   input.unknown_mode_1_bits = UINT32_C(1) << 30;
+   CHECK(!terakan_hw_config_draw_terascale_1_pa_sc_mode_encode(&input, &mode));
+
+   uint32_t packet[3];
+   CHECK(terakan_hw_config_draw_terascale_1_write_pa_sc_mode(packet, expected) == packet + 3);
+   CHECK(packet[0] == PKT3(PKT3_SET_CONTEXT_REG, 1, 0));
+   CHECK(packet[1] == (R_028A4C_PA_SC_MODE_CNTL - R600_CONTEXT_REG_OFFSET) >> 2);
+   CHECK(packet[2] == expected);
+}
+
 static struct terakan_hw_config_draw_terascale_1_cb_color_input
 representative_cb_color_input(void)
 {
@@ -599,6 +637,7 @@ main(void)
    test_db_alpha_to_mask();
    test_pa_sc_aa_mask();
    test_pa_sc_aa_config_sample_locs();
+   test_pa_sc_mode();
    test_cb_color_encode();
    test_cb_color_encode_rejects_unported_surfaces();
    test_cb_color_packets();

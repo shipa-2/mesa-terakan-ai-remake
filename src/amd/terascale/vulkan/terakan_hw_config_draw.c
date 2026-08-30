@@ -1112,9 +1112,49 @@ terakan_hw_config_draw_emit_pa_sc_line_stipple(
 }
 
 static void
+terakan_hw_config_draw_emit_pa_sc_mode_terascale_1(
+   struct terakan_gfx_command_writer * const command_writer)
+{
+   struct terakan_physical_device_chip_info const * const chip_info =
+      &terakan_gfx_command_writer_physical_device(command_writer)->chip_info;
+   uint32_t const mode_0 = command_writer->hw_config_draw.pa_sc_mode_cntl_0_;
+   uint32_t const mode_1 = command_writer->hw_config_draw.pa_sc_mode_cntl_1_;
+   uint32_t const known_mode_0_bits =
+      S_028A48_MSAA_ENABLE(1) | S_028A48_VPORT_SCISSOR_ENABLE(1) |
+      S_028A48_LINE_STIPPLE_ENABLE(1);
+   uint32_t const known_mode_1_bits = TERAKAN_HW_CONFIG_DRAW_PA_SC_MODE_CNTL_1_CONSTANT |
+                                      EG_S_028A4C_PS_ITER_SAMPLE(1);
+   struct terakan_hw_config_draw_terascale_1_pa_sc_mode_input const input = {
+      .msaa_enable = (mode_0 & S_028A48_MSAA_ENABLE(1)) != 0,
+      .line_stipple_enable = (mode_0 & S_028A48_LINE_STIPPLE_ENABLE(1)) != 0,
+      .viewport_scissor_enable = (mode_0 & S_028A48_VPORT_SCISSOR_ENABLE(1)) != 0,
+      .ps_iter_sample = (mode_1 & EG_S_028A4C_PS_ITER_SAMPLE(1)) != 0,
+      .is_rv770 = chip_info->chip_family == CHIP_RV770,
+      .unknown_mode_0_bits = mode_0 & ~known_mode_0_bits,
+      .unknown_mode_1_bits = mode_1 & ~known_mode_1_bits,
+   };
+   uint32_t mode_r700;
+   if (!terakan_hw_config_draw_terascale_1_pa_sc_mode_encode(&input, &mode_r700)) {
+      return;
+   }
+
+   uint32_t * packet = terakan_gfx_command_writer_emit(
+      command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG, 3);
+   if (unlikely(packet == NULL)) {
+      return;
+   }
+   packet = terakan_hw_config_draw_terascale_1_write_pa_sc_mode(packet, mode_r700);
+   terakan_gfx_command_writer_emit_done(command_writer, packet);
+}
+
+static void
 terakan_hw_config_draw_emit_pa_sc_mode_cntl_0(
    struct terakan_gfx_command_writer * const command_writer)
 {
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
+      terakan_hw_config_draw_emit_pa_sc_mode_terascale_1(command_writer);
+      return;
+   }
    terakan_hw_config_draw_emit_context_register(command_writer, R_028A48_PA_SC_MODE_CNTL_0,
                                                 command_writer->hw_config_draw.pa_sc_mode_cntl_0_);
 }
@@ -1123,6 +1163,14 @@ static void
 terakan_hw_config_draw_emit_pa_sc_mode_cntl_1(
    struct terakan_gfx_command_writer * const command_writer)
 {
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
+      /* MODE_CNTL_0 and MODE_CNTL_1 are independently dirty-tracked software entries but combine
+       * into one R700 register. Emit the complete current value from either entry; if both are
+       * dirty this deliberately writes the same value twice rather than relying on entry order.
+       */
+      terakan_hw_config_draw_emit_pa_sc_mode_terascale_1(command_writer);
+      return;
+   }
    terakan_hw_config_draw_emit_context_register(command_writer, R_028A4C_PA_SC_MODE_CNTL_1,
                                                 command_writer->hw_config_draw.pa_sc_mode_cntl_1_);
 }

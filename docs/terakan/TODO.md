@@ -461,7 +461,13 @@ classic Gallium R600 driver that has supported this hardware for years).
     DB-shaped name on Evergreen); `CB_COLOR_CONTROL` (0x028808, the
     already-known `SPECIAL_OP`-vs-`MODE` divergence at bit 4);
     `PA_SC_MODE_CNTL_1`/`_0` (0x028A4C/0x028A48) restructure most of their
-    bits between generations; `DB_SHADER_CONTROL`, `DB_RENDER_OVERRIDE(2)`,
+    bits between generations. The TeraScale 1 path now combines both software
+    entries into R700's single `PA_SC_MODE_CNTL` at 0x028A4C, including the
+    `r600_create_rs_state()` EOV/ZMM/scissor baseline and RV770-only tile-cover
+    workaround; it never writes Evergreen `MODE_CNTL_0` to R700's unrelated
+    `PA_SC_MPASS_PS_CNTL` at 0x028A48. Unknown future Evergreen bits are
+    rejected. Exact CPU packet coverage does not prove rasterization on RV710
+    while submit remains blocked. `DB_SHADER_CONTROL`, `DB_RENDER_OVERRIDE(2)`,
     `DB_RENDER_CONTROL`, `DB_COUNT_CONTROL` (already covered above as
     address collisions, but even where the DB *name* is right on both
     sides the field layout still differs completely, so this is a
