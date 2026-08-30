@@ -800,9 +800,17 @@ terakan_CmdResolveImage2(VkCommandBuffer const command_buffer_handle,
     */
    bool const shader_resolve_2x = resolve_selects_sample_zero;
 
+   /* The fixed function consumes the source through CB, which keeps the RTV metadata coherent on
+    * its own. The shader path samples the source as a texture instead, bypassing CB entirely, so
+    * the metadata has to reach memory first - otherwise the fetch reads whole tiles as they were
+    * before the render pass, which is what made every integer format's renderpass resolve
+    * inconsistent between attachments.
+    */
    terakan_barrier_emit_actions_unconditionally(
-      command_writer, TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RTV_DATA |
-                         TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_PS);
+      command_writer,
+      TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RTV_DATA |
+         TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_PS |
+         (shader_resolve_2x ? TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RTV_META : 0));
 
    struct terakan_meta_config_draw_begin_options const begin_options = {
       .vgt_primitive_type = V_008958_DI_PT_RECTLIST,

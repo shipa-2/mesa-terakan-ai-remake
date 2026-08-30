@@ -957,6 +957,43 @@ sample to equal it -- so it never distinguished samples and passed with the samp
 index ignored. Against the unfixed driver `terakan_sample_id_depth` reads 0.1 from all
 four samples, which is exactly the shape of the CTS failures.
 
+### Integer colour resolve and the RTV metadata cache
+
+`renderpasses.renderpass1.suballocation.multisample_resolve` was run in full -- 2600 cases --
+and gave 678 passing and **330 failing**. The format axis was perfectly clean: every
+`uint` and `sint` format failed and every unorm, snorm, srgb and float format passed,
+at every sample count, resolve level and base layer. The message was always
+"Different attachments were resolved to different values", and the resolved images
+held whole 8x8 tiles of the pre-render contents in places that differed from one
+attachment to the next.
+
+Integer formats are exactly the ones that take the shader path:
+`VK_RESOLVE_MODE_AVERAGE` is not what Vulkan asks for there, so `CB_RESOLVE` is
+replaced by a draw that fetches sample zero. Forcing every format down the shader path
+with a temporary environment variable reproduced the inconsistency on
+`r8g8b8a8_unorm` too, which took the format out of the picture and left the path.
+
+Adding barrier actions one bit at a time before the shader draw identified a single
+one: **`FLUSH_INV_CB_RTV_META`**. The fixed function consumes the source through CB,
+which keeps the RTV metadata coherent by itself; the shader samples the source as a
+texture and bypasses CB, so FMASK and CMASK have to reach memory first. Without that,
+the fetch decodes tiles against metadata as it stood before the render pass.
+
+The flush is emitted only on the shader path. Every two-sample case in the group now
+passes -- 330 failures down to **287** -- and on the 2641-case multisample and
+renderpass sample the count goes 71 to **50**, 21 fixed with none regressed.
+
+What remains is four and eight samples, and it is a different defect: the group's
+failures are now "Resolve produced unexpected values", and they occur for exactly
+those CTS sample masks that include sample 1. With the full mask every sample holds
+the render value, yet the resolve reads the clear value. Sample zero is being fetched
+against an FMASK the fetch does not decode correctly once the surface is only
+partially covered. `terakan_color_msaa_fetch_4x`/`_8x` do not catch this because they
+write every sample, which is the degenerate FMASK case; partial coverage is the one
+that exercises the mapping. No FMASK decompress exists in the driver, and whether one
+is needed or whether the lookup's field width is wrong at four and eight samples is
+the open question.
+
 ### Colour resolve under CTS
 
 `dEQP-VK.api.copy_and_blit.core.resolve_image`, 240 cases, run against Terakan
