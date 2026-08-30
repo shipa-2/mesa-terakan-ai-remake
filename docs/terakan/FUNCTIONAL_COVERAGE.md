@@ -1086,7 +1086,18 @@ rectangle rasterizes single-sample whatever the image is -- unlike the colour cl
 the attachment clear, both of which set it from `image->vk.samples`.
 
 Setting it takes `pipeline.monolithic.multisample.misc` from 505/594 to **1099 passing
-and 0 failing** of 1390.
+and 0 failing** of 1390. `api.image_clearing` is unchanged -- a 15212-case sample still
+fails the same 32, all of them the known single-sample small-extent ones -- and on the
+2641-case multisample and renderpass sample the count goes 25 to **7**, 18 fixed with
+none regressed.
+
+`terakan_depth_stencil_clear_multisample` covers it. A render pass with no draws clears
+the image to one value through its load operation, which does reach every sample;
+`vkCmdClearDepthStencilImage` then clears it to another; and a compute shader reads
+every sample of every texel through a `sampler2DMS` and a `usampler2DMS`. The load
+operation is what makes the failure deterministic rather than a read of whatever was in
+memory: against the unfixed driver the test reports **3072 of 4096 samples** still
+holding the first value, which is exactly three quarters.
 
 ### Colour resolve under CTS
 
