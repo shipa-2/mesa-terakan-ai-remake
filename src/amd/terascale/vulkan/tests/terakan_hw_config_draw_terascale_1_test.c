@@ -608,6 +608,12 @@ test_absent_ls_bool_const(void)
    CHECK(!terakan_hw_config_draw_terascale_1_absent_ls_bool_const_encode(0, NULL));
 }
 
+static void
+test_absent_cb_immed(void)
+{
+   CHECK(terakan_hw_config_draw_terascale_1_cb_immed_packet_dwords() == 0);
+}
+
 static struct terakan_hw_config_draw_terascale_1_cb_color_input
 representative_cb_color_input(void)
 {
@@ -776,6 +782,7 @@ main(void)
    test_absent_vgt_controls();
    test_ring_itemsize_is_begin_atom_only();
    test_absent_ls_bool_const();
+   test_absent_cb_immed();
    test_cb_color_encode();
    test_cb_color_encode_rejects_unported_surfaces();
    test_cb_color_packets();

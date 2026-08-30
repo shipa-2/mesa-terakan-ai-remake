@@ -2024,6 +2024,14 @@ terakan_hw_config_draw_emit_cb_color_control(
 static void
 terakan_hw_config_draw_emit_cb_immed(struct terakan_gfx_command_writer * const command_writer)
 {
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
+      /* R600/R700 has no CB_IMMEDn_BASE block. Storage images/buffers are not ported there, and
+       * set_all_modified() marks all twelve entries even for an ordinary graphics draw.
+       */
+      assert(terakan_hw_config_draw_terascale_1_cb_immed_packet_dwords() == 0);
+      command_writer->hw_config_draw.cb_immed_.modified_bits = 0;
+      return;
+   }
    struct terakan_device const * const device = terakan_gfx_command_writer_device(command_writer);
    uint64_t const uav_bytes_per_element_log2 =
       command_writer->hw_config_draw.cb_immed_.uav_bytes_per_element_log2;

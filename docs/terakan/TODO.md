@@ -339,6 +339,13 @@ classic Gallium R600 driver that has supported this hardware for years).
   has no R700 destination. Its supported zero state emits exactly zero dwords,
   and nonzero LS boolean constants remain rejected with tessellation itself.
 
+- TeraScale 1 suppresses the Evergreen `CB_IMMED0_BASE` through
+  `CB_IMMED11_BASE` packet that `set_all_modified()` otherwise emits even for
+  the first ordinary graphics draw. No such register block exists in
+  `r600d.h`; it belongs to the still-unported UAV/compute path. The R700 packet
+  is therefore exactly zero dwords and its dirty mask is consumed without
+  touching hardware. Storage buffer/image execution remains unsupported.
+
 - TeraScale 1 (R700) `DB_SHADER_CONTROL`: the runtime emitter no longer sends
   the full Evergreen payload merely because both generations place the
   register at `0x02880C`. Direct comparison of `r600d.h` and `evergreend.h`
