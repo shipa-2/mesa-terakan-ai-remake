@@ -1365,6 +1365,41 @@ measured before assuming, and `a2r10g10b10_sint_pack32` passes all five of its
 `api.buffer_view` uniform texel buffer cases, so it keeps them, as it keeps vertex
 buffer support.
 
+### Multisample depth and stencil copying
+
+`dEQP-VK.api.copy_and_blit.core.depth_stencil_msaa_copy` was run in full -- 432 cases,
+216 of them supported -- and **every one of the 216 failed**. `vkCmdCopyImage` of a
+multisample depth or stencil aspect had no path at all: the colour fast path requires a
+colour aspect and the meta draw below it cannot do multisample.
+
+A depth or stencil aspect is a plane of its own, with its own offset, tiling and slice
+size, so copying one aspect's slices moves exactly that aspect and leaves the other
+where it was. That is what makes a byte copy safe here where the colour path needs the
+whole surface: there it has to carry FMASK and CMASK along with the samples they
+describe, and here there is no depth metadata at all, since Terakan does not implement
+HTILE. The samples of a slice are interleaved inside it, so a slice-sized copy carries
+all of them without needing to know how.
+
+Two things came out of building it, both worth not rediscovering.
+
+A level's offset is already measured from the image's base, with the aspect's offset
+folded into it by `terakan_image_surface_aspect_compute`. Adding the aspect offset again
+put the stencil plane of a 64x64 `d16_unorm_s8_uint` image at 0x8000 in a 0x6000-byte
+surface and **lost the device**.
+
+And a tiled slice's layout depends on its index, so the bytes of one slice do not decode
+as another. Copying layer 2 into layer 3 of a 2D-tiled 64x64x5 `d32_sfloat` image runs
+and then reads back the destination's previous contents. The path is restricted to
+copies that stay on the same layer index; without that it would silently write wrong
+data for a legal operation, which is worse than not handling it.
+
+**216 failures down to 72.** All 144 `whole` cases pass; `partial`, which needs a
+sub-rectangle no byte copy can express, and `array_to_array`, which is exactly the
+layer-index case, remain and need the meta draw the `TODO` in
+`terakan_meta_copy_image.c` describes. A 7562-case sample of `resolve_image` and
+`image_to_image` is unchanged at 4 failures, all of them the known offset-resolve
+residue.
+
 ### Colour resolve under CTS
 
 `dEQP-VK.api.copy_and_blit.core.resolve_image`, 240 cases, run against Terakan

@@ -198,6 +198,89 @@ struct terakan_meta_shader const terakan_meta_copy_image_ps = {
    .primary_meta_resource_used = true,
 };
 
+
+/* One region of a multisample depth or stencil copy, as a plain byte copy of the aspect's plane.
+ *
+ * A depth or stencil aspect is a plane of its own, with its own offset, tiling and slice size, so
+ * copying one aspect's slices moves exactly that aspect and leaves the other where it was. That is
+ * what makes a byte copy safe here where the colour path needs the whole surface: there it has to
+ * carry FMASK and CMASK along with the samples they describe, and here there is no depth metadata
+ * at all, because Terakan does not implement HTILE. The samples of a slice are interleaved inside
+ * it, so a slice-sized copy carries all of them without knowing how.
+ *
+ * Returns false for a region this cannot express, in which case the outputs are untouched. The
+ * outputs may be NULL, to ask only whether the region qualifies.
+ */
+static bool
+terakan_meta_copy_image_multisample_aspect_plane(struct terakan_image const * const src_image,
+                                                 struct terakan_image const * const dst_image,
+                                                 VkImageCopy2 const * const region,
+                                                 VkDeviceSize * const src_va_out,
+                                                 VkDeviceSize * const dst_va_out,
+                                                 VkDeviceSize * const size_bytes_out)
+{
+   VkImageAspectFlags const aspects = region->srcSubresource.aspectMask;
+   if (aspects != region->dstSubresource.aspectMask ||
+       !(aspects & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)) ||
+       !util_is_power_of_two_nonzero((uint32_t)aspects)) {
+      return false;
+   }
+   unsigned const src_aspect_index =
+      terakan_format_aspect_index(src_image->format_info.aspect_map, aspects, 0);
+   unsigned const dst_aspect_index =
+      terakan_format_aspect_index(dst_image->format_info.aspect_map, aspects, 0);
+   if (src_aspect_index >= TERAKAN_FORMAT_MAX_ASPECTS ||
+       dst_aspect_index >= TERAKAN_FORMAT_MAX_ASPECTS) {
+      return false;
+   }
+   struct terakan_image_surface_aspect const * const src_aspect =
+      &src_image->surface.aspects[src_aspect_index];
+   struct terakan_image_surface_aspect const * const dst_aspect =
+      &dst_image->surface.aspects[dst_aspect_index];
+   struct terakan_image_surface_level const * const src_level =
+      &src_aspect->levels[region->srcSubresource.mipLevel];
+   struct terakan_image_surface_level const * const dst_level =
+      &dst_aspect->levels[region->dstSubresource.mipLevel];
+   uint32_t const layer_count =
+      MIN2(region->srcSubresource.layerCount, region->dstSubresource.layerCount);
+   if (memcmp(&src_aspect->tiling, &dst_aspect->tiling, sizeof(src_aspect->tiling)) != 0 ||
+       src_level->slice_size_bytes_shr8 != dst_level->slice_size_bytes_shr8 ||
+       memcmp(src_level->aligned_extent_surfels, dst_level->aligned_extent_surfels,
+              sizeof(src_level->aligned_extent_surfels)) != 0 ||
+       src_level->array_mode != dst_level->array_mode || region->srcOffset.x != 0 ||
+       region->srcOffset.y != 0 || region->srcOffset.z != 0 || region->dstOffset.x != 0 ||
+       region->dstOffset.y != 0 || region->dstOffset.z != 0 ||
+       region->extent.width !=
+          u_minify(src_image->vk.extent.width, region->srcSubresource.mipLevel) ||
+       region->extent.height !=
+          u_minify(src_image->vk.extent.height, region->srcSubresource.mipLevel) ||
+       region->extent.depth != 1 || layer_count == 0 ||
+       /* A tiled slice's layout depends on its index, so the bytes of one slice do not decode as
+        * another: copying layer 2 into layer 3 of a 2D-tiled 64x64x5 d32_sfloat image runs and
+        * then reads back the destination's previous contents. Only a copy that stays on the same
+        * layer index is a byte copy.
+        */
+       region->srcSubresource.baseArrayLayer != region->dstSubresource.baseArrayLayer ||
+       region->srcSubresource.baseArrayLayer + layer_count > src_image->vk.array_layers ||
+       region->dstSubresource.baseArrayLayer + layer_count > dst_image->vk.array_layers) {
+      return false;
+   }
+   /* A level's offset is already measured from the image's base, the aspect's offset having been
+    * folded into it by terakan_image_surface_aspect_compute. Adding the aspect's offset again put
+    * the stencil plane of a 64x64 d16_unorm_s8_uint image at 0x8000 in a 0x6000-byte surface and
+    * lost the device.
+    */
+   VkDeviceSize const slice_size = (VkDeviceSize)src_level->slice_size_bytes_shr8 << 8;
+   if (src_va_out != NULL) {
+      *src_va_out = src_image->va + ((VkDeviceSize)src_level->offset_in_memory_bytes_shr8 << 8) +
+                    slice_size * region->srcSubresource.baseArrayLayer;
+      *dst_va_out = dst_image->va + ((VkDeviceSize)dst_level->offset_in_memory_bytes_shr8 << 8) +
+                    slice_size * region->dstSubresource.baseArrayLayer;
+      *size_bytes_out = slice_size * layer_count;
+   }
+   return true;
+}
+
 VKAPI_ATTR void VKAPI_CALL
 terakan_CmdCopyImage2(VkCommandBuffer const commandBuffer,
                       VkCopyImageInfo2 const * const pCopyImageInfo)
@@ -341,6 +424,47 @@ terakan_CmdCopyImage2(VkCommandBuffer const commandBuffer,
                              TERAKAN_BO_PRIORITY_CP_DMA, dst_image->bo, dst_image->va,
                              TERAKAN_BO_PRIORITY_CP_DMA,
                              (VkDeviceSize)src_image->surface.size_bytes_shr8 << 8);
+         return;
+      }
+   }
+
+   /* Multisample depth and stencil copying, which the meta draw below cannot do -- the whole of
+    * dEQP-VK.api.copy_and_blit.core.depth_stencil_msaa_copy failed, 216 of 216. A partial
+    * rectangle is not expressible as a byte copy and still falls through.
+    */
+   if (getenv("TERAKAN_DEBUG_DISABLE_IMAGE_CP_DMA") == NULL &&
+       src_image->vk.samples > VK_SAMPLE_COUNT_1_BIT &&
+       src_image->vk.samples == dst_image->vk.samples &&
+       src_image->vk.format == dst_image->vk.format) {
+      /* Every region has to qualify before any is copied. Copying the ones that do and then
+       * falling through would leave the meta draw below to repeat them along with the rest.
+       */
+      bool every_region_qualifies = pCopyImageInfo->regionCount != 0;
+      for (uint32_t region_index = 0;
+           every_region_qualifies && region_index < pCopyImageInfo->regionCount; ++region_index) {
+         every_region_qualifies =
+            terakan_meta_copy_image_multisample_aspect_plane(src_image, dst_image,
+                                                             &pCopyImageInfo->pRegions[region_index],
+                                                             NULL, NULL, NULL);
+      }
+      if (every_region_qualifies) {
+         for (uint32_t region_index = 0; region_index < pCopyImageInfo->regionCount;
+              ++region_index) {
+            VkImageCopy2 const * const region = &pCopyImageInfo->pRegions[region_index];
+            VkDeviceSize src_va, dst_va, size_bytes;
+            ASSERTED bool const qualifies = terakan_meta_copy_image_multisample_aspect_plane(
+               src_image, dst_image, region, &src_va, &dst_va, &size_bytes);
+            assert(qualifies);
+            if (debug_copy_call < 4096) {
+               fprintf(stderr,
+                       "[TERAKAN_IMAGE_OP]   path=cp-dma-ds aspect=0x%x bytes=%llu\n",
+                       region->srcSubresource.aspectMask, (unsigned long long)size_bytes);
+            }
+            command_writer->post_depth_stencil_image_copy_write_barrier_actions |=
+               TERAKAN_BARRIER_ACTION_SYNC_ME_TO_CP_DMA;
+            terakan_cp_dma_copy(command_writer, src_image->bo, src_va, TERAKAN_BO_PRIORITY_CP_DMA,
+                                dst_image->bo, dst_va, TERAKAN_BO_PRIORITY_CP_DMA, size_bytes);
+         }
          return;
       }
    }
