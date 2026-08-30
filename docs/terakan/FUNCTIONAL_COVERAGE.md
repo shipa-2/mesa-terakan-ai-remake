@@ -1099,6 +1099,36 @@ operation is what makes the failure deterministic rather than a read of whatever
 memory: against the unfixed driver the test reports **3072 of 4096 samples** still
 holding the first value, which is exactly three quarters.
 
+### Custom sample locations at one sample
+
+A 2010-case run over `pipeline.monolithic.multisample`'s `sample_locations_ext`,
+`std_sample_locations`, `min_sample_shading`, `multisample_shader_builtin` and
+`sample_mask` gave 1130 passing and **214 failing**, and the sample count separates
+them completely: `samples_1` fails 159 of 183 while `samples_2`, `samples_4` and
+`samples_8` pass everything but one case each. The message is "Multisample pattern
+doesn't seem to change between passes" -- the test renders twice with different
+locations and gets the same picture.
+
+The state reaches the hardware. A probe rasterizing a triangle whose right edge falls
+at x = 4.25 of an 8-wide single-sample target, with the packet dumped as it was
+emitted, shows `PA_SC_AA_CONFIG` carrying `MAX_SAMPLE_DIST(7)`,
+`PA_SC_MODE_CNTL_0.MSAA_ENABLE` set -- the driver already sets it for one sample with
+a non-centre location -- and `PA_SC_AA_SAMPLE_LOCS_0` holding `0x09`, which is the
+correct encoding of x = 0.0625. The pixel at x = 4 stays uncovered anyway, and it stays
+uncovered with the sample at 0.0625, 0.25, 0.5 and 0.9375 alike, in x and in y. The
+rasterizer uses the pixel centre at `MSAA_NUM_SAMPLES = 0` and there is no other
+register to move it with.
+
+`VkPhysicalDeviceSampleLocationsPropertiesEXT::sampleLocationSampleCounts` is a bitmask
+of the sample counts that support custom locations, so one sample is dropped from it.
+The CTS throws `NotSupportedError` for a count that is not in it, and the group goes to
+1106 passing and **52 failing**: 162 failures become not-supported, 24 cases that
+passed become not-supported too -- they are one-sample cases whose locations happened
+to land near the centre -- and nothing regresses.
+
+What is left is 45 `min_sample_shading` failures, 6 `sample_locations_ext` and one
+`std_sample_locations`, which are separate.
+
 ### Colour resolve under CTS
 
 `dEQP-VK.api.copy_and_blit.core.resolve_image`, 240 cases, run against Terakan

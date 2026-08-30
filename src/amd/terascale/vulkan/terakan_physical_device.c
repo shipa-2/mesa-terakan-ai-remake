@@ -1071,7 +1071,16 @@ terakan_physical_device_get_capabilities(
 
    /* VK_EXT_sample_locations (#144). */
    extensions_out->EXT_sample_locations = true;
-   properties_out->sampleLocationSampleCounts = rasterization_sample_counts;
+   /* One sample is excluded. The state reaches the hardware correctly for it -- `PA_SC_AA_CONFIG`
+    * carries the `MAX_SAMPLE_DIST`, `PA_SC_MODE_CNTL_0.MSAA_ENABLE` is set as it is for a
+    * multisample draw, and `PA_SC_AA_SAMPLE_LOCS_0` holds the encoded location -- but the sample
+    * does not move. Measured by rasterizing a triangle whose right edge falls at x = 4.25 of an
+    * 8-wide single-sample target: the pixel at x = 4 stays uncovered whether its sample is placed
+    * at 0.0625, 0.25, 0.5 or 0.9375, so the rasterizer is using the pixel centre. Two, four and
+    * eight samples all honour the locations, which is what the CTS group measures.
+    */
+   properties_out->sampleLocationSampleCounts =
+      rasterization_sample_counts & ~(VkSampleCountFlags)VK_SAMPLE_COUNT_1_BIT;
    properties_out->maxSampleLocationGridSize = (VkExtent2D){2, 2};
    properties_out->sampleLocationCoordinateRange[0] = 0.0f;
    properties_out->sampleLocationCoordinateRange[1] = 1.0f - 0x1.0p-4f;
