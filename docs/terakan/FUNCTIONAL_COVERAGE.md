@@ -1346,6 +1346,25 @@ The resolve now takes the two view formats, with `VK_FORMAT_UNDEFINED` meaning t
 image's own -- which is what `vkCmdResolveImage` passes, since it resolves images and
 has no view. **`image.mutable` goes to 10118 of 10118 passing.**
 
+### The signed 2-bit-alpha 10_10_10 formats, the integer half
+
+The exclusion recorded for `a2r10g10b10_snorm_pack32` and `a2b10g10r10_snorm_pack32` --
+a two-bit signed channel is degenerate and the family does not survive the texture path
+-- had only ever named the `SNORM` members. The `SINT` ones are the same family and were
+still advertised in full.
+
+Over the 3264 `pipeline.monolithic.image` cases of the `a2*_pack32` formats,
+`a2r10g10b10_sint_pack32` passed 10 and **failed 194**, while
+`a2r10g10b10_uint_pack32` and `a2r10g10b10_unorm_pack32` passed all 204 of theirs with
+no failures. radv zeroes the image features of both `SINT` members exactly as it does
+the `SNORM` ones.
+
+Adding them to the exclusion takes the group to **0 failing**; the ten that had passed
+become not-supported. Only the image features are withheld: the texel buffer half was
+measured before assuming, and `a2r10g10b10_sint_pack32` passes all five of its
+`api.buffer_view` uniform texel buffer cases, so it keeps them, as it keeps vertex
+buffer support.
+
 ### Colour resolve under CTS
 
 `dEQP-VK.api.copy_and_blit.core.resolve_image`, 240 cases, run against Terakan

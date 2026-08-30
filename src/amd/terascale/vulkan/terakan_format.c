@@ -290,6 +290,11 @@ terakan_GetPhysicalDeviceFormatProperties2(UNUSED VkPhysicalDevice const physica
        * and both of their dEQP-VK.api.buffer_view.access.uniform_texel_buffer cases. AMD's own radv
        * zeroes all image features and both texel buffer features for the same family.
        *
+       * The `SINT` members belong to it too, which the first version of this missed. Sampling
+       * a2r10g10b10_sint_pack32 fails 194 of its 204 supported dEQP-VK.pipeline.*.image cases while
+       * a2r10g10b10_uint_pack32 and a2r10g10b10_unorm_pack32 pass all 204 of theirs, and radv
+       * zeroes the image features of both `SINT` members exactly as it does the `SNORM` ones.
+       *
        * Copying them works, for the same reason it works for the SCALED formats above -- a copy
        * moves the bits without interpreting them -- so the transfer features stay, as does vertex
        * buffer support, which measures clean at 4 passes and no failures in
@@ -297,7 +302,9 @@ terakan_GetPhysicalDeviceFormatProperties2(UNUSED VkPhysicalDevice const physica
        */
       bool const image_number_type_is_signed_2_10_10_10 =
          format == VK_FORMAT_A2R10G10B10_SNORM_PACK32 ||
-         format == VK_FORMAT_A2B10G10R10_SNORM_PACK32;
+         format == VK_FORMAT_A2B10G10R10_SNORM_PACK32 ||
+         format == VK_FORMAT_A2R10G10B10_SINT_PACK32 ||
+         format == VK_FORMAT_A2B10G10R10_SINT_PACK32;
       if (image_number_type_is_signed_2_10_10_10) {
          image_features =
             VK_FORMAT_FEATURE_2_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_2_TRANSFER_DST_BIT;
