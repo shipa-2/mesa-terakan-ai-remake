@@ -264,6 +264,109 @@ test_db_depth_base_info(void)
    CHECK(packets[3] == db_depth_info);
 }
 
+static struct terakan_hw_config_draw_terascale_1_db_depth_input
+representative_db_depth_input(void)
+{
+   return (struct terakan_hw_config_draw_terascale_1_db_depth_input){
+      .base = 0x12345,
+      .pitch_tile_max = 63,
+      .height_tile_max = 31,
+      .slice_tile_max = 2047,
+      .slice_start = 2,
+      .slice_max = 5,
+      .format = TERAKAN_HW_CONFIG_DRAW_TERASCALE_1_DB_DEPTH_24,
+      .array_mode = V_0280A0_ARRAY_2D_TILED_THIN1,
+      .zrange_precision = true,
+   };
+}
+
+static void
+test_db_depth_encode(void)
+{
+   struct terakan_hw_config_draw_terascale_1_db_depth_input input =
+      representative_db_depth_input();
+   struct terakan_hw_config_draw_terascale_1_db_depth depth;
+   CHECK(terakan_hw_config_draw_terascale_1_db_depth_encode(&input, &depth));
+   CHECK(depth.base == 0x12345);
+   CHECK(depth.size ==
+         (S_028000_PITCH_TILE_MAX(63) | S_028000_SLICE_TILE_MAX(2047)));
+   CHECK(depth.view == (S_028004_SLICE_START(2) | S_028004_SLICE_MAX(5)));
+   CHECK(depth.info ==
+         (S_028010_FORMAT(V_028010_DEPTH_X8_24) |
+          S_028010_ARRAY_MODE(V_0280A0_ARRAY_2D_TILED_THIN1) |
+          S_028010_ZRANGE_PRECISION(1)));
+   CHECK(depth.prefetch_limit == S_028D34_DEPTH_HEIGHT_TILE_MAX(31));
+
+   input.format = TERAKAN_HW_CONFIG_DRAW_TERASCALE_1_DB_DEPTH_16;
+   CHECK(terakan_hw_config_draw_terascale_1_db_depth_encode(&input, &depth));
+   CHECK(G_028010_FORMAT(depth.info) == V_028010_DEPTH_16);
+   input.format = TERAKAN_HW_CONFIG_DRAW_TERASCALE_1_DB_DEPTH_32_FLOAT;
+   CHECK(terakan_hw_config_draw_terascale_1_db_depth_encode(&input, &depth));
+   CHECK(G_028010_FORMAT(depth.info) == V_028010_DEPTH_32_FLOAT);
+}
+
+static void
+test_db_depth_encode_rejects_unported_surfaces(void)
+{
+   struct terakan_hw_config_draw_terascale_1_db_depth_input input =
+      representative_db_depth_input();
+   struct terakan_hw_config_draw_terascale_1_db_depth depth;
+
+   input.samples_log2 = 1;
+   CHECK(!terakan_hw_config_draw_terascale_1_db_depth_encode(&input, &depth));
+   input.samples_log2 = 0;
+   input.array_mode = V_0280A0_ARRAY_LINEAR_ALIGNED;
+   CHECK(!terakan_hw_config_draw_terascale_1_db_depth_encode(&input, &depth));
+   input.array_mode = V_0280A0_ARRAY_2D_TILED_THIN1;
+   input.format = TERAKAN_HW_CONFIG_DRAW_TERASCALE_1_DB_DEPTH_INVALID;
+   CHECK(!terakan_hw_config_draw_terascale_1_db_depth_encode(&input, &depth));
+   input.format = TERAKAN_HW_CONFIG_DRAW_TERASCALE_1_DB_DEPTH_24;
+   input.pitch_tile_max = 0x400;
+   CHECK(!terakan_hw_config_draw_terascale_1_db_depth_encode(&input, &depth));
+}
+
+static void
+test_db_depth_remaining_packets(void)
+{
+   struct terakan_hw_config_draw_terascale_1_db_depth_input const input =
+      representative_db_depth_input();
+   struct terakan_hw_config_draw_terascale_1_db_depth depth;
+   CHECK(terakan_hw_config_draw_terascale_1_db_depth_encode(&input, &depth));
+   uint32_t packets[13];
+   CHECK(terakan_hw_config_draw_terascale_1_write_db_depth(packets, &depth) == packets + 13);
+   uint32_t const registers[4] = {
+      R_028000_DB_DEPTH_SIZE, R_028004_DB_DEPTH_VIEW, R_02800C_DB_DEPTH_BASE,
+      R_028D34_DB_PREFETCH_LIMIT,
+   };
+   uint32_t const packet_offsets[4] = {0, 3, 6, 10};
+   uint32_t const packet_counts[4] = {1, 1, 2, 1};
+   for (uint32_t packet_index = 0; packet_index < 4; ++packet_index) {
+      uint32_t const offset = packet_offsets[packet_index];
+      CHECK(packets[offset] == PKT3(PKT3_SET_CONTEXT_REG, packet_counts[packet_index], 0));
+      CHECK(packets[offset + 1] ==
+            (registers[packet_index] - R600_CONTEXT_REG_OFFSET) >> 2);
+   }
+   CHECK(packets[2] == depth.size);
+   CHECK(packets[5] == depth.view);
+   CHECK(packets[8] == depth.base);
+   CHECK(packets[9] == depth.info);
+   CHECK(packets[12] == depth.prefetch_limit);
+
+   uint32_t prefetch_packet[3];
+   CHECK(terakan_hw_config_draw_terascale_1_write_db_depth_prefetch_limit(
+            prefetch_packet, 31) == prefetch_packet + 3);
+   CHECK(prefetch_packet[0] == PKT3(PKT3_SET_CONTEXT_REG, 1, 0));
+   CHECK(prefetch_packet[1] == (R_028D34_DB_PREFETCH_LIMIT - R600_CONTEXT_REG_OFFSET) >> 2);
+   CHECK(prefetch_packet[2] == 31);
+
+   uint32_t unbound_packet[3];
+   CHECK(terakan_hw_config_draw_terascale_1_write_db_depth_unbound(unbound_packet) ==
+         unbound_packet + 3);
+   CHECK(unbound_packet[0] == PKT3(PKT3_SET_CONTEXT_REG, 1, 0));
+   CHECK(unbound_packet[1] == (R_028010_DB_DEPTH_INFO - R600_CONTEXT_REG_OFFSET) >> 2);
+   CHECK(unbound_packet[2] == S_028010_FORMAT(V_028010_DEPTH_INVALID));
+}
+
 static void
 test_db_alpha_to_mask(void)
 {
@@ -438,6 +541,9 @@ main(void)
    test_db_shader_control_rejects_evergreen_only_fields();
    test_db_depth_size();
    test_db_depth_base_info();
+   test_db_depth_encode();
+   test_db_depth_encode_rejects_unported_surfaces();
+   test_db_depth_remaining_packets();
    test_db_alpha_to_mask();
    test_cb_color_encode();
    test_cb_color_encode_rejects_unported_surfaces();

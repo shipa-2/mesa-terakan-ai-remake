@@ -203,6 +203,77 @@ terakan_hw_config_draw_terascale_1_write_db_depth_base_info(uint32_t * packet,
    return packet;
 }
 
+bool
+terakan_hw_config_draw_terascale_1_db_depth_encode(
+   struct terakan_hw_config_draw_terascale_1_db_depth_input const * const input,
+   struct terakan_hw_config_draw_terascale_1_db_depth * const depth_out)
+{
+   if (input->pitch_tile_max > 0x3FF || input->height_tile_max > 0x3FF ||
+       input->slice_tile_max > 0xFFFFF ||
+       input->slice_start > 0x7FF || input->slice_max > 0x7FF ||
+       input->slice_start > input->slice_max || input->samples_log2 != 0 ||
+       (input->array_mode != V_0280A0_ARRAY_1D_TILED_THIN1 &&
+        input->array_mode != V_0280A0_ARRAY_2D_TILED_THIN1)) {
+      return false;
+   }
+
+   uint32_t hw_format;
+   switch (input->format) {
+   case TERAKAN_HW_CONFIG_DRAW_TERASCALE_1_DB_DEPTH_16:
+      hw_format = V_028010_DEPTH_16;
+      break;
+   case TERAKAN_HW_CONFIG_DRAW_TERASCALE_1_DB_DEPTH_24:
+      /* This encoder is depth-only, so the unused high byte is X rather than stencil. */
+      hw_format = V_028010_DEPTH_X8_24;
+      break;
+   case TERAKAN_HW_CONFIG_DRAW_TERASCALE_1_DB_DEPTH_32_FLOAT:
+      hw_format = V_028010_DEPTH_32_FLOAT;
+      break;
+   default:
+      return false;
+   }
+
+   *depth_out = (struct terakan_hw_config_draw_terascale_1_db_depth){
+      .base = input->base,
+      .size = S_028000_PITCH_TILE_MAX(input->pitch_tile_max) |
+              S_028000_SLICE_TILE_MAX(input->slice_tile_max),
+      .view = S_028004_SLICE_START(input->slice_start) |
+              S_028004_SLICE_MAX(input->slice_max),
+      .info = S_028010_FORMAT(hw_format) | S_028010_ARRAY_MODE(input->array_mode) |
+              S_028010_ZRANGE_PRECISION(input->zrange_precision),
+      /* r600_init_depth_surface() derives this directly from nblk_y / 8 - 1, which is the
+       * Evergreen-shaped HEIGHT_TILE_MAX already carried in the intermediate descriptor.
+       */
+      .prefetch_limit = S_028D34_DEPTH_HEIGHT_TILE_MAX(input->height_tile_max),
+   };
+   return true;
+}
+
+uint32_t *
+terakan_hw_config_draw_terascale_1_write_db_depth(
+   uint32_t * packet, struct terakan_hw_config_draw_terascale_1_db_depth const * const depth)
+{
+   packet = write_context_reg(packet, R_028000_DB_DEPTH_SIZE, depth->size);
+   packet = write_context_reg(packet, R_028004_DB_DEPTH_VIEW, depth->view);
+   packet = terakan_hw_config_draw_terascale_1_write_db_depth_base_info(
+      packet, depth->base, depth->info);
+   return write_context_reg(packet, R_028D34_DB_PREFETCH_LIMIT, depth->prefetch_limit);
+}
+
+uint32_t *
+terakan_hw_config_draw_terascale_1_write_db_depth_prefetch_limit(uint32_t * const packet,
+                                                                 uint32_t const value)
+{
+   return write_context_reg(packet, R_028D34_DB_PREFETCH_LIMIT, value);
+}
+
+uint32_t *
+terakan_hw_config_draw_terascale_1_write_db_depth_unbound(uint32_t * const packet)
+{
+   return write_context_reg(packet, R_028010_DB_DEPTH_INFO,
+                            S_028010_FORMAT(V_028010_DEPTH_INVALID));
+}
+
 uint32_t
 terakan_hw_config_draw_terascale_1_db_alpha_to_mask_encode(bool const enable)
 {

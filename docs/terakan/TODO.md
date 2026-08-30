@@ -733,19 +733,12 @@ classic Gallium R600 driver that has supported this hardware for years).
   `r600_state.c`'s own `radeon_set_context_reg_seq(cs,
   R_02800C_DB_DEPTH_BASE, 2)` sequencing). Both take fully
   caller-computed values, same as every other TeraScale 1 register
-  emission function -- the VALUE COMPUTATION side (deriving a real
-  `DB_DEPTH_INFO` `FORMAT`/`ARRAY_MODE` and `DB_DEPTH_BASE` address from
-  a Vulkan depth/stencil attachment) is not written, and is a genuinely
-  open research question, not just unstarted work: R600/R700 binds depth
-  and stencil through one combined surface and base address (no separate
-  stencil base at all), which doesn't map onto Terakan's existing
-  `terakan_depth_stencil_descriptor` (built around separate
-  `z_base`/`stencil_base`/`z_info`/`stencil_info`) without first figuring
-  out how the packed combined-surface model actually stores stencil data
-  alongside depth on this hardware. These two functions exist so the
-  register shape is ready once that research is done, not because the
-  value-computation problem is solved -- it remains the largest concrete
-  gap left before a TeraScale 1 depth attachment could actually be bound.
+  emission function. The depth-only value computation described below is
+  now written, but the combined depth/stencil case remains a genuinely open
+  research question: R600/R700 binds depth and stencil through one packed
+  surface and base address (no separate stencil base at all), which doesn't
+  map directly onto Terakan's existing split-aspect
+  `terakan_depth_stencil_descriptor`.
 
   A sixth follow-up ported the first complete color-target descriptor path rather than merely its
   register shape. `terakan_hw_config_draw_terascale_1_cb_color_encode()` repacks the existing
@@ -764,6 +757,23 @@ classic Gallium R600 driver that has supported this hardware for years).
   implementation's `COMP_SWAP` value while leaving the oracle intact and made the test abort at
   the `INFO` comparison. This proves CPU-side packet construction only: no R700 command stream was
   submitted and no tiled GPU copy/readback has passed yet.
+
+  A seventh follow-up connected the single-sampled depth-only DB path.
+  `terakan_hw_config_draw_terascale_1_db_depth_encode()` transcribes the
+  non-HTILE part of `r600_init_depth_surface()`: R8xx software depth formats
+  are explicitly mapped to R700 `DEPTH_16`, depth-only `DEPTH_X8_24`, or
+  `DEPTH_32_FLOAT`; `ARRAY_MODE`, `ZRANGE_PRECISION`, tile pitch/slice and
+  `DB_PREFETCH_LIMIT = aligned_height / 8 - 1` are repacked into the R700
+  registers. The command writer emits `DB_DEPTH_SIZE`, `DB_DEPTH_VIEW`, the
+  `DB_DEPTH_BASE/INFO` pair and `DB_PREFETCH_LIMIT`, with one relocation at
+  the real R700 base payload. Stencil-bearing and multisampled descriptors
+  are explicitly unbound instead of leaving a previous DB surface active:
+  classic R700 stores their depth and stencil in one packed allocation,
+  while Terakan still lays out the two Vulkan aspects separately. The CPU
+  oracle checks exact values, packet offsets and rejection boundaries. No
+  DB packet has been submitted or read back on RV710; the submit guard stays
+  in place, and combined depth/stencil remains unsupported rather than
+  guessed.
 
 - TeraScale 1 (R600/R700) `CB_COLORn_INFO`/`DB_Z_INFO` field-position
   comparison, following up on the spot-check above with the real
