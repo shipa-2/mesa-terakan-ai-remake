@@ -42,6 +42,11 @@ uint32_t * terakan_hw_config_shared_terascale_1_write_sq_config(
    uint32_t * packet,
    struct terakan_hw_config_shared_terascale_1_sq_config_info const * info);
 
+/* R600/R700 has no Evergreen SQ_LDS_RESOURCE_MGMT register. Compute LDS allocation has not been
+ * identified yet, so the only safe graphics-to-compute transition packet is empty.
+ */
+uint32_t terakan_hw_config_shared_terascale_1_compute_lds_packet_dwords(void);
+
 /* Upper bound on the dword count terakan_hw_config_shared_terascale_1_write_context_defaults()
  * writes (the R700 case; R600 writes 9 dwords fewer, 3 registers -- VGT_ENHANCE,
  * PA_SC_EDGERULE and SX_MISC -- that only exist for R700 in the reference function). Reserve this

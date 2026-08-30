@@ -81,6 +81,12 @@ test_sq_config_packets(void)
    CHECK(packets[9] == 0);
 }
 
+static void
+test_compute_lds_packet_is_empty(void)
+{
+   CHECK(terakan_hw_config_shared_terascale_1_compute_lds_packet_dwords() == 0);
+}
+
 /* R700 (RV710 is R700) writes 191 dwords: two blocks (PA_SC_EDGERULE and SX_MISC) exist only for
  * R700, at 3 dwords each -- see the comment on
  * terakan_hw_config_shared_terascale_1_write_context_defaults()'s declaration.
@@ -299,6 +305,7 @@ int
 main(void)
 {
    test_sq_config_packets();
+   test_compute_lds_packet_is_empty();
    test_context_defaults_packets_r700();
    test_context_defaults_packets_r600();
    return 0;

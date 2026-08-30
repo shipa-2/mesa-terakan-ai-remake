@@ -450,12 +450,15 @@ classic Gallium R600 driver that has supported this hardware for years).
   before this: `terakan_hw_config_shared_draw_emit_sq_thread_stack_resource_mgmt()`
   and `_compute_emit_sq_thread_stack_resource_mgmt()` both wrote
   `R_008C18_SQ_THREAD_RESOURCE_MGMT_1` per draw/dispatch, and the LDS setup
-  block in `terakan_hw_config_shared_draw_emit_modified()` wrote
-  `R_008E2C_SQ_LDS_RESOURCE_MGMT` on every compute-to-draw switch -- neither
+  blocks in `terakan_hw_config_shared_draw_emit_modified()` and
+  `_compute_emit_modified()` wrote `R_008E2C_SQ_LDS_RESOURCE_MGMT` on the
+  compute-to-draw and graphics-to-compute transitions respectively -- neither
   register is defined at all in `r600d.h`, so on real TeraScale 1 hardware
   these would have written to whatever unrelated register (if any) actually
   lives at those offsets, not a differently-laid-out version of the same
-  one. All three now also check `is_terascale_1` and skip. This is a real,
+  one. All four now also check `is_terascale_1` and skip. The latter transition
+  was found later because its condition checked only `!is_r9xx`; its exact
+  TeraScale 1 packet is now covered as zero dwords. This is a real,
   currently-undocumented gap, not a no-op: TeraScale 1 has no tessellator
   and doesn't re-switch thread/stack allocation per draw the way R8xx does,
   so the draw-time skip is permanently correct, but TeraScale 1's
