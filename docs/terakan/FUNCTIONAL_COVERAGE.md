@@ -1446,6 +1446,38 @@ abandoned once it became clear it would cost more than it was worth. The 480-cas
 survey goes 36 failures to **32** with none new.
 
 
+### Indirect draws whose parameters a compute shader writes
+
+Of the 107 failures left in `dEQP-VK.draw` after the vertex index fix, **79 are
+`indirect_draw.sequential_data_from_compute` and `indirect_draw.indexed_data_from_compute`**
+-- 29 in the render pass variants and 50 across the three command buffer ones. The
+remaining 28 are 12 `shader_draw_parameters`, 9 `implicit_sample_shading` and a few
+others.
+
+The mechanism is certain from the code alone. `terakan_vk_cmd_draw_indirect` reads the
+indirect buffer through `buffer->bo->mapping` at **record** time, to pull `firstVertex`
+and `firstInstance` out and put them in `VGT_INDX_OFFSET`, `SQ_VTX_START_INST_LOC` and
+the driver constants. These tests record a compute dispatch that fills that same buffer
+and then the draw; the dispatch runs at **submit** time, so the read is guaranteed to
+see whatever was in the buffer beforehand.
+
+The fix is not a small one, because it runs into why the CPU read is there at all.
+Evergreen's `DRAW_INDIRECT` and `DRAW_INDEX_INDIRECT` make the command processor load
+`SQ_VTX_BASE_VTX_LOC` and `SQ_VTX_START_INST_LOC` from the buffer by itself -- but
+Terakan deliberately does not use those. It puts the base in `VGT_INDX_OFFSET` and
+fetches with `SQ_VTX_FETCH_NO_INDEX_OFFSET` so that R0.X *is* `gl_VertexIndex`, which is
+what Vulkan wants and what the entry above turned out to depend on. `VGT_INDX_OFFSET` is
+a context register the command processor does not load from memory, and Evergreen has no
+packet to copy a dword from memory into one.
+
+So an indirect draw wants the other arrangement: fetch with `SQ_VTX_FETCH_VERTEX_DATA`
+so the hardware-loaded base reaches attribute fetching, leave `VGT_INDX_OFFSET` at zero,
+and have the shader add the base to R0.X for `gl_VertexIndex` -- which is exactly what
+`vertex_id_zero_based` produces, with the base reaching the shader through a CP DMA of
+those two dwords from the indirect buffer into the push constant buffer. That is two
+fetch shader variants and a per-draw copy, chosen by whether the draw is indirect. It is
+a design fork rather than a patch, and it is the next thing this group needs.
+
 ### Colour resolve under CTS
 
 `dEQP-VK.api.copy_and_blit.core.resolve_image`, 240 cases, run against Terakan
