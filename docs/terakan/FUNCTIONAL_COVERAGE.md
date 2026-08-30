@@ -1126,8 +1126,46 @@ The CTS throws `NotSupportedError` for a count that is not in it, and the group 
 passed become not-supported too -- they are one-sample cases whose locations happened
 to land near the centre -- and nothing regresses.
 
-What is left is 45 `min_sample_shading` failures, 6 `sample_locations_ext` and one
-`std_sample_locations`, which are separate.
+### gl_FragCoord and input attachments under sample shading
+
+That left 45 `min_sample_shading` failures of 60, rising with the fraction: `min_0_75`
+and `min_1_0` failed every case. Two defects were behind them, and the CTS shader names
+both:
+
+```glsl
+uint sampleId = gl_SampleID;
+fragColor = vec4(fract(gl_FragCoord.xy), 0.0, 1.0);
+```
+
+**`gl_FragCoord` was the pixel centre in every invocation.** Section "Sample Shading"
+of the Vulkan 1.4.349 specification puts `FragCoord` at the sample's position when the
+shader runs per sample, and `SPI_PS_IN_CONTROL_0.POSITION_SAMPLE` is what selects that;
+it was set only when the shader declared the position `sample`-qualified, which GLSL
+cannot do for `gl_FragCoord`. A shader reading `SampleId` or `SamplePosition` always
+runs per sample, so it now sets `POSITION_SAMPLE` too. A probe writing
+`fract(gl_FragCoord.xy)` in sixteenths into a 4-sample attachment reads back
+`(8, 8)` four times without the change and `(6, 2)`, `(14, 6)`, `(2, 10)`, `(10, 14)`
+with it -- the standard four-sample pattern.
+
+**A multisample input attachment was compressed.** These images are created with
+`COLOR_ATTACHMENT | TRANSFER_SRC | INPUT_ATTACHMENT` and no `SAMPLED`, so
+`terakan_image_create_color_descriptor` enabled `COMPRESSION` and `FAST_CLEAR` on them
+-- but `nir_lower_input_attachments` turns `subpassLoad` into a texture fetch, and a
+multisample one into `txf_ms`, which is exactly the plane-by-plane read compression
+breaks. The CTS extracts each sample with `subpassLoad(imageMS, sampleId)`, and the
+planes the CB never wrote came back as zero, which the test reports as "Got uncovered
+pixel, where covered samples were expected". Treating `INPUT_ATTACHMENT` usage as
+sampled, the way integer formats already are, removes all 12 of those.
+
+Together the group goes from 45 failures to **29**, all now "Got less unique colors
+than requested through minSampleShading" and still rising with the fraction. On the
+2641-case multisample and renderpass sample the count reaches **0**, down from 119 at
+the start of this work.
+
+What is left is those 29, 6 `sample_locations_ext` and one `std_sample_locations`.
+The CTS reads its per-sample images through `subpassLoad` with the sample index in a
+push constant, so a dynamically indexed multisample input attachment read is the next
+thing to probe.
 
 ### Colour resolve under CTS
 

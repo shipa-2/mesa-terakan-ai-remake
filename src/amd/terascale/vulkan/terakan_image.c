@@ -1813,11 +1813,16 @@ terakan_image_create_color_descriptor(
           * so `terakan_CmdResolveImage2` fetches the source as a texture. A colour attachment
           * created without `VK_IMAGE_USAGE_SAMPLED_BIT` - which is all the CTS multisample resolve
           * tests create - still reaches that path through a render pass resolve attachment.
+          *
+          * An input attachment is sampled too: `nir_lower_input_attachments` turns `subpassLoad`
+          * into a texture fetch, and a multisample one into `txf_ms`, so `VK_IMAGE_USAGE_
+          * INPUT_ATTACHMENT_BIT` reaches the same plane-by-plane read that compression breaks.
           */
          bool const sampled_by_the_shader_resolve =
             view_format.number_type == TERASCALE_FORMAT_NUMBER_TYPE_UINT ||
             view_format.number_type == TERASCALE_FORMAT_NUMBER_TYPE_SINT;
-         if ((image->vk.usage & VK_IMAGE_USAGE_SAMPLED_BIT) == 0 &&
+         if ((image->vk.usage &
+              (VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT)) == 0 &&
              !sampled_by_the_shader_resolve) {
             descriptor_out->info |= S_028C70_COMPRESSION(true);
             descriptor_out->info |= S_028C70_FAST_CLEAR(true);
