@@ -198,6 +198,11 @@ struct terakan_gfx_command_writer;
 struct terakan_rendering_color_resolve {
    VkImage src_image;
    VkImage dst_image;
+   /* The attachments' image view formats, which differ from the images' own when the image is
+    * mutable. Colour only; `VK_FORMAT_UNDEFINED` means the image's format.
+    */
+   VkFormat src_view_format;
+   VkFormat dst_view_format;
    VkImageSubresourceLayers src_subresource;
    VkImageSubresourceLayers dst_subresource;
    /* Depth/stencil only, where the two aspects share one entry but may be resolved with different

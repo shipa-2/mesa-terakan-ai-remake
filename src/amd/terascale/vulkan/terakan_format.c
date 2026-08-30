@@ -290,6 +290,11 @@ terakan_GetPhysicalDeviceFormatProperties2(UNUSED VkPhysicalDevice const physica
        * and both of their dEQP-VK.api.buffer_view.access.uniform_texel_buffer cases. AMD's own radv
        * zeroes all image features and both texel buffer features for the same family.
        *
+       * The `SINT` members belong to it too, which the first version of this missed. Sampling
+       * a2r10g10b10_sint_pack32 fails 194 of its 204 supported dEQP-VK.pipeline.*.image cases while
+       * a2r10g10b10_uint_pack32 and a2r10g10b10_unorm_pack32 pass all 204 of theirs, and radv
+       * zeroes the image features of both `SINT` members exactly as it does the `SNORM` ones.
+       *
        * Copying them works, for the same reason it works for the SCALED formats above -- a copy
        * moves the bits without interpreting them -- so the transfer features stay, as does vertex
        * buffer support, which measures clean at 4 passes and no failures in
@@ -297,7 +302,9 @@ terakan_GetPhysicalDeviceFormatProperties2(UNUSED VkPhysicalDevice const physica
        */
       bool const image_number_type_is_signed_2_10_10_10 =
          format == VK_FORMAT_A2R10G10B10_SNORM_PACK32 ||
-         format == VK_FORMAT_A2B10G10R10_SNORM_PACK32;
+         format == VK_FORMAT_A2B10G10R10_SNORM_PACK32 ||
+         format == VK_FORMAT_A2R10G10B10_SINT_PACK32 ||
+         format == VK_FORMAT_A2B10G10R10_SINT_PACK32;
       if (image_number_type_is_signed_2_10_10_10) {
          image_features =
             VK_FORMAT_FEATURE_2_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_2_TRANSFER_DST_BIT;
@@ -448,6 +455,49 @@ terakan_GetPhysicalDeviceImageFormatProperties2(
    }
    if (!features) {
       return VK_ERROR_FORMAT_NOT_SUPPORTED;
+   }
+
+   /* The `vkGetPhysicalDeviceImageFormatProperties` reference says the call fails when "the
+    * combination of format, type, tiling, usage, and flags is not supported", and each usage names
+    * the format feature it needs in the "Format Feature Dependent Usage" table. Only the format's
+    * feature mask was being checked, so a format advertising nothing but transfer -- the `USCALED`
+    * and `SSCALED` families, whose image features are deliberately reduced to that -- reported an
+    * image with `VK_IMAGE_USAGE_SAMPLED_BIT` as supported. That is how
+    * `dEQP-VK.texture.swizzle.component_mapping.color.r8g8b8a8_sscaled_2d_pot_rgba` got as far as
+    * asking for a shader that was never built for it and took the whole run down with it, while
+    * radv reports the format unsupported and the case is skipped.
+    *
+    * An input attachment names two features and needs either, not both.
+    * `TRANSIENT_ATTACHMENT` names none and is left out.
+    */
+   static struct {
+      VkImageUsageFlags usage;
+      /* At least one of these has to be present. */
+      VkFormatFeatureFlags2 features;
+   } const usage_features[] = {
+      {VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_FORMAT_FEATURE_2_TRANSFER_SRC_BIT},
+      {VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_FORMAT_FEATURE_2_TRANSFER_DST_BIT},
+      {VK_IMAGE_USAGE_SAMPLED_BIT, VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_BIT},
+      {VK_IMAGE_USAGE_STORAGE_BIT, VK_FORMAT_FEATURE_2_STORAGE_IMAGE_BIT},
+      {VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, VK_FORMAT_FEATURE_2_COLOR_ATTACHMENT_BIT},
+      {VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+       VK_FORMAT_FEATURE_2_DEPTH_STENCIL_ATTACHMENT_BIT},
+      {VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT,
+       VK_FORMAT_FEATURE_2_COLOR_ATTACHMENT_BIT |
+          VK_FORMAT_FEATURE_2_DEPTH_STENCIL_ATTACHMENT_BIT},
+   };
+   /* `VK_IMAGE_CREATE_EXTENDED_USAGE_BIT` says the usage is deliberately not required to be
+    * supported by the image's own format, because a view of a compatible format provides it. It is
+    * also what `VK_IMAGE_CREATE_BLOCK_TEXEL_VIEW_COMPATIBLE_BIT` is used with, to store into an
+    * uncompressed view of a compressed image.
+    */
+   if (!(pImageFormatInfo->flags & VK_IMAGE_CREATE_EXTENDED_USAGE_BIT)) {
+      for (unsigned usage_index = 0; usage_index < ARRAY_SIZE(usage_features); ++usage_index) {
+         if ((pImageFormatInfo->usage & usage_features[usage_index].usage) &&
+             !(features & usage_features[usage_index].features)) {
+            return VK_ERROR_FORMAT_NOT_SUPPORTED;
+         }
+      }
    }
 
    VkImageFormatProperties image_format_properties;

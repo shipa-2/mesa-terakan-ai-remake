@@ -1738,6 +1738,94 @@ if with_tests
         timeout : 20,
       )
 
+      terakan_depth_stencil_clear_multisample_spv = custom_target(
+        'terakan_depth_stencil_clear_multisample.spv.h',
+        input : 'tests/terakan_depth_stencil_clear_multisample.comp',
+        output : 'terakan_depth_stencil_clear_multisample.spv.h',
+        command : [
+          prog_glslang, '-V', '-x', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_depth_stencil_clear_multisample.spv.h.d',
+      )
+      terakan_depth_stencil_clear_multisample_test = executable(
+        'terakan_depth_stencil_clear_multisample_test',
+        [
+          'tests/terakan_depth_stencil_clear_multisample_test.c',
+          terakan_depth_stencil_clear_multisample_spv,
+        ],
+        dependencies : vulkan_loader_dep,
+      )
+      test(
+        'terakan_depth_stencil_clear_multisample',
+        terakan_depth_stencil_clear_multisample_test,
+        depends : [libvulkan_terascale, _dev_icd],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 15,
+      )
+
+      terakan_sample_id_depth_vertex_spv = custom_target(
+        'terakan_sample_id_depth.vert.spv',
+        input : 'tests/terakan_sample_id_depth.vert',
+        output : 'terakan_sample_id_depth.vert.spv',
+        command : [
+          prog_glslang, '-V', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_sample_id_depth.vert.spv.d',
+      )
+      terakan_sample_id_depth_fragment_spv = custom_target(
+        'terakan_sample_id_depth.frag.spv',
+        input : 'tests/terakan_sample_id_depth.frag',
+        output : 'terakan_sample_id_depth.frag.spv',
+        command : [
+          prog_glslang, '-V', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_sample_id_depth.frag.spv.d',
+      )
+      terakan_sample_id_depth_compute_spv = custom_target(
+        'terakan_sample_id_depth.comp.spv',
+        input : 'tests/terakan_sample_id_depth.comp',
+        output : 'terakan_sample_id_depth.comp.spv',
+        command : [
+          prog_glslang, '-V', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_sample_id_depth.comp.spv.d',
+      )
+      terakan_sample_id_depth_test = executable(
+        'terakan_sample_id_depth_test',
+        ['tests/terakan_sample_id_depth_test.c'],
+        dependencies : vulkan_loader_dep,
+      )
+      test(
+        'terakan_sample_id_depth',
+        terakan_sample_id_depth_test,
+        args : [
+          terakan_sample_id_depth_vertex_spv,
+          terakan_sample_id_depth_fragment_spv,
+          terakan_sample_id_depth_compute_spv,
+        ],
+        depends : [
+          libvulkan_terascale,
+          _dev_icd,
+          terakan_sample_id_depth_vertex_spv,
+          terakan_sample_id_depth_fragment_spv,
+          terakan_sample_id_depth_compute_spv,
+        ],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 20,
+      )
+
       terakan_input_attachment_vertex_spv = custom_target(
         'terakan_input_attachment.vert.spv',
         input : 'tests/terakan_input_attachment.vert',

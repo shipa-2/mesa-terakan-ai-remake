@@ -314,6 +314,10 @@ terakan_shader_impl_compile(terakan_shader_impl * const shader, terakan_device *
       }
       shader->fs.db_shader_control = db_shader_control;
 
+      shader->fs.per_sample_invocation =
+         BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_SAMPLE_ID) ||
+         BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_SAMPLE_POS);
+
       bool export_z = (db_shader_control &
                        ~(uint32_t)(C_02880C_Z_EXPORT_ENABLE & C_02880C_STENCIL_EXPORT_ENABLE &
                                    C_02880C_MASK_EXPORT_ENABLE)) != 0;
@@ -391,12 +395,20 @@ terakan_shader_impl_compile(terakan_shader_impl * const shader, terakan_device *
          S_0286CC_LINEAR_GRADIENT_ENA(
             (shader->static_state.stage.ps.spi_baryc_cntl & ~spi_baryc_cntl_linear_clear) != 0);
       if (position_input != nullptr) {
+         /* Section "Sample Shading" of the Vulkan 1.4.349 specification says that when the shader
+          * runs per sample, `FragCoord` is the sample's position rather than the pixel's centre.
+          * A shader reading `SampleId` or `SamplePosition` always runs per sample - see
+          * `per_sample_invocation` - so its position has to follow the sample.
+          */
+         bool const position_at_sample =
+            position_input->interpolate_location == TGSI_INTERPOLATE_LOC_SAMPLE ||
+            shader->fs.per_sample_invocation;
          shader->static_state.stage.ps.spi_ps_in_control[0] |=
             S_0286CC_POSITION_ENA(1) |
-            S_0286CC_POSITION_CENTROID(position_input->interpolate_location ==
-                                       TGSI_INTERPOLATE_LOC_CENTROID) |
-            S_0286CC_POSITION_SAMPLE(position_input->interpolate_location ==
-                                     TGSI_INTERPOLATE_LOC_SAMPLE) |
+            S_0286CC_POSITION_CENTROID(!position_at_sample &&
+                                       position_input->interpolate_location ==
+                                          TGSI_INTERPOLATE_LOC_CENTROID) |
+            S_0286CC_POSITION_SAMPLE(position_at_sample) |
             S_0286CC_POSITION_ADDR(position_input->gpr);
       }
       shader->static_state.stage.ps.spi_ps_in_control[1] = 0;

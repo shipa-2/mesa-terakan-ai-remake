@@ -111,7 +111,41 @@ terakan_CreateSampler(VkDevice const deviceHandle, VkSamplerCreateInfo const * c
       }
    }
 
-   /* TODO(Triang3l): Border color. */
+   /* The fixed border colour types deliver 1.0 as a float, which is what the specification asks
+    * for from `VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK` and `_WHITE` and what those pass with. The
+    * integer variants have to deliver the integer 1 instead, and the narrow integer formats read
+    * the fixed white back as something else: every 8-bit and 16-bit `uint`/`sint` format, and the
+    * stencil aspect of every combined depth/stencil format, fails the CTS `clamp_to_border` cases
+    * while the 32-bit integer formats and every normalized one pass.
+    *
+    * The per-sampler border colour registers are already emitted for the `REGISTER` type by
+    * `terakan_hw_config_sqk`, and they carry raw bits, so pointing the integer types at them with
+    * the integer values written out gives the specified result at every width.
+    */
+   if (!terakan_device_physical_device(device)->chip_info.is_terascale_1) {
+      uint32_t const * integer_border_color = NULL;
+      static uint32_t const integer_opaque_black[4] = {0, 0, 0, 1};
+      static uint32_t const integer_opaque_white[4] = {1, 1, 1, 1};
+      switch (pCreateInfo->borderColor) {
+      case VK_BORDER_COLOR_INT_OPAQUE_BLACK:
+         integer_border_color = integer_opaque_black;
+         break;
+      case VK_BORDER_COLOR_INT_OPAQUE_WHITE:
+         integer_border_color = integer_opaque_white;
+         break;
+      default:
+         break;
+      }
+      if (integer_border_color != NULL) {
+         sampler->sampler.sampler[0] =
+            (sampler->sampler.sampler[0] & C_03C000_BORDER_COLOR_TYPE) |
+            S_03C000_BORDER_COLOR_TYPE(V_03C000_SQ_TEX_BORDER_COLOR_REGISTER);
+         memcpy(sampler->sampler.register_border_color, integer_border_color,
+                sizeof(sampler->sampler.register_border_color));
+      }
+   }
+
+   /* TODO(Triang3l): Custom border colours, VK_EXT_custom_border_color. */
 
    sampler->unnormalized_coordinates = pCreateInfo->unnormalizedCoordinates;
 

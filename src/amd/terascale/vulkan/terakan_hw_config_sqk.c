@@ -801,8 +801,15 @@ terakan_hw_config_sqk_emit_modified_samplers(
       if (unlikely(packet == NULL)) {
          return;
       }
-      *packet++ = PKT3(PKT3_SET_CTL_CONST, 1 + 4, 0);
-      *packet++ = TERAKAN_CTL_CONST_OFFSET(R_00A400_TD_PS_SAMPLER0_BORDER_INDEX) +
+      /* The per-sampler border colour registers are configuration registers, not control
+       * constants: `TERAKAN_CTL_CONST_OFFSET` subtracts 0x3CFF0 from an address of 0xA400 and
+       * underflows, and the resulting write lost the device the first time this path was reached.
+       * Gallium r600 emits them with `radeon_set_config_reg_seq` for the same reason. The stage
+       * stride is the five registers of one block, and the hardware stage indices are in the same
+       * order the registers are.
+       */
+      *packet++ = PKT3(PKT3_SET_CONFIG_REG, 1 + 4, 0);
+      *packet++ = TERAKAN_CONFIG_REG_OFFSET(R_00A400_TD_PS_SAMPLER0_BORDER_INDEX) +
                   5 * (unsigned)hw_stage_index;
       *packet++ = sampler_index;
       memcpy(packet, stage->samplers[sampler_index].register_border_color, sizeof(uint32_t) * 4);

@@ -1,0 +1,46 @@
+#version 450
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+/* The same multisample image, once through each aspect. */
+layout(set = 0, binding = 0) uniform sampler2DMS source_depth;
+layout(set = 0, binding = 1) uniform usampler2DMS source_stencil;
+
+layout(set = 0, binding = 2, std430) buffer Output {
+   /* Texels whose depth or stencil is not the cleared value, counted over every sample. */
+   uint depth_mismatches;
+   uint stencil_mismatches;
+   /* One value that did not match, to tell a wrong clear from an untouched surface. */
+   uint depth_seen_bits;
+   uint stencil_seen;
+} output_buffer;
+
+layout(push_constant) uniform PushConstants {
+   uint width;
+   uint height;
+   uint sample_count;
+   float expected_depth;
+   uint expected_stencil;
+} push_constants;
+
+void
+main()
+{
+   uvec2 coordinate = gl_GlobalInvocationID.xy;
+   if (coordinate.x >= push_constants.width || coordinate.y >= push_constants.height)
+      return;
+
+   for (uint sample_index = 0; sample_index < push_constants.sample_count; ++sample_index) {
+      float depth = texelFetch(source_depth, ivec2(coordinate), int(sample_index)).r;
+      if (abs(depth - push_constants.expected_depth) > 1.0 / 4096.0) {
+         atomicAdd(output_buffer.depth_mismatches, 1);
+         output_buffer.depth_seen_bits = floatBitsToUint(depth);
+      }
+
+      uint stencil = texelFetch(source_stencil, ivec2(coordinate), int(sample_index)).r;
+      if (stencil != push_constants.expected_stencil) {
+         atomicAdd(output_buffer.stencil_mismatches, 1);
+         output_buffer.stencil_seen = stencil;
+      }
+   }
+}

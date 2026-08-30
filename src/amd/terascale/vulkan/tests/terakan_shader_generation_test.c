@@ -46,7 +46,12 @@ check_nir_options(enum radeon_family const family, bool const pre_evergreen)
       non_fs.lower_bit_count == pre_evergreen &&
       non_fs.lower_bitfield_reverse == pre_evergreen && non_fs.has_bfe == !pre_evergreen &&
       non_fs.has_bfm == !pre_evergreen && non_fs.has_bitfield_select == !pre_evergreen &&
-      non_fs.vertex_id_zero_based == !pre_evergreen && !non_fs.lower_all_io_to_temps &&
+      /* Never zero-based on either generation: the base is in `VGT_INDX_OFFSET`, so R0.X already
+       * carries it, which is what Vulkan's `VertexIndex` is. Asking NIR to treat it as zero-based
+       * made it add the base a second time, and every one of the 144 supported
+       * dEQP-VK.draw.*.indexed_draw cases failed.
+       */
+      !non_fs.vertex_id_zero_based && !non_fs.lower_all_io_to_temps &&
       fs.lower_all_io_to_temps && fs.force_indirect_unrolling_sampler == pre_evergreen &&
       fs.lower_bit_count == pre_evergreen && fs.has_bfe == !pre_evergreen;
    if (!passed) {

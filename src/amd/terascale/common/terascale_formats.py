@@ -563,6 +563,12 @@ def get_format_info(pipe_format, is_r8xx):
                       pipe_format.le_channels[1].size == 32 and
                       pipe_format.le_channels[2].size == 32):
                     info.format = '32_32_32_FLOAT' if is_float else '32_32_32'
+                    # A three-channel unpacked format is one texel per three surfels, and
+                    # 32_32_32 is a vertex fetch format rather than a texture one, exactly like
+                    # 8_8_8 and 16_16_16 above. Leaving the texture fetch enabled for it alone
+                    # hangs the GPU: sampling a 32x32 r32g32b32_sfloat image loses the device,
+                    # as does a 128-wide 1D array of six layers.
+                    info.supports_sq_texture_fetch = False
                     info.supports_cb_color = False
 
             elif nr_channels == 4:

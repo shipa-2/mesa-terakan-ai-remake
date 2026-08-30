@@ -880,8 +880,7 @@ and gave 3273 passing and **684 failing**. The tested aspect's resolve mode deci
 it: `zero` passes 1080 of 1080 and `none` 630 of 630, while `min` fails 270 of 1050
 and `max` 390 of 1050.
 
-The reason the split is not cleaner is that the reduce is not happening at all.
-Every depth case returns the same value whatever the mode and the sample count:
+Every depth case returned the same value whatever the mode and the sample count:
 
 ```
 min, 2 samples: got 0.0399939, expected 0.02
@@ -892,40 +891,592 @@ min, 8 samples: got 0.0399939, expected 0.02
 max, 8 samples: got 0.0399939, expected 0.32
 ```
 
-0.0399939 is one sample's depth. The two cases that pass -- depth `max` at two
-samples, stencil `min` -- pass because that one sample happens to be the answer
+0.0399939 is one sample's depth. The two cases that passed -- depth `max` at two
+samples, stencil `min` -- passed because that one sample happened to be the answer
 there.
 
-The programs are not the problem: each fetches as many samples as the source has
-and folds them with `MIN_DX10` or `MAX_DX10`, and the source is bound as
-`SQ_TEX_DIM_2D_ARRAY_MSAA`. What they do differently from everything that works is
-how they ask for a sample. They issue a direct `SQ_TEX_INST_LD` with the sample
-index in the coordinate's W, while the compiler's `LowerTexToBackend::lower_txf_ms`
-emits a two-step form on Evergreen: a first read of the sample-to-fragment mapping,
-then the fetch. The application path takes that form and works --
-`terakan_depth_msaa_fetch` reads every sample of a multisample depth image through
-`texelFetch(sampler2DMS, ...)` and passes at 2, 4 and 8 samples.
+Two readings of this were recorded and both were wrong. The first blamed the reduce
+programs' sample encoding: they issue a direct `SQ_TEX_INST_LD` with the sample index
+in the coordinate's W, while `LowerTexToBackend::lower_txf_ms` emits a two-step form
+on Evergreen. Rewriting the twelve programs as NIR with `txf_ms` produced exactly the
+two-step assembly and changed nothing, so the rewrite was reverted. The second reading
+concluded from that that per-sample depth fetch does not work on this hardware at all.
 
-That reading was wrong, and the correction is the useful part. The twelve reduce
-programs were rewritten as NIR with `txf_ms`, the backend emitted the two-step form
--- the assembly shows the `MODE:1` read followed by the fetch -- and **the results
-did not change at all**: still 0.0399939 for every mode and sample count. The
-rewrite was reverted rather than kept, since it changes nothing measurable.
+A probe settled it. Four full-screen triangles, each with `pSampleMask = 1 << i` and a
+push-constant depth of `0.1 + 0.2 * i`, write four distinct depths into one 4-sample
+`D32_SFLOAT` image; a compute shader reads them back with
+`texelFetch(sampler2DMS, ivec2(0, 0), s)`:
 
-Neither encoding selects a depth sample. And `terakan_depth_msaa_fetch` does not
-contradict that, because it does not distinguish samples: it clears the image to a
-single value and expects every sample to equal it, so it passes whether or not the
-sample index is honoured. Per-sample depth fetch has therefore never been
-demonstrated on this driver. Colour is different and is demonstrated --
-`terakan_color_msaa_fetch_2x`/`_4x`/`_8x` give each sample its own colour and pass
--- which fits: colour has FMASK for the two-step read to consult and depth has
-none, so the translation collapses every index onto one sample.
+```
+sample  written  read
+  0     0.100    0.100000
+  1     0.300    0.300000
+  2     0.500    0.500000
+  3     0.700    0.700000
+```
 
-What this needs next is a probe that writes genuinely distinct depths per sample
-and reads them back, to establish whether the hardware can do it at all and under
-which encoding. Until that exists there is nothing to write the resolve shaders
-against, and the coverage gap in `terakan_depth_msaa_fetch` is worth closing on its
-own account.
+Per-sample depth fetch works, in both encodings, and the resolve shaders were never
+the defect. **The defect is on the producing side: the driver never ran the CTS
+fragment shader per sample.** The shader these cases use is
+
+```glsl
+float sampleIndex = float(gl_SampleID);
+...
+gl_FragDepth = value / 100.0;
+```
+
+and it does not set `sampleShadingEnable`. Section "Sample Shading" of the Vulkan
+1.4.349 specification makes per-sample invocation mandatory anyway when the entry
+point's interface includes `SampleId` or `SamplePosition`, but
+`terakan_vk_pipeline_graphics_fragment_shading_init_with_rasterization` derived
+`PS_ITER_SAMPLES` from `state->ms->sample_shading_enable` alone. The shader therefore
+ran once per fragment, every sample of the fragment received sample 0's depth, and the
+reduce then folded four identical values. 0.0399939 is sample 0's depth, which is why
+it was the answer for every mode.
+
+The fix reads `SYSTEM_VALUE_SAMPLE_ID` and `SYSTEM_VALUE_SAMPLE_POS` out of the NIR
+into `terakan_shader_impl::fs::per_sample_invocation`, and forces
+`db_eqaa_ps_iter_max_invocation_samples_log2` to 0 -- one sample per invocation -- once
+the fragment shader has been translated. It has to happen there and not in the state
+setup, because the fragment shading state is built from the create info before any
+shader is compiled.
+
+On a 984-case sample of the group's `min`/`max` cases this goes from 113 passing and
+135 failing to **248 passing and 0 failing**. On a 2641-case sample across
+`pipeline.monolithic.multisample`, `renderpasses`, `glsl.builtin_var` and `multiview`
+it goes from 904/119 to **952/71**, with a per-case diff confirming 48 fixed and zero
+regressed. The reverted NIR reduce programs were re-tested on top of the fix and are
+still unnecessary: the hand-written ones give the identical 248/0.
+
+The coverage gap that hid this is closed by `terakan_sample_id_depth`, which is the
+probe turned into a driver test: one draw, no `sampleShadingEnable`, `gl_FragDepth`
+written from `gl_SampleID`, and all four samples read back with
+`texelFetch(sampler2DMS, ...)`. It covers both halves the resolve needs, unlike
+`terakan_depth_msaa_fetch`, which clears its image to a single value and expects every
+sample to equal it -- so it never distinguished samples and passed with the sample
+index ignored. Against the unfixed driver `terakan_sample_id_depth` reads 0.1 from all
+four samples, which is exactly the shape of the CTS failures.
+
+### Integer colour resolve and the RTV metadata cache
+
+`renderpasses.renderpass1.suballocation.multisample_resolve` was run in full -- 2600 cases --
+and gave 678 passing and **330 failing**. The format axis was perfectly clean: every
+`uint` and `sint` format failed and every unorm, snorm, srgb and float format passed,
+at every sample count, resolve level and base layer. The message was always
+"Different attachments were resolved to different values", and the resolved images
+held whole 8x8 tiles of the pre-render contents in places that differed from one
+attachment to the next.
+
+Integer formats are exactly the ones that take the shader path:
+`VK_RESOLVE_MODE_AVERAGE` is not what Vulkan asks for there, so `CB_RESOLVE` is
+replaced by a draw that fetches sample zero. Forcing every format down the shader path
+with a temporary environment variable reproduced the inconsistency on
+`r8g8b8a8_unorm` too, which took the format out of the picture and left the path.
+
+Adding barrier actions one bit at a time before the shader draw identified a single
+one: **`FLUSH_INV_CB_RTV_META`**. The fixed function consumes the source through CB,
+which keeps the RTV metadata coherent by itself; the shader samples the source as a
+texture and bypasses CB, so FMASK and CMASK have to reach memory first. Without that,
+the fetch decodes tiles against metadata as it stood before the render pass.
+
+The flush is emitted only on the shader path. Every two-sample case in the group now
+passes -- 330 failures down to **287** -- and on the 2641-case multisample and
+renderpass sample the count goes 71 to **50**, 21 fixed with none regressed.
+
+Four and eight samples still failed after that, now as "Resolve produced unexpected
+values" for exactly the sample masks that include sample 1. A probe -- a 4-sample
+`R8G8B8A8_UINT` attachment written under a `gl_SampleMask` push constant, read back
+both per sample and through `vkCmdResolveImage` -- passed every mask, which excluded
+the fetch, `gl_SampleMask`, the resolve shader, the image size and the render pass
+resolve attachment in turn. The one thing it did not match was the image's usage: the
+CTS creates its multisample images with `VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT` and
+nothing else. Dropping `VK_IMAGE_USAGE_SAMPLED_BIT` from the probe reproduced the
+failure exactly, including masks 1, 3, 5 and 7 resolving to half render value and half
+clear value.
+
+The cause was already written down next to the code that caused it.
+`terakan_image_create_color_descriptor` enables `COMPRESSION` and `FAST_CLEAR` for a
+multisample colour image that is not sampled, because compressed CB writes leave the
+planes the CB did not write untouched and a `TXF_MS` fetch reads them anyway. The
+condition was the image's `SAMPLED` usage -- but an integer format is sampled whether
+or not the application asks for it, since Vulkan resolves one by selecting a sample
+and `CB_RESOLVE` can only average, so `terakan_CmdResolveImage2` fetches it as a
+texture. A render pass resolve attachment reaches that path with no usage bit
+involved.
+
+Treating an integer number type as sampled takes the group to **1008 passing and 0
+failing** of 2600, from 678/330 where it started. On the 2641-case multisample and
+renderpass sample it goes 50 to **25**, 25 fixed with none regressed; everything left
+there is `pipeline.monolithic.multisample`. The cost is the fast-clear and compression
+bandwidth on integer multisample attachments only.
+
+### The multisample depth and stencil clear rasterized single-sample
+
+`pipeline.monolithic.multisample.misc` -- the `VK_EXT_multisampled_render_to_single_sampled`
+test file run without the extension -- was run in full, 1390 cases, giving 505 passing
+and **594 failing**. 522 of the failures are "Incorrect multisampled rendering for
+stencil attachment" and the other 72 name the stencil attachment alongside colour
+attachment 3. The cause was `vkCmdClearDepthStencilImage` rasterizing single-sample;
+the route to it is kept below because seven plausible explanations were excluded first,
+and each exclusion is a probe worth not repeating.
+
+The format axis is absolute: `d16_unorm` passes 268 of 268, and every format with a
+stencil aspect fails -- `d24_unorm_s8_uint` 81/205, `d32_sfloat_s8_uint` 75/198,
+`s8_uint` 81/191. Crossing format with the resolve mode shows it is not a resolve
+defect: the stencil formats fail at roughly the same rate with `ds_resolve_max`,
+`ds_resolve_sample_zero`, and no depth/stencil resolve at all. The `basic` and
+`input_attachments` subgroups fail every stencil case, and the deterministic
+`.default` variants fail 144 of 144.
+
+The resolved stencil image the test logs is noise -- 255, 21, 1, 0, 175, 239 and more
+across one 65x55 image, where two values are expected.
+
+Excluded, each by a probe that passes:
+
+- Multisample stencil rendering and per-sample fetch. A 4-sample `S8_UINT` attachment
+  written under a `gl_SampleMask` push constant with `VK_STENCIL_OP_REPLACE` reads back
+  correctly for every mask through `texelFetch(usampler2DMS, ...)`.
+- Single-sample stencil rendering and sampling, the same probe at one sample through
+  `usampler2D`.
+- The multisample stencil clear. With a clear value of 0x33 and partial coverage, the
+  covered samples hold the reference and the uncovered ones hold 0x33.
+- The image's usage flags, which is what the integer colour resolve turned on: this
+  file creates its depth/stencil images with `SAMPLED`, `TRANSFER_SRC`, `TRANSFER_DST`,
+  `DEPTH_STENCIL_ATTACHMENT` and `INPUT_ATTACHMENT`.
+- The back-face stencil write mask left stale by the application. Setting
+  `DB_STENCILREFMASK_BF` alongside the front mask in the resolve changes nothing.
+- The depth/stencil resolve not running at all. A debug line added to
+  `terakan_EndRendering` under `TERAKAN_DEBUG_RENDER` shows it running with the right
+  aspect mask, modes and area.
+
+- The stencil resolve itself in the shape these tests use. A probe with a colour
+  attachment and a 4-sample `D32_SFLOAT_S8_UINT` attachment in one `vkCmdBeginRendering`
+  pass, the fragment shader writing colour, `gl_FragDepth` and `gl_SampleMask`, the
+  stencil resolved by `VK_RESOLVE_MODE_SAMPLE_ZERO_BIT` and read back as a `usampler2D`,
+  gives the right value uniformly over the whole surface for every mask -- including at
+  65x64, the odd non-aligned framebuffer size these tests use.
+- Per-region scissored draws with their own stencil references, which is what `basic`
+  does and what has no depth analogue. Four pipelines, one per quadrant, with references
+  0x10, 0x20, 0x30 and 0x40 read back exactly those values in their quadrants.
+
+- `VK_STENCIL_OP_INCREMENT_AND_CLAMP`, which is the operation these tests use and which
+  none of the earlier probes did. Clearing to 0x33 and incrementing gives 0x34.
+
+The one thing every one of those probes had in common was
+`VK_ATTACHMENT_LOAD_OP_CLEAR`. These tests set `clearBeforeRenderPass`: they clear the
+attachment with `vkCmdClearDepthStencilImage` and then use
+`VK_ATTACHMENT_LOAD_OP_LOAD`, so that the area outside the render area can be verified
+too. Adding that to the probe reproduced the failure immediately, and printing the
+surface showed what it was:
+
+```
+stencil cleared to 0x33 = 51 before the pass, sample mask 0, nothing drawn
+ 51  51  51  51  51  51  51  54  54  54  54  54  54
+ 54  54  54  54  54  54  54  54  54  54  54  54  54
+ 51  51  51  51  51  51  51  54  54  54  54  54  54
+ 54  54  54  54  54  54  54  54  54  54  54  54  54
+ ...
+```
+
+The clear reached one quarter of the 4-sample surface, in the tile-interleaved pattern
+the samples are laid out in; the rest kept whatever was in memory.
+`terakan_CmdClearDepthStencilImage` builds its
+`terakan_meta_config_draw_begin_options` without `msaa_num_samples_log2`, so its
+rectangle rasterizes single-sample whatever the image is -- unlike the colour clear and
+the attachment clear, both of which set it from `image->vk.samples`.
+
+Setting it takes `pipeline.monolithic.multisample.misc` from 505/594 to **1099 passing
+and 0 failing** of 1390. `api.image_clearing` is unchanged -- a 15212-case sample still
+fails the same 32, all of them the known single-sample small-extent ones -- and on the
+2641-case multisample and renderpass sample the count goes 25 to **7**, 18 fixed with
+none regressed.
+
+`terakan_depth_stencil_clear_multisample` covers it. A render pass with no draws clears
+the image to one value through its load operation, which does reach every sample;
+`vkCmdClearDepthStencilImage` then clears it to another; and a compute shader reads
+every sample of every texel through a `sampler2DMS` and a `usampler2DMS`. The load
+operation is what makes the failure deterministic rather than a read of whatever was in
+memory: against the unfixed driver the test reports **3072 of 4096 samples** still
+holding the first value, which is exactly three quarters.
+
+### Custom sample locations at one sample
+
+A 2010-case run over `pipeline.monolithic.multisample`'s `sample_locations_ext`,
+`std_sample_locations`, `min_sample_shading`, `multisample_shader_builtin` and
+`sample_mask` gave 1130 passing and **214 failing**, and the sample count separates
+them completely: `samples_1` fails 159 of 183 while `samples_2`, `samples_4` and
+`samples_8` pass everything but one case each. The message is "Multisample pattern
+doesn't seem to change between passes" -- the test renders twice with different
+locations and gets the same picture.
+
+The state reaches the hardware. A probe rasterizing a triangle whose right edge falls
+at x = 4.25 of an 8-wide single-sample target, with the packet dumped as it was
+emitted, shows `PA_SC_AA_CONFIG` carrying `MAX_SAMPLE_DIST(7)`,
+`PA_SC_MODE_CNTL_0.MSAA_ENABLE` set -- the driver already sets it for one sample with
+a non-centre location -- and `PA_SC_AA_SAMPLE_LOCS_0` holding `0x09`, which is the
+correct encoding of x = 0.0625. The pixel at x = 4 stays uncovered anyway, and it stays
+uncovered with the sample at 0.0625, 0.25, 0.5 and 0.9375 alike, in x and in y. The
+rasterizer uses the pixel centre at `MSAA_NUM_SAMPLES = 0` and there is no other
+register to move it with.
+
+`VkPhysicalDeviceSampleLocationsPropertiesEXT::sampleLocationSampleCounts` is a bitmask
+of the sample counts that support custom locations, so one sample is dropped from it.
+The CTS throws `NotSupportedError` for a count that is not in it, and the group goes to
+1106 passing and **52 failing**: 162 failures become not-supported, 24 cases that
+passed become not-supported too -- they are one-sample cases whose locations happened
+to land near the centre -- and nothing regresses.
+
+### gl_FragCoord and input attachments under sample shading
+
+That left 45 `min_sample_shading` failures of 60, rising with the fraction: `min_0_75`
+and `min_1_0` failed every case. Two defects were behind them, and the CTS shader names
+both:
+
+```glsl
+uint sampleId = gl_SampleID;
+fragColor = vec4(fract(gl_FragCoord.xy), 0.0, 1.0);
+```
+
+**`gl_FragCoord` was the pixel centre in every invocation.** Section "Sample Shading"
+of the Vulkan 1.4.349 specification puts `FragCoord` at the sample's position when the
+shader runs per sample, and `SPI_PS_IN_CONTROL_0.POSITION_SAMPLE` is what selects that;
+it was set only when the shader declared the position `sample`-qualified, which GLSL
+cannot do for `gl_FragCoord`. A shader reading `SampleId` or `SamplePosition` always
+runs per sample, so it now sets `POSITION_SAMPLE` too. A probe writing
+`fract(gl_FragCoord.xy)` in sixteenths into a 4-sample attachment reads back
+`(8, 8)` four times without the change and `(6, 2)`, `(14, 6)`, `(2, 10)`, `(10, 14)`
+with it -- the standard four-sample pattern.
+
+**A multisample input attachment was compressed.** These images are created with
+`COLOR_ATTACHMENT | TRANSFER_SRC | INPUT_ATTACHMENT` and no `SAMPLED`, so
+`terakan_image_create_color_descriptor` enabled `COMPRESSION` and `FAST_CLEAR` on them
+-- but `nir_lower_input_attachments` turns `subpassLoad` into a texture fetch, and a
+multisample one into `txf_ms`, which is exactly the plane-by-plane read compression
+breaks. The CTS extracts each sample with `subpassLoad(imageMS, sampleId)`, and the
+planes the CB never wrote came back as zero, which the test reports as "Got uncovered
+pixel, where covered samples were expected". Treating `INPUT_ATTACHMENT` usage as
+sampled, the way integer formats already are, removes all 12 of those.
+
+Together those took the group from 45 failures to 29, all of them "Got less unique
+colors than requested through minSampleShading" and still rising with the fraction.
+
+The third one was in the shader above too, in what it does *not* do: `sampleId` is
+never used, so NIR drops the `SampleId` read and `per_sample_invocation` comes out
+false. The shader still runs per sample -- `minSampleShading` alone arranges that --
+but the translation cannot see pipeline state, so `POSITION_SAMPLE` was not set. It is
+now patched into `SPI_PS_IN_CONTROL_0` after the fragment shader is translated, next to
+where the per-sample invocation itself is decided; that is safe because SPI supplies
+the position in the same GPRs whichever location it is taken at, and the shader belongs
+to one pipeline. **45 failures down to 8.**
+
+The eight that remain are all two samples with `minSampleShading` at 0.75 or 1.0, and
+they are hardware. At two samples `POSITION_SAMPLE` does not move `FragCoord`: the
+probe reads `(8, 8)` from both samples with the standard locations and reads `(8, 8)`
+from both again with custom locations placed at 0.0625 and 0.9375, while the same probe
+at four samples returns the four standard positions exactly. The registers are right in
+both cases -- `POSITION_ENA` and `POSITION_SAMPLE` set, `PA_SC_MODE_CNTL_1.PS_ITER_SAMPLE`
+set, `PA_SC_AA_CONFIG` carrying `MSAA_NUM_SAMPLES = 1` and `MAX_SAMPLE_DIST = 4` -- and
+the shader really does run per sample there, since `gl_SampleID` reads back 0 and 1.
+Only the position stays at the centre.
+
+Across the 2010-case sample-shading and sample-location run this is 52 failures down to
+**15**, with 37 fixed and none regressed, and all fifteen are that same two-sample
+behaviour: 8 `min_sample_shading` at two samples, and the other seven are
+`sample_locations_ext.verify_interpolation.samples_2*` and
+`std_sample_locations.verify_interpolation.samples_2_invariable`, which check that
+interpolation happens at the sample and so need exactly the capability that is missing.
+Four and eight samples pass every one of them. The 2641-case multisample and renderpass
+sample stays at **0**, down from 119 where this work started.
+
+### A GPU hang sampling three-channel 96bpp images
+
+A stride sample of the whole case list -- every 380th of 3279369, 8630 cases -- aborted
+after 1132 with `VK_ERROR_DEVICE_LOST`. The case it died on was
+`pipeline.monolithic.image.suballocation.sampling_type.combined.view_type.1d_array.format.r32g32b32_sfloat.count_1.size.127x1_array_of_6`,
+and it reproduces on its own every time. Slicing it:
+
+| case | result |
+|---|---|
+| `1d_array` `r32g32b32_sfloat` `128x1_array_of_6` | device lost |
+| `1d_array` `r32g32b32_sfloat` `1x1_array_of_6` | pass |
+| `1d_array` `r32g32b32a32_sfloat` `128x1_array_of_6` | pass |
+| `1d` `r32g32b32_sfloat` `128x1` | pass |
+| `2d` `r32g32b32_sfloat` `32x32` | device lost |
+
+So it is the three-channel 96-bit format, not the view type or the size.
+
+`terascale_formats.py` disables `supports_sq_texture_fetch` for `3_3_2`, `10_11_11`,
+`11_11_10`, `8_8_8` and `16_16_16` -- and did not disable it for `32_32_32`, the one
+remaining member of the unpacked three-channel set. `FMT_32_32_32` is a vertex fetch
+format, not a texture one; a three-channel unpacked format is one texel per three
+surfels, so the surface's row is three times as wide in surfels as the descriptor's
+texel pitch says, and the fetch walks the surface as something it is not. The comment
+in `terakan_format.c` had already noticed the asymmetry from the other side --
+"`r32g32b32_sfloat` -- the only one of the set the driver advertises as a sampled image
+at all, the 8- and 16-bit ones having no texture fetch" -- without following it to the
+hang.
+
+Disabling it makes the class self-consistent, and the cases report
+`NotSupported (Unsupported format for sampling: VK_FORMAT_R32G32B32_SFLOAT)`. The cost
+is the five nearest-filter blits of that format that used to pass through the sampled
+path; the expand-3x copy and clear paths are unaffected, since they address the surface
+as raw surfels through their own buffer descriptors rather than as a texture.
+
+The 8630-case survey now runs to the end: **877 passing, 15 failing**, and nothing
+hangs. The largest cluster left in it is six `pipeline.monolithic.sampler` cases, and
+the rest are singletons across `descriptorset_random`, `image.mutable`, `subgroups`,
+`draw.dynamic_rendering` and `image.image_size`.
+
+### Border colours on narrow integer formats
+
+`pipeline.monolithic.sampler` was sampled at every sixth case -- 30340 of 182035 --
+and gave 3404 passing and **406 failing**. Two causes account for all of them and
+neither overlaps the other.
+
+221 are `1d_unnormalized` and `2d_unnormalized`, which fail every case they run:
+`S_03C000_FORCE_UNNORMALIZED` is only applied when the chip is r9xx, and nothing
+normalizes the coordinates for anything older, so `unnormalizedCoordinates` silently
+does nothing on Evergreen. The pipeline layout already tracks
+`shader_immutable_samplers_unnormalized_coordinates` per stage, which is the shape a
+NIR lowering would want, but no lowering exists. That one is still open.
+
+The other 163 are all `clamp_to_border`, and the format axis is exact: every 8-bit and
+16-bit `uint`/`sint` format fails, `a2r10g10b10_uint_pack32` fails, the stencil aspect
+of every combined depth/stencil format fails, and every 32-bit integer format and every
+normalized, float or packed format passes. The fixed
+`SQ_TEX_BORDER_COLOR_OPAQUE_BLACK` and `_WHITE` deliver 1.0 as a float, which is what
+`VK_BORDER_COLOR_FLOAT_OPAQUE_*` asks for; the integer variants have to deliver the
+integer 1, and at 8 and 16 bits the fixed white reads back as something else.
+
+`terakan_hw_config_sqk` already emits the per-sampler border colour registers for the
+`REGISTER` type, so pointing `VK_BORDER_COLOR_INT_OPAQUE_BLACK` and `_WHITE` at them
+with `{0, 0, 0, 1}` and `{1, 1, 1, 1}` written out is all the sampler needed. Doing that
+**lost the device**: it was the first time the path had ever been reached, and it
+emitted `PKT3_SET_CTL_CONST` with `TERAKAN_CTL_CONST_OFFSET(0x00A400)`, which subtracts
+the control-constant base of 0x3CFF0 from a smaller address and underflows. These are
+configuration registers -- Gallium r600 emits them with `radeon_set_config_reg_seq` --
+and with the packet corrected to `PKT3_SET_CONFIG_REG` the same run gives **1044
+passing and 0 failing** of the 3030 `clamp_to_border` cases, from 163 failing.
+
+Over the whole 30340-case sample this is 406 failures down to **243**, 163 fixed with
+none regressed, and every one of the 243 is an unnormalized-coordinate case.
+
+Custom border colours are still not implemented. `VK_EXT_custom_border_color` also needs
+the value converted into the view's format and swizzle before it reaches the register,
+which is what `evergreen_convert_border_color` does in Gallium r600 and which the
+sampler alone cannot do, since it does not know the view.
+
+### Image format properties ignored the requested usage
+
+A second stride sample -- every 120th case, wsi excluded -- aborted again, this time
+with a segmentation fault rather than a lost device, on
+`texture.swizzle.component_mapping.color.r8g8b8a8_sscaled_2d_pot_rgba`. The backtrace
+is inside the CTS, in `vk::createShaderModule` reading a program binary that was never
+built, and radv reports the same case `NotSupported` and skips it. So the question was
+what Terakan says that radv does not.
+
+`vkGetPhysicalDeviceFormatProperties` agrees with the intent of the code: `SSCALED` and
+`USCALED` report `TRANSFER_SRC | TRANSFER_DST` and nothing else, which is the
+deliberate, measured reduction recorded next to it -- copying them works because a copy
+moves bits without interpreting them, and everything that interprets the value fails.
+radv reports no image features at all for them.
+
+`vkGetPhysicalDeviceImageFormatProperties` was the difference. It rejected a format
+whose feature mask was empty, and then never checked the mask against the **usage** that
+was asked for, which the specification requires: each usage names the format feature it
+depends on. Querying `R8G8B8A8_SSCALED` with `VK_IMAGE_USAGE_SAMPLED_BIT` returned
+success, so the CTS built the image, went on to ask for a shader that was never
+generated for it, and took the run down.
+
+Every usage that names a feature is now checked: transfer source and destination,
+sampled, storage, colour attachment, depth/stencil attachment, and input attachment,
+which needs either the colour or the depth/stencil attachment feature rather than a
+single one. `TRANSIENT_ATTACHMENT` names none and is left alone. The case now reports
+`NotSupported (Format not supported: VK_FORMAT_R8G8B8A8_SSCALED)`, and
+`api.info.unsupported_image_usage` -- which checks exactly this correspondence and had
+been failing `linear.input_attachment_a2r10g10b10_sscaled_pack32` -- is clean. Over
+`api.info.unsupported_image_usage` and `api.info.image_format_properties*` together,
+4592 cases give 4210 passing and no driver failure; the twelve that are not passing are
+`InternalError (Unknown image format)` from the CTS itself on multi-planar YCbCr
+formats.
+
+The first version of the check regressed ten
+`image.extended_usage_bit_compatibility.image_format_properties*` cases, which is the
+rule it had missed: `VK_IMAGE_CREATE_EXTENDED_USAGE_BIT` says the usage is deliberately
+not required to be supported by the image's own format, because a view of a compatible
+format provides it, and it is what `BLOCK_TEXEL_VIEW_COMPATIBLE` is used with. Exempting
+it takes the regressions to zero.
+
+That group also moves some cases from passing to not-supported, and they were passing
+vacuously. It scans for a compatible view format that supports the usage with no flags
+and skips when none does; while every format claimed every usage, one was always found.
+The compatible set of a block-compressed format is other block-compressed formats, none
+of which supports storage here, so those now skip -- which is the test's own gate
+working on accurate data.
+
+The 27033-case survey, which had been aborting, now runs to the end, and the three
+versions of the check read 62, 52 and finally **51 failing** of 2874 passing, with no
+case going from passing to failing at any step.
+
+### A render pass resolve used the image's format, not the view's
+
+`dEQP-VK.image.mutable` was run in full -- 10118 cases -- and gave 9584 passing and
+**534 failing**. Two axes separate them completely. Every failure is a
+`draw_copy_resolve` variant, and within those the format pair decides it:
+
+| image format | view format | pass | fail |
+|---|---|---:|---:|
+| integer | integer | 160 | 104 |
+| integer | normalized or float | 146 | 202 |
+| normalized or float | integer | 120 | 228 |
+| normalized or float | normalized or float | 348 | 0 |
+
+An integer format anywhere in the pair fails; neither being integer always passes. That
+is the resolve's own split -- `CB_RESOLVE` averages, Vulkan resolves an integer format
+by selecting a sample, so integer formats take the shader path -- and the group is
+exactly the one that renders through a *view* whose format differs from the image's.
+
+`terakan_EndRendering` recorded only the two `VkImage` handles for a colour resolve and
+called `terakan_CmdResolveImage2`, which reads the number type from
+`image->format_info`. Vulkan resolves according to the attachment's view, so a `unorm`
+image rendered through a `uint` view was averaged and a `uint` image rendered through a
+`unorm` view was sample-selected, each the opposite of what was asked for.
+
+The resolve now takes the two view formats, with `VK_FORMAT_UNDEFINED` meaning the
+image's own -- which is what `vkCmdResolveImage` passes, since it resolves images and
+has no view. **`image.mutable` goes to 10118 of 10118 passing.**
+
+### The signed 2-bit-alpha 10_10_10 formats, the integer half
+
+The exclusion recorded for `a2r10g10b10_snorm_pack32` and `a2b10g10r10_snorm_pack32` --
+a two-bit signed channel is degenerate and the family does not survive the texture path
+-- had only ever named the `SNORM` members. The `SINT` ones are the same family and were
+still advertised in full.
+
+Over the 3264 `pipeline.monolithic.image` cases of the `a2*_pack32` formats,
+`a2r10g10b10_sint_pack32` passed 10 and **failed 194**, while
+`a2r10g10b10_uint_pack32` and `a2r10g10b10_unorm_pack32` passed all 204 of theirs with
+no failures. radv zeroes the image features of both `SINT` members exactly as it does
+the `SNORM` ones.
+
+Adding them to the exclusion takes the group to **0 failing**; the ten that had passed
+become not-supported. Only the image features are withheld: the texel buffer half was
+measured before assuming, and `a2r10g10b10_sint_pack32` passes all five of its
+`api.buffer_view` uniform texel buffer cases, so it keeps them, as it keeps vertex
+buffer support.
+
+### Multisample depth and stencil copying
+
+`dEQP-VK.api.copy_and_blit.core.depth_stencil_msaa_copy` was run in full -- 432 cases,
+216 of them supported -- and **every one of the 216 failed**. `vkCmdCopyImage` of a
+multisample depth or stencil aspect had no path at all: the colour fast path requires a
+colour aspect and the meta draw below it cannot do multisample.
+
+A depth or stencil aspect is a plane of its own, with its own offset, tiling and slice
+size, so copying one aspect's slices moves exactly that aspect and leaves the other
+where it was. That is what makes a byte copy safe here where the colour path needs the
+whole surface: there it has to carry FMASK and CMASK along with the samples they
+describe, and here there is no depth metadata at all, since Terakan does not implement
+HTILE. The samples of a slice are interleaved inside it, so a slice-sized copy carries
+all of them without needing to know how.
+
+Two things came out of building it, both worth not rediscovering.
+
+A level's offset is already measured from the image's base, with the aspect's offset
+folded into it by `terakan_image_surface_aspect_compute`. Adding the aspect offset again
+put the stencil plane of a 64x64 `d16_unorm_s8_uint` image at 0x8000 in a 0x6000-byte
+surface and **lost the device**.
+
+And a tiled slice's layout depends on its index, so the bytes of one slice do not decode
+as another. Copying layer 2 into layer 3 of a 2D-tiled 64x64x5 `d32_sfloat` image runs
+and then reads back the destination's previous contents. The path is restricted to
+copies that stay on the same layer index; without that it would silently write wrong
+data for a legal operation, which is worse than not handling it.
+
+**216 failures down to 72.** All 144 `whole` cases pass; `partial`, which needs a
+sub-rectangle no byte copy can express, and `array_to_array`, which is exactly the
+layer-index case, remain and need the meta draw the `TODO` in
+`terakan_meta_copy_image.c` describes. A 7562-case sample of `resolve_image` and
+`image_to_image` is unchanged at 4 failures, all of them the known offset-resolve
+residue.
+
+### gl_VertexIndex counted the base twice
+
+`dEQP-VK.draw.*.indexed_draw` failed **every one of its 144 supported cases**, in both the
+render pass and the dynamic rendering variants, including the plainest
+`draw_indexed_triangle_list`. The stride sample of the whole suite had only ever caught
+three of them.
+
+The images say what it is. The geometry is right -- a 76x76 square where the reference
+has 77x77, one pixel of edge -- and the colour is wrong: red where blue is expected. The
+test's vertex shader explains itself:
+
+```glsl
+gl_Position = in_position;
+if (gl_VertexIndex == in_refVertexIndex)
+    out_color = in_color;   // blue
+else
+    out_color = vec4(1.0, 0.0, 0.0, 1.0);
+```
+
+Every vertex is blue and every pixel came out red, so `gl_VertexIndex` never matched the
+vertex it belonged to.
+
+Terakan puts the draw's base into `VGT_INDX_OFFSET` and fetches attributes with
+`SQ_VTX_FETCH_NO_INDEX_OFFSET`, which is the choice `terakan_vertex_input.c` documents:
+"In Vulkan and OpenGL, `gl_VertexIndex` or `gl_VertexID` includes the base, so it's more
+straightforward to use `VGT_INDX_OFFSET`". R0.X therefore already carries the base, and
+SFN returns R0.X for `load_vertex_id`.
+
+`terakan_shader_nir_options_init` set `vertex_id_zero_based` for Evergreen and newer,
+copying classic r600 -- which sets it because OpenGL's `gl_VertexID` is zero-based and it
+fetches with `SQ_VTX_FETCH_VERTEX_DATA` instead. With it set, `nir_lower_system_values`
+rewrites `load_vertex_id` into `load_vertex_id_zero_base + load_first_vertex`, and
+`load_first_vertex` is the driver constant holding the same base. The base was added a
+second time.
+
+Clearing it takes the group to **144 of 144 passing**. `terakan_shader_generation_test`
+asserted the old value and is corrected with it, which is what caught the flag being
+generation-dependent rather than simply wrong.
+
+After the fix the whole `dEQP-VK.draw` group stands at 3362 passing and 107 failing of
+29392; there is no clean before-figure for the whole group, because that baseline run was
+abandoned once it became clear it would cost more than it was worth. The 480-case
+`indexed_draw` list was measured both ways and is the evidence, and a 27033-case stride
+survey goes 36 failures to **32** with none new.
+
+
+### Indirect draws whose parameters a compute shader writes
+
+Of the 107 failures left in `dEQP-VK.draw` after the vertex index fix, **79 are
+`indirect_draw.sequential_data_from_compute` and `indirect_draw.indexed_data_from_compute`**
+-- 29 in the render pass variants and 50 across the three command buffer ones. The
+remaining 28 are 12 `shader_draw_parameters`, 9 `implicit_sample_shading` and a few
+others.
+
+The mechanism is certain from the code alone. `terakan_vk_cmd_draw_indirect` reads the
+indirect buffer through `buffer->bo->mapping` at **record** time, to pull `firstVertex`
+and `firstInstance` out and put them in `VGT_INDX_OFFSET`, `SQ_VTX_START_INST_LOC` and
+the driver constants. These tests record a compute dispatch that fills that same buffer
+and then the draw; the dispatch runs at **submit** time, so the read is guaranteed to
+see whatever was in the buffer beforehand.
+
+The fix is not a small one, because it runs into why the CPU read is there at all.
+Evergreen's `DRAW_INDIRECT` and `DRAW_INDEX_INDIRECT` make the command processor load
+`SQ_VTX_BASE_VTX_LOC` and `SQ_VTX_START_INST_LOC` from the buffer by itself -- but
+Terakan deliberately does not use those. It puts the base in `VGT_INDX_OFFSET` and
+fetches with `SQ_VTX_FETCH_NO_INDEX_OFFSET` so that R0.X *is* `gl_VertexIndex`, which is
+what Vulkan wants and what the entry above turned out to depend on. `VGT_INDX_OFFSET` is
+a context register the command processor does not load from memory, and Evergreen has no
+packet to copy a dword from memory into one.
+
+So an indirect draw wants the other arrangement: fetch with `SQ_VTX_FETCH_VERTEX_DATA`
+so the hardware-loaded base reaches attribute fetching, leave `VGT_INDX_OFFSET` at zero,
+and have the shader add the base to R0.X for `gl_VertexIndex` -- which is exactly what
+`vertex_id_zero_based` produces, with the base reaching the shader through a CP DMA of
+those two dwords from the indirect buffer into the push constant buffer. That is two
+fetch shader variants and a per-draw copy, chosen by whether the draw is indirect. It is
+a design fork rather than a patch, and it is the next thing this group needs.
 
 ### Colour resolve under CTS
 

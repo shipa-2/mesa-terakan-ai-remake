@@ -127,6 +127,16 @@ extern struct terakan_meta_shader const terakan_meta_query_copy_timestamp_64_bit
 extern struct terakan_meta_shader const terakan_meta_query_copy_streamoutstats_32_bit_vs;
 extern struct terakan_meta_shader const terakan_meta_query_copy_streamoutstats_64_bit_vs;
 
+/* `vkCmdResolveImage` with the source and destination formats given explicitly, so a render pass
+ * can resolve in the format of the attachment's image view rather than the image's own. They
+ * differ when the image is mutable, and Vulkan resolves according to the view -- which decides
+ * whether the resolve averages the samples or selects one, since an integer format may not be
+ * averaged. `VK_FORMAT_UNDEFINED` means the image's own format.
+ */
+void terakan_meta_resolve_color(VkCommandBuffer command_buffer_handle,
+                                VkResolveImageInfo2 const * resolve_info,
+                                VkFormat src_view_format, VkFormat dst_view_format);
+
 /* Resolves the requested aspects of a multisample depth/stencil image into a single-sample one in
  * VK_RESOLVE_MODE_SAMPLE_ZERO_BIT, by sampling the source rather than decompressing it: Terakan
  * does not implement HTILE, so multisample depth is stored uncompressed and fetches per sample.

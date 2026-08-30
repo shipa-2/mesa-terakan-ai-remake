@@ -1071,7 +1071,18 @@ terakan_physical_device_get_capabilities(
 
    /* VK_EXT_sample_locations (#144). */
    extensions_out->EXT_sample_locations = true;
-   properties_out->sampleLocationSampleCounts = rasterization_sample_counts;
+   /* One sample is excluded. The state reaches the hardware correctly for it -- `PA_SC_AA_CONFIG`
+    * carries the `MAX_SAMPLE_DIST`, `PA_SC_MODE_CNTL_0.MSAA_ENABLE` is set as it is for a
+    * multisample draw, and `PA_SC_AA_SAMPLE_LOCS_0` holds the encoded location -- but the sample
+    * does not move. Measured on Caicos by rasterizing a triangle whose right edge falls at
+    * x = 4.25 of an 8-wide single-sample target: the pixel at x = 4 stays uncovered whether its
+    * sample is placed at 0.0625, 0.25, 0.5 or 0.9375, so the rasterizer is using the pixel centre.
+    * Two, four and eight samples all honour the locations, which is what the CTS group measures.
+    * TeraScale 1 is excluded with it rather than separately, since nothing can be measured there
+    * while queue submission is blocked and promising less is the safe direction.
+    */
+   properties_out->sampleLocationSampleCounts =
+      rasterization_sample_counts & ~(VkSampleCountFlags)VK_SAMPLE_COUNT_1_BIT;
    /* R700 has one two-dword sample-location pattern shared by all pixels, unlike R8xx/R9xx's four
     * pixel-specific register groups. A 1x1 grid is programmable and is replicated by the common
     * state conversion; advertising 2x2 on TeraScale 1 would promise distinctions the registers

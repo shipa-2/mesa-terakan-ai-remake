@@ -1,0 +1,22 @@
+#version 450
+
+layout(local_size_x = 1) in;
+
+layout(set = 0, binding = 0) uniform sampler2DMS source_depth;
+
+layout(set = 0, binding = 1, std430) writeonly buffer Output {
+   float values[];
+} output_buffer;
+
+layout(push_constant) uniform PushConstants {
+   uint sample_count;
+} push_constants;
+
+void
+main()
+{
+   for (uint sample_index = 0; sample_index < push_constants.sample_count; ++sample_index) {
+      output_buffer.values[sample_index] =
+         texelFetch(source_depth, ivec2(0, 0), int(sample_index)).r;
+   }
+}

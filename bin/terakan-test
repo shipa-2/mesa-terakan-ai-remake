@@ -79,6 +79,7 @@ gpu_tests=(
   terakan_clear_expand_3x
   terakan_copy_expand_3x
   terakan_depth_stencil_clear_ranges
+  terakan_depth_stencil_clear_multisample
   terakan_render_area_mip
   terakan_storage_image_base_slice
   terakan_blit_mixed_regions
@@ -88,6 +89,7 @@ gpu_tests=(
   terakan_attrib_divisor
   terakan_depth_readback
   terakan_depth_msaa_fetch
+  terakan_sample_id_depth
   terakan_color_msaa_fetch_2x
   terakan_color_msaa_fetch_4x
   terakan_color_msaa_fetch_8x

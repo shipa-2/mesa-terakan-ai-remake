@@ -698,6 +698,11 @@ terakan_CmdClearDepthStencilImage(
       TERAKAN_BARRIER_ACTION_FLUSH_INV_DB_DATA | TERAKAN_BARRIER_ACTION_FLUSH_INV_DB_META |
       TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_PS;
 
+   /* Without the image's sample count the rectangle rasterizes single-sample, and a multisample
+    * image only gets one sample's worth of its memory written - one quarter of a 4x surface, in the
+    * tile-interleaved pattern the samples are laid out in. The rest keeps whatever was there.
+    */
+   unsigned const clear_samples_log2 = util_logbase2((uint32_t)image->vk.samples);
    struct terakan_meta_config_draw_begin_options const meta_begin_options = {
       .vgt_primitive_type = V_008958_DI_PT_RECTLIST,
       .cb_and_db_shader_control_mode = TERAKAN_META_CONFIG_DRAW_BEGIN_CB_MODE_DYNAMIC,
@@ -705,6 +710,8 @@ terakan_CmdClearDepthStencilImage(
          {
             .enable = true,
             .db_explicit = true,
+            .msaa_num_samples_log2 = clear_samples_log2,
+            .msaa_num_anchor_samples_log2 = clear_samples_log2,
          },
    };
    terakan_meta_config_draw_begin(command_writer, &meta_begin_options);

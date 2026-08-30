@@ -348,6 +348,20 @@ struct terakan_shader_impl {
       uint32_t db_shader_control;
 
       uint8_t rtv_dsb_uncompacted_exports;
+
+      /* Section "Sample Shading" of the Vulkan 1.4.349 specification makes per-sample invocation
+       * mandatory for a shader that observes which sample it is running on, regardless of whether
+       * `sampleShadingEnable` was requested:
+       *
+       *     "Sample shading is enabled for a graphics pipeline: [...] If the fragment shader entry
+       *     point's interface includes an input variable decorated with SampleId or SamplePosition
+       *     built-ins."
+       *
+       * Without this the shader runs once per fragment, and every sample of the fragment receives
+       * the value computed for sample 0 - which a depth or stencil resolve then reduces over
+       * identical samples.
+       */
+      bool per_sample_invocation;
    } fs;
 
    struct r600_shader shader;

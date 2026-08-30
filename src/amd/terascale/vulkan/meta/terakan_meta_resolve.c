@@ -744,9 +744,26 @@ terakan_meta_resolve_region_is_fixed_function_compatible(
           (uint32_t)region->srcOffset.y <= src_extent.height - region->extent.height;
 }
 
-VKAPI_ATTR void VKAPI_CALL
-terakan_CmdResolveImage2(VkCommandBuffer const command_buffer_handle,
-                         VkResolveImageInfo2 const * const resolve_info)
+/* A render pass resolves through image views, whose format may differ from the image's when the
+ * image is mutable, and Vulkan resolves according to the view. `VK_FORMAT_UNDEFINED` means the
+ * image's own format, which is what `vkCmdResolveImage` works in.
+ */
+static struct terascale_format_info
+terakan_meta_resolve_view_format(struct terakan_image const * const image,
+                                 unsigned const aspect_index, VkFormat const view_format)
+{
+   struct terakan_format_info view_format_info;
+   if (view_format == VK_FORMAT_UNDEFINED ||
+       !terakan_format_info_get(view_format, &view_format_info)) {
+      return image->format_info.aspect_formats[aspect_index];
+   }
+   return view_format_info.aspect_formats[aspect_index];
+}
+
+void
+terakan_meta_resolve_color(VkCommandBuffer const command_buffer_handle,
+                           VkResolveImageInfo2 const * const resolve_info,
+                           VkFormat const src_view_format, VkFormat const dst_view_format)
 {
    struct terakan_image const * const src_image =
       terakan_image_from_handle(resolve_info->srcImage);
@@ -775,9 +792,9 @@ terakan_CmdResolveImage2(VkCommandBuffer const command_buffer_handle,
       terakan_format_aspect_index(dst_image->format_info.aspect_map,
                                   VK_IMAGE_ASPECT_COLOR_BIT, 0);
    struct terascale_format_info const src_format =
-      src_image->format_info.aspect_formats[src_aspect_index];
+      terakan_meta_resolve_view_format(src_image, src_aspect_index, src_view_format);
    struct terascale_format_info const dst_format =
-      dst_image->format_info.aspect_formats[dst_aspect_index];
+      terakan_meta_resolve_view_format(dst_image, dst_aspect_index, dst_view_format);
    bool const debug_render = getenv("TERAKAN_DEBUG_RENDER") != NULL;
    /* CB_RESOLVE averages samples, and Vulkan resolves an integer format by selecting one instead,
     * so integer formats take the shader path and everything else keeps the fixed function. This
@@ -800,9 +817,17 @@ terakan_CmdResolveImage2(VkCommandBuffer const command_buffer_handle,
     */
    bool const shader_resolve_2x = resolve_selects_sample_zero;
 
+   /* The fixed function consumes the source through CB, which keeps the RTV metadata coherent on
+    * its own. The shader path samples the source as a texture instead, bypassing CB entirely, so
+    * the metadata has to reach memory first - otherwise the fetch reads whole tiles as they were
+    * before the render pass, which is what made every integer format's renderpass resolve
+    * inconsistent between attachments.
+    */
    terakan_barrier_emit_actions_unconditionally(
-      command_writer, TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RTV_DATA |
-                         TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_PS);
+      command_writer,
+      TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RTV_DATA |
+         TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_PS |
+         (shader_resolve_2x ? TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RTV_META : 0));
 
    struct terakan_meta_config_draw_begin_options const begin_options = {
       .vgt_primitive_type = V_008958_DI_PT_RECTLIST,
@@ -994,4 +1019,12 @@ terakan_CmdResolveImage2(VkCommandBuffer const command_buffer_handle,
       command_writer, TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RTV_DATA |
                          TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_PS |
                          TERAKAN_BARRIER_ACTION_INV_TC);
+}
+
+VKAPI_ATTR void VKAPI_CALL
+terakan_CmdResolveImage2(VkCommandBuffer const command_buffer_handle,
+                         VkResolveImageInfo2 const * const resolve_info)
+{
+   terakan_meta_resolve_color(command_buffer_handle, resolve_info, VK_FORMAT_UNDEFINED,
+                              VK_FORMAT_UNDEFINED);
 }
