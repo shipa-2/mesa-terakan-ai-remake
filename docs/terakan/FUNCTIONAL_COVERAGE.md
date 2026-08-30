@@ -1288,11 +1288,17 @@ depends on. Querying `R8G8B8A8_SSCALED` with `VK_IMAGE_USAGE_SAMPLED_BIT` return
 success, so the CTS built the image, went on to ask for a shader that was never
 generated for it, and took the run down.
 
-The usages with an unambiguous single feature are now checked -- transfer source and
-destination, sampled, storage, colour attachment, depth/stencil attachment.
-`INPUT_ATTACHMENT` is specified against a choice of attachment features rather than one
-and `TRANSIENT_ATTACHMENT` names none, so both are left alone. The case now reports
-`NotSupported (Format not supported: VK_FORMAT_R8G8B8A8_SSCALED)`.
+Every usage that names a feature is now checked: transfer source and destination,
+sampled, storage, colour attachment, depth/stencil attachment, and input attachment,
+which needs either the colour or the depth/stencil attachment feature rather than a
+single one. `TRANSIENT_ATTACHMENT` names none and is left alone. The case now reports
+`NotSupported (Format not supported: VK_FORMAT_R8G8B8A8_SSCALED)`, and
+`api.info.unsupported_image_usage` -- which checks exactly this correspondence and had
+been failing `linear.input_attachment_a2r10g10b10_sscaled_pack32` -- is clean. Over
+`api.info.unsupported_image_usage` and `api.info.image_format_properties*` together,
+4592 cases give 4210 passing and no driver failure; the twelve that are not passing are
+`InternalError (Unknown image format)` from the CTS itself on multi-planar YCbCr
+formats.
 
 The first version of the check regressed ten
 `image.extended_usage_bit_compatibility.image_format_properties*` cases, which is the
@@ -1308,9 +1314,9 @@ The compatible set of a block-compressed format is other block-compressed format
 of which supports storage here, so those now skip -- which is the test's own gate
 working on accurate data.
 
-The 27033-case survey, which had been aborting, now runs to the end: **2851 passing, 50
-failing**, from 62 with the first version and with no case going from passing to
-failing.
+The 27033-case survey, which had been aborting, now runs to the end, and the three
+versions of the check read 62, 52 and finally **51 failing** of 2874 passing, with no
+case going from passing to failing at any step.
 
 ### Colour resolve under CTS
 

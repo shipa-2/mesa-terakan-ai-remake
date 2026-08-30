@@ -460,12 +460,13 @@ terakan_GetPhysicalDeviceImageFormatProperties2(
     * asking for a shader that was never built for it and took the whole run down with it, while
     * radv reports the format unsupported and the case is skipped.
     *
-    * `INPUT_ATTACHMENT` and `TRANSIENT_ATTACHMENT` are left out: the first is specified against a
-    * choice of attachment features rather than one, and the second names none.
+    * An input attachment names two features and needs either, not both.
+    * `TRANSIENT_ATTACHMENT` names none and is left out.
     */
    static struct {
       VkImageUsageFlags usage;
-      VkFormatFeatureFlags2 feature;
+      /* At least one of these has to be present. */
+      VkFormatFeatureFlags2 features;
    } const usage_features[] = {
       {VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_FORMAT_FEATURE_2_TRANSFER_SRC_BIT},
       {VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_FORMAT_FEATURE_2_TRANSFER_DST_BIT},
@@ -474,6 +475,9 @@ terakan_GetPhysicalDeviceImageFormatProperties2(
       {VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, VK_FORMAT_FEATURE_2_COLOR_ATTACHMENT_BIT},
       {VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
        VK_FORMAT_FEATURE_2_DEPTH_STENCIL_ATTACHMENT_BIT},
+      {VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT,
+       VK_FORMAT_FEATURE_2_COLOR_ATTACHMENT_BIT |
+          VK_FORMAT_FEATURE_2_DEPTH_STENCIL_ATTACHMENT_BIT},
    };
    /* `VK_IMAGE_CREATE_EXTENDED_USAGE_BIT` says the usage is deliberately not required to be
     * supported by the image's own format, because a view of a compatible format provides it. It is
@@ -483,7 +487,7 @@ terakan_GetPhysicalDeviceImageFormatProperties2(
    if (!(pImageFormatInfo->flags & VK_IMAGE_CREATE_EXTENDED_USAGE_BIT)) {
       for (unsigned usage_index = 0; usage_index < ARRAY_SIZE(usage_features); ++usage_index) {
          if ((pImageFormatInfo->usage & usage_features[usage_index].usage) &&
-             !(features & usage_features[usage_index].feature)) {
+             !(features & usage_features[usage_index].features)) {
             return VK_ERROR_FORMAT_NOT_SUPPORTED;
          }
       }
