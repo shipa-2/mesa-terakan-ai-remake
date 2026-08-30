@@ -1227,6 +1227,45 @@ hangs. The largest cluster left in it is six `pipeline.monolithic.sampler` cases
 the rest are singletons across `descriptorset_random`, `image.mutable`, `subgroups`,
 `draw.dynamic_rendering` and `image.image_size`.
 
+### Border colours on narrow integer formats
+
+`pipeline.monolithic.sampler` was sampled at every sixth case -- 30340 of 182035 --
+and gave 3404 passing and **406 failing**. Two causes account for all of them and
+neither overlaps the other.
+
+221 are `1d_unnormalized` and `2d_unnormalized`, which fail every case they run:
+`S_03C000_FORCE_UNNORMALIZED` is only applied when the chip is r9xx, and nothing
+normalizes the coordinates for anything older, so `unnormalizedCoordinates` silently
+does nothing on Evergreen. The pipeline layout already tracks
+`shader_immutable_samplers_unnormalized_coordinates` per stage, which is the shape a
+NIR lowering would want, but no lowering exists. That one is still open.
+
+The other 163 are all `clamp_to_border`, and the format axis is exact: every 8-bit and
+16-bit `uint`/`sint` format fails, `a2r10g10b10_uint_pack32` fails, the stencil aspect
+of every combined depth/stencil format fails, and every 32-bit integer format and every
+normalized, float or packed format passes. The fixed
+`SQ_TEX_BORDER_COLOR_OPAQUE_BLACK` and `_WHITE` deliver 1.0 as a float, which is what
+`VK_BORDER_COLOR_FLOAT_OPAQUE_*` asks for; the integer variants have to deliver the
+integer 1, and at 8 and 16 bits the fixed white reads back as something else.
+
+`terakan_hw_config_sqk` already emits the per-sampler border colour registers for the
+`REGISTER` type, so pointing `VK_BORDER_COLOR_INT_OPAQUE_BLACK` and `_WHITE` at them
+with `{0, 0, 0, 1}` and `{1, 1, 1, 1}` written out is all the sampler needed. Doing that
+**lost the device**: it was the first time the path had ever been reached, and it
+emitted `PKT3_SET_CTL_CONST` with `TERAKAN_CTL_CONST_OFFSET(0x00A400)`, which subtracts
+the control-constant base of 0x3CFF0 from a smaller address and underflows. These are
+configuration registers -- Gallium r600 emits them with `radeon_set_config_reg_seq` --
+and with the packet corrected to `PKT3_SET_CONFIG_REG` the same run gives **1044
+passing and 0 failing** of the 3030 `clamp_to_border` cases, from 163 failing.
+
+Over the whole 30340-case sample this is 406 failures down to **243**, 163 fixed with
+none regressed, and every one of the 243 is an unnormalized-coordinate case.
+
+Custom border colours are still not implemented. `VK_EXT_custom_border_color` also needs
+the value converted into the view's format and swizzle before it reaches the register,
+which is what `evergreen_convert_border_color` does in Gallium r600 and which the
+sampler alone cannot do, since it does not know the view.
+
 ### Colour resolve under CTS
 
 `dEQP-VK.api.copy_and_blit.core.resolve_image`, 240 cases, run against Terakan
