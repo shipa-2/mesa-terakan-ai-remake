@@ -983,16 +983,32 @@ The flush is emitted only on the shader path. Every two-sample case in the group
 passes -- 330 failures down to **287** -- and on the 2641-case multisample and
 renderpass sample the count goes 71 to **50**, 21 fixed with none regressed.
 
-What remains is four and eight samples, and it is a different defect: the group's
-failures are now "Resolve produced unexpected values", and they occur for exactly
-those CTS sample masks that include sample 1. With the full mask every sample holds
-the render value, yet the resolve reads the clear value. Sample zero is being fetched
-against an FMASK the fetch does not decode correctly once the surface is only
-partially covered. `terakan_color_msaa_fetch_4x`/`_8x` do not catch this because they
-write every sample, which is the degenerate FMASK case; partial coverage is the one
-that exercises the mapping. No FMASK decompress exists in the driver, and whether one
-is needed or whether the lookup's field width is wrong at four and eight samples is
-the open question.
+Four and eight samples still failed after that, now as "Resolve produced unexpected
+values" for exactly the sample masks that include sample 1. A probe -- a 4-sample
+`R8G8B8A8_UINT` attachment written under a `gl_SampleMask` push constant, read back
+both per sample and through `vkCmdResolveImage` -- passed every mask, which excluded
+the fetch, `gl_SampleMask`, the resolve shader, the image size and the render pass
+resolve attachment in turn. The one thing it did not match was the image's usage: the
+CTS creates its multisample images with `VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT` and
+nothing else. Dropping `VK_IMAGE_USAGE_SAMPLED_BIT` from the probe reproduced the
+failure exactly, including masks 1, 3, 5 and 7 resolving to half render value and half
+clear value.
+
+The cause was already written down next to the code that caused it.
+`terakan_image_create_color_descriptor` enables `COMPRESSION` and `FAST_CLEAR` for a
+multisample colour image that is not sampled, because compressed CB writes leave the
+planes the CB did not write untouched and a `TXF_MS` fetch reads them anyway. The
+condition was the image's `SAMPLED` usage -- but an integer format is sampled whether
+or not the application asks for it, since Vulkan resolves one by selecting a sample
+and `CB_RESOLVE` can only average, so `terakan_CmdResolveImage2` fetches it as a
+texture. A render pass resolve attachment reaches that path with no usage bit
+involved.
+
+Treating an integer number type as sampled takes the group to **1008 passing and 0
+failing** of 2600, from 678/330 where it started. On the 2641-case multisample and
+renderpass sample it goes 50 to **25**, 25 fixed with none regressed; everything left
+there is `pipeline.monolithic.multisample`. The cost is the fast-clear and compression
+bandwidth on integer multisample attachments only.
 
 ### Colour resolve under CTS
 
