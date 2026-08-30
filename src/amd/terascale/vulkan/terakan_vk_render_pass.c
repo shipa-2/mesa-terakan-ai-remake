@@ -435,6 +435,12 @@ terakan_CmdEndRendering(VkCommandBuffer const commandBuffer)
          /* Not routed through vkCmdResolveImage2, which the specification defines for color
           * images only.
           */
+         if (getenv("TERAKAN_DEBUG_RENDER") != NULL)
+            fprintf(stderr, "[TERAKAN_RENDER] ds resolve aspects=0x%x depth_mode=%u stencil_mode=%u area=%ux%u\n",
+                    depth_stencil_resolve->src_subresource.aspectMask,
+                    depth_stencil_resolve->depth_mode, depth_stencil_resolve->stencil_mode,
+                    command_buffer->rendering_resolve_area.extent.width,
+                    command_buffer->rendering_resolve_area.extent.height);
          terakan_meta_resolve_depth_stencil(
             command_buffer->command_writer.gfx,
             terakan_image_from_handle(depth_stencil_resolve->src_image),

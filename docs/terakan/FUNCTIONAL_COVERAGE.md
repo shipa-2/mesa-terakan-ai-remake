@@ -1010,6 +1010,48 @@ renderpass sample it goes 50 to **25**, 25 fixed with none regressed; everything
 there is `pipeline.monolithic.multisample`. The cost is the fast-clear and compression
 bandwidth on integer multisample attachments only.
 
+### Multisample stencil in pipeline.multisample.misc
+
+`pipeline.monolithic.multisample.misc` -- the `VK_EXT_multisampled_render_to_single_sampled`
+test file run without the extension -- was run in full, 1390 cases, giving 505 passing
+and **594 failing**. 522 of the failures are "Incorrect multisampled rendering for
+stencil attachment" and the other 72 name the stencil attachment alongside colour
+attachment 3.
+
+The format axis is absolute: `d16_unorm` passes 268 of 268, and every format with a
+stencil aspect fails -- `d24_unorm_s8_uint` 81/205, `d32_sfloat_s8_uint` 75/198,
+`s8_uint` 81/191. Crossing format with the resolve mode shows it is not a resolve
+defect: the stencil formats fail at roughly the same rate with `ds_resolve_max`,
+`ds_resolve_sample_zero`, and no depth/stencil resolve at all. The `basic` and
+`input_attachments` subgroups fail every stencil case, and the deterministic
+`.default` variants fail 144 of 144.
+
+The resolved stencil image the test logs is noise -- 255, 21, 1, 0, 175, 239 and more
+across one 65x55 image, where two values are expected.
+
+Excluded so far, each by a probe that passes:
+
+- Multisample stencil rendering and per-sample fetch. A 4-sample `S8_UINT` attachment
+  written under a `gl_SampleMask` push constant with `VK_STENCIL_OP_REPLACE` reads back
+  correctly for every mask through `texelFetch(usampler2DMS, ...)`.
+- Single-sample stencil rendering and sampling, the same probe at one sample through
+  `usampler2D`.
+- The multisample stencil clear. With a clear value of 0x33 and partial coverage, the
+  covered samples hold the reference and the uncovered ones hold 0x33.
+- The image's usage flags, which is what the integer colour resolve turned on: this
+  file creates its depth/stencil images with `SAMPLED`, `TRANSFER_SRC`, `TRANSFER_DST`,
+  `DEPTH_STENCIL_ATTACHMENT` and `INPUT_ATTACHMENT`.
+- The back-face stencil write mask left stale by the application. Setting
+  `DB_STENCILREFMASK_BF` alongside the front mask in the resolve changes nothing.
+- The depth/stencil resolve not running at all. A debug line added to
+  `terakan_EndRendering` under `TERAKAN_DEBUG_RENDER` shows it running with the right
+  aspect mask, modes and area.
+
+What has not been built yet is a probe with the shape these tests actually have: three
+colour attachments and a depth/stencil attachment in one pass, several draws each
+scissored to its own region, and the verification reading the resolved stencil as a
+`utexture2D`. That is the next step, since every simpler shape passes.
+
 ### Colour resolve under CTS
 
 `dEQP-VK.api.copy_and_blit.core.resolve_image`, 240 cases, run against Terakan
