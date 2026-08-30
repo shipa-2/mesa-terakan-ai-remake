@@ -1047,10 +1047,21 @@ Excluded so far, each by a probe that passes:
   `terakan_EndRendering` under `TERAKAN_DEBUG_RENDER` shows it running with the right
   aspect mask, modes and area.
 
-What has not been built yet is a probe with the shape these tests actually have: three
-colour attachments and a depth/stencil attachment in one pass, several draws each
-scissored to its own region, and the verification reading the resolved stencil as a
-`utexture2D`. That is the next step, since every simpler shape passes.
+- The stencil resolve itself in the shape these tests use. A probe with a colour
+  attachment and a 4-sample `D32_SFLOAT_S8_UINT` attachment in one `vkCmdBeginRendering`
+  pass, the fragment shader writing colour, `gl_FragDepth` and `gl_SampleMask`, the
+  stencil resolved by `VK_RESOLVE_MODE_SAMPLE_ZERO_BIT` and read back as a `usampler2D`,
+  gives the right value uniformly over the whole surface for every mask -- including at
+  65x64, the odd non-aligned framebuffer size these tests use.
+- Per-region scissored draws with their own stencil references, which is what `basic`
+  does and what has no depth analogue. Four pipelines, one per quadrant, with references
+  0x10, 0x20, 0x30 and 0x40 read back exactly those values in their quadrants.
+
+Every shape simpler than the test itself passes. What is left unreplicated is the
+multi-pass structure: several passes carrying the stencil forward with
+`VK_ATTACHMENT_LOAD_OP_LOAD`, the stencil bound as an input attachment (that subgroup
+fails every stencil case), and the `useGarbageAttachment` variants. Building that is
+the next step.
 
 ### Colour resolve under CTS
 
