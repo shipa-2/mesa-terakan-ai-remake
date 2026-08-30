@@ -409,19 +409,103 @@ terakan_CreatePipelineLayout(VkDevice const deviceHandle,
    return VK_SUCCESS;
 }
 
+/* Whether `terakan_CreateDescriptorSetLayout` would accept this layout.
+ *
+ * The support query used to answer from a total-descriptor bound of its own, which the layout
+ * creation path knows nothing about: creation validates each binding against the hardware's
+ * register spaces, so the two could and did disagree.
+ * `dEQP-VK.api.maintenance3_check.support_count_*_create_layout` builds the layout the query said
+ * was supported and creates it, and got `VK_ERROR_VALIDATION_FAILED`. Asking creation itself
+ * cannot disagree with creation.
+ */
+static bool
+terakan_descriptor_set_layout_creatable(VkDevice const device,
+                                        VkDescriptorSetLayoutCreateInfo const * const create_info)
+{
+   VkDescriptorSetLayout layout_handle = VK_NULL_HANDLE;
+   if (terakan_CreateDescriptorSetLayout(device, create_info, NULL, &layout_handle) != VK_SUCCESS) {
+      return false;
+   }
+   struct terakan_descriptor_set_layout * const layout =
+      terakan_descriptor_set_layout_from_handle(layout_handle);
+   vk_descriptor_set_layout_unref(&terakan_device_from_handle(device)->vk, &layout->vk);
+   return true;
+}
+
 VKAPI_ATTR void VKAPI_CALL
 terakan_GetDescriptorSetLayoutSupport(VkDevice device,
                                       VkDescriptorSetLayoutCreateInfo const * const pCreateInfo,
                                       VkDescriptorSetLayoutSupport * const pSupport)
 {
-   (void)device;
-   /* Validate descriptor set layout against hardware limits. */
-   uint32_t total_descriptors = 0;
-   for (uint32_t i = 0; i < pCreateInfo->bindingCount; ++i) {
-      total_descriptors += pCreateInfo->pBindings[i].descriptorCount;
+   pSupport->supported = terakan_descriptor_set_layout_creatable(device, pCreateInfo);
+
+   /* The `VkDescriptorSetVariableDescriptorCountLayoutSupport` reference says
+    * `maxVariableDescriptorCount` "is set to zero" when the layout has no variable-sized binding,
+    * and otherwise holds the largest count that binding may be given. The structure was left
+    * untouched, so it kept whatever the caller had in it -- which is what
+    * `dEQP-VK.api.maintenance3_check.support_count_*_no_variable_size_*` reports as "Nonzero
+    * maxVariableDescriptorCount when using no variable descriptor counts".
+    */
+   VkDescriptorSetVariableDescriptorCountLayoutSupport * const variable_support =
+      vk_find_struct(pSupport->pNext, DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_LAYOUT_SUPPORT);
+   if (variable_support == NULL) {
+      return;
    }
-   /* Terakan supports up to 128 total descriptors per set. */
-   pSupport->supported = total_descriptors <= 128;
+   variable_support->maxVariableDescriptorCount = 0;
+
+   VkDescriptorSetLayoutBindingFlagsCreateInfo const * const binding_flags =
+      vk_find_struct_const(pCreateInfo->pNext, DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO);
+   if (binding_flags == NULL || pCreateInfo->bindingCount == 0) {
+      return;
+   }
+   /* Only the last binding may be variable-sized, so there is at most one. */
+   uint32_t variable_binding_index = pCreateInfo->bindingCount;
+   for (uint32_t i = 0; i < pCreateInfo->bindingCount; ++i) {
+      if (i < binding_flags->bindingCount &&
+          (binding_flags->pBindingFlags[i] &
+           VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT) != 0) {
+         variable_binding_index = i;
+         break;
+      }
+   }
+   if (variable_binding_index >= pCreateInfo->bindingCount) {
+      return;
+   }
+
+   /* The reported count has to be one creation accepts, and the test builds exactly that layout,
+    * so the largest accepted count is found by asking. The bound is the device's own
+    * `maxPerSetDescriptors`, which no binding can exceed.
+    */
+   struct terakan_device const * const terakan_device_ = terakan_device_from_handle(device);
+   uint32_t const probe_limit = MIN2(
+      terakan_device_physical_device(terakan_device_)->vk.properties.maxPerSetDescriptors, 1u << 16);
+   VkDescriptorSetLayoutBinding * const probe_bindings =
+      vk_alloc(&terakan_device_->vk.alloc, sizeof(*probe_bindings) * pCreateInfo->bindingCount, 8,
+               VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
+   if (probe_bindings == NULL) {
+      return;
+   }
+   memcpy(probe_bindings, pCreateInfo->pBindings,
+          sizeof(*probe_bindings) * pCreateInfo->bindingCount);
+   VkDescriptorSetLayoutCreateInfo probe_create_info = *pCreateInfo;
+   probe_create_info.pBindings = probe_bindings;
+
+   uint32_t accepted = 0, low = 0, high = probe_limit;
+   while (low <= high) {
+      uint32_t const middle = low + (high - low) / 2;
+      probe_bindings[variable_binding_index].descriptorCount = middle;
+      if (terakan_descriptor_set_layout_creatable(device, &probe_create_info)) {
+         accepted = middle;
+         low = middle + 1;
+      } else {
+         if (middle == 0) {
+            break;
+         }
+         high = middle - 1;
+      }
+   }
+   vk_free(&terakan_device_->vk.alloc, probe_bindings);
+   variable_support->maxVariableDescriptorCount = accepted;
 }
 
 VKAPI_ATTR void VKAPI_CALL

@@ -1500,6 +1500,34 @@ entitled to it, so mixed framebuffers are left no worse than they were.
 
 **228 failures to 0**, with the 160 integer cases still passing.
 
+### The descriptor set layout support query answered for itself
+
+`dEQP-VK.api.maintenance3_check` failed **143 of its 178 supported cases**. Two separate
+things were wrong with `terakan_GetDescriptorSetLayoutSupport`, and the group separates
+them cleanly.
+
+It never wrote `VkDescriptorSetVariableDescriptorCountLayoutSupport`. The structure kept
+whatever the caller had left in it, which the CTS reports as "Nonzero
+maxVariableDescriptorCount when using no variable descriptor counts". The specification
+says the field is zero when the layout has no variable-sized binding and otherwise holds
+the largest count that binding may be given.
+
+And `supported` was decided by a total-descriptor bound of the query's own -- 128 --
+which the layout creation path knows nothing about. Creation validates each binding
+against the hardware's register spaces, so the two disagreed: the
+`support_count_*_create_layout` cases build the layout the query called supported and
+create it, and got `VK_ERROR_VALIDATION_FAILED`.
+
+Both are answered by asking creation. `supported` is now whether
+`terakan_CreateDescriptorSetLayout` accepts the layout, which cannot disagree with
+creation because it is creation; and `maxVariableDescriptorCount` is found by binary
+search over the variable binding's count, bounded by the device's own
+`maxPerSetDescriptors` -- about seven throwaway layouts for a query that is not on any
+hot path. The test sets the binding to exactly the reported count and creates it, so a
+value creation would reject is not an answer.
+
+**143 failures to 0.**
+
 ### Colour resolve under CTS
 
 `dEQP-VK.api.copy_and_blit.core.resolve_image`, 240 cases, run against Terakan
