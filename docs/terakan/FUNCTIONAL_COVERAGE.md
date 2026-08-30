@@ -1266,6 +1266,52 @@ the value converted into the view's format and swizzle before it reaches the reg
 which is what `evergreen_convert_border_color` does in Gallium r600 and which the
 sampler alone cannot do, since it does not know the view.
 
+### Image format properties ignored the requested usage
+
+A second stride sample -- every 120th case, wsi excluded -- aborted again, this time
+with a segmentation fault rather than a lost device, on
+`texture.swizzle.component_mapping.color.r8g8b8a8_sscaled_2d_pot_rgba`. The backtrace
+is inside the CTS, in `vk::createShaderModule` reading a program binary that was never
+built, and radv reports the same case `NotSupported` and skips it. So the question was
+what Terakan says that radv does not.
+
+`vkGetPhysicalDeviceFormatProperties` agrees with the intent of the code: `SSCALED` and
+`USCALED` report `TRANSFER_SRC | TRANSFER_DST` and nothing else, which is the
+deliberate, measured reduction recorded next to it -- copying them works because a copy
+moves bits without interpreting them, and everything that interprets the value fails.
+radv reports no image features at all for them.
+
+`vkGetPhysicalDeviceImageFormatProperties` was the difference. It rejected a format
+whose feature mask was empty, and then never checked the mask against the **usage** that
+was asked for, which the specification requires: each usage names the format feature it
+depends on. Querying `R8G8B8A8_SSCALED` with `VK_IMAGE_USAGE_SAMPLED_BIT` returned
+success, so the CTS built the image, went on to ask for a shader that was never
+generated for it, and took the run down.
+
+The usages with an unambiguous single feature are now checked -- transfer source and
+destination, sampled, storage, colour attachment, depth/stencil attachment.
+`INPUT_ATTACHMENT` is specified against a choice of attachment features rather than one
+and `TRANSIENT_ATTACHMENT` names none, so both are left alone. The case now reports
+`NotSupported (Format not supported: VK_FORMAT_R8G8B8A8_SSCALED)`.
+
+The first version of the check regressed ten
+`image.extended_usage_bit_compatibility.image_format_properties*` cases, which is the
+rule it had missed: `VK_IMAGE_CREATE_EXTENDED_USAGE_BIT` says the usage is deliberately
+not required to be supported by the image's own format, because a view of a compatible
+format provides it, and it is what `BLOCK_TEXEL_VIEW_COMPATIBLE` is used with. Exempting
+it takes the regressions to zero.
+
+That group also moves some cases from passing to not-supported, and they were passing
+vacuously. It scans for a compatible view format that supports the usage with no flags
+and skips when none does; while every format claimed every usage, one was always found.
+The compatible set of a block-compressed format is other block-compressed formats, none
+of which supports storage here, so those now skip -- which is the test's own gate
+working on accurate data.
+
+The 27033-case survey, which had been aborting, now runs to the end: **2851 passing, 50
+failing**, from 62 with the first version and with no case going from passing to
+failing.
+
 ### Colour resolve under CTS
 
 `dEQP-VK.api.copy_and_blit.core.resolve_image`, 240 cases, run against Terakan

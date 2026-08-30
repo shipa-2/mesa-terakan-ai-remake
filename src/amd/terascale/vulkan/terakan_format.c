@@ -450,6 +450,45 @@ terakan_GetPhysicalDeviceImageFormatProperties2(
       return VK_ERROR_FORMAT_NOT_SUPPORTED;
    }
 
+   /* The `vkGetPhysicalDeviceImageFormatProperties` reference says the call fails when "the
+    * combination of format, type, tiling, usage, and flags is not supported", and each usage names
+    * the format feature it needs in the "Format Feature Dependent Usage" table. Only the format's
+    * feature mask was being checked, so a format advertising nothing but transfer -- the `USCALED`
+    * and `SSCALED` families, whose image features are deliberately reduced to that -- reported an
+    * image with `VK_IMAGE_USAGE_SAMPLED_BIT` as supported. That is how
+    * `dEQP-VK.texture.swizzle.component_mapping.color.r8g8b8a8_sscaled_2d_pot_rgba` got as far as
+    * asking for a shader that was never built for it and took the whole run down with it, while
+    * radv reports the format unsupported and the case is skipped.
+    *
+    * `INPUT_ATTACHMENT` and `TRANSIENT_ATTACHMENT` are left out: the first is specified against a
+    * choice of attachment features rather than one, and the second names none.
+    */
+   static struct {
+      VkImageUsageFlags usage;
+      VkFormatFeatureFlags2 feature;
+   } const usage_features[] = {
+      {VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_FORMAT_FEATURE_2_TRANSFER_SRC_BIT},
+      {VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_FORMAT_FEATURE_2_TRANSFER_DST_BIT},
+      {VK_IMAGE_USAGE_SAMPLED_BIT, VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_BIT},
+      {VK_IMAGE_USAGE_STORAGE_BIT, VK_FORMAT_FEATURE_2_STORAGE_IMAGE_BIT},
+      {VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, VK_FORMAT_FEATURE_2_COLOR_ATTACHMENT_BIT},
+      {VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+       VK_FORMAT_FEATURE_2_DEPTH_STENCIL_ATTACHMENT_BIT},
+   };
+   /* `VK_IMAGE_CREATE_EXTENDED_USAGE_BIT` says the usage is deliberately not required to be
+    * supported by the image's own format, because a view of a compatible format provides it. It is
+    * also what `VK_IMAGE_CREATE_BLOCK_TEXEL_VIEW_COMPATIBLE_BIT` is used with, to store into an
+    * uncompressed view of a compressed image.
+    */
+   if (!(pImageFormatInfo->flags & VK_IMAGE_CREATE_EXTENDED_USAGE_BIT)) {
+      for (unsigned usage_index = 0; usage_index < ARRAY_SIZE(usage_features); ++usage_index) {
+         if ((pImageFormatInfo->usage & usage_features[usage_index].usage) &&
+             !(features & usage_features[usage_index].feature)) {
+            return VK_ERROR_FORMAT_NOT_SUPPORTED;
+         }
+      }
+   }
+
    VkImageFormatProperties image_format_properties;
 
    bool const is_target =
