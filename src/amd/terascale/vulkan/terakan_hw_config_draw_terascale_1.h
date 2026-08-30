@@ -142,6 +142,12 @@ uint32_t terakan_hw_config_draw_terascale_1_constant_packet_dwords(void);
 bool terakan_hw_config_draw_terascale_1_absent_vgt_control_encode(
    uint32_t value, uint32_t * packet_dwords_out);
 
+/* The begin atom clears the real R600/R700 ring-item-size block. Evergreen ring indices and
+ * addresses are not reusable; until their users are ported, accept only an all-zero state.
+ */
+bool terakan_hw_config_draw_terascale_1_ring_itemsize_encode(
+   uint32_t const * itemsize_dwords, uint32_t itemsize_count, uint32_t * packet_dwords_out);
+
 uint32_t * terakan_hw_config_draw_terascale_1_write_sq_pgm_fs(uint32_t * packet,
                                                                uint32_t program_va_shr8);
 uint32_t * terakan_hw_config_draw_terascale_1_write_sq_pgm_vs(

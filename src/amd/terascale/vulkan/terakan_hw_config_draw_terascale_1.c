@@ -261,6 +261,23 @@ terakan_hw_config_draw_terascale_1_absent_vgt_control_encode(
    return true;
 }
 
+bool
+terakan_hw_config_draw_terascale_1_ring_itemsize_encode(
+   uint32_t const * const itemsize_dwords, uint32_t const itemsize_count,
+   uint32_t * const packet_dwords_out)
+{
+   if (!itemsize_dwords || !packet_dwords_out) {
+      return false;
+   }
+   for (uint32_t index = 0; index < itemsize_count; ++index) {
+      if (itemsize_dwords[index] != 0) {
+         return false;
+      }
+   }
+   *packet_dwords_out = 0;
+   return true;
+}
+
 uint32_t *
 terakan_hw_config_draw_terascale_1_write_sq_pgm_fs(uint32_t * const packet,
                                                     uint32_t const program_va_shr8)

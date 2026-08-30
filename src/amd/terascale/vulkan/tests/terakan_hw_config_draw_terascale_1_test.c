@@ -583,6 +583,21 @@ test_absent_vgt_controls(void)
    CHECK(!terakan_hw_config_draw_terascale_1_absent_vgt_control_encode(0, NULL));
 }
 
+static void
+test_ring_itemsize_is_begin_atom_only(void)
+{
+   uint32_t itemsize_dwords[6] = {};
+   uint32_t packet_dwords = UINT32_MAX;
+   CHECK(terakan_hw_config_draw_terascale_1_ring_itemsize_encode(
+      itemsize_dwords, 6, &packet_dwords));
+   CHECK(packet_dwords == 0);
+   itemsize_dwords[2] = 1;
+   CHECK(!terakan_hw_config_draw_terascale_1_ring_itemsize_encode(
+      itemsize_dwords, 6, &packet_dwords));
+   CHECK(!terakan_hw_config_draw_terascale_1_ring_itemsize_encode(NULL, 6, &packet_dwords));
+   CHECK(!terakan_hw_config_draw_terascale_1_ring_itemsize_encode(itemsize_dwords, 6, NULL));
+}
+
 static struct terakan_hw_config_draw_terascale_1_cb_color_input
 representative_cb_color_input(void)
 {
@@ -749,6 +764,7 @@ main(void)
    test_sq_pgm_bindings();
    test_draw_constant_packet_is_empty();
    test_absent_vgt_controls();
+   test_ring_itemsize_is_begin_atom_only();
    test_cb_color_encode();
    test_cb_color_encode_rejects_unported_surfaces();
    test_cb_color_packets();

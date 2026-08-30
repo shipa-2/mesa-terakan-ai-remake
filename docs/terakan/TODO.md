@@ -325,6 +325,14 @@ classic Gallium R600 driver that has supported this hardware for years).
   dwords; nonzero state is rejected rather than mapped to an unrelated R700
   address. This does not add tessellation support or prove GPU execution.
 
+- TeraScale 1 no longer replays the six Evergreen `SQ_*TMP_RING_ITEMSIZE`
+  entries on the first draw. Their addresses and stage set differ from the
+  R600/R700 ring block; the dedicated begin atom already clears the real R700
+  `SQ_ESGS_RING_ITEMSIZE` through `SQ_PSTMP_RING_ITEMSIZE` registers. The
+  currently supported all-zero state therefore produces exactly zero extra
+  dwords. Nonzero ring sizes remain rejected until the corresponding R700
+  GS/ES or compute ring users and base/size registers are ported.
+
 - TeraScale 1 (R700) `DB_SHADER_CONTROL`: the runtime emitter no longer sends
   the full Evergreen payload merely because both generations place the
   register at `0x02880C`. Direct comparison of `r600d.h` and `evergreend.h`

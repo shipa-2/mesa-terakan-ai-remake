@@ -1036,6 +1036,15 @@ terakan_hw_config_draw_emit_sq_ring_itemsize(
    struct terakan_gfx_command_writer * const command_writer)
 {
    struct terakan_hw_config_draw * const config = &command_writer->hw_config_draw;
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
+      uint32_t packet_dwords;
+      assert(terakan_hw_config_draw_terascale_1_ring_itemsize_encode(
+         config->sq_ring_itemsize_.itemsize_dwords, TERAKAN_SHADER_RING_INDEX_COUNT,
+         &packet_dwords));
+      assert(packet_dwords == 0);
+      config->sq_ring_itemsize_.modified_bits = 0;
+      return;
+   }
    if (unlikely(!config->sq_ring_itemsize_.modified_bits)) {
       /* Don't do an empty emission. */
       return;
