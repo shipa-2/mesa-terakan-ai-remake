@@ -674,6 +674,13 @@ static void
 terakan_hw_config_draw_emit_vgt_shader_stages_en(
    struct terakan_gfx_command_writer * const command_writer)
 {
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
+      uint32_t packet_dwords;
+      assert(terakan_hw_config_draw_terascale_1_absent_vgt_control_encode(
+         command_writer->hw_config_draw.vgt_shader_stages_en_, &packet_dwords));
+      assert(packet_dwords == 0);
+      return;
+   }
    terakan_hw_config_draw_emit_context_register(
       command_writer, R_028B54_VGT_SHADER_STAGES_EN,
       command_writer->hw_config_draw.vgt_shader_stages_en_);
@@ -683,6 +690,13 @@ static void
 terakan_hw_config_draw_emit_vgt_ls_hs_config(
    struct terakan_gfx_command_writer * const command_writer)
 {
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
+      uint32_t packet_dwords;
+      assert(terakan_hw_config_draw_terascale_1_absent_vgt_control_encode(
+         command_writer->hw_config_draw.vgt_ls_hs_config_, &packet_dwords));
+      assert(packet_dwords == 0);
+      return;
+   }
    terakan_hw_config_draw_emit_context_register(
       command_writer, R_028B58_VGT_LS_HS_CONFIG,
       command_writer->hw_config_draw.vgt_ls_hs_config_);
@@ -691,6 +705,13 @@ terakan_hw_config_draw_emit_vgt_ls_hs_config(
 static void
 terakan_hw_config_draw_emit_vgt_tf_param(struct terakan_gfx_command_writer * const command_writer)
 {
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
+      uint32_t packet_dwords;
+      assert(terakan_hw_config_draw_terascale_1_absent_vgt_control_encode(
+         command_writer->hw_config_draw.vgt_tf_param_, &packet_dwords));
+      assert(packet_dwords == 0);
+      return;
+   }
    terakan_hw_config_draw_emit_context_register(command_writer, R_028B6C_VGT_TF_PARAM,
                                                 command_writer->hw_config_draw.vgt_tf_param_);
 }

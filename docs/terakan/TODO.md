@@ -318,6 +318,13 @@ classic Gallium R600 driver that has supported this hardware for years).
   The per-draw constant packet is therefore exactly zero dwords on TeraScale 1;
   this has not been submitted to RV710 while the queue guard remains active.
 
+- TeraScale 1 suppresses the three Evergreen-only tessellation-stage controls
+  `VGT_SHADER_STAGES_EN`, `VGT_LS_HS_CONFIG` and `VGT_TF_PARAM`. They are
+  absent from `r600d.h` and from the classic R600/R700 state path, so the only
+  supported tracked value is disabled and the exact hardware packet is zero
+  dwords; nonzero state is rejected rather than mapped to an unrelated R700
+  address. This does not add tessellation support or prove GPU execution.
+
 - TeraScale 1 (R700) `DB_SHADER_CONTROL`: the runtime emitter no longer sends
   the full Evergreen payload merely because both generations place the
   register at `0x02880C`. Direct comparison of `r600d.h` and `evergreend.h`

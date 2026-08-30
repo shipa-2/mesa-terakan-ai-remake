@@ -136,6 +136,12 @@ bool terakan_hw_config_draw_terascale_1_sq_pgm_resources_encode(
  */
 uint32_t terakan_hw_config_draw_terascale_1_constant_packet_dwords(void);
 
+/* Evergreen tessellation-stage controls have no R600/R700 registers. A disabled tracked value is
+ * represented by an empty packet; anything else is unsupported rather than reinterpreted.
+ */
+bool terakan_hw_config_draw_terascale_1_absent_vgt_control_encode(
+   uint32_t value, uint32_t * packet_dwords_out);
+
 uint32_t * terakan_hw_config_draw_terascale_1_write_sq_pgm_fs(uint32_t * packet,
                                                                uint32_t program_va_shr8);
 uint32_t * terakan_hw_config_draw_terascale_1_write_sq_pgm_vs(
