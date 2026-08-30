@@ -906,12 +906,26 @@ then the fetch. The application path takes that form and works --
 `terakan_depth_msaa_fetch` reads every sample of a multisample depth image through
 `texelFetch(sampler2DMS, ...)` and passes at 2, 4 and 8 samples.
 
-So the direct encoding does not select the sample, and the same limitation is what
-stopped the colour shader resolve earlier in this file: there too, fetching sample
-zero worked and any other index did not. Twelve hand-assembled reduce programs are
-affected, and the fix for all of them is the same -- write them as NIR with
-`txf_ms` and let the backend emit the form that works, which the meta NIR path now
-makes straightforward.
+That reading was wrong, and the correction is the useful part. The twelve reduce
+programs were rewritten as NIR with `txf_ms`, the backend emitted the two-step form
+-- the assembly shows the `MODE:1` read followed by the fetch -- and **the results
+did not change at all**: still 0.0399939 for every mode and sample count. The
+rewrite was reverted rather than kept, since it changes nothing measurable.
+
+Neither encoding selects a depth sample. And `terakan_depth_msaa_fetch` does not
+contradict that, because it does not distinguish samples: it clears the image to a
+single value and expects every sample to equal it, so it passes whether or not the
+sample index is honoured. Per-sample depth fetch has therefore never been
+demonstrated on this driver. Colour is different and is demonstrated --
+`terakan_color_msaa_fetch_2x`/`_4x`/`_8x` give each sample its own colour and pass
+-- which fits: colour has FMASK for the two-step read to consult and depth has
+none, so the translation collapses every index onto one sample.
+
+What this needs next is a probe that writes genuinely distinct depths per sample
+and reads them back, to establish whether the hardware can do it at all and under
+which encoding. Until that exists there is nothing to write the resolve shaders
+against, and the coverage gap in `terakan_depth_msaa_fetch` is worth closing on its
+own account.
 
 ### Colour resolve under CTS
 
