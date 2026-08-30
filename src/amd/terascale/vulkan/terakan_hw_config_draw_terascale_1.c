@@ -125,6 +125,46 @@ terakan_hw_config_draw_terascale_1_write_pa_sc_aa_mask(uint32_t * const packet,
    return write_context_reg(packet, R_028C48_PA_SC_AA_MASK, value);
 }
 
+bool
+terakan_hw_config_draw_terascale_1_pa_sc_aa_encode(
+   uint32_t const sample_count_log2, uint32_t const max_sample_dist,
+   bool const aa_mask_centroid_determine, uint8_t const sample_locs[16][4],
+   struct terakan_hw_config_draw_terascale_1_pa_sc_aa * const aa_out)
+{
+   if (sample_count_log2 > 3 || max_sample_dist > 0xF || !sample_locs || !aa_out) {
+      return false;
+   }
+
+   *aa_out = (struct terakan_hw_config_draw_terascale_1_pa_sc_aa){
+      .config = S_028C04_MSAA_NUM_SAMPLES(sample_count_log2) |
+                S_028C04_AA_MASK_CENTROID_DTMN(aa_mask_centroid_determine) |
+                S_028C04_MAX_SAMPLE_DIST(max_sample_dist),
+   };
+
+   uint32_t const sample_count = UINT32_C(1) << sample_count_log2;
+   for (uint32_t sample_index = 0; sample_index < sample_count; ++sample_index) {
+      for (uint32_t pixel_index = 1; pixel_index < 4; ++pixel_index) {
+         if (sample_locs[sample_index][pixel_index] != sample_locs[sample_index][0]) {
+            return false;
+         }
+      }
+      aa_out->sample_locs[sample_index >> 2] |=
+         (uint32_t)sample_locs[sample_index][0] << (8 * (sample_index & 3));
+   }
+   return true;
+}
+
+uint32_t *
+terakan_hw_config_draw_terascale_1_write_pa_sc_aa(
+   uint32_t * packet, struct terakan_hw_config_draw_terascale_1_pa_sc_aa const * const aa)
+{
+   *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 2, 0);
+   *packet++ = (R_028C1C_PA_SC_AA_SAMPLE_LOCS_MCTX - R600_CONTEXT_REG_OFFSET) >> 2;
+   *packet++ = aa->sample_locs[0];
+   *packet++ = aa->sample_locs[1];
+   return write_context_reg(packet, R_028C04_PA_SC_AA_CONFIG, aa->config);
+}
+
 uint32_t *
 terakan_hw_config_draw_terascale_1_write_db_depth_view(uint32_t * const packet,
                                                         uint32_t const value)

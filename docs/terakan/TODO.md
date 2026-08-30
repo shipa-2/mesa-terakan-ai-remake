@@ -436,9 +436,15 @@ classic Gallium R600 driver that has supported this hardware for years).
     the real R600/R700 `PA_SC_AA_MASK` address 0x028C48, with an exact packet
     oracle. This proves the CPU-side register address and payload construction,
     but not multisample rendering on RV710 while queue submission remains
-    blocked. The
-    address `PA_SC_AA_SAMPLE_LOCS_7` uses on R8xx/R9xx is `CB_CLRCMP_DST`
-    on R600/R700. `SPI_BARYC_CNTL`/`SPI_PS_IN_CONTROL_2` collide with the
+    blocked. R700 sample locations now use exactly its two shared
+    `PA_SC_AA_SAMPLE_LOCS_MCTX` words at 0x028C1C/20, following
+    `r600_emit_msaa_state()`, rather than the four/eight pixel-specific R8xx
+    words (whose later addresses collide with `CB_CLRCMP_*`). Consequently
+    the TeraScale 1 physical device advertises the representable 1x1
+    programmable sample-location grid rather than R8xx/R9xx's 2x2 grid. The
+    exact CPU packet is covered, and RV710 property enumeration verifies the
+    1x1 limit, but multisample rendering is still unsubmitted and unread back.
+    `SPI_BARYC_CNTL`/`SPI_PS_IN_CONTROL_2` collide with the
     R600/R700-only `SPI_FOG_FUNC_SCALE`/`_BIAS`. `SQ_GPR_RESOURCE_MGMT_3`/
     `SQ_GLOBAL_GPR_RESOURCE_MGMT_1`/`_2` (0x008C0C/0x008C10/0x008C14) are
     `SQ_THREAD_RESOURCE_MGMT`/`SQ_STACK_RESOURCE_MGMT_1`/`_2` on R600/R700 --

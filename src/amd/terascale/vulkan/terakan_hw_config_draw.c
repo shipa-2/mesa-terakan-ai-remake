@@ -1174,8 +1174,30 @@ terakan_hw_config_draw_emit_pa_sc_aa_config_sample_locs(
 {
    struct terakan_hw_config_draw const * const config = &command_writer->hw_config_draw;
 
-   bool const is_r9xx =
-      terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_r9xx;
+   struct terakan_physical_device_chip_info const * const chip_info =
+      &terakan_gfx_command_writer_physical_device(command_writer)->chip_info;
+
+   if (chip_info->is_terascale_1) {
+      uint32_t const evergreen_config = config->pa_sc_aa_config_sample_locs_.config;
+      struct terakan_hw_config_draw_terascale_1_pa_sc_aa aa;
+      if (!terakan_hw_config_draw_terascale_1_pa_sc_aa_encode(
+             G_028BE0_MSAA_NUM_SAMPLES(evergreen_config),
+             G_028BE0_MAX_SAMPLE_DIST(evergreen_config),
+             G_028BE0_AA_MASK_CENTROID_DTMN(evergreen_config),
+             config->pa_sc_aa_config_sample_locs_.sample_locs, &aa)) {
+         return;
+      }
+      uint32_t * packet = terakan_gfx_command_writer_emit(
+         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG, 7);
+      if (unlikely(packet == NULL)) {
+         return;
+      }
+      packet = terakan_hw_config_draw_terascale_1_write_pa_sc_aa(packet, &aa);
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
+      return;
+   }
+
+   bool const is_r9xx = chip_info->is_r9xx;
 
    uint32_t pa_sc_aa_config = config->pa_sc_aa_config_sample_locs_.config;
    if (!is_r9xx) {

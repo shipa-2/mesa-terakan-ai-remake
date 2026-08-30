@@ -400,6 +400,44 @@ test_pa_sc_aa_mask(void)
    CHECK(packet[2] == encoded);
 }
 
+static void
+test_pa_sc_aa_config_sample_locs(void)
+{
+   uint8_t sample_locs[16][4] = {0};
+   uint8_t const eight_sample_pattern[8] = {0x11, 0xDF, 0x2D, 0xF4,
+                                             0xEB, 0x52, 0x35, 0xB3};
+   for (uint32_t sample_index = 0; sample_index < 8; ++sample_index) {
+      for (uint32_t pixel_index = 0; pixel_index < 4; ++pixel_index) {
+         sample_locs[sample_index][pixel_index] = eight_sample_pattern[sample_index];
+      }
+   }
+
+   struct terakan_hw_config_draw_terascale_1_pa_sc_aa aa;
+   CHECK(terakan_hw_config_draw_terascale_1_pa_sc_aa_encode(3, 7, true, sample_locs, &aa));
+   CHECK(aa.config == (S_028C04_MSAA_NUM_SAMPLES(3) |
+                       S_028C04_AA_MASK_CENTROID_DTMN(1) |
+                       S_028C04_MAX_SAMPLE_DIST(7)));
+   CHECK(aa.sample_locs[0] == UINT32_C(0xF42DDF11));
+   CHECK(aa.sample_locs[1] == UINT32_C(0xB33552EB));
+
+   uint32_t packet[7];
+   CHECK(terakan_hw_config_draw_terascale_1_write_pa_sc_aa(packet, &aa) == packet + 7);
+   CHECK(packet[0] == PKT3(PKT3_SET_CONTEXT_REG, 2, 0));
+   CHECK(packet[1] ==
+         (R_028C1C_PA_SC_AA_SAMPLE_LOCS_MCTX - R600_CONTEXT_REG_OFFSET) >> 2);
+   CHECK(packet[2] == aa.sample_locs[0]);
+   CHECK(packet[3] == aa.sample_locs[1]);
+   CHECK(packet[4] == PKT3(PKT3_SET_CONTEXT_REG, 1, 0));
+   CHECK(packet[5] == (R_028C04_PA_SC_AA_CONFIG - R600_CONTEXT_REG_OFFSET) >> 2);
+   CHECK(packet[6] == aa.config);
+
+   sample_locs[3][2] ^= 1;
+   CHECK(!terakan_hw_config_draw_terascale_1_pa_sc_aa_encode(3, 7, true, sample_locs, &aa));
+   sample_locs[3][2] ^= 1;
+   CHECK(!terakan_hw_config_draw_terascale_1_pa_sc_aa_encode(4, 7, true, sample_locs, &aa));
+   CHECK(!terakan_hw_config_draw_terascale_1_pa_sc_aa_encode(3, 16, true, sample_locs, &aa));
+}
+
 static struct terakan_hw_config_draw_terascale_1_cb_color_input
 representative_cb_color_input(void)
 {
@@ -560,6 +598,7 @@ main(void)
    test_db_depth_remaining_packets();
    test_db_alpha_to_mask();
    test_pa_sc_aa_mask();
+   test_pa_sc_aa_config_sample_locs();
    test_cb_color_encode();
    test_cb_color_encode_rejects_unported_surfaces();
    test_cb_color_packets();

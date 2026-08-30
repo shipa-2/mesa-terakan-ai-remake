@@ -1072,7 +1072,13 @@ terakan_physical_device_get_capabilities(
    /* VK_EXT_sample_locations (#144). */
    extensions_out->EXT_sample_locations = true;
    properties_out->sampleLocationSampleCounts = rasterization_sample_counts;
-   properties_out->maxSampleLocationGridSize = (VkExtent2D){2, 2};
+   /* R700 has one two-dword sample-location pattern shared by all pixels, unlike R8xx/R9xx's four
+    * pixel-specific register groups. A 1x1 grid is programmable and is replicated by the common
+    * state conversion; advertising 2x2 on TeraScale 1 would promise distinctions the registers
+    * cannot represent. R600 remains blocked at logical-device creation.
+    */
+   properties_out->maxSampleLocationGridSize =
+      chip_info->is_terascale_1 ? (VkExtent2D){1, 1} : (VkExtent2D){2, 2};
    properties_out->sampleLocationCoordinateRange[0] = 0.0f;
    properties_out->sampleLocationCoordinateRange[1] = 1.0f - 0x1.0p-4f;
    properties_out->sampleLocationSubPixelBits = 4;

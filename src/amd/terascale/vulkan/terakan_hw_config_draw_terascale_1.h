@@ -64,6 +64,29 @@ uint32_t terakan_hw_config_draw_terascale_1_pa_sc_aa_mask_encode(uint32_t sample
 uint32_t * terakan_hw_config_draw_terascale_1_write_pa_sc_aa_mask(uint32_t * packet,
                                                                    uint32_t value);
 
+/* RV6xx/RV7xx has one sample-location pattern shared by the four pixels of a 2x2 quad, stored in
+ * two context registers rather than R8xx's four pixel-specific register groups. The physical
+ * device therefore advertises a 1x1 programmable grid on TeraScale 1. The encoder still verifies
+ * that its internal [sample][pixel] input was replicated, so a future caller can't silently drop
+ * per-pixel differences.
+ */
+struct terakan_hw_config_draw_terascale_1_pa_sc_aa {
+   uint32_t config;
+   uint32_t sample_locs[2];
+};
+
+bool terakan_hw_config_draw_terascale_1_pa_sc_aa_encode(
+   uint32_t sample_count_log2, uint32_t max_sample_dist, bool aa_mask_centroid_determine,
+   uint8_t const sample_locs[16][4],
+   struct terakan_hw_config_draw_terascale_1_pa_sc_aa * aa_out);
+
+/* Writes the two PA_SC_AA_SAMPLE_LOCS_MCTX dwords followed by PA_SC_AA_CONFIG, matching the order
+ * in r600_emit_msaa_state() for R700. R600's configuration-register sample locations remain out of
+ * scope while R600 logical-device creation is blocked.
+ */
+uint32_t * terakan_hw_config_draw_terascale_1_write_pa_sc_aa(
+   uint32_t * packet, struct terakan_hw_config_draw_terascale_1_pa_sc_aa const * aa);
+
 /* Per-draw (as opposed to once-per-command-buffer) TeraScale 1 register emission that genuinely
  * needs its own code, as opposed to the R8xx/R9xx code already working unchanged (see
  * DB_DEPTH_CONTROL/CB_TARGET_MASK in TODO.md) -- either because the register lives at a different
