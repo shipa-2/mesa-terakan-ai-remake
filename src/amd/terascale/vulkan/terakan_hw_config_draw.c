@@ -1084,6 +1084,13 @@ static void
 terakan_hw_config_draw_emit_sq_bool_const_ls(
    struct terakan_gfx_command_writer * const command_writer)
 {
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
+      uint32_t packet_dwords;
+      assert(terakan_hw_config_draw_terascale_1_absent_ls_bool_const_encode(
+         command_writer->hw_config_draw.sq_bool_const_ls_, &packet_dwords));
+      assert(packet_dwords == 0);
+      return;
+   }
    uint32_t * packet = terakan_gfx_command_writer_emit(
       command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG, 2 + 1);
    if (unlikely(packet == NULL)) {

@@ -333,6 +333,12 @@ classic Gallium R600 driver that has supported this hardware for years).
   dwords. Nonzero ring sizes remain rejected until the corresponding R700
   GS/ES or compute ring users and base/size registers are ported.
 
+- TeraScale 1 suppresses `SET_BOOL_CONST` for Evergreen's LS stage index 4.
+  Classic R600 exposes only PS/VS/GS/ES indices 0 through 3; the existing
+  VSES index 1 therefore remains valid for ordinary vertex shaders, while LS
+  has no R700 destination. Its supported zero state emits exactly zero dwords,
+  and nonzero LS boolean constants remain rejected with tessellation itself.
+
 - TeraScale 1 (R700) `DB_SHADER_CONTROL`: the runtime emitter no longer sends
   the full Evergreen payload merely because both generations place the
   register at `0x02880C`. Direct comparison of `r600d.h` and `evergreend.h`
