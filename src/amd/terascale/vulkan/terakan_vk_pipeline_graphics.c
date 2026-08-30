@@ -1320,6 +1320,15 @@ terakan_vk_pipeline_graphics_create(struct terakan_device * const device,
       compiled_shader_stages |= BITFIELD_BIT(shader_stage_vk_bit_index);
    }
 
+   /* A fragment shader that reads which sample it is running on has to be invoked once per sample
+    * even when the application did not ask for sample shading. This is only known once the shader
+    * has been translated, which is after the fragment shading state was built from the create info.
+    */
+   if ((compiled_shader_stages & VK_SHADER_STAGE_FRAGMENT_BIT) &&
+       pipeline->shaders[MESA_SHADER_FRAGMENT].fs.per_sample_invocation) {
+      pipeline->fragment_shading.db_eqaa_ps_iter_max_invocation_samples_log2 = 0;
+   }
+
    bool const fetch_shader_is_static =
       BITSET_TEST(pipeline->vertex_input.static_state,
                   TERAKAN_VK_PIPELINE_GRAPHICS_VERTEX_INPUT_STATIC_SQ_PGM_FETCH);

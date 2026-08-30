@@ -314,6 +314,10 @@ terakan_shader_impl_compile(terakan_shader_impl * const shader, terakan_device *
       }
       shader->fs.db_shader_control = db_shader_control;
 
+      shader->fs.per_sample_invocation =
+         BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_SAMPLE_ID) ||
+         BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_SAMPLE_POS);
+
       bool export_z = (db_shader_control &
                        ~(uint32_t)(C_02880C_Z_EXPORT_ENABLE & C_02880C_STENCIL_EXPORT_ENABLE &
                                    C_02880C_MASK_EXPORT_ENABLE)) != 0;

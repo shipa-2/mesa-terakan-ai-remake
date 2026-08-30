@@ -880,8 +880,7 @@ and gave 3273 passing and **684 failing**. The tested aspect's resolve mode deci
 it: `zero` passes 1080 of 1080 and `none` 630 of 630, while `min` fails 270 of 1050
 and `max` 390 of 1050.
 
-The reason the split is not cleaner is that the reduce is not happening at all.
-Every depth case returns the same value whatever the mode and the sample count:
+Every depth case returned the same value whatever the mode and the sample count:
 
 ```
 min, 2 samples: got 0.0399939, expected 0.02
@@ -892,40 +891,66 @@ min, 8 samples: got 0.0399939, expected 0.02
 max, 8 samples: got 0.0399939, expected 0.32
 ```
 
-0.0399939 is one sample's depth. The two cases that pass -- depth `max` at two
-samples, stencil `min` -- pass because that one sample happens to be the answer
+0.0399939 is one sample's depth. The two cases that passed -- depth `max` at two
+samples, stencil `min` -- passed because that one sample happened to be the answer
 there.
 
-The programs are not the problem: each fetches as many samples as the source has
-and folds them with `MIN_DX10` or `MAX_DX10`, and the source is bound as
-`SQ_TEX_DIM_2D_ARRAY_MSAA`. What they do differently from everything that works is
-how they ask for a sample. They issue a direct `SQ_TEX_INST_LD` with the sample
-index in the coordinate's W, while the compiler's `LowerTexToBackend::lower_txf_ms`
-emits a two-step form on Evergreen: a first read of the sample-to-fragment mapping,
-then the fetch. The application path takes that form and works --
-`terakan_depth_msaa_fetch` reads every sample of a multisample depth image through
-`texelFetch(sampler2DMS, ...)` and passes at 2, 4 and 8 samples.
+Two readings of this were recorded and both were wrong. The first blamed the reduce
+programs' sample encoding: they issue a direct `SQ_TEX_INST_LD` with the sample index
+in the coordinate's W, while `LowerTexToBackend::lower_txf_ms` emits a two-step form
+on Evergreen. Rewriting the twelve programs as NIR with `txf_ms` produced exactly the
+two-step assembly and changed nothing, so the rewrite was reverted. The second reading
+concluded from that that per-sample depth fetch does not work on this hardware at all.
 
-That reading was wrong, and the correction is the useful part. The twelve reduce
-programs were rewritten as NIR with `txf_ms`, the backend emitted the two-step form
--- the assembly shows the `MODE:1` read followed by the fetch -- and **the results
-did not change at all**: still 0.0399939 for every mode and sample count. The
-rewrite was reverted rather than kept, since it changes nothing measurable.
+A probe settled it. Four full-screen triangles, each with `pSampleMask = 1 << i` and a
+push-constant depth of `0.1 + 0.2 * i`, write four distinct depths into one 4-sample
+`D32_SFLOAT` image; a compute shader reads them back with
+`texelFetch(sampler2DMS, ivec2(0, 0), s)`:
 
-Neither encoding selects a depth sample. And `terakan_depth_msaa_fetch` does not
-contradict that, because it does not distinguish samples: it clears the image to a
-single value and expects every sample to equal it, so it passes whether or not the
-sample index is honoured. Per-sample depth fetch has therefore never been
-demonstrated on this driver. Colour is different and is demonstrated --
-`terakan_color_msaa_fetch_2x`/`_4x`/`_8x` give each sample its own colour and pass
--- which fits: colour has FMASK for the two-step read to consult and depth has
-none, so the translation collapses every index onto one sample.
+```
+sample  written  read
+  0     0.100    0.100000
+  1     0.300    0.300000
+  2     0.500    0.500000
+  3     0.700    0.700000
+```
 
-What this needs next is a probe that writes genuinely distinct depths per sample
-and reads them back, to establish whether the hardware can do it at all and under
-which encoding. Until that exists there is nothing to write the resolve shaders
-against, and the coverage gap in `terakan_depth_msaa_fetch` is worth closing on its
-own account.
+Per-sample depth fetch works, in both encodings, and the resolve shaders were never
+the defect. **The defect is on the producing side: the driver never ran the CTS
+fragment shader per sample.** The shader these cases use is
+
+```glsl
+float sampleIndex = float(gl_SampleID);
+...
+gl_FragDepth = value / 100.0;
+```
+
+and it does not set `sampleShadingEnable`. Section "Sample Shading" of the Vulkan
+1.4.349 specification makes per-sample invocation mandatory anyway when the entry
+point's interface includes `SampleId` or `SamplePosition`, but
+`terakan_vk_pipeline_graphics_fragment_shading_init_with_rasterization` derived
+`PS_ITER_SAMPLES` from `state->ms->sample_shading_enable` alone. The shader therefore
+ran once per fragment, every sample of the fragment received sample 0's depth, and the
+reduce then folded four identical values. 0.0399939 is sample 0's depth, which is why
+it was the answer for every mode.
+
+The fix reads `SYSTEM_VALUE_SAMPLE_ID` and `SYSTEM_VALUE_SAMPLE_POS` out of the NIR
+into `terakan_shader_impl::fs::per_sample_invocation`, and forces
+`db_eqaa_ps_iter_max_invocation_samples_log2` to 0 -- one sample per invocation -- once
+the fragment shader has been translated. It has to happen there and not in the state
+setup, because the fragment shading state is built from the create info before any
+shader is compiled.
+
+On a 984-case sample of the group's `min`/`max` cases this goes from 113 passing and
+135 failing to **248 passing and 0 failing**. On a 2641-case sample across
+`pipeline.monolithic.multisample`, `renderpasses`, `glsl.builtin_var` and `multiview`
+it goes from 904/119 to **952/71**, with a per-case diff confirming 48 fixed and zero
+regressed. The reverted NIR reduce programs were re-tested on top of the fix and are
+still unnecessary: the hand-written ones give the identical 248/0.
+
+The coverage gap that hid this is still worth closing: `terakan_depth_msaa_fetch`
+clears its image to a single value and expects every sample to equal it, so it never
+distinguished samples and would have passed with the sample index ignored.
 
 ### Colour resolve under CTS
 
