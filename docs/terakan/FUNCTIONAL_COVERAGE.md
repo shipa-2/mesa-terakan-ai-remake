@@ -1478,6 +1478,28 @@ those two dwords from the indirect buffer into the push constant buffer. That is
 fetch shader variants and a per-draw copy, chosen by whether the draw is indirect. It is
 a design fork rather than a patch, and it is the next thing this group needs.
 
+### The logic op applied to formats it does not apply to
+
+`pipeline.monolithic.logic_op_na_formats` failed **228 of its 256 supported cases**,
+while `pipeline.monolithic.logic_op` passed all 160 of its. The split is the group's own
+name: the failing formats are every float and sRGB one -- `r16g16_sfloat`,
+`r16g16b16a16_sfloat`, `r32g32_sfloat`, `r32g32b32a32_sfloat`, `r8g8b8a8_srgb`,
+`b8g8r8a8_srgb`, `r16_sfloat`, `r32_sfloat` -- and the passing group is the integer ones.
+
+Section "Logical Operations" of the Vulkan 1.4.349 specification says they "are applied
+only for signed and unsigned integer and normalized integer framebuffers" and "are not
+applied to floating-point or sRGB format color attachments". The pipeline set
+`CB_COLOR_CONTROL.ROP3` from `logicOpEnable` alone.
+
+`ROP3` is one field for the whole colour block, so this can only be decided per draw.
+It is now switched off when no enabled attachment is a format the operation applies to,
+which is exactly the measured case. A framebuffer mixing an integer attachment with a
+float one keeps the operation, as it did before: the hardware cannot apply it per
+attachment, and switching it off there would take it away from the attachments that are
+entitled to it, so mixed framebuffers are left no worse than they were.
+
+**228 failures to 0**, with the 160 integer cases still passing.
+
 ### Colour resolve under CTS
 
 `dEQP-VK.api.copy_and_blit.core.resolve_image`, 240 cases, run against Terakan

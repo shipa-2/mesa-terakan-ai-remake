@@ -812,17 +812,53 @@ terakan_vk_pipeline_graphics_fragment_output_init_with_rasterization(
          }
       }
 
+      /* Section "Logical Operations" of the Vulkan 1.4.349 specification says:
+       *
+       *     "Logical operations are applied only for signed and unsigned integer and normalized
+       *     integer framebuffers. Logical operations are not applied to floating-point or sRGB
+       *     format color attachments."
+       *
+       * `CB_COLOR_CONTROL.ROP3` is one field for the whole colour block, so this can only be
+       * decided for the draw as a whole. It is switched off when no enabled attachment is a format
+       * the operation applies to, which is the case the CTS measures --
+       * `pipeline.monolithic.logic_op_na_formats` failed 228 of its 256 supported cases, every one
+       * of them a float or sRGB format, while `logic_op` passed all 160 of its integer ones. A
+       * framebuffer mixing the two keeps the operation, as it did before: the hardware cannot
+       * apply it per attachment, and switching it off there would take it away from the
+       * attachments that are entitled to it.
+       */
+      bool logic_op_applies = true;
+      if (state->rp != NULL && vk_render_pass_state_has_attachment_info(state->rp)) {
+         logic_op_applies = false;
+         u_foreach_bit (attachment_index,
+                        fragment_output->cb_color_rtv_write_potentially_enabled_mask &
+                           BITFIELD_MASK(state->rp->color_attachment_count)) {
+            VkFormat const attachment_format =
+               state->rp->color_attachment_formats[attachment_index];
+            if (attachment_format != VK_FORMAT_UNDEFINED &&
+                !vk_format_is_float(attachment_format) && !vk_format_is_srgb(attachment_format)) {
+               logic_op_applies = true;
+               break;
+            }
+         }
+      }
+
       if (fragment_output->cb_color_rtv_write_potentially_enabled_mask) {
          bool const logic_op_enable_dynamic =
             BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_LOGIC_OP_ENABLE);
          if (!logic_op_enable_dynamic) {
-            fragment_output->cb_rop3_enable = state->cb->logic_op_enable;
+            fragment_output->cb_rop3_enable = state->cb->logic_op_enable && logic_op_applies;
             BITSET_SET(fragment_output->static_state,
                        TERAKAN_VK_PIPELINE_GRAPHICS_FRAGMENT_OUTPUT_STATIC_CB_ROP3_ENABLE);
          }
          if (!BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_LOGIC_OP) &&
              (logic_op_enable_dynamic || state->cb->logic_op_enable)) {
-            fragment_output->cb_rop3 = terakan_vk_state_logic_op_rop3(state->cb->logic_op);
+            /* With a dynamic enable the operation itself is still static, so a format the
+             * operation does not apply to is handled by making it a copy.
+             */
+            fragment_output->cb_rop3 =
+               logic_op_applies ? terakan_vk_state_logic_op_rop3(state->cb->logic_op)
+                                : TERAKAN_HW_CONFIG_DRAW_CB_COLOR_CONTROL_ROP3_COPY;
             BITSET_SET(fragment_output->static_state,
                        TERAKAN_VK_PIPELINE_GRAPHICS_FRAGMENT_OUTPUT_STATIC_CB_ROP3);
          }
