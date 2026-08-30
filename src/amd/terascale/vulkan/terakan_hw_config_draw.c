@@ -1277,8 +1277,23 @@ terakan_hw_config_draw_emit_pa_sc_aa_mask(struct terakan_gfx_command_writer * co
     * architecture generations. Per-pixel setting is not exposed because it's currently not needed.
     */
 
-   bool const is_r9xx =
-      terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_r9xx;
+   struct terakan_physical_device_chip_info const * const chip_info =
+      &terakan_gfx_command_writer_physical_device(command_writer)->chip_info;
+
+   if (chip_info->is_terascale_1) {
+      uint32_t * packet = terakan_gfx_command_writer_emit(
+         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG, 3);
+      if (unlikely(packet == NULL)) {
+         return;
+      }
+      packet = terakan_hw_config_draw_terascale_1_write_pa_sc_aa_mask(
+         packet, terakan_hw_config_draw_terascale_1_pa_sc_aa_mask_encode(
+                    command_writer->hw_config_draw.pa_sc_aa_mask_));
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
+      return;
+   }
+
+   bool const is_r9xx = chip_info->is_r9xx;
 
    unsigned const quad_dword_count = is_r9xx ? 2 : 1;
 

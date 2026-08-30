@@ -111,6 +111,20 @@ terakan_hw_config_draw_terascale_1_write_spi_ps(
    return write_context_reg(packet, R_0286D8_SPI_INPUT_Z, spi->input_z);
 }
 
+uint32_t
+terakan_hw_config_draw_terascale_1_pa_sc_aa_mask_encode(uint32_t const sample_mask)
+{
+   uint32_t const pixel_mask = sample_mask & 0xFF;
+   return pixel_mask | (pixel_mask << 8) | (pixel_mask << 16) | (pixel_mask << 24);
+}
+
+uint32_t *
+terakan_hw_config_draw_terascale_1_write_pa_sc_aa_mask(uint32_t * const packet,
+                                                        uint32_t const value)
+{
+   return write_context_reg(packet, R_028C48_PA_SC_AA_MASK, value);
+}
+
 uint32_t *
 terakan_hw_config_draw_terascale_1_write_db_depth_view(uint32_t * const packet,
                                                         uint32_t const value)

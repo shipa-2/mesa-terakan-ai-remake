@@ -386,6 +386,20 @@ test_db_alpha_to_mask(void)
    CHECK(packets[2] == enabled);
 }
 
+static void
+test_pa_sc_aa_mask(void)
+{
+   uint32_t const encoded =
+      terakan_hw_config_draw_terascale_1_pa_sc_aa_mask_encode(UINT32_C(0x123456A5));
+   CHECK(encoded == UINT32_C(0xA5A5A5A5));
+
+   uint32_t packet[3];
+   CHECK(terakan_hw_config_draw_terascale_1_write_pa_sc_aa_mask(packet, encoded) == packet + 3);
+   CHECK(packet[0] == PKT3(PKT3_SET_CONTEXT_REG, 1, 0));
+   CHECK(packet[1] == (R_028C48_PA_SC_AA_MASK - R600_CONTEXT_REG_OFFSET) >> 2);
+   CHECK(packet[2] == encoded);
+}
+
 static struct terakan_hw_config_draw_terascale_1_cb_color_input
 representative_cb_color_input(void)
 {
@@ -545,6 +559,7 @@ main(void)
    test_db_depth_encode_rejects_unported_surfaces();
    test_db_depth_remaining_packets();
    test_db_alpha_to_mask();
+   test_pa_sc_aa_mask();
    test_cb_color_encode();
    test_cb_color_encode_rejects_unported_surfaces();
    test_cb_color_packets();

@@ -54,6 +54,16 @@ bool terakan_hw_config_draw_terascale_1_spi_ps_encode(
 uint32_t * terakan_hw_config_draw_terascale_1_write_spi_ps(
    uint32_t * packet, struct terakan_hw_config_draw_terascale_1_spi_ps const * spi);
 
+/* R600/R700 has one 8-bit sample mask per pixel in R_028C48_PA_SC_AA_MASK. Classic
+ * r600_emit_sample_mask() repeats the API-visible low byte for all four pixels. Evergreen uses
+ * R_028C3C for its one-dword form, but that address is R_028C3C_CB_CLRCMP_MSK on R600/R700, so the
+ * shared emitter must not be used even though the payload itself has the same repeated shape.
+ */
+uint32_t terakan_hw_config_draw_terascale_1_pa_sc_aa_mask_encode(uint32_t sample_mask);
+
+uint32_t * terakan_hw_config_draw_terascale_1_write_pa_sc_aa_mask(uint32_t * packet,
+                                                                   uint32_t value);
+
 /* Per-draw (as opposed to once-per-command-buffer) TeraScale 1 register emission that genuinely
  * needs its own code, as opposed to the R8xx/R9xx code already working unchanged (see
  * DB_DEPTH_CONTROL/CB_TARGET_MASK in TODO.md) -- either because the register lives at a different

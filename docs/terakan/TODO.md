@@ -431,7 +431,12 @@ classic Gallium R600 driver that has supported this hardware for years).
     register slot relative to each other between the two generations.
     `CB_COLOR8_BASE`/`_9_BASE` (0x028E40/0x028E5C) collide with
     `PA_CL_UCP2_X`/`_UCP3_W` (user clip plane coefficients!) on R600/R700.
-    `PA_SC_AA_MASK` (0x028C3C) collides with `CB_CLRCMP_MSK`, and the
+    Evergreen `PA_SC_AA_MASK` (0x028C3C) collides with `CB_CLRCMP_MSK`; the
+    TeraScale 1 path now emits the classic driver's repeated low-byte mask at
+    the real R600/R700 `PA_SC_AA_MASK` address 0x028C48, with an exact packet
+    oracle. This proves the CPU-side register address and payload construction,
+    but not multisample rendering on RV710 while queue submission remains
+    blocked. The
     address `PA_SC_AA_SAMPLE_LOCS_7` uses on R8xx/R9xx is `CB_CLRCMP_DST`
     on R600/R700. `SPI_BARYC_CNTL`/`SPI_PS_IN_CONTROL_2` collide with the
     R600/R700-only `SPI_FOG_FUNC_SCALE`/`_BIAS`. `SQ_GPR_RESOURCE_MGMT_3`/
