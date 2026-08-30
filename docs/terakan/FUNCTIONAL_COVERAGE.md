@@ -1188,6 +1188,45 @@ interpolation happens at the sample and so need exactly the capability that is m
 Four and eight samples pass every one of them. The 2641-case multisample and renderpass
 sample stays at **0**, down from 119 where this work started.
 
+### A GPU hang sampling three-channel 96bpp images
+
+A stride sample of the whole case list -- every 380th of 3279369, 8630 cases -- aborted
+after 1132 with `VK_ERROR_DEVICE_LOST`. The case it died on was
+`pipeline.monolithic.image.suballocation.sampling_type.combined.view_type.1d_array.format.r32g32b32_sfloat.count_1.size.127x1_array_of_6`,
+and it reproduces on its own every time. Slicing it:
+
+| case | result |
+|---|---|
+| `1d_array` `r32g32b32_sfloat` `128x1_array_of_6` | device lost |
+| `1d_array` `r32g32b32_sfloat` `1x1_array_of_6` | pass |
+| `1d_array` `r32g32b32a32_sfloat` `128x1_array_of_6` | pass |
+| `1d` `r32g32b32_sfloat` `128x1` | pass |
+| `2d` `r32g32b32_sfloat` `32x32` | device lost |
+
+So it is the three-channel 96-bit format, not the view type or the size.
+
+`terascale_formats.py` disables `supports_sq_texture_fetch` for `3_3_2`, `10_11_11`,
+`11_11_10`, `8_8_8` and `16_16_16` -- and did not disable it for `32_32_32`, the one
+remaining member of the unpacked three-channel set. `FMT_32_32_32` is a vertex fetch
+format, not a texture one; a three-channel unpacked format is one texel per three
+surfels, so the surface's row is three times as wide in surfels as the descriptor's
+texel pitch says, and the fetch walks the surface as something it is not. The comment
+in `terakan_format.c` had already noticed the asymmetry from the other side --
+"`r32g32b32_sfloat` -- the only one of the set the driver advertises as a sampled image
+at all, the 8- and 16-bit ones having no texture fetch" -- without following it to the
+hang.
+
+Disabling it makes the class self-consistent, and the cases report
+`NotSupported (Unsupported format for sampling: VK_FORMAT_R32G32B32_SFLOAT)`. The cost
+is the five nearest-filter blits of that format that used to pass through the sampled
+path; the expand-3x copy and clear paths are unaffected, since they address the surface
+as raw surfels through their own buffer descriptors rather than as a texture.
+
+The 8630-case survey now runs to the end: **877 passing, 15 failing**, and nothing
+hangs. The largest cluster left in it is six `pipeline.monolithic.sampler` cases, and
+the rest are singletons across `descriptorset_random`, `image.mutable`, `subgroups`,
+`draw.dynamic_rendering` and `image.image_size`.
+
 ### Colour resolve under CTS
 
 `dEQP-VK.api.copy_and_blit.core.resolve_image`, 240 cases, run against Terakan
