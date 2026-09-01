@@ -42,10 +42,17 @@ terakan_vk_pipeline_compute_cb_target_mask(struct terakan_shader_impl const * co
 
    /* Mutable resources are compacted to consecutive RAT/CB color slots while
     * lowering their bindings.  CB_TARGET_MASK must use those compacted slot
-    * numbers too, rather than the original mutable-resource indices. */
-   return uav_count == TERAKAN_COLOR_HW_RTV_AND_UAV_COUNT
-             ? UINT32_MAX
-             : ((1u << (4 * uav_count)) - 1u);
+    * numbers too, rather than the original mutable-resource indices.
+    *
+    * The register holds four bits for each of the eight hardware colour targets, so eight or more
+    * of them is every bit it has. Shifting by `4 * uav_count` without that bound shifted by 32 at
+    * exactly eight UAVs, which is undefined and on x86 wraps to a shift of zero: the mask came out
+    * as 0 and the colour block discarded every RAT write the dispatch made, so such a dispatch
+    * silently produced nothing. Nine to eleven UAVs were shifted by 36 to 44 and enabled one to
+    * three targets instead of all of them.
+    */
+   unsigned const target_mask_bits = 4 * MIN2(uav_count, 8u);
+   return target_mask_bits >= 32 ? UINT32_MAX : ((1u << target_mask_bits) - 1u);
 }
 
 static uint32_t
