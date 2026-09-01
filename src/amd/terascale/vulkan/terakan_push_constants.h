@@ -53,6 +53,7 @@ enum terakan_push_constants_driver_index {
    TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_NUM_WORKGROUPS,
    TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_BASE_WORKGROUP,
    TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_SAMPLE_POSITIONS,
+   TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_SAMPLER_UNNORMALIZED,
 
    TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_COUNT,
 };
@@ -84,6 +85,16 @@ struct terakan_push_constants_driver {
     * rasterization sample count are the pixel centre.
     */
    float sample_positions[TERAKAN_PUSH_CONSTANTS_MAX_SAMPLES][2];
+
+   /* One bit per hardware sampler slot of the stage, set when the bound sampler was created with
+    * `unnormalizedCoordinates`.
+    *
+    * R8xx has no `FORCE_UNNORMALIZED` in the sampler constant -- the bit exists only on Cayman --
+    * so the division by the texture size has to be done by the shader, and the shader can only
+    * learn which of its samplers need it at draw time. Immutable samplers are resolved at
+    * compilation instead and never consult this mask.
+    */
+   uint32_t sampler_unnormalized[MESA_SHADER_STAGES];
 };
 
 /* Aligned to vec4 to avoid placing vectors in different kcache lines more likely to be accessed in

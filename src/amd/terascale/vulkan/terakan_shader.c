@@ -575,6 +575,9 @@ terakan_shader_lower_and_optimize_post_link(
          _, nir, terakan_nir_lower_bindings, pipeline_layout, sqk_usage,
          nir->info.stage == MESA_SHADER_FRAGMENT ? util_bitcount(rtv_dsb_uncompacted_exports) : 0,
          uavs_for_mutable_resources_needed, driver_push_constants_used);
+
+      NIR_PASS(_, nir, terakan_nir_lower_unnormalized_coordinates, sqk_usage,
+               driver_push_constants_used);
    }
 
    /* Binding lowering replaces SSBO and image operations, but their

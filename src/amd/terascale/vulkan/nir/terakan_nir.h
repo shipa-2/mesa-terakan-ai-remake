@@ -81,6 +81,16 @@ bool terakan_nir_lower_bindings(nir_shader * shader, struct terakan_pipeline_lay
                                 BITSET_WORD * uavs_for_mutable_resources_needed_out_opt,
                                 uint32_t * driver_push_constants_used_accum);
 
+/* R8xx samplers have no `FORCE_UNNORMALIZED` -- the bit exists only on Cayman -- so a sampler
+ * created with `unnormalizedCoordinates` has to have its coordinates divided by the texture size
+ * by the shader. Which of the stage's sampler slots need that is only known at draw time, so the
+ * division is predicated on `terakan_push_constants_driver::sampler_unnormalized`. Must run after
+ * `terakan_nir_lower_bindings`, which assigns the hardware sampler and texture slots this reads.
+ */
+bool terakan_nir_lower_unnormalized_coordinates(
+   nir_shader * shader, struct terakan_shader_sqk_usage * sqk_usage_accum,
+   uint32_t * driver_push_constants_used_accum);
+
 bool terakan_nir_lower_sin_cos(nir_shader * shader);
 
 /* TeraScale doesn't have general cross-lane data exchange instructions usable by all Vulkan

@@ -189,10 +189,30 @@ terakan_CmdBindDescriptorSets(VkCommandBuffer const commandBuffer,
                 * may be left uninitialized if they're not statically referenced by the pipeline.
                 */
                if (likely(G_03C008_TYPE(sampler->sampler.sampler[2]))) {
-                  sqk_set_functions->sampler(&command_writer->hw_config_sqk,
-                                             range_shader_base + sampler_index, &sampler->sampler);
+                  uint8_t const shader_sampler = range_shader_base + sampler_index;
+                  sqk_set_functions->sampler(&command_writer->hw_config_sqk, shader_sampler,
+                                             &sampler->sampler);
+                  /* R8xx samplers have no `FORCE_UNNORMALIZED`, so the shader divides the
+                   * coordinates by the texture size instead, and needs to be told which slots that
+                   * applies to. Immutable samplers are decided at compilation and are not in the
+                   * mask, but they are also written through this loop, so the bit is maintained for
+                   * every slot regardless -- a shader simply does not read the ones it resolved
+                   * statically.
+                   */
+                  assert(shader_sampler < 32);
+                  uint32_t * const unnormalized_mask =
+                     &command_writer->push_constants_state.driver_constants
+                         .sampler_unnormalized[shader_stage];
+                  uint32_t const unnormalized_bit = BITFIELD_BIT(shader_sampler);
+                  uint32_t const unnormalized_mask_new =
+                     sampler->unnormalized_coordinates ? (*unnormalized_mask | unnormalized_bit)
+                                                       : (*unnormalized_mask & ~unnormalized_bit);
+                  if (unnormalized_mask_new != *unnormalized_mask) {
+                     *unnormalized_mask = unnormalized_mask_new;
+                     command_writer->push_constants_state.driver_constants_modified |=
+                        BITFIELD_BIT(TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_SAMPLER_UNNORMALIZED);
+                  }
                }
-               /* TODO(Triang3l): Unnormalized coordinates on R8xx. */
             }
          }
       }

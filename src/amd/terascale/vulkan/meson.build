@@ -92,6 +92,7 @@ libterakan_files = files(
   'nir/terakan_nir_compact_rtv_dsb_exports.c',
   'nir/terakan_nir_lower_bindings.c',
   'nir/terakan_nir_lower_subgroups.c',
+  'nir/terakan_nir_lower_unnormalized_coordinates.c',
   'terakan_app_config_compute.c',
   'terakan_app_config_compute.h',
   'terakan_app_config_draw.c',
