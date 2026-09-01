@@ -1559,6 +1559,28 @@ is still a cube. A storage cube array does not need cube addressing at all, so t
 is a second resource descriptor for it, shaped as a 2D array of six slices per cube; that
 is a change to the image view rather than to the query, and it is what these need.
 
+### textureSamples queried a fixed resource slot
+
+`dEQP-VK.glsl.texture_functions.query.texturesamples` failed **all 16 of its cases**,
+every one reporting `Result: 0` where 2 samples were expected.
+
+`TexInstr::emit_tex_texture_samples` in SFN built its resource id as
+`R600_MAX_CONST_BUFFERS + texture_resource_offset`, ignoring the instruction's own
+`texture_index` -- a comment sitting on that line called it fishy and asked whether the
+constant should be the sampler index. It should be the texture index, which is how every
+other texture operation in the same file resolves its resource, `emit_tex_txs` included.
+The query was reading a slot that had nothing bound in it.
+
+**16 failures to 0**, and one `texturesize` case comes with it. Over the whole
+`glsl.texture_functions.query` group, 65 failures to 48.
+
+What is left there is two groups, both understood. Ten `texturesize` cases are
+`samplercubearray` and are the cube-array layer count already recorded above -- SFN
+leaves that component unwritten and reads it from Gallium's texture-info constant buffer.
+The other 38 are `texturequerylod`, and every one of them is a `zero_uv_width` variant:
+the derivatives are zero, and the CTS wants an LOD at or below -31.9961 where the
+hardware returns zero. That is a degenerate-input rule rather than a query defect.
+
 ### Colour resolve under CTS
 
 `dEQP-VK.api.copy_and_blit.core.resolve_image`, 240 cases, run against Terakan

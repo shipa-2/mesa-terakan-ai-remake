@@ -643,9 +643,14 @@ TexInstr::emit_tex_texture_samples(nir_tex_instr *instr, Inputs& src, Shader& sh
       0, true, {4, 4, 4, 4}
    };
 
-   int res_id = R600_MAX_CONST_BUFFERS + shader.binding_layout().texture_resource_offset;
+   /* The resource is the one the instruction names, the same way every other texture operation
+    * here resolves it. This used to be a constant `R600_MAX_CONST_BUFFERS` base, which the comment
+    * that stood here flagged as fishy: it queries a fixed slot rather than the sampler's, so
+    * `textureSamples` returned zero for every multisample sampler --
+    * `dEQP-VK.glsl.texture_functions.query.texturesamples` failed all 16 of its cases.
+    */
+   int res_id = instr->texture_index + shader.binding_layout().texture_resource_offset;
 
-   // Fishy: should the zero be instr->sampler_index?
    auto ir =
       new TexInstr(src.opcode, dest, {3, 7, 7, 7}, help, res_id, src.texture_offset);
    shader.emit_instruction(ir);
