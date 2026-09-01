@@ -1341,6 +1341,86 @@ closed "many distinct compute pipelines rather than one" -- every concrete
 gap this note originally named. So whatever the application hits is narrower
 than this composition shape.
 
+## In-shader memory model: RAT returns, and a GPU hang
+
+`dEQP-VK.memory_model` exercises coherence *inside* a shader, which is the one
+thing the `terakan_frame_chain` composition above cannot reach -- it covers
+barriers between commands, not two invocations of the same dispatch racing on
+one storage image. Only the `core11` cases run; the `ext` ones need
+`VK_KHR_vulkan_memory_model`, which is not exposed.
+
+Of the 177 `core11` cases that complete, 47 pass and 51 fail. The failures
+concentrate on two axes, both measured on the same run:
+
+- `device` scope fails 45 of 66; `workgroup` scope fails only 7 of 32, and
+  `payload_nonlocal.workgroup` (shared memory rather than a UAV) passes 17 of
+  17. So the shared-memory path is sound and the UAV path is where device-wide
+  visibility is lost.
+- The fragment stage fails 21 of 24, against 31 of 74 for compute.
+
+### The hang
+
+118 cases abort the whole CTS process with `VK_ERROR_DEVICE_LOST`; the kernel
+reports `ring 0 stalled` with no VM fault, so a wait never completes rather
+than an address being wrong. The sharpest reproducer is
+
+    dEQP-VK.memory_model.write_after_read.core11.u32.coherent.fence_fence \
+        .atomicwrite.device.payload_local.image.guard_local.image.comp
+
+and the slicing is:
+
+- payload and guard both storage images -- hangs.
+- either one replaced by a storage buffer -- fails with a wrong result, no hang.
+- `noncoherent` instead of `coherent`, both images -- passes.
+
+`coherent` is what routes the load onto the UAV `NOP_RTN` read path
+(`nir_uav_returning_instr_r600` with `V_RAT_INST_NOP_RTN`) instead of a texture
+fetch, so the hang needs two typed RATs each issuing a returning MEM_RAT.
+`payload_nonlocal.buffer.guard_nonlocal.image` at `workgroup` scope also hangs,
+so the shape is not strictly "two images" and the exact boundary is not yet
+known.
+
+Comparing the emitted bytecode of the hanging image/image shader against the
+merely-failing image/buffer one: the two programs are instruction-for-instruction
+identical in control flow, opcodes, acknowledgements and waits. The only
+difference is the CB descriptor bound to RAT1 (`RESOURCE_TYPE` 2D versus
+BUFFER). The hang therefore comes from the RAT state, not from what the shader
+was asked to do.
+
+### Hypotheses measured and rejected
+
+Each of these was implemented, built and measured against the 177-case baseline
+of 47 passing, then reverted:
+
+- **A missing `WAIT_ACK` before end-of-program.** `AssamblerVisitor::finalize()`
+  sets `end_of_program` without draining outstanding acknowledgements, and a
+  marked `MEM_RAT ... STORE_TYPED` really can be the last RAT operation on a
+  path (it is, in this shader, at CF 0034 and 0048). Emitting the wait there
+  changed neither the hang nor the pass count.
+- **Two UAVs sharing one `CB_IMMED` return buffer.** Gallium allocates a
+  separate immediate buffer per image view (`evergreen_setup_immed_buffer`),
+  while Terakan derives the address from the invocation alone and shares one
+  region per element size, so two RATs returning for the same invocation write
+  the same address. Giving every hardware UAV index its own region changed
+  neither the hang nor the pass count (47 -> 46, within the noise of tests that
+  race by construction).
+- **`MEM_RAT_NOCACHE` for coherent accesses.** The `device`-scope axis suggests
+  the per-render-backend CB cache, and Evergreen has a cacheless MEM_RAT opcode
+  that Gallium leaves commented out. Using it for `ACCESS_COHERENT` regressed
+  the group from 47 passing to 27. Reverted.
+
+One further observation, not yet acted on: any shader containing a memory
+barrier gets `Shader::InstructionChain::prepare_mem_barrier` latched for the
+whole shader, so *every* RAT instruction is marked as acknowledged, including
+plain stores -- which is exactly the "RAT/WAIT_ACK chain [that] can deadlock
+Evergreen compute" the comment in `RatInstr::emit_uav_instr` warns about. The
+passing `noncoherent` variants contain barriers too, so this alone is not
+sufficient to hang, but it widens the acknowledgement chain far beyond what the
+barrier needs.
+
+Until this is understood, a full-suite CTS run must exclude
+`payload_*.image.guard_*.image`, or it aborts partway through.
+
 ## Vertex pipeline stage survey (geometry and tessellation)
 
 Surveyed 2026-08-23 while starting the geometry and tessellation items. Both
