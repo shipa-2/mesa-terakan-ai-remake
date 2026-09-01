@@ -39,6 +39,11 @@
 extern "C" {
 #endif
 
+/* The most samples any supported chip rasterizes: 8 on R8xx, and R9xx's EQAA coverage samples do
+ * not add shading positions.
+ */
+#define TERAKAN_PUSH_CONSTANTS_MAX_SAMPLES 8
+
 enum terakan_push_constants_driver_index {
    TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_BUFFER_UAV_BASE_GRANULARITY_OFFSET,
 
@@ -47,6 +52,7 @@ enum terakan_push_constants_driver_index {
    TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_BASE_INSTANCE,
    TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_NUM_WORKGROUPS,
    TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_BASE_WORKGROUP,
+   TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_SAMPLE_POSITIONS,
 
    TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_COUNT,
 };
@@ -67,6 +73,17 @@ struct terakan_push_constants_driver {
    uint32_t base_instance;
    uint32_t num_workgroups[3];
    uint32_t base_workgroup[3];
+
+   /* `gl_SamplePosition` and `interpolateAtSample`, indexed by the sample index, each within
+    * [0, 1] with the pixel's centre at 0.5.
+    *
+    * SFN reads both of these out of Gallium's buffer-info constant buffer, which Terakan has no
+    * equivalent of, so it read whatever happened to be in that resource slot. Placing the table in
+    * the driver push constants instead lets Terakan's own lowering answer them, and it is the same
+    * place `gl_BaseVertex` and the workgroup counts already come from. The entries beyond the
+    * rasterization sample count are the pixel centre.
+    */
+   float sample_positions[TERAKAN_PUSH_CONSTANTS_MAX_SAMPLES][2];
 };
 
 /* Aligned to vec4 to avoid placing vectors in different kcache lines more likely to be accessed in

@@ -1033,6 +1033,42 @@ terakan_app_config_draw_apply_pa_sc_aa_config_sample_locs(
          S_028BE0_MSAA_EXPOSED_SAMPLES(sample_count_log2),
       sample_locs);
 
+   /* The same locations as floats for `gl_SamplePosition` and `interpolateAtSample`, which the
+    * shader reads out of the driver push constants. The register byte holds two signed 4-bit
+    * offsets from the pixel's centre in sixteenths, low nibble first, so the position within the
+    * pixel is `(nibble + 8) / 16`; see
+    * `terakan_hw_config_draw_pa_sc_aa_sample_loc_for_tl_0_to_br_1`, which this inverts. Only
+    * pixel (0, 0) of the location grid is used, because the specification defines both of these
+    * per sample index rather than per pixel in the grid.
+    */
+   struct terakan_push_constants_state * const push_constants_state =
+      &command_writer->push_constants_state;
+   unsigned const sample_count =
+      MIN2(1u << sample_count_log2, TERAKAN_PUSH_CONSTANTS_MAX_SAMPLES);
+   bool sample_positions_modified = false;
+   for (unsigned sample_index = 0; sample_index < TERAKAN_PUSH_CONSTANTS_MAX_SAMPLES;
+        ++sample_index) {
+      float position[2] = {0.5f, 0.5f};
+      if (sample_index < sample_count) {
+         /* The four pixels of the grid are consecutive bytes, this one being the first. */
+         uint8_t const sample_loc_xy = sample_locs[4 * sample_index];
+         position[0] = (float)(((int8_t)(sample_loc_xy << 4) >> 4) + 8) * (1.0f / 16.0f);
+         position[1] = (float)(((int8_t)sample_loc_xy >> 4) + 8) * (1.0f / 16.0f);
+      }
+      for (unsigned axis = 0; axis < 2; ++axis) {
+         if (push_constants_state->driver_constants.sample_positions[sample_index][axis] !=
+             position[axis]) {
+            push_constants_state->driver_constants.sample_positions[sample_index][axis] =
+               position[axis];
+            sample_positions_modified = true;
+         }
+      }
+   }
+   if (sample_positions_modified) {
+      push_constants_state->driver_constants_modified |=
+         BITFIELD_BIT(TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_SAMPLE_POSITIONS);
+   }
+
    /* Update other entries that depend on the sample count.
     * This entry can be made pending even when the sample locations are modified without changing
     * the sample count, but that's expected to be done rarely, and mainly roughly at render pass

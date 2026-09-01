@@ -332,12 +332,70 @@ struct terakan_nir_lower_draw_parameters_state {
    uint32_t * driver_push_constants_used;
 };
 
+/* The sample position table lives in the driver push constants; see
+ * `terakan_push_constants_driver::sample_positions`. Reads entry `sample_index` as a vec2.
+ */
+static nir_def *
+terakan_nir_load_sample_position(nir_builder * const b, nir_def * const sample_index,
+                                 struct terakan_nir_lower_draw_parameters_state * const state)
+{
+   *state->driver_push_constants_used |=
+      BITFIELD_BIT(TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_SAMPLE_POSITIONS);
+   BITSET_SET(state->sqk_usage->resources, TERAKAN_RESOURCE_RANGE_PUSH_CONSTANTS);
+   /* Out-of-range indices are clamped rather than left to address the rest of the push constants:
+    * the specification leaves `interpolateAtSample` with an index at or above the sample count
+    * undefined, and the table's unused entries hold the pixel centre.
+    */
+   nir_def * const clamped_index =
+      nir_umin(b, sample_index, nir_imm_int(b, TERAKAN_PUSH_CONSTANTS_MAX_SAMPLES - 1));
+   return terakan_nir_load_raw_resource_buffer(
+      b, 2, 32, ACCESS_CAN_REORDER, TERAKAN_RESOURCE_RANGE_PUSH_CONSTANTS, nir_imm_int(b, 0),
+      (unsigned)offsetof(struct terakan_push_constants_driver, sample_positions),
+      nir_imul_imm(b, clamped_index, 2 * sizeof(float)));
+}
+
 static bool
 terakan_nir_lower_draw_parameters_instr(
    nir_builder * const b, nir_intrinsic_instr * const intrin, void * const cb_data)
 {
    struct terakan_nir_lower_draw_parameters_state * const state =
       (struct terakan_nir_lower_draw_parameters_state *)cb_data;
+
+   /* `gl_SamplePosition`, and the barycentric that `interpolateAtSample` lowers to. SFN reads the
+    * sample position table out of Gallium's buffer-info constant buffer, a resource slot Terakan
+    * never binds, so both read whatever was left in it:
+    * `dEQP-VK.pipeline.monolithic.multisample_interpolation` failed all 30 of its
+    * `sample_interpolation_consistency` cases, all 30 `offset_interpolation_at_sample_position`
+    * ones and all 6 `sample_interpolate_at_distinct_values`. Answering them here, from Terakan's
+    * own driver push constants, means SFN never reaches its version.
+    *
+    * `interpolateAtSample` becomes `interpolateAtOffset` at the sample's offset from the pixel's
+    * centre, which is the same definition and needs no table at all in the backend.
+    */
+   if (intrin->intrinsic == nir_intrinsic_load_sample_pos) {
+      b->cursor = nir_before_instr(&intrin->instr);
+      nir_def_replace(&intrin->def,
+                      terakan_nir_load_sample_position(b, nir_load_sample_id(b), state));
+      return true;
+   }
+   if (intrin->intrinsic == nir_intrinsic_interp_deref_at_sample) {
+      /* This has to happen here rather than on the barycentric SFN sees, because `nir_lower_io`
+       * turns the deref form into `load_barycentric_at_sample` inside SFN, after this pass has
+       * run.
+       */
+      b->cursor = nir_before_instr(&intrin->instr);
+      nir_def * const position = terakan_nir_load_sample_position(b, intrin->src[1].ssa, state);
+      nir_intrinsic_instr * const at_offset =
+         nir_intrinsic_instr_create(b->shader, nir_intrinsic_interp_deref_at_offset);
+      at_offset->num_components = intrin->num_components;
+      at_offset->src[0] = nir_src_for_ssa(intrin->src[0].ssa);
+      at_offset->src[1] = nir_src_for_ssa(nir_fadd_imm(b, position, -0.5f));
+      nir_def_init(&at_offset->instr, &at_offset->def, intrin->def.num_components,
+                   intrin->def.bit_size);
+      nir_builder_instr_insert(b, &at_offset->instr);
+      nir_def_replace(&intrin->def, &at_offset->def);
+      return true;
+   }
 
    enum terakan_push_constants_driver_index driver_index;
    size_t byte_offset;

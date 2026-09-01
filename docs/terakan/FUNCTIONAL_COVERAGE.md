@@ -1581,6 +1581,38 @@ The other 38 are `texturequerylod`, and every one of them is a `zero_uv_width` v
 the derivatives are zero, and the CTS wants an LOD at or below -31.9961 where the
 hardware returns zero. That is a degenerate-input rule rather than a query defect.
 
+### The sample position table SFN reads and Terakan never bound
+
+`dEQP-VK.pipeline.monolithic.multisample_interpolation` failed **67 of its 127 supported
+cases**, and the split named the feature: `sample_interpolation_consistency` 0 of 30,
+`offset_interpolation_at_sample_position` 0 of 30, `sample_interpolate_at_distinct_values`
+0 of 6, while `centroid_interpolation_consistency`, `sample_qualifier_distinct_values` and
+the plain `interpolateAtOffset` cases all passed.
+
+Both `gl_SamplePosition` and `interpolateAtSample` land in SFN on a read from
+`R600_BUFFER_INFO_CONST_BUFFER` -- Gallium's buffer-info constant buffer, which
+`r600_state_common.c` fills with the sample positions for the fragment stage. Terakan has
+no equivalent and never binds that resource slot, so both read whatever was left in it.
+It is the same buffer the cube-array size query reads its layer count from, and the third
+place it has turned up.
+
+The table now lives in Terakan's own driver push constants, next to `gl_BaseVertex` and
+the workgroup counts, written whenever the sample locations state is applied -- the
+register byte holds two signed 4-bit offsets from the pixel's centre in sixteenths, so
+the position is `(nibble + 8) / 16`, inverting the encoder. Terakan's lowering answers
+`load_sample_pos` from it, and rewrites `interpolateAtSample` into `interpolateAtOffset`
+at the sample's offset from the centre, which is the same definition and needs no table
+in the backend at all.
+
+That rewrite has to happen on the deref form, before SFN's own `nir_lower_io` turns it
+into `load_barycentric_at_sample`: doing it on the barycentric first left
+`sample_interpolation_consistency` untouched at 0 of 30, because by the time SFN runs that
+pass Terakan's has long finished.
+
+**67 failures to 21**, and every one of the 21 is a `samples_2` case -- the two-sample
+behaviour already recorded above, where the hardware does not move the sample position at
+all. Four and eight samples pass throughout.
+
 ### Colour resolve under CTS
 
 `dEQP-VK.api.copy_and_blit.core.resolve_image`, 240 cases, run against Terakan
