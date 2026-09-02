@@ -1341,6 +1341,52 @@ closed "many distinct compute pipelines rather than one" -- every concrete
 gap this note originally named. So whatever the application hits is narrower
 than this composition shape.
 
+## Random descriptor sets: two remaining shapes
+
+`dEQP-VK.binding_model.descriptorset_random` builds a random descriptor set
+layout and has every invocation read every descriptor, writing 1 to its own
+texel of an 8x8 storage image when all of them matched. A 1465-case sample of
+the family passes 124 and fails 30. Every failing case falls into one of two
+signatures, and they are distinct defects.
+
+### All 64 texels wrong
+
+Ten cases, compute and fragment alike, produce a wholly empty result. For
+compute this was `CB_TARGET_MASK` overflowing at eight UAVs and is fixed; what
+remains under this signature has another cause and has not been sliced yet.
+
+### The same ten texels wrong
+
+Thirteen cases fail on exactly the texels 44, 50-53, 58-62 and no others. The
+set is identical across cases whose shaders differ substantially -- different
+descriptor types, different counts, with and without input attachments -- and
+identical across repeated runs, so it is not a race and not descriptor
+dependent. Every invocation runs the same code, so a texel holding 0 means
+either that invocation's final `imageStore` never landed or its accumulator was
+non-zero.
+
+What has been excluded by measurement, each by reproducing the ingredient in
+`terakan_attachmentless_atomic` at the same 8x8 size and finding all 64 texels
+correct:
+
+- Rasterization coverage, including the test's own geometry: the case draws a
+  four-vertex strip whose z runs from 1 to -1 so the near plane clips it to
+  exactly the viewport. Reproducing that vertex shader and topology covers all
+  64 texels.
+- `imageStore` versus `imageAtomicAdd` as the final write.
+- An 8x8 storage image rather than a larger one.
+- UAV writes inside divergent control flow ahead of the final write, which the
+  failing shaders all contain.
+- Shader size and register pressure: the failing shaders use 6 and 9 GPRs
+  against 13 for a passing one, and 458 and 544 dwords against 418.
+
+Two things are known to change the outcome and are the place to start next.
+`TERAKAN_DEBUG_FORCE_LINEAR_IMAGES=1` changes the failing set entirely, to 33
+different texels, so image tiling reaches the result even though coverage and
+the final store in isolation are correct. And the failing shaders bind between
+four and eight UAVs while the reproducer binds one, which is the largest
+remaining difference from the shapes already excluded.
+
 ## In-shader memory model: RAT returns, and a GPU hang
 
 `dEQP-VK.memory_model` exercises coherence *inside* a shader, which is the one
