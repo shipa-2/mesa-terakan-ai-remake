@@ -149,6 +149,12 @@ also contained a ring reset and lockup report whose reported stall duration pred
 That is not a clean survival result and must not be generalized or repeated: B2 remains open until
 the recorded-command-buffer path and a data readback are independently clean.
 
+`TERAKAN_DEBUG_TERASCALE_1_PREAMBLE_ONLY=1` is the next recorded-IB differential: it creates the
+IB with one NOP, causing the transcribed context defaults to be emitted, but excludes the unrelated
+host-to-device cache tail. RV710 dry-run produced 208 dwords (the final two are alignment NOPs),
+and no `PKT3_SURFACE_SYNC` tail. It is deliberately test-only and is not a cache-coherency mode;
+the remaining step is one separately audited fence attempt, not rendering or readback.
+
 ## Completed and regression-covered
 
 - Multisample correctness, closed as a group. Seven defects, each with a probe or

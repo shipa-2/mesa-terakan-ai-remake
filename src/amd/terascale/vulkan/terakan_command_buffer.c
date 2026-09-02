@@ -51,7 +51,15 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
+
+static bool
+terakan_debug_terascale_1_preamble_only(void)
+{
+   char const * const value = getenv("TERAKAN_DEBUG_TERASCALE_1_PREAMBLE_ONLY");
+   return value != NULL && strcmp(value, "1") == 0;
+}
 
 void
 terakan_bo_reference_writer_reset(struct terakan_bo_reference_writer * const writer,
@@ -1159,7 +1167,20 @@ terakan_BeginCommandBuffer(VkCommandBuffer const commandBuffer,
     */
    uint32_t const invalidate_caches_packet_dwords =
       ARRAY_SIZE(invalidate_caches_packets) - (physical_device->chip_info.is_terascale_1 ? 2 : 0);
-   {
+   if (physical_device->chip_info.is_terascale_1 && terakan_debug_terascale_1_preamble_only()) {
+      /* This B2-only differential deliberately makes an IB exist by emitting one NOP, which causes
+       * terakan_gfx_command_writer_emit() to prepend the transcribed R600/R700 context defaults.
+       * Do not use it for any functional command: it omits the normal Vulkan host-to-device cache
+       * domain operation solely to distinguish that tail from the preamble before real hardware
+       * execution. The exact environment value confines it to explicit TeraScale 1 bring-up.
+       */
+      uint32_t * const nop_packet = terakan_gfx_command_writer_emit(
+         gfx_command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_OTHER, 1);
+      if (likely(nop_packet != NULL)) {
+         *nop_packet = PKT_TYPE_S(2);
+         terakan_gfx_command_writer_emit_done(gfx_command_writer, nop_packet + 1);
+      }
+   } else {
       uint32_t * invalidate_cache_packets_ptr = terakan_gfx_command_writer_emit(
          gfx_command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_OTHER,
          invalidate_caches_packet_dwords);
