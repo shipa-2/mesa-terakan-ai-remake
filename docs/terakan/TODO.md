@@ -143,7 +143,11 @@ reintroduce the same `eg+` CS flush and CB8...CB11 bits. The existing RV710 prob
 additional exact opt-in `TERAKAN_DEBUG_TERASCALE_1_SIGNAL_ONLY=1`; with `DRY_RUN` it produced a
 16-dword signal IB containing `PS_PARTIAL_FLUSH` (`0x16`) and `CP_COHER_CNTL = 0x86007FC0`, with
 no CS flush or CB8...CB11 bits. This validates only the chosen packet fields, not a completed
-fence or cache coherency.
+fence or cache coherency. One real signal-only attempt on RV710 then returned from `vkQueueSubmit`
+and its five-second fence wait successfully, but the kernel journal in the same wall-clock window
+also contained a ring reset and lockup report whose reported stall duration predated the attempt.
+That is not a clean survival result and must not be generalized or repeated: B2 remains open until
+the recorded-command-buffer path and a data readback are independently clean.
 
 ## Completed and regression-covered
 
