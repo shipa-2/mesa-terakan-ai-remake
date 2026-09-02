@@ -1537,14 +1537,39 @@ correct.
 `TERAKAN_DEBUG_DUMP_FRAGMENT_BYTECODE=1` dumps the fragment programs the way
 the compute one already did, which is how the indexed RAT writes were found.
 
-What has not been tried, and is what the next attempt should be, is a faithful
-reduction rather than another guess at the ingredient. The failing case's GLSL
-is available from the test log and its SPIR-V from
-`TERAKAN_DEBUG_DUMP_GRAPHICS_SPIRV_DIR`, and the four descriptor sets it needs
-are written out in that GLSL. Standing that up in a local harness makes it
-possible to delete statements until the failure goes away, which converges,
-where picking one ingredient at a time out of a fifteen-binding shader has now
-missed ten times.
+### The reduction
+
+`terakan_descriptor_set_shape` is that case standing on its own: the four
+descriptor sets it declares, the values it checks for, and its fragment shader
+as a file next to the test, so statements can be deleted from it. It reproduces
+the failure exactly -- the same ten texels, 44, 50-53 and 58-62 -- and is
+registered with `should_fail : true`, so the suite stays green while the defect
+is open and says so loudly when it closes.
+
+Deleting statements gives a shape no single ingredient has:
+
+- The reads alone pass and the conditional stores alone pass. Only together do
+  they fail, which is why ten reductions that each took one ingredient came back
+  clean.
+- The store has to be **dynamically indexed**. Keeping only
+  `ssbo3_0[accum + 0].val = 33` fails, and so does keeping only the two
+  `simage2_4[accum + N]` stores; keeping only `simage1_10` or only `ssbo2_2`,
+  the two that are not arrays, passes.
+- The reads have to include a **storage buffer** read. Three texel-buffer reads
+  plus one SSBO read fail, from either texel binding. Four texel-buffer reads
+  without an SSBO read pass, whether they come from one binding or two. Five
+  uniform-buffer reads pass. Two texel reads plus an SSBO read pass.
+
+So it is not a count -- four fetches pass and four fetches fail depending on
+what they are -- and not a single descriptor, since either texel binding serves.
+The smallest failure so far is three texel-buffer reads, one storage-buffer
+read, and one dynamically indexed storage-buffer store.
+
+The next step is to take that smallest shape into the emitted bytecode --
+`TERAKAN_DEBUG_DUMP_FRAGMENT_BYTECODE=1` -- and compare it against the same
+shape with the store's index made constant, which passes. Two programs
+differing by one thing, one of which is wrong, is a far smaller object than the
+original shader.
 
 ## In-shader memory model: RAT returns, and a GPU hang
 

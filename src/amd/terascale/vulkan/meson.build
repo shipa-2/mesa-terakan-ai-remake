@@ -1555,6 +1555,41 @@ if with_tests
         timeout : 20,
       )
 
+      terakan_descriptor_set_shape_fragment_spv = custom_target(
+        'terakan_descriptor_set_shape.frag.spv.h',
+        input : 'tests/terakan_descriptor_set_shape.frag',
+        output : 'terakan_descriptor_set_shape.frag.spv.h',
+        command : [
+          prog_glslang, '-V', '-x', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_descriptor_set_shape.frag.spv.h.d',
+      )
+      terakan_descriptor_set_shape_test = executable(
+        'terakan_descriptor_set_shape_test',
+        [
+          'tests/terakan_descriptor_set_shape_test.cpp',
+          terakan_color_msaa_write_vertex_spv,
+          terakan_descriptor_set_shape_fragment_spv,
+        ],
+        dependencies : vulkan_loader_dep,
+      )
+      # Reproduces an open defect, so it is expected to fail: it loses ten of its sixty-four
+      # texels, exactly as the dEQP case it was reduced from does. When it starts passing the
+      # defect is fixed and this line is what says so.
+      test(
+        'terakan_descriptor_set_shape',
+        terakan_descriptor_set_shape_test,
+        depends : [libvulkan_terascale, _dev_icd],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        should_fail : true,
+        timeout : 20,
+      )
+
       terakan_attachmentless_atomic_fragment_spv = custom_target(
         'terakan_attachmentless_atomic.frag.spv.h',
         input : 'tests/terakan_attachmentless_atomic.frag',
