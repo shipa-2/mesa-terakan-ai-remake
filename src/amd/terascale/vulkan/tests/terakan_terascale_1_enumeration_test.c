@@ -61,6 +61,13 @@ terascale_1_signal_only_opted_in(void)
    return value != NULL && strcmp(value, "1") == 0;
 }
 
+static bool
+terascale_1_cp_dma_copy_opted_in(void)
+{
+   char const * const value = getenv("TERAKAN_DEBUG_TERASCALE_1_CP_DMA_COPY");
+   return value != NULL && strcmp(value, "1") == 0;
+}
+
 static uint32_t
 check_rv710_signal_only_submit(VkDevice const device, VkQueue const queue)
 {
@@ -161,6 +168,158 @@ cleanup:
       vkFreeCommandBuffers(device, command_pool, 1, &command_buffer);
    }
    vkDestroyCommandPool(device, command_pool, NULL);
+   return failures;
+}
+
+/* B3 is intentionally an opt-in RV710-only probe. The destination starts with the inverse pattern,
+ * so a skipped CP DMA command cannot pass merely because mapped memory happened to contain the
+ * requested data. This does not exercise unaligned copies, images, or cache transitions beyond the
+ * transfer write becoming visible to the host.
+ */
+static uint32_t
+check_rv710_cp_dma_buffer_copy(VkPhysicalDevice const physical_device, VkDevice const device,
+                               VkQueue const queue)
+{
+   enum { dword_count = 16, byte_count = dword_count * sizeof(uint32_t) };
+   VkBuffer buffers[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
+   VkDeviceMemory memories[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
+   uint32_t * mappings[2] = {NULL, NULL};
+   VkCommandPool command_pool = VK_NULL_HANDLE;
+   VkCommandBuffer command_buffer = VK_NULL_HANDLE;
+   VkFence fence = VK_NULL_HANDLE;
+   uint32_t failures = 0;
+
+   VkBufferCreateInfo const buffer_info = {
+      .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+      .size = byte_count,
+      .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+   };
+   for (uint32_t buffer_index = 0; buffer_index < 2; ++buffer_index) {
+      VkResult result = vkCreateBuffer(device, &buffer_info, NULL, &buffers[buffer_index]);
+      if (result != VK_SUCCESS) {
+         fprintf(stderr, "  RV710 CP-DMA vkCreateBuffer failed with %d\n", result);
+         failures = 1;
+         goto cleanup;
+      }
+      VkMemoryRequirements requirements;
+      vkGetBufferMemoryRequirements(device, buffers[buffer_index], &requirements);
+      VkPhysicalDeviceMemoryProperties memory_properties;
+      vkGetPhysicalDeviceMemoryProperties(physical_device, &memory_properties);
+      uint32_t memory_type = UINT32_MAX;
+      for (uint32_t type_index = 0; type_index < memory_properties.memoryTypeCount; ++type_index) {
+         if ((requirements.memoryTypeBits & ((uint32_t)1 << type_index)) &&
+             (memory_properties.memoryTypes[type_index].propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)) {
+            memory_type = type_index;
+            break;
+         }
+      }
+      if (memory_type == UINT32_MAX) {
+         fprintf(stderr, "  RV710 CP-DMA buffer has no host-visible memory type\n");
+         failures = 1;
+         goto cleanup;
+      }
+      VkMemoryAllocateInfo const allocate_info = {
+         .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+         .allocationSize = requirements.size,
+         .memoryTypeIndex = memory_type,
+      };
+      result = vkAllocateMemory(device, &allocate_info, NULL, &memories[buffer_index]);
+      if (result != VK_SUCCESS ||
+          (result = vkBindBufferMemory(device, buffers[buffer_index], memories[buffer_index], 0)) !=
+             VK_SUCCESS ||
+          (result = vkMapMemory(device, memories[buffer_index], 0, VK_WHOLE_SIZE, 0,
+                                (void **)&mappings[buffer_index])) != VK_SUCCESS) {
+         fprintf(stderr, "  RV710 CP-DMA buffer allocation/bind/map failed with %d\n", result);
+         failures = 1;
+         goto cleanup;
+      }
+   }
+
+   for (uint32_t index = 0; index < dword_count; ++index) {
+      mappings[0][index] = UINT32_C(0x1a2b3c40) + index;
+      mappings[1][index] = ~mappings[0][index];
+   }
+   VkMappedMemoryRange const source_flush = {
+      .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+      .memory = memories[0],
+      .size = VK_WHOLE_SIZE,
+   };
+   if (vkFlushMappedMemoryRanges(device, 1, &source_flush) != VK_SUCCESS) {
+      fprintf(stderr, "  RV710 CP-DMA source flush failed\n");
+      failures = 1;
+      goto cleanup;
+   }
+
+   VkCommandPoolCreateInfo const command_pool_info = {
+      .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+      .queueFamilyIndex = 0,
+   };
+   VkCommandBufferAllocateInfo const command_buffer_info = {
+      .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+      .commandBufferCount = 1,
+      .commandPool = command_pool,
+      .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+   };
+   VkCommandBufferBeginInfo const begin_info = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+   VkBufferCopy const copy = {.size = byte_count};
+   VkFenceCreateInfo const fence_info = {.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+   VkResult result = vkCreateCommandPool(device, &command_pool_info, NULL, &command_pool);
+   if (result == VK_SUCCESS)
+      result = vkAllocateCommandBuffers(device, &command_buffer_info, &command_buffer);
+   if (result == VK_SUCCESS)
+      result = vkBeginCommandBuffer(command_buffer, &begin_info);
+   if (result == VK_SUCCESS) {
+      vkCmdCopyBuffer(command_buffer, buffers[0], buffers[1], 1, &copy);
+      result = vkEndCommandBuffer(command_buffer);
+   }
+   if (result == VK_SUCCESS)
+      result = vkCreateFence(device, &fence_info, NULL, &fence);
+   VkSubmitInfo const submit_info = {
+      .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+      .commandBufferCount = 1,
+      .pCommandBuffers = &command_buffer,
+   };
+   if (result == VK_SUCCESS)
+      result = vkQueueSubmit(queue, 1, &submit_info, fence);
+   if (result == VK_SUCCESS)
+      result = vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_C(5000000000));
+   if (result != VK_SUCCESS) {
+      fprintf(stderr, "  RV710 CP-DMA copy submission failed with %d\n", result);
+      failures = 1;
+      goto cleanup;
+   }
+   VkMappedMemoryRange const destination_invalidate = {
+      .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+      .memory = memories[1],
+      .size = VK_WHOLE_SIZE,
+   };
+   if (vkInvalidateMappedMemoryRanges(device, 1, &destination_invalidate) != VK_SUCCESS) {
+      fprintf(stderr, "  RV710 CP-DMA destination invalidate failed\n");
+      failures = 1;
+      goto cleanup;
+   }
+   for (uint32_t index = 0; index < dword_count; ++index) {
+      if (mappings[1][index] != mappings[0][index]) {
+         fprintf(stderr, "  RV710 CP-DMA readback mismatch at %u: got 0x%08x expected 0x%08x\n",
+                 index, mappings[1][index], mappings[0][index]);
+         failures = 1;
+         break;
+      }
+   }
+   if (!failures)
+      fprintf(stderr, "  RV710 CP-DMA 64-byte buffer copy/readback completed\n");
+
+cleanup:
+   vkDestroyFence(device, fence, NULL);
+   if (command_buffer != VK_NULL_HANDLE)
+      vkFreeCommandBuffers(device, command_pool, 1, &command_buffer);
+   vkDestroyCommandPool(device, command_pool, NULL);
+   for (uint32_t buffer_index = 0; buffer_index < 2; ++buffer_index) {
+      if (mappings[buffer_index] != NULL)
+         vkUnmapMemory(device, memories[buffer_index]);
+      vkDestroyBuffer(device, buffers[buffer_index], NULL);
+      vkFreeMemory(device, memories[buffer_index], NULL);
+   }
    return failures;
 }
 
@@ -596,9 +755,12 @@ main(void)
                fprintf(stderr, "  TeraScale 1 queue submission remains safely disabled\n");
             }
          } else if (properties.deviceID == 0x954f) {
-            failures += terascale_1_signal_only_opted_in()
-                           ? check_rv710_signal_only_submit(device, queue)
-                           : check_rv710_empty_submit(device, queue);
+            failures += terascale_1_cp_dma_copy_opted_in()
+                           ? check_rv710_cp_dma_buffer_copy(physical_devices[device_index], device,
+                                                            queue)
+                           : terascale_1_signal_only_opted_in()
+                                ? check_rv710_signal_only_submit(device, queue)
+                                : check_rv710_empty_submit(device, queue);
          } else {
             fprintf(stderr,
                     "  TeraScale 1 submit opt-in deliberately skips non-RV710 device 0x%04x\n",
