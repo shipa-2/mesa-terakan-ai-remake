@@ -1522,15 +1522,29 @@ a permutation, and a permutation would be invisible here because every written
 texel gets the same value. So the write address loses a bit somewhere, and the
 bit it loses depends on the tiling.
 
-The other is that the whole reproduce-and-eliminate approach may be aimed
-wrongly: the depth/stencil clear family turned out to be order dependent --
-`clear_depth_stencil_image.2d.single_layer.d32_sfloat_s8_uint_33x128` passes
-inside a full-suite run and fails three times out of three on its own -- so a
-defect here need not be a property of the failing draw at all, and a reproducer
-that runs the same shapes in isolation would never show it.
+Order dependence was considered and ruled out for this family, though it is
+real for the depth/stencil clears: the same case fails with the same ten texels
+run on its own and run after fifteen unrelated passing cases in one process, so
+reproducing these shapes in isolation is a valid method here even though it is
+not for the clears.
+
+Two further shapes were excluded the same way, both taken from what the failing
+shaders actually contain: three separate 1x1 storage images bound alongside the
+8x8 destination, and stores into them from divergent control flow through a
+dynamically indexed array. Ten reproductions now stand at all 64 texels
+correct.
 
 `TERAKAN_DEBUG_DUMP_FRAGMENT_BYTECODE=1` dumps the fragment programs the way
 the compute one already did, which is how the indexed RAT writes were found.
+
+What has not been tried, and is what the next attempt should be, is a faithful
+reduction rather than another guess at the ingredient. The failing case's GLSL
+is available from the test log and its SPIR-V from
+`TERAKAN_DEBUG_DUMP_GRAPHICS_SPIRV_DIR`, and the four descriptor sets it needs
+are written out in that GLSL. Standing that up in a local harness makes it
+possible to delete statements until the failure goes away, which converges,
+where picking one ingredient at a time out of a fifteen-binding shader has now
+missed ten times.
 
 ## In-shader memory model: RAT returns, and a GPU hang
 
