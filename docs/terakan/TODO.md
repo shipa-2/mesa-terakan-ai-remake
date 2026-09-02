@@ -152,8 +152,10 @@ the recorded-command-buffer path and a data readback are independently clean.
 `TERAKAN_DEBUG_TERASCALE_1_PREAMBLE_ONLY=1` is the next recorded-IB differential: it creates the
 IB with one NOP, causing the transcribed context defaults to be emitted, but excludes the unrelated
 host-to-device cache tail. RV710 dry-run produced 208 dwords (the final two are alignment NOPs),
-and no `PKT3_SURFACE_SYNC` tail. It is deliberately test-only and is not a cache-coherency mode;
-the remaining step is one separately audited fence attempt, not rendering or readback.
+and no `PKT3_SURFACE_SYNC` tail. The real RV710 fence then completed once, followed by 5/5 further
+clean repetitions with no kernel-journal entries after the series. This establishes the
+start-atom/prelude portion of B2; it is deliberately test-only and not a cache-coherency mode.
+It does not validate the omitted normal cache tail, any draw/copy/readback, or rendering.
 
 ## Completed and regression-covered
 
