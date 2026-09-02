@@ -26,6 +26,15 @@ terakan_hw_config_draw_terascale_1_gprs_fit_baseline(
 }
 
 static uint32_t *
+write_config_reg(uint32_t * packet, uint32_t const reg, uint32_t const value)
+{
+   *packet++ = PKT3(PKT3_SET_CONFIG_REG, 1, 0);
+   *packet++ = (reg - R600_CONFIG_REG_OFFSET) >> 2;
+   *packet++ = value;
+   return packet;
+}
+
+static uint32_t *
 write_context_reg(uint32_t * packet, uint32_t const reg, uint32_t const value)
 {
    *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 1, 0);
@@ -167,13 +176,48 @@ terakan_hw_config_draw_terascale_1_pa_sc_aa_encode(
 
 uint32_t *
 terakan_hw_config_draw_terascale_1_write_pa_sc_aa(
-   uint32_t * packet, struct terakan_hw_config_draw_terascale_1_pa_sc_aa const * const aa)
+   uint32_t * packet, bool const is_original_r600,
+   struct terakan_hw_config_draw_terascale_1_pa_sc_aa const * const aa)
 {
-   *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 2, 0);
-   *packet++ = (R_028C1C_PA_SC_AA_SAMPLE_LOCS_MCTX - R600_CONTEXT_REG_OFFSET) >> 2;
-   *packet++ = aa->sample_locs[0];
-   *packet++ = aa->sample_locs[1];
+   if (is_original_r600) {
+      switch (G_028C04_MSAA_NUM_SAMPLES(aa->config)) {
+      case 0:
+         break;
+      case 1:
+         packet = write_config_reg(packet, R_008B40_PA_SC_AA_SAMPLE_LOCS_2S,
+                                   aa->sample_locs[0]);
+         break;
+      case 2:
+         packet = write_config_reg(packet, R_008B44_PA_SC_AA_SAMPLE_LOCS_4S,
+                                   aa->sample_locs[0]);
+         break;
+      case 3:
+         *packet++ = PKT3(PKT3_SET_CONFIG_REG, 2, 0);
+         *packet++ = (R_008B48_PA_SC_AA_SAMPLE_LOCS_8S_WD0 - R600_CONFIG_REG_OFFSET) >> 2;
+         *packet++ = aa->sample_locs[0];
+         *packet++ = aa->sample_locs[1];
+         break;
+      }
+   } else {
+      *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 2, 0);
+      *packet++ = (R_028C1C_PA_SC_AA_SAMPLE_LOCS_MCTX - R600_CONTEXT_REG_OFFSET) >> 2;
+      *packet++ = aa->sample_locs[0];
+      *packet++ = aa->sample_locs[1];
+   }
    return write_context_reg(packet, R_028C04_PA_SC_AA_CONFIG, aa->config);
+}
+
+uint32_t
+terakan_hw_config_draw_terascale_1_pa_sc_aa_packet_dwords(
+   bool const is_original_r600,
+   struct terakan_hw_config_draw_terascale_1_pa_sc_aa const * const aa)
+{
+   if (!is_original_r600) {
+      return 7;
+   }
+   return G_028C04_MSAA_NUM_SAMPLES(aa->config) == 0 ? 3
+          : G_028C04_MSAA_NUM_SAMPLES(aa->config) == 3 ? 7
+                                                       : 6;
 }
 
 bool
@@ -185,18 +229,25 @@ terakan_hw_config_draw_terascale_1_pa_sc_mode_encode(
       return false;
    }
 
-   /* Baseline and the RV770-only sample-shading workaround are transcribed from
-    * r600_create_rs_state(). FORCE_EOV_* and R700_ZMM_LINE_OFFSET are not present in Terakan's
-    * Evergreen-shaped software state at compatible positions, so they must be supplied here.
+   /* Both baselines and the RV770-only sample-shading workaround are transcribed from
+    * r600_create_rs_state(). R700 adds FORCE_EOV_REZ, ZMM_LINE_OFFSET and its viewport-scissor bit;
+    * R600 uses WALK_ALIGN8_PRIM_FITS_ST instead. The common Evergreen software value has no
+    * trustworthy representation of these generation-specific constants, so they are supplied
+    * here. R600 does not consume `viewport_scissor_enable` in this register; the classic path uses
+    * its unconditional WALK_ALIGN8 baseline and programs the actual scissor rectangles separately.
     */
    *mode_out = S_028A4C_MSAA_ENABLE(input->msaa_enable) |
                S_028A4C_LINE_STIPPLE_ENABLE(input->line_stipple_enable) |
-               S_028A4C_FORCE_EOV_CNTDWN_ENABLE(1) | S_028A4C_FORCE_EOV_REZ_ENABLE(1) |
-               S_028A4C_PS_ITER_SAMPLE(input->ps_iter_sample) |
-               S_028A4C_R700_ZMM_LINE_OFFSET(1) |
-               S_028A4C_R700_VPORT_SCISSOR_ENABLE(input->viewport_scissor_enable) |
-               S_028A4C_TILE_COVER_DISABLE(input->is_rv770 && input->msaa_enable &&
-                                           input->ps_iter_sample);
+               S_028A4C_FORCE_EOV_CNTDWN_ENABLE(1) |
+               S_028A4C_PS_ITER_SAMPLE(input->ps_iter_sample);
+   if (input->is_r700) {
+      *mode_out |= S_028A4C_FORCE_EOV_REZ_ENABLE(1) | S_028A4C_R700_ZMM_LINE_OFFSET(1) |
+                   S_028A4C_R700_VPORT_SCISSOR_ENABLE(input->viewport_scissor_enable) |
+                   S_028A4C_TILE_COVER_DISABLE(input->is_rv770 && input->msaa_enable &&
+                                               input->ps_iter_sample);
+   } else {
+      *mode_out |= S_028A4C_WALK_ALIGN8_PRIM_FITS_ST(1);
+   }
    return true;
 }
 
@@ -205,6 +256,44 @@ terakan_hw_config_draw_terascale_1_write_pa_sc_mode(uint32_t * const packet,
                                                      uint32_t const value)
 {
    return write_context_reg(packet, R_028A4C_PA_SC_MODE_CNTL, value);
+}
+
+bool
+terakan_hw_config_draw_terascale_1_pa_cl_clip_encode(
+   uint32_t const evergreen_value, bool const is_r700,
+   struct terakan_hw_config_draw_terascale_1_pa_cl_clip * const clip_out)
+{
+   uint32_t const known_bits =
+      S_028810_CLIP_DISABLE(1) | S_028810_DX_CLIP_SPACE_DEF(1) |
+      S_028810_DX_RASTERIZATION_KILL(1) | S_028810_DX_LINEAR_ATTR_CLIP_ENA(1) |
+      S_028810_ZCLIP_NEAR_DISABLE(1) | S_028810_ZCLIP_FAR_DISABLE(1);
+   if (!clip_out || (evergreen_value & ~known_bits)) {
+      return false;
+   }
+
+   bool const rasterization_kill = G_028810_DX_RASTERIZATION_KILL(evergreen_value) != 0;
+   clip_out->clip_cntl =
+      is_r700 ? evergreen_value : evergreen_value & C_028810_DX_RASTERIZATION_KILL;
+   clip_out->sx_misc = is_r700 ? 0 : S_028350_MULTIPASS(rasterization_kill);
+   return true;
+}
+
+uint32_t
+terakan_hw_config_draw_terascale_1_pa_cl_clip_packet_dwords(bool const is_r700)
+{
+   return is_r700 ? 3 : 6;
+}
+
+uint32_t *
+terakan_hw_config_draw_terascale_1_write_pa_cl_clip(
+   uint32_t * packet, bool const is_r700,
+   struct terakan_hw_config_draw_terascale_1_pa_cl_clip const * const clip)
+{
+   packet = write_context_reg(packet, R_028810_PA_CL_CLIP_CNTL, clip->clip_cntl);
+   if (!is_r700) {
+      packet = write_context_reg(packet, R_028350_SX_MISC, clip->sx_misc);
+   }
+   return packet;
 }
 
 bool
@@ -243,7 +332,8 @@ terakan_hw_config_draw_terascale_1_write_pa_su_poly_offset(
 
 bool
 terakan_hw_config_draw_terascale_1_sq_pgm_resources_encode(
-   uint32_t const evergreen_resources, uint32_t * const r700_resources_out)
+   uint32_t const evergreen_resources, bool const force_uncached_first_inst,
+   uint32_t * const r700_resources_out)
 {
    uint32_t const known_bits = S_028850_NUM_GPRS(UINT8_MAX) |
                                S_028850_STACK_SIZE(UINT8_MAX) | S_028850_DX10_CLAMP(1) |
@@ -251,7 +341,8 @@ terakan_hw_config_draw_terascale_1_sq_pgm_resources_encode(
    if (!r700_resources_out || (evergreen_resources & ~known_bits)) {
       return false;
    }
-   *r700_resources_out = evergreen_resources;
+   *r700_resources_out =
+      evergreen_resources | S_028850_UNCACHED_FIRST_INST(force_uncached_first_inst);
    return true;
 }
 
@@ -461,9 +552,9 @@ terakan_hw_config_draw_terascale_1_db_depth_encode(
    struct terakan_hw_config_draw_terascale_1_db_depth * const depth_out)
 {
    if (input->pitch_tile_max > 0x3FF || input->height_tile_max > 0x3FF ||
-       input->slice_tile_max > 0xFFFFF ||
+       input->slice_tile_max > 0xFFFFF || input->samples_log2 > 3 ||
        input->slice_start > 0x7FF || input->slice_max > 0x7FF ||
-       input->slice_start > input->slice_max || input->samples_log2 != 0 ||
+       input->slice_start > input->slice_max ||
        (input->array_mode != V_0280A0_ARRAY_1D_TILED_THIN1 &&
         input->array_mode != V_0280A0_ARRAY_2D_TILED_THIN1)) {
       return false;
@@ -546,7 +637,7 @@ terakan_hw_config_draw_terascale_1_cb_color_encode(
    struct terakan_hw_config_draw_terascale_1_cb_color_input const * const input,
    struct terakan_hw_config_draw_terascale_1_cb_color * const color_out)
 {
-   if (input->is_uav || input->is_multisampled || input->metadata_enabled || input->format == 0 ||
+   if (input->is_uav || input->format == 0 ||
        input->pitch_tile_max > 0x3FF || input->slice_tile_max > 0xFFFFF ||
        input->slice_start > 0x7FF || input->slice_max > 0x7FF ||
        input->slice_start > input->slice_max || input->endian > 0x3 || input->format > 0x3F ||
@@ -554,6 +645,15 @@ terakan_hw_config_draw_terascale_1_cb_color_encode(
         input->array_mode != V_0280A0_ARRAY_1D_TILED_THIN1 &&
         input->array_mode != V_0280A0_ARRAY_2D_TILED_THIN1) ||
        input->number_type > 0x7 || input->comp_swap > 0x3 || input->source_format > 1) {
+      return false;
+   }
+   /* A multisampled R6xx/R7xx target needs both metadata addresses and their paired mask. The
+    * classic driver allocates the pair together; accepting only one would be a known hang path,
+    * not a graceful loss of compression. Conversely, a single-sample target with metadata is not
+    * representable by this port yet (the R600 resolve-destination dummy allocation is separate).
+    */
+   if (input->is_multisampled != input->metadata_enabled ||
+       input->cmask_tile_max > 0xFFF || input->fmask_tile_max > 0xFFFFF) {
       return false;
    }
 
@@ -569,13 +669,20 @@ terakan_hw_config_draw_terascale_1_cb_color_encode(
       S_0280A0_BLEND_BYPASS(input->blend_bypass) | S_0280A0_SIMPLE_FLOAT(input->simple_float) |
       S_0280A0_SOURCE_FORMAT(input->source_format == 1 ? V_0280A0_EXPORT_NORM
                                                        : V_0280A0_EXPORT_FULL);
-   /* With metadata disabled, classic r600_init_color_surface() points both metadata bases at the
-    * color base and leaves CB_COLORn_MASK zero. This is not a claim that FMASK/CMASK addressing is
-    * validated -- the early rejection above keeps every metadata-bearing surface out.
-    */
-   color_out->fmask = input->base;
-   color_out->cmask = input->base;
-   color_out->mask = 0;
+   if (input->metadata_enabled) {
+      color_out->info |= S_0280A0_TILE_MODE(V_0280A0_FRAG_ENABLE);
+      color_out->fmask = input->fmask;
+      color_out->cmask = input->cmask;
+      color_out->mask = S_028100_CMASK_BLOCK_MAX(input->cmask_tile_max) |
+                        S_028100_FMASK_TILE_MAX(input->fmask_tile_max);
+   } else {
+      /* The no-metadata branch is exactly r600_init_color_surface(): alias both metadata bases to
+       * BASE and clear MASK. It is valid only for a single-sampled target, checked above.
+       */
+      color_out->fmask = input->base;
+      color_out->cmask = input->base;
+      color_out->mask = 0;
+   }
    return true;
 }
 

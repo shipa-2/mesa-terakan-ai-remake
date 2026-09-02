@@ -3,9 +3,9 @@
  * SPDX-License-Identifier: MIT
  */
 
-/* TeraScale 1 physical devices enumerate and report properties. On hardware-validated R700,
- * vkCreateDevice additionally performs the minimal logical-device bring-up, while R600 is still
- * refused cleanly. Queue submission remains disabled on both until the command stream is validated.
+/* TeraScale 1 physical devices enumerate and report properties. On hardware-validated R600 and
+ * R700, vkCreateDevice additionally performs the minimal logical-device bring-up. Queue submission
+ * remains disabled on both until each generation's command stream is validated independently.
  *
  * Meaningful only on a machine with a TeraScale 1 card actually installed; there is no requirement
  * that one be present. When none is found, this reports that plainly and passes, since there is
@@ -35,13 +35,6 @@ static uint32_t const application_fragment_spirv[] = {
       }                                                                                            \
    } while (0)
 
-static bool
-device_name_is_r700(char const * const device_name)
-{
-   return strstr(device_name, "RV770") != NULL || strstr(device_name, "RV730") != NULL ||
-          strstr(device_name, "RV710") != NULL || strstr(device_name, "RV740") != NULL;
-}
-
 static uint32_t
 first_memory_type(uint32_t const memory_type_bits)
 {
@@ -54,8 +47,9 @@ first_memory_type(uint32_t const memory_type_bits)
 }
 
 static uint32_t
-check_r700_image_layout(VkDevice const device, VkImageCreateInfo const * const image_info,
-                        char const * const name, bool const check_linear_layout)
+check_terascale_1_image_layout(VkDevice const device, VkImageCreateInfo const * const image_info,
+                              char const * const name, bool const check_linear_layout,
+                              VkDeviceSize const minimum_size_exclusive)
 {
    uint32_t failures = 0;
    VkImage image = VK_NULL_HANDLE;
@@ -74,6 +68,14 @@ check_r700_image_layout(VkDevice const device, VkImageCreateInfo const * const i
       fprintf(stderr, "  %s invalid memory requirements: size=%llu alignment=%llu\n", name,
               (unsigned long long)requirements.size,
               (unsigned long long)requirements.alignment);
+      ++failures;
+      goto cleanup;
+   }
+   if (requirements.size <= minimum_size_exclusive) {
+      fprintf(stderr,
+              "  %s is missing required auxiliary storage: size=%llu must exceed %llu\n", name,
+              (unsigned long long)requirements.size,
+              (unsigned long long)minimum_size_exclusive);
       ++failures;
       goto cleanup;
    }
@@ -135,7 +137,7 @@ cleanup:
 }
 
 static uint32_t
-check_r700_image_layouts(VkDevice const device)
+check_terascale_1_image_layouts(VkDevice const device)
 {
    VkImageCreateInfo const linear = {
       .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
@@ -166,17 +168,44 @@ check_r700_image_layouts(VkDevice const device)
    expand_3x.extent = (VkExtent3D){81, 5, 1};
    expand_3x.mipLevels = 2;
 
+   /* 1024x1024 RGBA8 2x has an exactly 8 MiB main surface on the RV610 used for this test. R600's
+    * classic r600_texture_get_fmask_info() additionally allocates an over-sized FMASK, and
+    * r600_texture_get_cmask_info() a CMASK. Requiring strictly more than the main surface catches
+    * the former TeraScale 1 stub, which reported exactly 8 MiB and still advertised MSAA. This is
+    * an allocation/layout test only; it does not claim that rendering or resolving is validated
+    * while queue submission remains disabled.
+    */
+   VkImageCreateInfo msaa_color = optimal;
+   msaa_color.extent = (VkExtent3D){1024, 1024, 1};
+   msaa_color.mipLevels = 1;
+   msaa_color.samples = VK_SAMPLE_COUNT_2_BIT;
+   msaa_color.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+
+   /* DB uses the same 2D tiled pitch/slice encoding at every sample count on R6xx/R7xx; sample
+    * count is PA_SC state. This only validates allocation/binding of the 4x depth surface -- no
+    * DB packet can be submitted until the global TeraScale 1 queue guard is removed. */
+   VkImageCreateInfo msaa_depth = msaa_color;
+   msaa_depth.format = VK_FORMAT_D32_SFLOAT;
+   msaa_depth.samples = VK_SAMPLE_COUNT_4_BIT;
+   msaa_depth.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+
    uint32_t failures = 0;
-   failures += check_r700_image_layout(device, &linear, "linear RGBA8", true);
-   failures += check_r700_image_layout(device, &optimal, "2D-tiled RGBA8 mip chain", false);
-   failures += check_r700_image_layout(device, &bc1, "2D-tiled BC1 mip chain", false);
+   failures += check_terascale_1_image_layout(device, &linear, "linear RGBA8", true, 0);
    failures +=
-      check_r700_image_layout(device, &expand_3x, "linear R32G32B32 mip chain", false);
+      check_terascale_1_image_layout(device, &optimal, "2D-tiled RGBA8 mip chain", false, 0);
+   failures +=
+      check_terascale_1_image_layout(device, &bc1, "2D-tiled BC1 mip chain", false, 0);
+   failures +=
+      check_terascale_1_image_layout(device, &expand_3x, "linear R32G32B32 mip chain", false, 0);
+   failures += check_terascale_1_image_layout(device, &msaa_color, "2x MSAA RGBA8 metadata", false,
+                                               UINT64_C(1024) * 1024 * 4 * 2);
+   failures += check_terascale_1_image_layout(device, &msaa_depth, "4x MSAA D32", false, 0);
    return failures;
 }
 
 static uint32_t
-check_r700_application_graphics_shader_compile(VkDevice const device)
+check_terascale_1_application_graphics_shader_compile(VkDevice const device,
+                                                       VkSampleCountFlagBits const samples)
 {
    VkShaderModule vertex_module = VK_NULL_HANDLE, fragment_module = VK_NULL_HANDLE;
    VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
@@ -218,7 +247,7 @@ check_r700_application_graphics_shader_compile(VkDevice const device)
 
    VkAttachmentDescription const attachment = {
       .format = VK_FORMAT_R8G8B8A8_UNORM,
-      .samples = VK_SAMPLE_COUNT_1_BIT,
+      .samples = samples,
       .loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
       .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
       .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
@@ -301,7 +330,7 @@ check_r700_application_graphics_shader_compile(VkDevice const device)
    };
    VkPipelineMultisampleStateCreateInfo const multisample = {
       .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-      .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+      .rasterizationSamples = samples,
    };
    VkPipelineColorBlendAttachmentState const blend_attachment = {
       .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
@@ -327,10 +356,12 @@ check_r700_application_graphics_shader_compile(VkDevice const device)
    };
    result = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipeline_info, NULL, &pipeline);
    if (result != VK_SUCCESS) {
-      fprintf(stderr, "  R700 application VS/FS pipeline compilation failed with %d\n", result);
+      fprintf(stderr, "  TeraScale 1 %ux application VS/FS pipeline compilation failed with %d\n",
+              (unsigned)samples, result);
       failures = 1;
    } else {
-      fprintf(stderr, "  R700 application VS/FS pipeline compilation succeeded\n");
+      fprintf(stderr, "  TeraScale 1 %ux application VS/FS pipeline compilation succeeded\n",
+              (unsigned)samples);
    }
 
 cleanup:
@@ -393,10 +424,9 @@ main(void)
          .pNext = &sample_location_properties,
       };
       vkGetPhysicalDeviceProperties2(physical_devices[device_index], &properties_2);
-      if (device_name_is_r700(properties.deviceName) &&
-          (sample_location_properties.maxSampleLocationGridSize.width != 1 ||
-           sample_location_properties.maxSampleLocationGridSize.height != 1)) {
-         fprintf(stderr, "  R700 sample-location grid is %ux%u, expected 1x1\n",
+      if (sample_location_properties.maxSampleLocationGridSize.width != 1 ||
+          sample_location_properties.maxSampleLocationGridSize.height != 1) {
+         fprintf(stderr, "  TeraScale 1 sample-location grid is %ux%u, expected 1x1\n",
                  sample_location_properties.maxSampleLocationGridSize.width,
                  sample_location_properties.maxSampleLocationGridSize.height);
          ++failures;
@@ -417,42 +447,34 @@ main(void)
       VkDevice device;
       VkResult const create_result =
          vkCreateDevice(physical_devices[device_index], &device_info, NULL, &device);
-      if (device_name_is_r700(properties.deviceName)) {
-         if (create_result != VK_SUCCESS) {
-            fprintf(stderr, "  vkCreateDevice failed with %d on hardware-validated R700\n",
-                    create_result);
-            ++failures;
-         } else {
-            fprintf(stderr, "  minimal R700 vkCreateDevice succeeded\n");
-
-            failures += check_r700_image_layouts(device);
-            failures += check_r700_application_graphics_shader_compile(device);
-
-            VkQueue queue;
-            vkGetDeviceQueue(device, 0, 0, &queue);
-            VkSubmitInfo const empty_submit = {
-               .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-            };
-            VkResult const submit_result = vkQueueSubmit(queue, 1, &empty_submit, VK_NULL_HANDLE);
-            if (submit_result != VK_ERROR_DEVICE_LOST) {
-               fprintf(
-                  stderr,
-                  "  guarded R700 queue submission returned %d, expected VK_ERROR_DEVICE_LOST\n",
-                  submit_result);
-               ++failures;
-            } else {
-               fprintf(stderr, "  R700 queue submission remains safely disabled\n");
-            }
-         }
-      } else if (create_result == VK_SUCCESS) {
-         fprintf(stderr, "  vkCreateDevice unexpectedly succeeded on unvalidated TeraScale 1 %s\n",
-                 properties.deviceName);
-         ++failures;
-      } else if (create_result != VK_ERROR_INITIALIZATION_FAILED) {
-         fprintf(stderr,
-                 "  vkCreateDevice failed with %d, expected VK_ERROR_INITIALIZATION_FAILED\n",
+      if (create_result != VK_SUCCESS) {
+         fprintf(stderr, "  vkCreateDevice failed with %d on hardware-validated TeraScale 1\n",
                  create_result);
          ++failures;
+      } else {
+         fprintf(stderr, "  minimal TeraScale 1 vkCreateDevice succeeded\n");
+
+         failures += check_terascale_1_image_layouts(device);
+         failures += check_terascale_1_application_graphics_shader_compile(
+            device, VK_SAMPLE_COUNT_1_BIT);
+         failures += check_terascale_1_application_graphics_shader_compile(
+            device, VK_SAMPLE_COUNT_4_BIT);
+
+         VkQueue queue;
+         vkGetDeviceQueue(device, 0, 0, &queue);
+         VkSubmitInfo const empty_submit = {
+            .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+         };
+         VkResult const submit_result = vkQueueSubmit(queue, 1, &empty_submit, VK_NULL_HANDLE);
+         if (submit_result != VK_ERROR_DEVICE_LOST) {
+            fprintf(stderr,
+                    "  guarded TeraScale 1 queue submission returned %d, expected "
+                    "VK_ERROR_DEVICE_LOST\n",
+                    submit_result);
+            ++failures;
+         } else {
+            fprintf(stderr, "  TeraScale 1 queue submission remains safely disabled\n");
+         }
       }
       if (create_result == VK_SUCCESS) {
          vkDestroyDevice(device, NULL);
