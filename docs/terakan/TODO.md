@@ -123,7 +123,16 @@ TeraScale 1 submission has a deliberately narrow diagnostic opt-in: only
 `TERAKAN_DEBUG_TERASCALE_1_SUBMIT=1` reaches the winsys. With the variable absent, or with any
 other value including `0`, `terakan_queue_submit` still returns `VK_ERROR_DEVICE_LOST`. This is
 only B1 of the first-execution plan: it is not a claim that any command buffer is safe to submit.
-The first allowed experiment is an empty-buffer fence/readback on the isolated RV710 machine.
+On RV710, the first empty-buffer experiment exposed two separate facts: the kernel first rejected
+Evergreen-only `PKT3_PFP_SYNC_ME` (`0x42`), so TeraScale 1 now omits it; after that correction the
+kernel accepted the IB but ring 0 locked up and its fence timed out. The offline audit also found
+`EVENT_TYPE_CS_PARTIAL_FLUSH` (`0x07`) marked `eg+` in `r600d.h`; unlike the former packet, it
+passed validation and therefore could plausibly have caused the stall. TeraScale 1 now emits only
+the `PS_PARTIAL_FLUSH` used by `r600_init_atom_start_cs()`. A repeatable dry-run
+`TERAKAN_DEBUG_DRY_RUN_SUBMIT=1` paired with `TERAKAN_DUMP_CS=1` records the exact IB without
+issuing `DRM_RADEON_CS`; on RV710 it proved the 216-dword post-change stream contains no `0x07`
+event. B2 is therefore **not done**: do not repeat a real submit until the remaining preamble
+differs from `r600_init_atom_start_cs()` by documented, justified packets.
 
 ## Completed and regression-covered
 

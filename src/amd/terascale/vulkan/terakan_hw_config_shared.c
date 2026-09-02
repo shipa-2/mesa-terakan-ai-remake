@@ -76,16 +76,23 @@ terakan_hw_config_shared_indirect_buffer_begun(
 {
    terakan_hw_config_shared_set_all_modified(&command_writer->hw_config_shared);
 
+   struct terakan_physical_device_chip_info const * const chip_info =
+      &terakan_gfx_command_writer_physical_device(command_writer)->chip_info;
+
    /* Flush all shader invocations before configuring the sequencer.
     * This is necessary, and on WDDM Radeon Software, not flushing before setting `SQ_CONFIG`
     * consistently results in a GPU hang (tested on Barts on 15.301.1901).
+    *
+    * EVENT_TYPE_CS_PARTIAL_FLUSH is explicitly Evergreen-and-newer in r600d.h. R7xx does not
+    * have a CS stage; its classic r600_init_atom_start_cs() preamble emits only
+    * PS_PARTIAL_FLUSH here. The Radeon command-stream validator accepts event 0x07, but an RV710
+    * empty-IB experiment subsequently stalled ring 0, so leaving the Evergreen CS flush in this
+    * shared preamble is not defensible. Keep the pre-existing two-event sequence byte-for-byte for
+    * Evergreen and use the documented R600/R700 event instead.
     */
    terakan_barrier_emit_actions_unconditionally(
-      command_writer,
-      TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_PS | TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CS);
-
-   struct terakan_physical_device_chip_info const * const chip_info =
-      &terakan_gfx_command_writer_physical_device(command_writer)->chip_info;
+      command_writer, TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_PS |
+                          (chip_info->is_terascale_1 ? 0 : TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CS));
 
    /* TeraScale 1's SQ_CONFIG/SQ_GPR_RESOURCE_MGMT/SQ_THREAD_RESOURCE_MGMT and the rest of the
     * per-command-buffer context defaults have a genuinely different register layout from R8xx/R9xx

@@ -17,6 +17,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static uint32_t const application_vertex_spirv[] = {
@@ -44,6 +45,88 @@ first_memory_type(uint32_t const memory_type_bits)
       }
    }
    return UINT32_MAX;
+}
+
+static bool
+terascale_1_submit_opted_in(void)
+{
+   char const * const value = getenv("TERAKAN_DEBUG_TERASCALE_1_SUBMIT");
+   return value != NULL && strcmp(value, "1") == 0;
+}
+
+static uint32_t
+check_rv710_empty_submit(VkDevice const device, VkQueue const queue)
+{
+   VkCommandPool command_pool = VK_NULL_HANDLE;
+   VkCommandBuffer command_buffer = VK_NULL_HANDLE;
+   VkFence fence = VK_NULL_HANDLE;
+   uint32_t failures = 0;
+
+   VkCommandPoolCreateInfo const command_pool_info = {
+      .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+      .queueFamilyIndex = 0,
+   };
+   VkResult result = vkCreateCommandPool(device, &command_pool_info, NULL, &command_pool);
+   if (result != VK_SUCCESS) {
+      fprintf(stderr, "  RV710 empty-submit vkCreateCommandPool failed with %d\n", result);
+      return 1;
+   }
+   VkCommandBufferAllocateInfo const command_buffer_info = {
+      .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+      .commandPool = command_pool,
+      .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+      .commandBufferCount = 1,
+   };
+   result = vkAllocateCommandBuffers(device, &command_buffer_info, &command_buffer);
+   if (result != VK_SUCCESS) {
+      fprintf(stderr, "  RV710 empty-submit vkAllocateCommandBuffers failed with %d\n", result);
+      failures = 1;
+      goto cleanup;
+   }
+   VkCommandBufferBeginInfo const begin_info = {
+      .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+   };
+   result = vkBeginCommandBuffer(command_buffer, &begin_info);
+   if (result == VK_SUCCESS) {
+      result = vkEndCommandBuffer(command_buffer);
+   }
+   if (result != VK_SUCCESS) {
+      fprintf(stderr, "  RV710 empty command-buffer recording failed with %d\n", result);
+      failures = 1;
+      goto cleanup;
+   }
+   VkFenceCreateInfo const fence_info = {
+      .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+   };
+   result = vkCreateFence(device, &fence_info, NULL, &fence);
+   if (result != VK_SUCCESS) {
+      fprintf(stderr, "  RV710 empty-submit vkCreateFence failed with %d\n", result);
+      failures = 1;
+      goto cleanup;
+   }
+   VkSubmitInfo const submit_info = {
+      .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+      .commandBufferCount = 1,
+      .pCommandBuffers = &command_buffer,
+   };
+   result = vkQueueSubmit(queue, 1, &submit_info, fence);
+   if (result == VK_SUCCESS) {
+      result = vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_C(5000000000));
+   }
+   if (result != VK_SUCCESS) {
+      fprintf(stderr, "  RV710 empty preamble/fence submission failed with %d\n", result);
+      failures = 1;
+   } else {
+      fprintf(stderr, "  RV710 empty preamble/fence submission completed\n");
+   }
+
+cleanup:
+   vkDestroyFence(device, fence, NULL);
+   if (command_buffer != VK_NULL_HANDLE) {
+      vkFreeCommandBuffers(device, command_pool, 1, &command_buffer);
+   }
+   vkDestroyCommandPool(device, command_pool, NULL);
+   return failures;
 }
 
 static uint32_t
@@ -462,18 +545,27 @@ main(void)
 
          VkQueue queue;
          vkGetDeviceQueue(device, 0, 0, &queue);
-         VkSubmitInfo const empty_submit = {
-            .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-         };
-         VkResult const submit_result = vkQueueSubmit(queue, 1, &empty_submit, VK_NULL_HANDLE);
-         if (submit_result != VK_ERROR_DEVICE_LOST) {
-            fprintf(stderr,
-                    "  guarded TeraScale 1 queue submission returned %d, expected "
-                    "VK_ERROR_DEVICE_LOST\n",
-                    submit_result);
-            ++failures;
+         if (!terascale_1_submit_opted_in()) {
+            VkSubmitInfo const empty_submit = {
+               .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+            };
+            VkResult const submit_result =
+               vkQueueSubmit(queue, 1, &empty_submit, VK_NULL_HANDLE);
+            if (submit_result != VK_ERROR_DEVICE_LOST) {
+               fprintf(stderr,
+                       "  guarded TeraScale 1 queue submission returned %d, expected "
+                       "VK_ERROR_DEVICE_LOST\n",
+                       submit_result);
+               ++failures;
+            } else {
+               fprintf(stderr, "  TeraScale 1 queue submission remains safely disabled\n");
+            }
+         } else if (properties.deviceID == 0x954f) {
+            failures += check_rv710_empty_submit(device, queue);
          } else {
-            fprintf(stderr, "  TeraScale 1 queue submission remains safely disabled\n");
+            fprintf(stderr,
+                    "  TeraScale 1 submit opt-in deliberately skips non-RV710 device 0x%04x\n",
+                    properties.deviceID);
          }
       }
       if (create_result == VK_SUCCESS) {

@@ -191,6 +191,15 @@ terakan_queue_drm_radeon_submit(
       fflush(stderr);
    }
 
+   /* Pair this with TERAKAN_DUMP_CS while bringing up a new generation. This deliberately follows
+    * relocation preparation and prints the exact kernel-facing IB, but never issues DRM_RADEON_CS.
+    * It is a diagnostic failure, not a successful submission, so callers must not interpret it as
+    * a fence or a GPU result.
+    */
+   if (debug_get_bool_option("TERAKAN_DEBUG_DRY_RUN_SUBMIT", false)) {
+      return VK_ERROR_UNKNOWN;
+   }
+
    bool const debug_submit_timing = debug_get_bool_option("TERAKAN_DEBUG_SUBMIT_TIMING", false);
    int64_t const submit_begin_ns = debug_submit_timing ? os_time_get_nano() : 0;
    int const cs_result = drmCommandWriteRead(device->render_node_fd, DRM_RADEON_CS, &cs_arguments,

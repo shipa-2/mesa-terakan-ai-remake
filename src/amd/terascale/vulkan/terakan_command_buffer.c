@@ -1143,14 +1143,21 @@ terakan_BeginCommandBuffer(VkCommandBuffer const commandBuffer,
       PKT3(PKT3_PFP_SYNC_ME, 0, 0),
       0,
    };
+   /* r600d.h marks PFP_SYNC_ME (0x42) as Evergreen-and-newer, and
+    * r600_init_atom_start_cs() has no equivalent packet. The DRM Radeon validator rejects it on
+    * RV710 before execution. It is deliberately the final pair in the common packet list so the
+    * TeraScale 1 path can omit it without changing the Evergreen packet sequence or its ordering.
+    */
+   uint32_t const invalidate_caches_packet_dwords =
+      ARRAY_SIZE(invalidate_caches_packets) - (physical_device->chip_info.is_terascale_1 ? 2 : 0);
    {
       uint32_t * invalidate_cache_packets_ptr = terakan_gfx_command_writer_emit(
          gfx_command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_OTHER,
-         ARRAY_SIZE(invalidate_caches_packets));
+         invalidate_caches_packet_dwords);
       if (likely(invalidate_cache_packets_ptr != NULL)) {
          memcpy(invalidate_cache_packets_ptr, invalidate_caches_packets,
-                sizeof(invalidate_caches_packets));
-         invalidate_cache_packets_ptr += ARRAY_SIZE(invalidate_caches_packets);
+                sizeof(uint32_t) * invalidate_caches_packet_dwords);
+         invalidate_cache_packets_ptr += invalidate_caches_packet_dwords;
          terakan_gfx_command_writer_emit_done(gfx_command_writer, invalidate_cache_packets_ptr);
       }
    }
