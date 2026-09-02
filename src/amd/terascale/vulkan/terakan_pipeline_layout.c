@@ -66,6 +66,8 @@ terakan_CmdBindDescriptorSets(VkCommandBuffer const commandBuffer,
       is_compute ? MESA_SHADER_COMPUTE : MESA_SHADER_FRAGMENT;
 
    gl_shader_stage const uav_shader_stage = is_compute ? MESA_SHADER_COMPUTE : MESA_SHADER_FRAGMENT;
+   unsigned const uav_bind_point = is_compute ? TERAKAN_APP_CONFIG_DRAW_UAV_BIND_POINT_COMPUTE
+                                              : TERAKAN_APP_CONFIG_DRAW_UAV_BIND_POINT_GRAPHICS;
 
    uint32_t const * set_dynamic_offsets = pDynamicOffsets;
 
@@ -293,11 +295,12 @@ terakan_CmdBindDescriptorSets(VkCommandBuffer const commandBuffer,
                      new_uav_color = &new_uav_color_with_dynamic_offset;
                   }
                   terakan_app_config_draw_set_cb_color_uav(&command_writer->app_config_draw,
-                                                           shader_uav_index, set_uav->bo,
-                                                           new_uav_color);
+                                                           uav_bind_point, shader_uav_index,
+                                                           set_uav->bo, new_uav_color);
                } else {
                   terakan_app_config_draw_set_cb_color_uav(&command_writer->app_config_draw,
-                                                           shader_uav_index, NULL, NULL);
+                                                           uav_bind_point, shader_uav_index, NULL,
+                                                           NULL);
                }
             }
          }

@@ -30,7 +30,7 @@ struct terakan_gfx_command_writer;
 
 void terakan_app_config_compute_reset(struct terakan_app_config_compute * config);
 
-void terakan_app_config_compute_clear_binding(struct terakan_app_config_compute * config);
+void terakan_app_config_compute_invalidate_binding(struct terakan_app_config_compute * config);
 
 void terakan_app_config_compute_bind_shader(struct terakan_gfx_command_writer * command_writer,
                                             struct terakan_shader_impl const * shader,

@@ -87,34 +87,37 @@ terakan_app_config_draw_set_cb_color_rtv(struct terakan_app_config_draw * const 
 
 void
 terakan_app_config_draw_set_cb_color_uav(struct terakan_app_config_draw * const config,
+                                         unsigned const bind_point,
                                          unsigned const mutable_resource_index,
                                          struct terakan_bo const * const bo,
                                          struct terakan_color_descriptor const * const color)
 {
+   assert(bind_point <= TERAKAN_APP_CONFIG_DRAW_UAV_BIND_POINT_COMPUTE);
    assert(mutable_resource_index < TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL);
+   BITSET_WORD * const uav_bound = config->cb_color_uav_and_unused_mrt_.uav_bound[bind_point];
    if (terakan_color_descriptor_is_bound(bo, color)) {
       assert(G_028C70_RAT(color->info));
       struct terakan_app_config_draw_cb_color_uav * const uav =
-         &config->cb_color_uav_and_unused_mrt_.uav[mutable_resource_index];
-      if (BITSET_TEST(config->cb_color_uav_and_unused_mrt_.uav_bound, mutable_resource_index) &&
-          uav->bo == bo &&
+         &config->cb_color_uav_and_unused_mrt_.uav[bind_point][mutable_resource_index];
+      if (BITSET_TEST(uav_bound, mutable_resource_index) && uav->bo == bo &&
           memcmp(&uav->color, color, sizeof(struct terakan_color_descriptor)) == 0) {
          return;
       }
-      BITSET_SET(config->cb_color_uav_and_unused_mrt_.uav_bound, mutable_resource_index);
+      BITSET_SET(uav_bound, mutable_resource_index);
       uav->bo = bo;
       uav->color = *color;
    } else {
-      if (!BITSET_TEST(config->cb_color_uav_and_unused_mrt_.uav_bound, mutable_resource_index)) {
+      if (!BITSET_TEST(uav_bound, mutable_resource_index)) {
          return;
       }
-      BITSET_CLEAR(config->cb_color_uav_and_unused_mrt_.uav_bound, mutable_resource_index);
+      BITSET_CLEAR(uav_bound, mutable_resource_index);
    }
-   if (BITSET_TEST(config->cb_color_uav_and_unused_mrt_.from_apply_sq_pgm_fragment.uav_used,
-                   mutable_resource_index)) {
-      terakan_app_config_draw_set_pending(
-         config, TERAKAN_APP_CONFIG_DRAW_ENTRY_CB_COLOR_UAV_AND_UNUSED_MRT);
-   }
+   /* `uav_used` describes whichever bind point was prepared last, so it cannot say whether this
+    * one's shader wants the binding. Re-applying an entry that turns out unchanged is cheap next
+    * to missing one that did change.
+    */
+   terakan_app_config_draw_set_pending(config,
+                                       TERAKAN_APP_CONFIG_DRAW_ENTRY_CB_COLOR_UAV_AND_UNUSED_MRT);
 }
 
 typedef void (*terakan_app_config_apply_function)(
@@ -2011,10 +2014,12 @@ terakan_app_config_draw_apply_cb_color_uav_and_unused_mrt(
                      : TERAKAN_RESOURCE_RANGE_UAV_IMMEDIATE_BASE_PIXEL) +
          uav_count;
 
-      if (BITSET_TEST(app_config->cb_color_uav_and_unused_mrt_.uav_bound,
+      unsigned const uav_bind_point = is_compute ? TERAKAN_APP_CONFIG_DRAW_UAV_BIND_POINT_COMPUTE
+                                                 : TERAKAN_APP_CONFIG_DRAW_UAV_BIND_POINT_GRAPHICS;
+      if (BITSET_TEST(app_config->cb_color_uav_and_unused_mrt_.uav_bound[uav_bind_point],
                       uav_uncompacted_index)) {
          struct terakan_app_config_draw_cb_color_uav const * const uav =
-            &app_config->cb_color_uav_and_unused_mrt_.uav[uav_uncompacted_index];
+            &app_config->cb_color_uav_and_unused_mrt_.uav[uav_bind_point][uav_uncompacted_index];
 
          if (debug_rat && debug_rat_apply < 4096) {
             fprintf(stderr,
@@ -2433,7 +2438,8 @@ terakan_app_config_draw_reset(struct terakan_app_config_draw * config)
    config->cb_color_control_.from_apply_cb_color_rtv_and_blend_control.any_rtv_written = false;
    config->db_shader_control_.from_apply_cb_color_rtv_and_blend_control.rtv_128bpp_export = false;
 
-   BITSET_ZERO(config->cb_color_uav_and_unused_mrt_.uav_bound);
+   BITSET_ZERO(config->cb_color_uav_and_unused_mrt_.uav_bound[0]);
+   BITSET_ZERO(config->cb_color_uav_and_unused_mrt_.uav_bound[1]);
    config->cb_color_control_.from_apply_cb_color_uav_and_unused_mrt.any_uav_used = false;
 
    /* VkPipelineColorBlendStateCreateInfo blendConstants[0...3] = 0.0f */

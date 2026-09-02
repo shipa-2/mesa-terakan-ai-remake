@@ -996,7 +996,7 @@ terakan_vk_pipeline_graphics_cmd_bind(struct vk_command_buffer * const command_b
                  : 0);
    }
 
-   terakan_app_config_compute_clear_binding(&command_writer->app_config_compute);
+   terakan_app_config_compute_invalidate_binding(&command_writer->app_config_compute);
 
    BITSET_COPY(command_buffer->graphics_state_is_dynamic, pipeline->dynamic_state);
    /* For consistency with the dynamic state in the `vk_command_buffer`, mark the state that's

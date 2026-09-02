@@ -510,9 +510,14 @@ struct terakan_app_config_draw {
        * corresponding bit set for a UAV, the BO pointer and the color target descriptor are
        * undefined.
        */
-      BITSET_DECLARE(uav_bound, TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL);
+      /* Indexed by the bind point: graphics first, compute second. The two share the hardware
+       * CB/RAT targets but are separate pipeline bind points in Vulkan, each with its own bound
+       * descriptor sets, so one array for both let whichever set was bound last decide the UAV
+       * descriptors for the other's draw or dispatch as well.
+       */
+      BITSET_DECLARE(uav_bound[2], TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL);
       struct terakan_app_config_draw_cb_color_uav
-         uav[TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL];
+         uav[2][TERAKAN_RESOURCE_RANGE_MUTABLE_MAX_COUNT_PIXEL];
 
       struct {
          uint8_t rtv_dsb_export_count;
@@ -1364,7 +1369,11 @@ terakan_app_config_draw_get_cb_color_rtv(struct terakan_app_config_draw const * 
 /* If `terakan_color_descriptor_is_bound` for the provided arguments is false, the UAV is unbound.
  * #MemoryIntegrity is expected to be ensured before calling.
  */
+#define TERAKAN_APP_CONFIG_DRAW_UAV_BIND_POINT_GRAPHICS 0
+#define TERAKAN_APP_CONFIG_DRAW_UAV_BIND_POINT_COMPUTE  1
+
 void terakan_app_config_draw_set_cb_color_uav(struct terakan_app_config_draw * config,
+                                              unsigned bind_point,
                                               unsigned mutable_resource_index,
                                               struct terakan_bo const * bo,
                                               struct terakan_color_descriptor const * color);

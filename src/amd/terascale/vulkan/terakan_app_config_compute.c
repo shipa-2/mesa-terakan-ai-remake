@@ -33,12 +33,16 @@ terakan_app_config_compute_reset(struct terakan_app_config_compute * const confi
 }
 
 void
-terakan_app_config_compute_clear_binding(struct terakan_app_config_compute * const config)
+terakan_app_config_compute_invalidate_binding(struct terakan_app_config_compute * const config)
 {
-   config->shader = NULL;
-   config->cb_target_mask_ = 0;
-   config->diagnostic_skip_dispatch_ = false;
-   config->pending_ = false;
+   /* Compute and graphics share hardware state -- the LS/CS stage program and the CB/RAT target
+    * mask -- so a graphics pipeline bind leaves the compute configuration no longer in the
+    * hardware and it has to be programmed again before the next dispatch. It must not be
+    * forgotten, though: `vkCmdBindPipeline` for one bind point does not disturb the other's
+    * binding, and dropping the shader and the target mask here made every dispatch that followed a
+    * graphics pipeline bind skip its own state entirely, so it wrote nothing.
+    */
+   config->pending_ = true;
 }
 
 void
