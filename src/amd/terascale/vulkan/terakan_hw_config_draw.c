@@ -807,7 +807,7 @@ terakan_hw_config_draw_emit_sq_pgm_vs(struct terakan_gfx_command_writer * const 
    if (is_terascale_1 &&
        (shader->sq_pgm_resources[1] != 0 ||
         !terakan_hw_config_draw_terascale_1_sq_pgm_resources_encode(
-           shader->sq_pgm_resources[0], &resources_r700))) {
+           shader->sq_pgm_resources[0], false, &resources_r700))) {
       return;
    }
 
@@ -901,7 +901,7 @@ terakan_hw_config_draw_emit_sq_pgm_pre_vs_stage(
       if (register_start == R_0288D0_SQ_PGM_START_LS ||
           register_start == R_0288B8_SQ_PGM_START_HS || shader->sq_pgm_resources[1] != 0 ||
           !terakan_hw_config_draw_terascale_1_sq_pgm_resources_encode(
-             shader->sq_pgm_resources[0], &resources_r700)) {
+             shader->sq_pgm_resources[0], false, &resources_r700)) {
          return;
       }
    }
@@ -1002,14 +1002,16 @@ terakan_hw_config_draw_emit_sq_pgm_ps(struct terakan_gfx_command_writer * const 
    }
 
    uint32_t const interpolator_count = G_0286CC_NUM_INTERP(shader->stage.ps.spi_ps_in_control[0]);
-   bool const is_terascale_1 =
-      terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1;
+   struct terakan_physical_device_chip_info const * const chip_info =
+      &terakan_gfx_command_writer_physical_device(command_writer)->chip_info;
+   bool const is_terascale_1 = chip_info->is_terascale_1;
 
    uint32_t resources_r700 = 0;
    if (is_terascale_1 &&
        (shader->sq_pgm_resources[1] != 0 ||
         !terakan_hw_config_draw_terascale_1_sq_pgm_resources_encode(
-           shader->sq_pgm_resources[0], &resources_r700))) {
+           shader->sq_pgm_resources[0], chip_info->chip_family == CHIP_R600,
+           &resources_r700))) {
       return;
    }
 
@@ -1240,6 +1242,27 @@ terakan_hw_config_draw_emit_pa_cl_vport_scale_offset(
 static void
 terakan_hw_config_draw_emit_pa_cl_clip_cntl(struct terakan_gfx_command_writer * const command_writer)
 {
+   struct terakan_physical_device_chip_info const * const chip_info =
+      &terakan_gfx_command_writer_physical_device(command_writer)->chip_info;
+   if (chip_info->is_terascale_1) {
+      bool const is_r700 =
+         terakan_physical_device_chip_family_is_r700(chip_info->chip_family);
+      struct terakan_hw_config_draw_terascale_1_pa_cl_clip clip;
+      if (!terakan_hw_config_draw_terascale_1_pa_cl_clip_encode(
+             command_writer->hw_config_draw.pa_cl_clip_cntl_, is_r700, &clip)) {
+         return;
+      }
+      uint32_t * packet = terakan_gfx_command_writer_emit(
+         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG,
+         terakan_hw_config_draw_terascale_1_pa_cl_clip_packet_dwords(is_r700));
+      if (unlikely(packet == NULL)) {
+         return;
+      }
+      packet = terakan_hw_config_draw_terascale_1_write_pa_cl_clip(packet, is_r700, &clip);
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
+      return;
+   }
+
    terakan_hw_config_draw_emit_context_register(command_writer, R_028810_PA_CL_CLIP_CNTL,
                                                 command_writer->hw_config_draw.pa_cl_clip_cntl_);
 }
@@ -1293,6 +1316,7 @@ terakan_hw_config_draw_emit_pa_sc_mode_terascale_1(
       .line_stipple_enable = (mode_0 & S_028A48_LINE_STIPPLE_ENABLE(1)) != 0,
       .viewport_scissor_enable = (mode_0 & S_028A48_VPORT_SCISSOR_ENABLE(1)) != 0,
       .ps_iter_sample = (mode_1 & EG_S_028A4C_PS_ITER_SAMPLE(1)) != 0,
+      .is_r700 = terakan_physical_device_chip_family_is_r700(chip_info->chip_family),
       .is_rv770 = chip_info->chip_family == CHIP_RV770,
       .unknown_mode_0_bits = mode_0 & ~known_mode_0_bits,
       .unknown_mode_1_bits = mode_1 & ~known_mode_1_bits,
@@ -1431,12 +1455,15 @@ terakan_hw_config_draw_emit_pa_sc_aa_config_sample_locs(
              config->pa_sc_aa_config_sample_locs_.sample_locs, &aa)) {
          return;
       }
+      bool const is_original_r600 = chip_info->chip_family == CHIP_R600;
+      uint32_t const packet_dwords =
+         terakan_hw_config_draw_terascale_1_pa_sc_aa_packet_dwords(is_original_r600, &aa);
       uint32_t * packet = terakan_gfx_command_writer_emit(
-         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG, 7);
+         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG, packet_dwords);
       if (unlikely(packet == NULL)) {
          return;
       }
-      packet = terakan_hw_config_draw_terascale_1_write_pa_sc_aa(packet, &aa);
+      packet = terakan_hw_config_draw_terascale_1_write_pa_sc_aa(packet, is_original_r600, &aa);
       terakan_gfx_command_writer_emit_done(command_writer, packet);
       return;
    }
@@ -1682,9 +1709,10 @@ terakan_hw_config_draw_emit_db_depth_stencil_buffer(
     * single most dangerous offset collision found in the TeraScale 1 CB/DB/PA/SPI/SQ register
     * compatibility audit (TODO.md). R600/R700 also binds depth and stencil through one combined
     * surface and base address (R_02800C_DB_DEPTH_BASE) rather than R8xx/R9xx's four independent
-    * read/write Z/stencil base registers. The depth-only single-sample subset is translated below;
-    * stencil and multisample descriptors are explicitly unbound until their packed R700 surface
-    * allocation is ported. Must never fall through to the Evergreen code below for TeraScale 1.
+    * read/write Z/stencil base registers. The depth-only subset is translated below. Classic
+    * r600_init_depth_surface() has no DB sample-count field: PA_SC_AA_CONFIG owns that state, so
+    * the larger MSAA layout is valid here too. Stencil remains explicitly unbound. Must never fall
+    * through to the Evergreen code below for TeraScale 1.
     */
    if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
       struct terakan_bo const * const bo =
@@ -1745,7 +1773,8 @@ terakan_hw_config_draw_emit_db_depth_stencil_buffer(
 
       uint32_t const bo_reference = terakan_bo_reference_writer_add_reference(
          &command_writer->base.bo_reference_writer, bo, true, true,
-         TERAKAN_BO_PRIORITY_DEPTH_BUFFER);
+         input.samples_log2 ? TERAKAN_BO_PRIORITY_DEPTH_BUFFER_MS
+                            : TERAKAN_BO_PRIORITY_DEPTH_BUFFER);
       terakan_gfx_command_writer_add_relocation(
          command_writer, &packet, &packet_start[8], packet_start[8],
          TERASCALE_WDDM_PATCH_IDS_DB_Z_STENCIL_BASE, bo_reference);
@@ -2185,6 +2214,13 @@ terakan_hw_config_draw_emit_cb_color(struct terakan_gfx_command_writer * const c
             .is_uav = G_028C70_RAT(color->info),
             .is_multisampled = G_028C74_NUM_SAMPLES(color->attrib) != 0,
             .metadata_enabled = metadata_enabled,
+            .fmask = config->cb_color_.meta[color_index].fmask,
+            .cmask = config->cb_color_.meta[color_index].cmask,
+            /* CB_COLORn_MASK has narrower fields than Evergreen's CMASK/ FMASK slice registers.
+             * The latter's TILE_MAX fields start at bit 0, so extract their documented raw ranges
+             * here and let the TeraScale 1 encoder reject values that cannot be represented. */
+            .cmask_tile_max = config->cb_color_.meta[color_index].cmask_slice & 0x3FFF,
+            .fmask_tile_max = config->cb_color_.meta[color_index].fmask_slice & 0x3FFFFF,
          };
          struct terakan_hw_config_draw_terascale_1_cb_color color_r700;
          if (!terakan_hw_config_draw_terascale_1_cb_color_encode(&input, &color_r700)) {

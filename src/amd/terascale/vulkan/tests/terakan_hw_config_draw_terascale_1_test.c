@@ -306,13 +306,26 @@ test_db_depth_encode(void)
 }
 
 static void
-test_db_depth_encode_rejects_unported_surfaces(void)
+test_db_depth_encode_multisample_and_rejects_unported_surfaces(void)
 {
    struct terakan_hw_config_draw_terascale_1_db_depth_input input =
       representative_db_depth_input();
    struct terakan_hw_config_draw_terascale_1_db_depth depth;
 
-   input.samples_log2 = 1;
+   /* MSAA sample count belongs to PA_SC_AA_CONFIG, not DB_DEPTH_INFO. The DB packet therefore is
+    * byte-for-byte the classic r600_init_depth_surface() encoding for the same tiled dimensions. */
+   input.samples_log2 = 2;
+   CHECK(terakan_hw_config_draw_terascale_1_db_depth_encode(&input, &depth));
+   CHECK(depth.info ==
+         (S_028010_FORMAT(V_028010_DEPTH_X8_24) |
+          S_028010_ARRAY_MODE(V_0280A0_ARRAY_2D_TILED_THIN1) | S_028010_ZRANGE_PRECISION(1)));
+   uint32_t packets[13];
+   CHECK(terakan_hw_config_draw_terascale_1_write_db_depth(packets, &depth) == packets + 13);
+   CHECK(packets[0] == PKT3(PKT3_SET_CONTEXT_REG, 1, 0));
+   CHECK(packets[1] == (R_028000_DB_DEPTH_SIZE - R600_CONTEXT_REG_OFFSET) >> 2);
+   CHECK(packets[8] == input.base);
+   CHECK(packets[9] == depth.info);
+   input.samples_log2 = 4;
    CHECK(!terakan_hw_config_draw_terascale_1_db_depth_encode(&input, &depth));
    input.samples_log2 = 0;
    input.array_mode = V_0280A0_ARRAY_LINEAR_ALIGNED;
@@ -421,7 +434,8 @@ test_pa_sc_aa_config_sample_locs(void)
    CHECK(aa.sample_locs[1] == UINT32_C(0xB33552EB));
 
    uint32_t packet[7];
-   CHECK(terakan_hw_config_draw_terascale_1_write_pa_sc_aa(packet, &aa) == packet + 7);
+   CHECK(terakan_hw_config_draw_terascale_1_pa_sc_aa_packet_dwords(false, &aa) == 7);
+   CHECK(terakan_hw_config_draw_terascale_1_write_pa_sc_aa(packet, false, &aa) == packet + 7);
    CHECK(packet[0] == PKT3(PKT3_SET_CONTEXT_REG, 2, 0));
    CHECK(packet[1] ==
          (R_028C1C_PA_SC_AA_SAMPLE_LOCS_MCTX - R600_CONTEXT_REG_OFFSET) >> 2);
@@ -430,6 +444,44 @@ test_pa_sc_aa_config_sample_locs(void)
    CHECK(packet[4] == PKT3(PKT3_SET_CONTEXT_REG, 1, 0));
    CHECK(packet[5] == (R_028C04_PA_SC_AA_CONFIG - R600_CONTEXT_REG_OFFSET) >> 2);
    CHECK(packet[6] == aa.config);
+
+   CHECK(terakan_hw_config_draw_terascale_1_pa_sc_aa_packet_dwords(true, &aa) == 7);
+   CHECK(terakan_hw_config_draw_terascale_1_write_pa_sc_aa(packet, true, &aa) == packet + 7);
+   CHECK(packet[0] == PKT3(PKT3_SET_CONFIG_REG, 2, 0));
+   CHECK(packet[1] ==
+         (R_008B48_PA_SC_AA_SAMPLE_LOCS_8S_WD0 - R600_CONFIG_REG_OFFSET) >> 2);
+   CHECK(packet[2] == aa.sample_locs[0]);
+   CHECK(packet[3] == aa.sample_locs[1]);
+   CHECK(packet[4] == PKT3(PKT3_SET_CONTEXT_REG, 1, 0));
+   CHECK(packet[5] == (R_028C04_PA_SC_AA_CONFIG - R600_CONTEXT_REG_OFFSET) >> 2);
+   CHECK(packet[6] == aa.config);
+
+   aa.config = 0;
+   CHECK(terakan_hw_config_draw_terascale_1_pa_sc_aa_packet_dwords(true, &aa) == 3);
+   CHECK(terakan_hw_config_draw_terascale_1_write_pa_sc_aa(packet, true, &aa) == packet + 3);
+   CHECK(packet[0] == PKT3(PKT3_SET_CONTEXT_REG, 1, 0));
+   CHECK(packet[1] == (R_028C04_PA_SC_AA_CONFIG - R600_CONTEXT_REG_OFFSET) >> 2);
+   CHECK(packet[2] == 0);
+
+   aa.config = S_028C04_MSAA_NUM_SAMPLES(1) | S_028C04_MAX_SAMPLE_DIST(4);
+   CHECK(terakan_hw_config_draw_terascale_1_pa_sc_aa_packet_dwords(true, &aa) == 6);
+   CHECK(terakan_hw_config_draw_terascale_1_write_pa_sc_aa(packet, true, &aa) == packet + 6);
+   CHECK(packet[0] == PKT3(PKT3_SET_CONFIG_REG, 1, 0));
+   CHECK(packet[1] == (R_008B40_PA_SC_AA_SAMPLE_LOCS_2S - R600_CONFIG_REG_OFFSET) >> 2);
+   CHECK(packet[2] == aa.sample_locs[0]);
+   CHECK(packet[3] == PKT3(PKT3_SET_CONTEXT_REG, 1, 0));
+   CHECK(packet[4] == (R_028C04_PA_SC_AA_CONFIG - R600_CONTEXT_REG_OFFSET) >> 2);
+   CHECK(packet[5] == aa.config);
+
+   aa.config = S_028C04_MSAA_NUM_SAMPLES(2) | S_028C04_MAX_SAMPLE_DIST(6);
+   CHECK(terakan_hw_config_draw_terascale_1_pa_sc_aa_packet_dwords(true, &aa) == 6);
+   CHECK(terakan_hw_config_draw_terascale_1_write_pa_sc_aa(packet, true, &aa) == packet + 6);
+   CHECK(packet[0] == PKT3(PKT3_SET_CONFIG_REG, 1, 0));
+   CHECK(packet[1] == (R_008B44_PA_SC_AA_SAMPLE_LOCS_4S - R600_CONFIG_REG_OFFSET) >> 2);
+   CHECK(packet[2] == aa.sample_locs[0]);
+   CHECK(packet[3] == PKT3(PKT3_SET_CONTEXT_REG, 1, 0));
+   CHECK(packet[4] == (R_028C04_PA_SC_AA_CONFIG - R600_CONTEXT_REG_OFFSET) >> 2);
+   CHECK(packet[5] == aa.config);
 
    sample_locs[3][2] ^= 1;
    CHECK(!terakan_hw_config_draw_terascale_1_pa_sc_aa_encode(3, 7, true, sample_locs, &aa));
@@ -446,6 +498,7 @@ test_pa_sc_mode(void)
       .line_stipple_enable = true,
       .viewport_scissor_enable = true,
       .ps_iter_sample = true,
+      .is_r700 = true,
    };
    uint32_t mode;
    CHECK(terakan_hw_config_draw_terascale_1_pa_sc_mode_encode(&input, &mode));
@@ -462,6 +515,16 @@ test_pa_sc_mode(void)
    input.msaa_enable = false;
    CHECK(terakan_hw_config_draw_terascale_1_pa_sc_mode_encode(&input, &mode));
    CHECK((mode & S_028A4C_TILE_COVER_DISABLE(1)) == 0);
+
+   input.is_r700 = false;
+   input.is_rv770 = false;
+   input.msaa_enable = true;
+   CHECK(terakan_hw_config_draw_terascale_1_pa_sc_mode_encode(&input, &mode));
+   uint32_t const expected_r600 =
+      S_028A4C_MSAA_ENABLE(1) | S_028A4C_LINE_STIPPLE_ENABLE(1) |
+      S_028A4C_FORCE_EOV_CNTDWN_ENABLE(1) | S_028A4C_PS_ITER_SAMPLE(1) |
+      S_028A4C_WALK_ALIGN8_PRIM_FITS_ST(1);
+   CHECK(mode == expected_r600);
 
    input.unknown_mode_0_bits = UINT32_C(1) << 31;
    CHECK(!terakan_hw_config_draw_terascale_1_pa_sc_mode_encode(&input, &mode));
@@ -512,17 +575,61 @@ test_pa_su_poly_offset(void)
 }
 
 static void
+test_pa_cl_clip_cntl(void)
+{
+   uint32_t const common = S_028810_DX_CLIP_SPACE_DEF(1) |
+                           S_028810_DX_LINEAR_ATTR_CLIP_ENA(1) |
+                           S_028810_ZCLIP_NEAR_DISABLE(1);
+   struct terakan_hw_config_draw_terascale_1_pa_cl_clip clip;
+
+   CHECK(terakan_hw_config_draw_terascale_1_pa_cl_clip_encode(
+      common | S_028810_DX_RASTERIZATION_KILL(1), true, &clip));
+   CHECK(clip.clip_cntl == (common | S_028810_DX_RASTERIZATION_KILL(1)));
+   CHECK(clip.sx_misc == 0);
+   CHECK(terakan_hw_config_draw_terascale_1_pa_cl_clip_packet_dwords(true) == 3);
+   uint32_t packet[6];
+   CHECK(terakan_hw_config_draw_terascale_1_write_pa_cl_clip(packet, true, &clip) == packet + 3);
+   CHECK(packet[0] == PKT3(PKT3_SET_CONTEXT_REG, 1, 0));
+   CHECK(packet[1] == (R_028810_PA_CL_CLIP_CNTL - R600_CONTEXT_REG_OFFSET) >> 2);
+   CHECK(packet[2] == (common | S_028810_DX_RASTERIZATION_KILL(1)));
+
+   CHECK(terakan_hw_config_draw_terascale_1_pa_cl_clip_encode(
+      common | S_028810_DX_RASTERIZATION_KILL(1), false, &clip));
+   CHECK(clip.clip_cntl == common);
+   CHECK(clip.sx_misc == S_028350_MULTIPASS(1));
+   CHECK(terakan_hw_config_draw_terascale_1_pa_cl_clip_packet_dwords(false) == 6);
+   CHECK(terakan_hw_config_draw_terascale_1_write_pa_cl_clip(packet, false, &clip) == packet + 6);
+   CHECK(packet[0] == PKT3(PKT3_SET_CONTEXT_REG, 1, 0));
+   CHECK(packet[1] == (R_028810_PA_CL_CLIP_CNTL - R600_CONTEXT_REG_OFFSET) >> 2);
+   CHECK(packet[2] == common);
+   CHECK(packet[3] == PKT3(PKT3_SET_CONTEXT_REG, 1, 0));
+   CHECK(packet[4] == (R_028350_SX_MISC - R600_CONTEXT_REG_OFFSET) >> 2);
+   CHECK(packet[5] == S_028350_MULTIPASS(1));
+
+   CHECK(terakan_hw_config_draw_terascale_1_pa_cl_clip_encode(common, false, &clip));
+   CHECK(clip.clip_cntl == common);
+   CHECK(clip.sx_misc == 0);
+   CHECK(!terakan_hw_config_draw_terascale_1_pa_cl_clip_encode(
+      common | S_028810_UCP_ENA_0(1), false, &clip));
+}
+
+static void
 test_sq_pgm_bindings(void)
 {
-   uint32_t const evergreen_resources = UINT32_C(37) | (UINT32_C(11) << 8) |
-                                        (UINT32_C(1) << 21) | (UINT32_C(1) << 28);
+   uint32_t const evergreen_resources =
+      UINT32_C(37) | (UINT32_C(11) << 8) | (UINT32_C(1) << 21);
    uint32_t resources;
-   CHECK(terakan_hw_config_draw_terascale_1_sq_pgm_resources_encode(evergreen_resources,
-                                                                    &resources));
+   CHECK(terakan_hw_config_draw_terascale_1_sq_pgm_resources_encode(
+      evergreen_resources, false, &resources));
+   CHECK(resources ==
+         (S_028850_NUM_GPRS(37) | S_028850_STACK_SIZE(11) | S_028850_DX10_CLAMP(1)));
+
+   CHECK(terakan_hw_config_draw_terascale_1_sq_pgm_resources_encode(
+      evergreen_resources, true, &resources));
    CHECK(resources == (S_028850_NUM_GPRS(37) | S_028850_STACK_SIZE(11) |
                        S_028850_DX10_CLAMP(1) | S_028850_UNCACHED_FIRST_INST(1)));
    CHECK(!terakan_hw_config_draw_terascale_1_sq_pgm_resources_encode(
-      evergreen_resources | (UINT32_C(1) << 23), &resources));
+      evergreen_resources | (UINT32_C(1) << 23), false, &resources));
 
    uint32_t fs_packet[3];
    CHECK(terakan_hw_config_draw_terascale_1_write_sq_pgm_fs(fs_packet, 0x12345) ==
@@ -709,6 +816,45 @@ test_cb_color_encode(void)
 }
 
 static void
+test_cb_color_encode_multisample_metadata(void)
+{
+   struct terakan_hw_config_draw_terascale_1_cb_color_input input =
+      representative_cb_color_input();
+   struct terakan_hw_config_draw_terascale_1_cb_color color;
+
+   /* Exact CB_COLORn metadata fields used by r600_init_color_surface() for a 4x target. The
+    * addresses and tile maxima are deliberately distinct from BASE and each other: a test with
+    * aliases would not prove that FRAG/TILE/MASK survived the translation. */
+   input.is_multisampled = true;
+   input.metadata_enabled = true;
+   input.fmask = 0x22345;
+   input.cmask = 0x32345;
+   input.cmask_tile_max = 5;
+   input.fmask_tile_max = 0x345;
+   CHECK(terakan_hw_config_draw_terascale_1_cb_color_encode(&input, &color));
+   CHECK(color.info ==
+         (S_0280A0_FORMAT(V_0280A0_COLOR_8_8_8_8) |
+          S_0280A0_ARRAY_MODE(V_0280A0_ARRAY_2D_TILED_THIN1) |
+          S_0280A0_NUMBER_TYPE(V_0280A0_NUMBER_UNORM) |
+          S_0280A0_COMP_SWAP(V_0280A0_SWAP_ALT) | S_0280A0_BLEND_CLAMP(1) |
+          S_0280A0_SIMPLE_FLOAT(1) | S_0280A0_SOURCE_FORMAT(V_0280A0_EXPORT_NORM) |
+          S_0280A0_TILE_MODE(V_0280A0_FRAG_ENABLE)));
+   CHECK(color.fmask == input.fmask);
+   CHECK(color.cmask == input.cmask);
+   CHECK(color.mask ==
+         (S_028100_CMASK_BLOCK_MAX(input.cmask_tile_max) |
+          S_028100_FMASK_TILE_MAX(input.fmask_tile_max)));
+
+   /* Negative controls: R6xx accepts the pair as a unit only. Dropping either the metadata state
+    * or MASK must reject the descriptor rather than emit a surface whose CB accesses disagree. */
+   input.metadata_enabled = false;
+   CHECK(!terakan_hw_config_draw_terascale_1_cb_color_encode(&input, &color));
+   input.metadata_enabled = true;
+   input.cmask_tile_max = 0x1000;
+   CHECK(!terakan_hw_config_draw_terascale_1_cb_color_encode(&input, &color));
+}
+
+static void
 test_cb_color_encode_rejects_unported_surfaces(void)
 {
    struct terakan_hw_config_draw_terascale_1_cb_color_input input =
@@ -823,12 +969,13 @@ main(void)
    test_db_depth_size();
    test_db_depth_base_info();
    test_db_depth_encode();
-   test_db_depth_encode_rejects_unported_surfaces();
+   test_db_depth_encode_multisample_and_rejects_unported_surfaces();
    test_db_depth_remaining_packets();
    test_db_alpha_to_mask();
    test_pa_sc_aa_mask();
    test_pa_sc_aa_config_sample_locs();
    test_pa_sc_mode();
+   test_pa_cl_clip_cntl();
    test_pa_su_poly_offset();
    test_sq_pgm_bindings();
    test_gpr_baseline_admission();
@@ -838,6 +985,7 @@ main(void)
    test_absent_ls_bool_const();
    test_absent_cb_immed();
    test_cb_color_encode();
+   test_cb_color_encode_multisample_metadata();
    test_cb_color_encode_rejects_unported_surfaces();
    test_cb_color_packets();
    test_cb_color_control_and_blend_packets();

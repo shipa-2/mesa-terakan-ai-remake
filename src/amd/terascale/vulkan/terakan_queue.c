@@ -318,7 +318,7 @@ terakan_queue_submit(struct vk_queue * const queue_base, struct vk_queue_submit 
     */
    if (physical_device->chip_info.is_terascale_1) {
       return vk_errorf(device, VK_ERROR_DEVICE_LOST,
-                       "R700 logical-device bring-up does not enable queue submission yet");
+                       "TeraScale 1 logical-device bring-up does not enable queue submission yet");
    }
 
    /* Update submission-time allocations. */

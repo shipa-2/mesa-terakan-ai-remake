@@ -43,6 +43,26 @@ static struct terakan_hw_config_shared_terascale_1_sq_config_info const rv710_in
 };
 
 static void
+test_start_3d_cmdbuf_packet(void)
+{
+   uint32_t guarded_packet[TERAKAN_HW_CONFIG_SHARED_TERASCALE_1_START_3D_CMDBUF_DWORDS + 2] = {
+      CANARY,
+      0,
+      0,
+      CANARY,
+   };
+   uint32_t * const packet = &guarded_packet[1];
+   uint32_t * const end =
+      terakan_hw_config_shared_terascale_1_write_start_3d_cmdbuf(packet);
+
+   CHECK(end == packet + TERAKAN_HW_CONFIG_SHARED_TERASCALE_1_START_3D_CMDBUF_DWORDS);
+   CHECK(guarded_packet[0] == CANARY);
+   CHECK(guarded_packet[3] == CANARY);
+   CHECK(packet[0] == PKT3(PKT3_START_3D_CMDBUF, 0, 0));
+   CHECK(packet[1] == 0);
+}
+
+static void
 test_sq_config_packets(void)
 {
    uint32_t guarded_packets[TERAKAN_HW_CONFIG_SHARED_TERASCALE_1_SQ_CONFIG_DWORDS + 2];
@@ -304,6 +324,7 @@ test_context_defaults_packets_r600(void)
 int
 main(void)
 {
+   test_start_3d_cmdbuf_packet();
    test_sq_config_packets();
    test_compute_lds_packet_is_empty();
    test_context_defaults_packets_r700();

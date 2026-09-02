@@ -108,6 +108,88 @@ terakan_image_surface_compute_aspect_terascale_1(
    return true;
 }
 
+static void
+terakan_image_surface_color_metadata_compute_terascale_1(
+   VkImageCreateInfo const * const image_create_info,
+   struct terakan_physical_device const * const physical_device,
+   struct terakan_image_surface * const surface)
+{
+   unsigned const samples = (unsigned)image_create_info->samples;
+   assert(samples == 2 || samples == 4 || samples == 8);
+
+   /* This is r600_texture_get_fmask_info(), not the R8xx/R9xx FMASK layout. The classic driver
+    * makes a 2D, single-sample auxiliary surface, then deliberately doubles its element size on
+    * R600 through R700 to avoid colorbuffer corruption. Thus 2x/4x use 2 bytes per pixel here,
+    * and 8x uses 8, even though the nominal FMASK encodings use 1 and 4 respectively. Do not
+    * remove that over-allocation based on an R8xx observation.
+    *
+    * `terakan_image_tiling_terascale_1_*` implements the r6_surface_init-derived alignment for
+    * this driver. The exact FMASK tile swizzle and rendering behavior have not been verified on
+    * RV610 yet because TeraScale 1 submission remains intentionally blocked.
+    */
+   uint32_t const fmask_bytes_per_element = samples <= 4 ? 2 : 8;
+   uint32_t const group_bytes = 1u << physical_device->tiling_info.pipe_interleave_bytes_log2;
+   uint32_t const num_pipes = 1u << physical_device->tiling_info.pipes_log2;
+   uint32_t const num_banks = 1u << physical_device->tiling_info.banks_log2;
+   struct terakan_image_tiling_terascale_1_alignments const fmask_alignments =
+      terakan_image_tiling_terascale_1_alignments_2d_tiled_thin1(
+         group_bytes, num_pipes, num_banks, fmask_bytes_per_element, 1, false);
+   struct terakan_image_tiling_terascale_1_level_layout const fmask_layout =
+      terakan_image_tiling_terascale_1_level_layout(
+         image_create_info->extent.width, image_create_info->extent.height,
+         fmask_alignments.pitch_surfels, fmask_alignments.height_surfels,
+         fmask_bytes_per_element, 1, false);
+   uint64_t const fmask_size_bytes = fmask_layout.slice_bytes * image_create_info->arrayLayers;
+   assert(fmask_layout.slice_bytes != 0 && !(fmask_layout.slice_bytes & 0xFF));
+   assert(fmask_size_bytes <= UINT32_MAX && !(fmask_size_bytes & 0xFF));
+   uint32_t const fmask_slice_tiles =
+      fmask_layout.aligned_pitch_surfels * fmask_layout.aligned_height_surfels / 64;
+   assert(fmask_slice_tiles != 0);
+
+   surface->fmask.alignment_bytes_shr8 = fmask_alignments.base_level_bo_alignment_bytes >> 8;
+   surface->fmask.offset_in_memory_bytes_shr8 =
+      ALIGN_POT(surface->size_bytes_shr8, surface->fmask.alignment_bytes_shr8);
+   surface->fmask.size_bytes_shr8 = (uint32_t)(fmask_size_bytes >> 8);
+   surface->fmask.slice_size_bytes_shr8 = (uint32_t)(fmask_layout.slice_bytes >> 8);
+   surface->fmask.slice_tile_max = fmask_slice_tiles - 1;
+   /* This field belongs to Evergreen CB_ATTRIB and is ignored by the TeraScale 1 CB encoder. */
+   surface->fmask.attrib_bank_height = 0;
+   surface->alignment_bytes_shr8 =
+      MAX2(surface->alignment_bytes_shr8, surface->fmask.alignment_bytes_shr8);
+   surface->size_bytes_shr8 =
+      surface->fmask.offset_in_memory_bytes_shr8 + surface->fmask.size_bytes_shr8;
+
+   /* This is the same direct transcription of r600_texture_get_cmask_info() used by the existing
+    * R8xx/R9xx path: one four-bit element per 8x8 color tile and one 1024-bit cache line per pipe.
+    */
+   unsigned const macro_tile_pixels_log2 = 14 + physical_device->tiling_info.pipes_log2;
+   unsigned const macro_tile_width_log2 = DIV_ROUND_UP(macro_tile_pixels_log2, 2);
+   uint32_t const macro_tile_width = 1u << macro_tile_width_log2;
+   uint32_t const macro_tile_height = 1u << (macro_tile_pixels_log2 - macro_tile_width_log2);
+   assert((macro_tile_width & 127) == 0 && (macro_tile_height & 127) == 0);
+   uint32_t const cmask_pitch = ALIGN_POT(image_create_info->extent.width, macro_tile_width);
+   uint32_t const cmask_height = ALIGN_POT(image_create_info->extent.height, macro_tile_height);
+   uint32_t const cmask_alignment_bytes = MAX2(
+      256u, 1u << (physical_device->tiling_info.pipes_log2 +
+                   physical_device->tiling_info.pipe_interleave_bytes_log2));
+   uint64_t const cmask_slice_bytes =
+      ALIGN_POT((uint64_t)cmask_pitch * cmask_height / 128, cmask_alignment_bytes);
+   uint64_t const cmask_size_bytes = cmask_slice_bytes * image_create_info->arrayLayers;
+   assert(!(cmask_slice_bytes & 0xFF) && cmask_size_bytes <= UINT32_MAX &&
+          !(cmask_size_bytes & 0xFF));
+
+   surface->cmask.alignment_bytes_shr8 = cmask_alignment_bytes >> 8;
+   surface->cmask.offset_in_memory_bytes_shr8 =
+      ALIGN_POT(surface->size_bytes_shr8, surface->cmask.alignment_bytes_shr8);
+   surface->cmask.size_bytes_shr8 = (uint32_t)(cmask_size_bytes >> 8);
+   surface->cmask.slice_size_bytes_shr8 = (uint32_t)(cmask_slice_bytes >> 8);
+   surface->cmask.slice_tile_max = cmask_pitch * cmask_height / (128 * 128) - 1;
+   surface->alignment_bytes_shr8 =
+      MAX2(surface->alignment_bytes_shr8, surface->cmask.alignment_bytes_shr8);
+   surface->size_bytes_shr8 =
+      surface->cmask.offset_in_memory_bytes_shr8 + surface->cmask.size_bytes_shr8;
+}
+
 bool
 terakan_image_surface_compute_terascale_1(
    VkImageCreateInfo const * const image_create_info,
@@ -175,6 +257,13 @@ terakan_image_surface_compute_terascale_1(
               surface_out->alignment_bytes_shr8);
       surface_out->size_bytes_shr8 = surface_out->aspects[aspect_index].offset_in_memory_bytes_shr8 +
                                      surface_out->aspects[aspect_index].size_bytes_shr8;
+   }
+
+   if (multisampled &&
+       (terakan_format_aspect_map_aspect_masks[format_info->aspect_map] &
+        VK_IMAGE_ASPECT_COLOR_BIT) != 0) {
+      terakan_image_surface_color_metadata_compute_terascale_1(
+         image_create_info, physical_device, surface_out);
    }
 
    return true;

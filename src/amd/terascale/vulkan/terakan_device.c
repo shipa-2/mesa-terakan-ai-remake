@@ -442,19 +442,12 @@ terakan_CreateDevice(VkPhysicalDevice const physicalDevice,
    struct terakan_physical_device * const physical_device =
       terakan_physical_device_from_handle(physicalDevice);
 
-   /* The minimal logical-device bring-up is intentionally R700-only. Its ISA, BO alignment and
-    * fixed SQ configuration are selected from the actual chip family and DRM tiling/backend
-    * queries. R600 has a separate instruction encoding and register defaults and remains closed
-    * until it gets its own hardware validation.
+   /* Minimal logical-device bring-up is hardware-validated on both R600 and R700. ISA selection,
+    * BO alignment, the fixed SQ configuration and the R600-vs-R700 context defaults come from the
+    * actual runtime chip family and DRM queries, not the build-generation label. Queue submission
+    * remains blocked for every TeraScale 1 device until the R600 and R700 command streams have
+    * separate hardware readback validation.
     */
-   if (physical_device->chip_info.is_terascale_1 &&
-       !terakan_physical_device_chip_family_is_r700(physical_device->chip_info.chip_family)) {
-      return vk_errorf(
-         physical_device->vk.instance, VK_ERROR_INITIALIZATION_FAILED,
-         "TeraScale 1 %s is recognized, but minimal logical-device bring-up is "
-         "enabled only for hardware-validated R700 devices",
-         terakan_physical_device_chip_family_name(physical_device->chip_info.chip_family));
-   }
 
    struct terakan_device * device;
    VkResult const result =

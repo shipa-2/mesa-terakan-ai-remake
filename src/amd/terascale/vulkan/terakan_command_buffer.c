@@ -29,6 +29,7 @@
 #include "terakan_device.h"
 #include "terakan_entrypoints.h"
 #include "terakan_image.h"
+#include "terakan_hw_config_shared_terascale_1.h"
 #include "terakan_instance.h"
 #include "terakan_limits.h"
 #include "terakan_physical_device.h"
@@ -548,6 +549,23 @@ terakan_gfx_command_writer_emit_preamble(struct terakan_gfx_command_writer * con
       &physical_device->submission_info_gfx;
 
    uint32_t * packet;
+
+   /* r600_init_atom_start_cs() emits this before CONTEXT_CONTROL for every R600 gfx-level family
+    * (R600 through RS880). PKT3_START_3D_CMDBUF was removed on R700, so keep the runtime split
+    * inside the already generation-specific TeraScale 1 path and never emit it on RV7xx or
+    * Evergreen.
+    */
+   if (physical_device->chip_info.is_terascale_1 &&
+       !terakan_physical_device_chip_family_is_r700(physical_device->chip_info.chip_family)) {
+      packet = terakan_gfx_command_writer_emit(
+         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG,
+         TERAKAN_HW_CONFIG_SHARED_TERASCALE_1_START_3D_CMDBUF_DWORDS);
+      if (unlikely(packet == NULL)) {
+         return;
+      }
+      packet = terakan_hw_config_shared_terascale_1_write_start_3d_cmdbuf(packet);
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
+   }
 
    /* Disable register shadowing before setting any registers. */
    packet = terakan_gfx_command_writer_emit(command_writer,

@@ -20,6 +20,14 @@
 
 #include <stddef.h>
 
+uint32_t *
+terakan_hw_config_shared_terascale_1_write_start_3d_cmdbuf(uint32_t * packet)
+{
+   *packet++ = PKT3(PKT3_START_3D_CMDBUF, 0, 0);
+   *packet++ = 0;
+   return packet;
+}
+
 static uint32_t *
 write_config_reg(uint32_t * packet, uint32_t const reg, uint32_t const value)
 {

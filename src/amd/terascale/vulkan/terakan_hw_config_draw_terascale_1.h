@@ -79,11 +79,11 @@ uint32_t terakan_hw_config_draw_terascale_1_pa_sc_aa_mask_encode(uint32_t sample
 uint32_t * terakan_hw_config_draw_terascale_1_write_pa_sc_aa_mask(uint32_t * packet,
                                                                    uint32_t value);
 
-/* RV6xx/RV7xx has one sample-location pattern shared by the four pixels of a 2x2 quad, stored in
- * two context registers rather than R8xx's four pixel-specific register groups. The physical
- * device therefore advertises a 1x1 programmable grid on TeraScale 1. The encoder still verifies
- * that its internal [sample][pixel] input was replicated, so a future caller can't silently drop
- * per-pixel differences.
+/* RV6xx/RV7xx has one sample-location pattern shared by the four pixels of a 2x2 quad. Original
+ * R600 stores the 2x/4x/8x patterns in separate configuration registers; all later TeraScale 1
+ * chips use two context registers. The physical device therefore advertises a 1x1 programmable
+ * grid on TeraScale 1. The encoder still verifies that its internal [sample][pixel] input was
+ * replicated, so a future caller can't silently drop per-pixel differences.
  */
 struct terakan_hw_config_draw_terascale_1_pa_sc_aa {
    uint32_t config;
@@ -95,23 +95,29 @@ bool terakan_hw_config_draw_terascale_1_pa_sc_aa_encode(
    uint8_t const sample_locs[16][4],
    struct terakan_hw_config_draw_terascale_1_pa_sc_aa * aa_out);
 
-/* Writes the two PA_SC_AA_SAMPLE_LOCS_MCTX dwords followed by PA_SC_AA_CONFIG, matching the order
- * in r600_emit_msaa_state() for R700. R600's configuration-register sample locations remain out of
- * scope while R600 logical-device creation is blocked.
+/* Exact packet size and writer for r600_emit_msaa_state()'s split: CHIP_R600 uses one of the
+ * PA_SC_AA_SAMPLE_LOCS_{2S,4S,8S_*} configuration-register forms, while RV610 and every newer
+ * TeraScale 1 family use the two PA_SC_AA_SAMPLE_LOCS_MCTX context dwords. `is_original_r600`
+ * means CHIP_R600 specifically, not the whole R600 gfx-level family.
  */
+uint32_t terakan_hw_config_draw_terascale_1_pa_sc_aa_packet_dwords(
+   bool is_original_r600, struct terakan_hw_config_draw_terascale_1_pa_sc_aa const * aa);
+
 uint32_t * terakan_hw_config_draw_terascale_1_write_pa_sc_aa(
-   uint32_t * packet, struct terakan_hw_config_draw_terascale_1_pa_sc_aa const * aa);
+   uint32_t * packet, bool is_original_r600,
+   struct terakan_hw_config_draw_terascale_1_pa_sc_aa const * aa);
 
 /* Evergreen splits rasterizer mode state between PA_SC_MODE_CNTL_0 at 0x028A48 and
- * PA_SC_MODE_CNTL_1 at 0x028A4C. R700 has one differently-shaped PA_SC_MODE_CNTL at 0x028A4C;
- * 0x028A48 is PA_SC_MPASS_PS_CNTL there. Keep the input semantic so the R700-only translation unit
- * owns every field position and can reject any future unported Evergreen state.
+ * PA_SC_MODE_CNTL_1 at 0x028A4C. R600/R700 has one differently-shaped PA_SC_MODE_CNTL at 0x028A4C;
+ * 0x028A48 is PA_SC_MPASS_PS_CNTL there. The R600 and R700 baselines within that register differ
+ * too, so the runtime gfx-level is an explicit semantic input rather than a build-time choice.
  */
 struct terakan_hw_config_draw_terascale_1_pa_sc_mode_input {
    bool msaa_enable;
    bool line_stipple_enable;
    bool viewport_scissor_enable;
    bool ps_iter_sample;
+   bool is_r700;
    bool is_rv770;
    uint32_t unknown_mode_0_bits;
    uint32_t unknown_mode_1_bits;
@@ -123,6 +129,26 @@ bool terakan_hw_config_draw_terascale_1_pa_sc_mode_encode(
 
 uint32_t * terakan_hw_config_draw_terascale_1_write_pa_sc_mode(uint32_t * packet,
                                                                 uint32_t value);
+
+/* PA_CL_CLIP_CNTL's DX_RASTERIZATION_KILL bit is R700-only even though r600d.h exposes its
+ * position with that caveat. Classic r600_create_rs_state() uses SX_MISC.MULTIPASS for the same
+ * Vulkan rasterizer-discard meaning on the R600 gfx level. All other fields Terakan currently
+ * produces below are bit-compatible and are validated before being passed through.
+ */
+struct terakan_hw_config_draw_terascale_1_pa_cl_clip {
+   uint32_t clip_cntl;
+   uint32_t sx_misc;
+};
+
+bool terakan_hw_config_draw_terascale_1_pa_cl_clip_encode(
+   uint32_t evergreen_value, bool is_r700,
+   struct terakan_hw_config_draw_terascale_1_pa_cl_clip * clip_out);
+
+uint32_t terakan_hw_config_draw_terascale_1_pa_cl_clip_packet_dwords(bool is_r700);
+
+uint32_t * terakan_hw_config_draw_terascale_1_write_pa_cl_clip(
+   uint32_t * packet, bool is_r700,
+   struct terakan_hw_config_draw_terascale_1_pa_cl_clip const * clip);
 
 /* R700 moves the complete polygon-offset block from Evergreen's 0x028B78..0x028B8C to
  * 0x028DF8..0x028E0C. DB_FMT_CNTL's two fields have identical positions in both headers, while
@@ -141,10 +167,12 @@ uint32_t * terakan_hw_config_draw_terascale_1_write_pa_su_poly_offset(
 /* The first SQ_PGM_RESOURCES word has compatible NUM_GPRS/STACK_SIZE/DX10_CLAMP/
  * UNCACHED_FIRST_INST/CLAMP_CONSTS positions, but nearby fields and all register addresses differ.
  * Accept only that proven subset; Evergreen RESOURCES_2 rounding/denorm state has no port here and
- * must be zero before these writers are used.
+ * must be zero before these writers are used. `force_uncached_first_inst` is the original-CHIP_R600
+ * pixel-shader workaround from r600_update_ps_state(), not an R600-gfx-level default.
  */
 bool terakan_hw_config_draw_terascale_1_sq_pgm_resources_encode(
-   uint32_t evergreen_resources, uint32_t * r700_resources_out);
+   uint32_t evergreen_resources, bool force_uncached_first_inst,
+   uint32_t * r700_resources_out);
 
 /* The classic R600/R700 baseline is emitted by the per-indirect-buffer begin atom. The separate
  * Evergreen draw-constant packet must therefore contain exactly zero dwords on TeraScale 1.
@@ -312,9 +340,10 @@ struct terakan_hw_config_draw_terascale_1_db_depth {
    uint32_t prefetch_limit;
 };
 
-/* Encode the depth-only, single-sampled subset of r600_init_depth_surface(). R700's packed
- * depth/stencil formats and multisample layout are deliberately rejected until their shared
- * allocation has been ported; the caller must unbind DB when this returns false.
+/* Encode the depth-only R600/R700 subset of r600_init_depth_surface(). MSAA count is consumed by
+ * PA_SC_AA_CONFIG, not DB_DEPTH_INFO, so 2x/4x/8x use the same DB register encoding as 1x once
+ * the surface layout supplies the larger pitch/slice allocation. Packed depth/stencil formats and
+ * HTILE remain deliberately rejected; the caller must unbind DB when this returns false.
  */
 bool terakan_hw_config_draw_terascale_1_db_depth_encode(
    struct terakan_hw_config_draw_terascale_1_db_depth_input const * input,
@@ -346,11 +375,10 @@ uint32_t * terakan_hw_config_draw_terascale_1_write_db_alpha_to_mask(uint32_t * 
  * other fields live in seven independently-strided register arrays rather than one per-target
  * register block. Keep the input field-based so this translation unit never needs evergreend.h.
  *
- * This first port deliberately accepts only single-sampled RTVs with metadata disabled. Classic
- * r600_init_color_surface() gives multisampled surfaces real FMASK/CMASK state, while Terakan's
- * TeraScale 1 surface layout does not compute those allocations yet. UAV/compute use is also not
- * ready on TeraScale 1. Returning false preserves those boundaries instead of manufacturing packet
- * values that could address the wrong memory once queue submission is eventually enabled.
+ * `r600_init_color_surface()` uses an FMASK/CMASK pair for a multisampled target, encoded through
+ * CB_COLORn_FRAG, CB_COLORn_TILE and CB_COLORn_MASK. Keep the three translated values explicit:
+ * their Evergreen source registers have different names and positions, but the R600/R700 values
+ * are not optional aliases of BASE. UAV/compute use is still not ready on TeraScale 1.
  */
 struct terakan_hw_config_draw_terascale_1_cb_color_input {
    uint32_t base;
@@ -370,6 +398,10 @@ struct terakan_hw_config_draw_terascale_1_cb_color_input {
    bool is_uav;
    bool is_multisampled;
    bool metadata_enabled;
+   uint32_t fmask;
+   uint32_t cmask;
+   uint32_t cmask_tile_max;
+   uint32_t fmask_tile_max;
 };
 
 struct terakan_hw_config_draw_terascale_1_cb_color {

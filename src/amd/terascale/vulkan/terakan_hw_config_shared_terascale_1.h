@@ -35,6 +35,15 @@ struct terakan_hw_config_shared_terascale_1_sq_config_info {
       num_es_stack_entries;
 };
 
+/* R600 gfx-level command buffers must begin with PKT3_START_3D_CMDBUF. The packet was removed on
+ * R700, so callers must invoke this writer only for the R600 half of TeraScale 1. This is kept in
+ * the r600d.h-only translation unit so common command-buffer code doesn't acquire the opcode from
+ * a header for a generation where it doesn't exist.
+ */
+#define TERAKAN_HW_CONFIG_SHARED_TERASCALE_1_START_3D_CMDBUF_DWORDS 2
+
+uint32_t * terakan_hw_config_shared_terascale_1_write_start_3d_cmdbuf(uint32_t * packet);
+
 /* Writes TERAKAN_HW_CONFIG_SHARED_TERASCALE_1_SQ_CONFIG_DWORDS dwords to `packet` and returns the
  * advanced pointer, the same convention terakan_hw_config_loop_constants_write() uses.
  */

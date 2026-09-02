@@ -114,8 +114,8 @@ classic Gallium R600 driver that has supported this hardware for years).
 | Work item | Importance | Complexity | Feasibility | Acceptance criteria |
 |---|---:|---:|---|---|
 | ~~Determine real per-family render backend counts~~ | 5/5 | 2/5 | Done: `max_render_backends_log2` is now populated from `RADEON_INFO_NUM_BACKENDS`, queried by the drm_radeon winsys for TeraScale 1 devices and required to succeed, matching the classic R600 driver's own unconditional query-and-fail-if-missing behavior. Confirmed on real RV710 hardware (ioctl reports 1 backend). R8xx/R9xx keep their existing static table, untouched | A real value backs `max_render_backends_log2` for every recognized TeraScale 1 chip family, sourced from kernel query or documented per-family reference, not guessed |
-| Wire the TeraScale 1 register-emission helpers into command buffer recording, keep surveying and porting per-draw CB/DB state, and build command stream submission | 5/5 | 5/5 | Minimal logical-device creation is now enabled only for hardware-validated R700: physical-device ISA selection, conservative maximum BO alignment and internal allocations are derived from the actual chip family and DRM-reported tiling/backend topology. R600 remains refused. The begin-command-buffer atom is wired to the separate TeraScale 1 SQ/default-register writers. R700 `CB_COLOR_CONTROL` now repacks the proven `DISABLE`/`NORMAL`/`RESOLVE_BOX`, ROP3, degamma and per-target blend-enable fields rather than passing Evergreen `MODE` through the same address; its `CB_BLENDn_CONTROL` packets strip Evergreen-only enable bit 30 and move those enables into `TARGET_BLEND_ENABLE`, following `r600_create_blend_state_mode()`. R700 `DB_ALPHA_TO_MASK` is emitted at its real `0x028D44` offset with the classic driver's regular `2,2,2,2` sample offsets, not Evergreen's potentially dithered value at `0x028B70`. The no-query, no-HTILE `DB_RENDER_CONTROL/DB_RENDER_OVERRIDE` baseline now also matches `r600_emit_db_misc_state()` (`ZPASS_INCREMENT_DISABLE`, HiZ and both HiS directions forced off); nonzero Evergreen-shaped values are rejected pending individual query/HTILE/copy ports. `DB_SHADER_CONTROL` now repacks only the six fields whose bit positions match in both headers, accepts `DB_SOURCE_FORMAT` solely as validated Evergreen software metadata, and rejects rather than emits Evergreen-only execution/alpha/conservative-Z state. Conservative-Z still needs its classic-R700 placement in `DB_RENDER_CONTROL`; early-fragment-tests and shader memory side effects remain unsupported. R700 pixel-shader SPI state now follows `r600_update_ps_state()`: interpolation location/mode is packed into each `SPI_PS_INPUT_CNTL_n`, `SPI_PS_IN_CONTROL_0/1` and `SPI_INPUT_Z` use the classic fields, and the emitter does not write Evergreen `SPI_BARYC_CNTL` to R700's conflicting `SPI_FOG_FUNC_SCALE` address. Its packet layout has an exact CPU oracle, and real RV710 still compiles the application VS/FS pipeline, but no SPI packet has been submitted or read back. `MULTIWRITE_ENABLE` is deliberately still clear pending the shader-export/MRT survey, and Evergreen eliminate/decompress modes are safely disabled because no exact classic mapping has been established. Queue submission still returns `VK_ERROR_DEVICE_LOST` before the winsys because the remaining per-draw packets and meta shaders are not hardware-validated. Real RV710 `1002:954f` passes create/destroy and the guarded-submit negative check; the new CB/DB/SPI control work is packet-tested only, not submitted. | A trivial graphics submission completes on R700 with register and memory readback checks |
-| TeraScale 1 tiling/surface addressing (bank/pipe swizzle, macro-tile layout) | 5/5 | 5/5 | Layout is wired into image creation: linear/1D/2D alignment, mip offsets, 2D-to-1D degradation, array/3D sizing, block-compressed/subsampled texel-to-block conversion and linear 3x-expanded formats follow classic `radeon_surface.c` plus AddrLib's documented 3x pitch ordering. Aspect bases are independently aligned, preventing depth/stencil overlap. Real RV710 create/layout/allocate/bind checks pass for linear RGBA8/R32G32B32 and tiled RGBA8/BC1 mip chains. R700 single-sampled color RTV `BASE/SIZE/VIEW/INFO` encoding and register emission now follow classic `r600_init_color_surface()`/`r600_emit_framebuffer_state()` with exact packet tests; MSAA metadata, UAVs, DB value computation and GPU copy/readback remain open, so queue submission stays blocked. | A buffer/image round trip through the tiled surface layout matches, the same class of check `terakan_image.c` already does for R8xx/R9xx |
+| Wire the TeraScale 1 register-emission helpers into command buffer recording, keep surveying and porting per-draw CB/DB state, and build command stream submission | 5/5 | 5/5 | Minimal logical-device creation is enabled on hardware-validated R600 and R700: physical-device ISA selection, conservative maximum BO alignment and internal allocations are derived from the actual chip family and DRM-reported tiling/backend topology. Real RV610 `1002:94c1` passes create/destroy, basic linear/tiled image create/layout/allocate/bind, real 1x and 4x application VS/FS pipeline compilation and the guarded-submit negative check in ten consecutive runs. This does **not** validate command packets or rendered output on R600. The begin-command-buffer atom is wired to the separate TeraScale 1 SQ/default-register writers; the R600 gfx-level path now also places the required `PKT3_START_3D_CMDBUF` before `CONTEXT_CONTROL`, while R700 emits neither dword because the opcode was removed there. R600 rasterizer discard is translated from the common software `PA_CL_CLIP_CNTL.DX_RASTERIZATION_KILL` intent to `SX_MISC.MULTIPASS`, following `r600_create_rs_state()`; R700 retains its own clip-control bit. Both are exact packet-oracle results only, not submitted on RV610. R700 `CB_COLOR_CONTROL` now repacks the proven `DISABLE`/`NORMAL`/`RESOLVE_BOX`, ROP3, degamma and per-target blend-enable fields rather than passing Evergreen `MODE` through the same address; its `CB_BLENDn_CONTROL` packets strip Evergreen-only enable bit 30 and move those enables into `TARGET_BLEND_ENABLE`, following `r600_create_blend_state_mode()`. R700 `DB_ALPHA_TO_MASK` is emitted at its real `0x028D44` offset with the classic driver's regular `2,2,2,2` sample offsets, not Evergreen's potentially dithered value at `0x028B70`. The no-query, no-HTILE `DB_RENDER_CONTROL/DB_RENDER_OVERRIDE` baseline now also matches `r600_emit_db_misc_state()` (`ZPASS_INCREMENT_DISABLE`, HiZ and both HiS directions forced off); nonzero Evergreen-shaped values are rejected pending individual query/HTILE/copy ports. `DB_SHADER_CONTROL` now repacks only the six fields whose bit positions match in both headers, accepts `DB_SOURCE_FORMAT` solely as validated Evergreen software metadata, and rejects rather than emits Evergreen-only execution/alpha/conservative-Z state. Conservative-Z still needs its classic-R700 placement in `DB_RENDER_CONTROL`; early-fragment-tests and shader memory side effects remain unsupported. R700 pixel-shader SPI state now follows `r600_update_ps_state()`: interpolation location/mode is packed into each `SPI_PS_INPUT_CNTL_n`, `SPI_PS_IN_CONTROL_0/1` and `SPI_INPUT_Z` use the classic fields, and the emitter does not write Evergreen `SPI_BARYC_CNTL` to R700's conflicting `SPI_FOG_FUNC_SCALE` address. Its packet layout has an exact CPU oracle, and real RV710 still compiles the application VS/FS pipeline, but no SPI packet has been submitted or read back. `MULTIWRITE_ENABLE` is deliberately still clear pending the shader-export/MRT survey, and Evergreen eliminate/decompress modes are safely disabled because no exact classic mapping has been established. Queue submission still returns `VK_ERROR_DEVICE_LOST` before the winsys because the remaining per-draw packets and meta shaders are not hardware-validated. Real RV710 `1002:954f` passes create/destroy and the guarded-submit negative check; the new CB/DB/SPI control work is packet-tested only, not submitted. | A trivial graphics submission completes on R700 with register and memory readback checks |
+| TeraScale 1 tiling/surface addressing (bank/pipe swizzle, macro-tile layout) | 5/5 | 5/5 | Layout is wired into image creation: linear/1D/2D alignment, mip offsets, 2D-to-1D degradation, array/3D sizing, block-compressed/subsampled texel-to-block conversion and linear 3x-expanded formats follow classic `radeon_surface.c` plus AddrLib's documented 3x pitch ordering. Aspect bases are independently aligned, preventing depth/stencil overlap. Real RV710 create/layout/allocate/bind checks pass for linear RGBA8/R32G32B32 and tiled RGBA8/BC1 mip chains. R600/R700 MSAA color images now allocate the classic FMASK/CMASK pair: FMASK follows `r600_texture_get_fmask_info()`'s R600-R700 doubled-BPE workaround, CMASK follows `r600_texture_get_cmask_info()`, and the TeraScale 1 CB encoder writes `FRAG_ENABLE`, `FRAG`, `TILE` and `MASK` as an inseparable pair. R600/R700 depth-only DB descriptors now accept 2x/4x/8x too: `r600_init_depth_surface()` has no DB sample-count bit, so the sample count is kept solely in `PA_SC_AA_CONFIG` and the larger tiled pitch/slice allocation feeds the ordinary DB registers. Real RV610 creation/allocation/binding of a 1024² RGBA8 2x target reports 10,493,952 bytes, strictly beyond its 8,388,608-byte main surface; disabling the allocator restores exactly 8,388,608 and makes the hardware smoke test fail. Its 1024² D32 4x target also creates, allocates and binds (16,777,216 bytes, 8 KiB alignment). These prove allocation and descriptor packet construction only. FMASK tile swizzle, CB/DB rendering/resolve, per-sample fetch, metadata initialization and GPU copy/readback remain unverified because TeraScale 1 submit is deliberately blocked. UAVs, packed depth/stencil and HTILE remain open too. | A buffer/image round trip through the tiled surface layout matches, the same class of check `terakan_image.c` already does for R8xx/R9xx |
 | Replace the hand-written Evergreen meta shader bytecode (blit/resolve/clear/copy/query, all of `src/amd/terascale/vulkan/meta/`) with generation-neutral NIR | 4/5 | 5/5 | `terakan_meta_nir_compile()` now lets meta operations use `nir_builder` and compile through SFN with the runtime chip generation, including `ISA_CC_R700`; it also performs the input-variable and resource-binding setup required by this backend. The first NIR meta shader is in use, but the remaining hand-assembled Evergreen shaders still need conversion and R700 readback validation | Each meta operation this driver depends on (at minimum blit and clear) passes its existing readback test on TeraScale 1 hardware |
 | Recognize R600/R700 PCI IDs and correctly plumb `gfx_level` through the NIR shader path for real application shaders | 4/5 | 2/5 | Production PCI lookup and `terakan_shader_generation_test` now consume the same complete `r600_pci_ids.h` table. The actual runtime family selects `R600`/`ISA_CC_R600`, `R700`/`ISA_CC_R700`, Evergreen or Cayman for NIR optimization, SFN translation, bytecode assembly and ISA initialization. NIR compiler options now follow classic `r600_screen_create()` too: pre-Evergreen lowers bit count/reverse, unrolls indirect sampler indexing, does not advertise BFE/BFM/BFI, and keeps non-zero-based vertex IDs; Evergreen behavior is unchanged. The existing R700 enumeration test additionally creates a real application VS/FS graphics pipeline without submitting it. Pipeline compilation is hardware-tested separately on RV710; rendering remains blocked by the deliberate submit guard | A real application vertex/fragment shader renders correctly on TeraScale 1 after command submission is safely enabled |
 
@@ -179,10 +179,11 @@ classic Gallium R600 driver that has supported this hardware for years).
   register set where R8xx/R9xx has a tessellation-stage-indexed one --
   populating that struct needed a genuinely separate code path through
   `terakan_physical_device_chip_info_init`, not new switch cases plugged into
-  the existing one. Minimal `terakan_CreateDevice` bring-up is enabled only for
-  hardware-validated R700, while R600 is still refused and R700 queue submission
-  is stopped before the winsys until its command stream is verified. Verified on real RV710
-  (R700) hardware installed alongside a Cedar (R8xx) card on the same machine;
+  the existing one. Minimal `terakan_CreateDevice` bring-up is enabled on
+  hardware-validated R600 and R700, while queue submission on both generations
+  is stopped before the winsys until each command stream is verified. Verified on real RV610
+  (R600) and RV710 (R700) hardware; the R600 check covers only device creation,
+  basic image layout/allocation/binding and application shader compilation, not execution;
   `terakan_terascale_1_enumeration` covers it and passes trivially (nothing to
   check) on machines with no TeraScale 1 hardware installed.
 
@@ -202,8 +203,11 @@ classic Gallium R600 driver that has supported this hardware for years).
   anything useful.
 
 - TeraScale 1 (R600/R700) "begin command buffer" register atom: the whole of
-  `r600_init_atom_start_cs()` (`src/gallium/drivers/r600/r600_state.c`), split
-  across two functions. `terakan_hw_config_shared_terascale_1_write_sq_config()`
+  `r600_init_atom_start_cs()` (`src/gallium/drivers/r600/r600_state.c`). R600
+  gfx-level command buffers now start with `PKT3_START_3D_CMDBUF, 0` before
+  `CONTEXT_CONTROL`; R700 skips it because the opcode was removed there. The
+  remaining initialization is split across two functions.
+  `terakan_hw_config_shared_terascale_1_write_sq_config()`
   writes `SQ_CONFIG`/`SQ_GPR_RESOURCE_MGMT_1`/`SQ_GPR_RESOURCE_MGMT_2`/`SQ_THREAD_RESOURCE_MGMT`/
   `SQ_STACK_RESOURCE_MGMT_1`/`SQ_STACK_RESOURCE_MGMT_2`, the block
   `chip_info->terascale_1`'s fields feed directly.
@@ -214,8 +218,10 @@ classic Gallium R600 driver that has supported this hardware for years).
   `ALU_CONST_BUFFER_SIZE_*` and `VGT_OUTPUT_PATH_CNTL` zero-initialization
   blocks, a long run of individual VGT/PA/SPI/DB/CB/SQ context and ctl_const
   registers, and the three initial `SQ_LOOP_CONST` values -- R700 writes 3
-  registers (`VGT_ENHANCE`, `PA_SC_EDGERULE`, `SX_MISC`) that R600 has no
-  equivalent for at all, which the `is_r700` parameter selects. Both kept in
+  baseline stores (`VGT_ENHANCE`, `PA_SC_EDGERULE`, `SX_MISC`) that the
+  reference begin atom writes only for R700, which the `is_r700` parameter
+  selects. R600 does use `SX_MISC` later for rasterizer discard, but not as a
+  begin-atom constant. Both helpers are kept in
   the same translation unit, including only `r600d.h`/`r600d_common.h` and
   never `evergreend.h`. The two headers give the *same offset* a different
   meaning on this generation (`0x8C0C` is `SQ_THREAD_RESOURCE_MGMT` here,
@@ -361,7 +367,7 @@ classic Gallium R600 driver that has supported this hardware for years).
   `r600_emit_polygon_offset()`. The exact CPU packet is covered, but depth-bias
   rasterization has not been submitted or read back on RV710.
 
-- TeraScale 1 (R700) application VS/PS and fetch-shader binding now uses the
+- TeraScale 1 (R600/R700) application VS/PS and fetch-shader binding now uses the
   non-contiguous R700 `SQ_PGM_START`/`SQ_PGM_RESOURCES`/`SQ_PGM_EXPORTS`
   addresses from `r600_update_vs_state()`, `r600_update_ps_state()` and
   `r600_emit_vertex_fetch_shader()`. The first resource word is accepted only
@@ -369,8 +375,13 @@ classic Gallium R600 driver that has supported this hardware for years).
   `RESOURCES_2` must remain zero because R700 has no corresponding per-stage
   float-control word. R700 `SPI_VS_OUT_ID_0` also starts at 0x028614 rather
   than Evergreen's 0x02861C. Exact CPU packets cover VS, PS, FS and VS output
-  IDs, but shader execution is not proved until queue submit and readback are
-  enabled. ES/GS binding now likewise uses R700's non-consecutive
+  IDs. The original `CHIP_R600` pixel-shader path additionally forces
+  `SQ_PGM_RESOURCES_PS.UNCACHED_FIRST_INST`, matching the hardware workaround
+  in `r600_update_ps_state()`; RV610 and all later chips leave it unchanged.
+  The forced and unforced resource words have an exact negative-controlled CPU
+  oracle, but no original R600 card was available and shader execution is not
+  proved until queue submit and readback are enabled. ES/GS binding now
+  likewise uses R700's non-consecutive
   `SQ_PGM_START_ES/GS` and `SQ_PGM_RESOURCES_ES/GS` pairs transcribed from
   `r600_update_es_state()`/`r600_update_gs_state()`, rather than Evergreen's
   three-register blocks at colliding addresses. Exact CPU packets cover both
@@ -574,10 +585,14 @@ classic Gallium R600 driver that has supported this hardware for years).
     the real R600/R700 `PA_SC_AA_MASK` address 0x028C48, with an exact packet
     oracle. This proves the CPU-side register address and payload construction,
     but not multisample rendering on RV710 while queue submission remains
-    blocked. R700 sample locations now use exactly its two shared
-    `PA_SC_AA_SAMPLE_LOCS_MCTX` words at 0x028C1C/20, following
-    `r600_emit_msaa_state()`, rather than the four/eight pixel-specific R8xx
-    words (whose later addresses collide with `CB_CLRCMP_*`). Consequently
+    blocked. RV610 and every later TeraScale 1 family use exactly the two shared
+    `PA_SC_AA_SAMPLE_LOCS_MCTX` words at 0x028C1C/20, while original
+    `CHIP_R600` selects the separate 2x/4x/8x configuration-register forms at
+    0x008B40..0x008B4C, following the family branch in `r600_emit_msaa_state()`.
+    Exact CPU packet oracles cover all four CHIP_R600 sample-count forms and
+    the later context-register form, rather than reusing the four/eight
+    pixel-specific R8xx words (whose later addresses collide with
+    `CB_CLRCMP_*`). Consequently
     the TeraScale 1 physical device advertises the representable 1x1
     programmable sample-location grid rather than R8xx/R9xx's 2x2 grid. The
     exact CPU packet is covered, and RV710 property enumeration verifies the
@@ -600,12 +615,13 @@ classic Gallium R600 driver that has supported this hardware for years).
     already-known `SPECIAL_OP`-vs-`MODE` divergence at bit 4);
     `PA_SC_MODE_CNTL_1`/`_0` (0x028A4C/0x028A48) restructure most of their
     bits between generations. The TeraScale 1 path now combines both software
-    entries into R700's single `PA_SC_MODE_CNTL` at 0x028A4C, including the
-    `r600_create_rs_state()` EOV/ZMM/scissor baseline and RV770-only tile-cover
-    workaround; it never writes Evergreen `MODE_CNTL_0` to R700's unrelated
+    entries into the single `PA_SC_MODE_CNTL` at 0x028A4C. It selects R600's
+    `WALK_ALIGN8_PRIM_FITS_ST` baseline or R700's EOV_REZ/ZMM/scissor baseline
+    from the runtime gfx level, and applies the tile-cover workaround only to
+    RV770; it never writes Evergreen `MODE_CNTL_0` to TeraScale 1's unrelated
     `PA_SC_MPASS_PS_CNTL` at 0x028A48. Unknown future Evergreen bits are
-    rejected. Exact CPU packet coverage does not prove rasterization on RV710
-    while submit remains blocked. `DB_SHADER_CONTROL`, `DB_RENDER_OVERRIDE(2)`,
+    rejected. Exact CPU packet coverage does not prove rasterization on RV610
+    or RV710 while submit remains blocked. `DB_SHADER_CONTROL`, `DB_RENDER_OVERRIDE(2)`,
     `DB_RENDER_CONTROL`, `DB_COUNT_CONTROL` (already covered above as
     address collisions, but even where the DB *name* is right on both
     sides the field layout still differs completely, so this is a

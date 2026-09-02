@@ -42,8 +42,8 @@ if terakan_target_generation == 'auto'
   endif
 endif
 if terakan_target_generation == 'r600'
-  warning('Terakan: the R600 shader encoding is selected, but device creation and command ' +
-          'submission remain disabled pending hardware validation.')
+  warning('Terakan: R600 logical-device and image-layout bring-up is enabled, but command ' +
+          'submission remains disabled pending hardware readback validation.')
 elif terakan_target_generation == 'r700'
   warning('Terakan: R700 logical-device and image-layout bring-up is enabled, but command ' +
           'submission remains disabled pending hardware readback validation.')
