@@ -1341,6 +1341,41 @@ closed "many distinct compute pipelines rather than one" -- every concrete
 gap this note originally named. So whatever the application hits is narrower
 than this composition shape.
 
+## Depth/stencil clears of high array layers on small images
+
+`dEQP-VK.api.image_clearing.*.clear_depth_stencil_image` passes 350 of the 450
+cases it supports and fails 100. The axes are sharp:
+
+- The layer range decides it. `multiple_layers`, which clears layers 2 to 6,
+  passes every case. `remaining_array_layers` and its `twostep` variant, which
+  clear from layer 8 to the end of a sixteen-layer image, account for almost
+  all the failures.
+- The image size decides it. At 200x180 and 55x21x11 every layer range passes;
+  the failures are at 1x33, 32x29x3, 33x128 and 64x11.
+- The aspect decides it. `d32_sfloat_64x11` at `remaining_array_layers` passes
+  while `s8_uint_64x11` fails, and the message is always a stencil one:
+  `Ref:6 Threshold:0 Stencil:0`, a texel inside the clear range still holding
+  the initial value, so the clear did not reach it.
+
+The colour path is not affected in the same shape: `clear_color_image` with
+`remaining_array_layers` on `r8_uint` passes at 64x11 and 1x33, one byte per
+texel and the same sixteen layers with base layer 8. Since the readback of a
+stencil-only image goes through that same copy path, the defect is on the DB
+side of the clear rather than in the layout or the readback.
+
+Excluded by measurement:
+
+- The layout itself. Depth and stencil have identical aligned extents in every
+  case examined, and `DB_DEPTH_SLICE.SLICE_TILE_MAX` derived from them agrees
+  with `slice_size_bytes` exactly: 64x11 aligns to 64x16 with a 1024-byte
+  stencil slice and `SLICE_TILE_MAX` 15, 1x33 to 32x40 with 1280 and 19, and
+  the passing 200x180 to 224x184 with 41216 and 643.
+- The layered draw. Forcing one draw per layer instead of one draw for the run
+  of layers changes nothing.
+- `DB_DEPTH_VIEW.SLICE_START`. Offsetting the depth and stencil base addresses
+  by the base layer and leaving `SLICE_START` at zero changes nothing.
+- Tiling. `TERAKAN_DEBUG_FORCE_LINEAR_IMAGES=1` changes nothing.
+
 ## Random descriptor sets: two remaining shapes
 
 `dEQP-VK.binding_model.descriptorset_random` builds a random descriptor set
