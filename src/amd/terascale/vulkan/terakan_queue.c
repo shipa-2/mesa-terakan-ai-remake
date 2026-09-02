@@ -47,7 +47,20 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
+
+/* TeraScale 1 command streams are still experimental. Keep the normal device-lost guard unless a
+ * hardware bring-up run explicitly spells out the one accepted opt-in value. In particular, a
+ * generic non-empty debug environment (or a stale "=0") must not accidentally submit an R600/R700
+ * command stream on the developer's regular GPU.
+ */
+static bool
+terakan_debug_terascale_1_submit_enabled(void)
+{
+   char const * const value = getenv("TERAKAN_DEBUG_TERASCALE_1_SUBMIT");
+   return value != NULL && strcmp(value, "1") == 0;
+}
 
 static int
 terakan_queue_completion_thread_func(void * queue_ptr)
@@ -312,13 +325,15 @@ terakan_queue_submit(struct vk_queue * const queue_base, struct vk_queue_submit 
    struct terakan_physical_device const * const physical_device =
       terakan_device_physical_device(device);
 
-   /* vkCreateDevice is enabled on hardware-validated R700 so resource allocation and API object
-    * bring-up can proceed, but the complete R700 command stream is not validated yet. Never let
-    * the remaining Evergreen-only packets reach real TeraScale 1 hardware.
+   /* TeraScale 1 logical-device creation allows resource allocation and pipeline compilation, but
+    * its command stream is not validated yet. Never submit it by default; B1 of the hardware
+    * bring-up only permits an explicitly opted-in diagnostic run on the isolated test machine.
     */
-   if (physical_device->chip_info.is_terascale_1) {
+   if (physical_device->chip_info.is_terascale_1 &&
+       !terakan_debug_terascale_1_submit_enabled()) {
       return vk_errorf(device, VK_ERROR_DEVICE_LOST,
-                       "TeraScale 1 logical-device bring-up does not enable queue submission yet");
+                       "TeraScale 1 submission is disabled; set "
+                       "TERAKAN_DEBUG_TERASCALE_1_SUBMIT=1 only for isolated hardware bring-up");
    }
 
    /* Update submission-time allocations. */
