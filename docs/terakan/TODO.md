@@ -162,6 +162,15 @@ hardware. It does not lift the default `VK_ERROR_DEVICE_LOST` guard or validate 
 CP DMA/readback, descriptors and every draw/dispatch packet remain separate gates before general
 submission can be enabled.
 
+The first B3 CP-DMA packet constraint is now transcribed from classic
+`r600_cp_dma_copy_buffer()`: R600/R700 caps `BYTE_COUNT` at `2^21 - 8`, rather than the nominal
+all-ones 21-bit value retained by the Evergreen path. This matters for four-byte fills: the exact
+R700 maximum is `0x001ffff8`, while the old generic cap would emit `0x001ffffc`; 32-byte-aligned
+copies round both to `0x001fffe0`. `terakan_cp_dma_terascale_1_test` checks all three values and
+has the old fill value as a negative control. It proves only packet-size selection on the CPU. No
+CP-DMA packet, data transfer, or readback has yet run on RV710, so B3 and the submit guard remain
+open.
+
 ## Completed and regression-covered
 
 - Multisample correctness, closed as a group. Seven defects, each with a probe or

@@ -26,6 +26,7 @@
 
 #include "terakan_bo.h"
 #include "terakan_command_buffer.h"
+#include "terakan_cp_dma_limits.h"
 
 #include <vulkan/vulkan_core.h>
 
@@ -41,8 +42,6 @@ extern "C" {
  * - The total amount of data copied across operations. If it ends up unaligned, a throwaway copy
  *   operation needs to be done to restore the alignment of the internal counter.
  */
-#define TERAKAN_CP_DMA_COPY_OPTIMAL_ALIGNMENT ((VkDeviceSize)1 << 5)
-
 void terakan_cp_dma_sync_cp_me(struct terakan_gfx_command_writer * const command_writer);
 
 /* Commands are executed without CP_SYNC. When completion needs to be awaited in CP ME,

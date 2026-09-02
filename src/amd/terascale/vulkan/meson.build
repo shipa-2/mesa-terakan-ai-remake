@@ -106,6 +106,7 @@ libterakan_files = files(
   'terakan_command_buffer.h',
   'terakan_cp_dma.c',
   'terakan_cp_dma.h',
+  'terakan_cp_dma_limits.h',
   'terakan_descriptor.c',
   'terakan_descriptor.h',
   'terakan_descriptor_set.c',
@@ -394,6 +395,18 @@ if with_tests
     c_args : c_msvc_compat_args,
   )
   test('terakan_hw_config_shared_terascale_1', terakan_hw_config_shared_terascale_1_test)
+
+  terakan_cp_dma_terascale_1_test = executable(
+    'terakan_cp_dma_terascale_1_test',
+    'tests/terakan_cp_dma_terascale_1_test.c',
+    include_directories : [
+      inc_include,
+      inc_src,
+    ],
+    dependencies : idep_vulkan_util_headers,
+    c_args : c_msvc_compat_args,
+  )
+  test('terakan_cp_dma_terascale_1', terakan_cp_dma_terascale_1_test)
 
   terakan_sampler_terascale_1_test = executable(
     'terakan_sampler_terascale_1_test',

@@ -38,12 +38,6 @@
 #include <stdint.h>
 #include <string.h>
 
-/* Maximum value that can be specified in the BYTE_COUNT field of a CP DMA command. */
-#define TERAKAN_CP_DMA_MAX_BYTE_COUNT (((VkDeviceSize)1 << 21) - 1)
-
-#define TERAKAN_CP_DMA_MAX_ALIGNED_COPY_BYTE_COUNT                                                 \
-   (TERAKAN_CP_DMA_MAX_BYTE_COUNT & ~(TERAKAN_CP_DMA_COPY_OPTIMAL_ALIGNMENT - 1))
-
 void
 terakan_cp_dma_sync_cp_me(struct terakan_gfx_command_writer * const command_writer)
 {
@@ -90,8 +84,9 @@ terakan_cp_dma_copy(struct terakan_gfx_command_writer * const command_writer,
    VkDeviceSize src_aligned_size_remaining = size - src_misaligned_head_size;
    uint64_t current_dst_va_src_aligned = dst_va + src_misaligned_head_size;
    while (src_aligned_size_remaining != 0) {
-      uint32_t const command_copy_size =
-         (uint32_t)MIN2(src_aligned_size_remaining, TERAKAN_CP_DMA_MAX_ALIGNED_COPY_BYTE_COUNT);
+      uint32_t const command_copy_size = terakan_cp_dma_get_chunk_byte_count(
+         terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1,
+         src_aligned_size_remaining, TERAKAN_CP_DMA_COPY_OPTIMAL_ALIGNMENT);
       packet = terakan_gfx_command_writer_emit_with_bo(
          command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_OTHER, 1 + 5, 2, 0, 2);
       if (unlikely(packet == NULL)) {
@@ -243,8 +238,9 @@ terakan_cp_dma_fill(struct terakan_gfx_command_writer * const command_writer,
    terakan_cp_dma_prepare(command_writer);
 
    while (size_bytes != 0) {
-      uint32_t command_fill_size = (uint32_t)MIN2(
-         size_bytes, TERAKAN_CP_DMA_MAX_BYTE_COUNT & ~(uint32_t)(sizeof(uint32_t) - 1));
+      uint32_t command_fill_size = terakan_cp_dma_get_chunk_byte_count(
+         terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1,
+         size_bytes, sizeof(uint32_t));
 
       uint32_t * packet = terakan_gfx_command_writer_emit_with_bo(
          command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_OTHER, 1 + 5, 1, 0, 1);
