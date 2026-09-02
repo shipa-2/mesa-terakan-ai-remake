@@ -1379,6 +1379,39 @@ nothing: `TERAKAN_DEBUG_IMAGE_OPS` shows these images at `mode=4`, which is
 path the `TODO(Triang3l)` in `terakan_CmdCopyImage2` already names, not another
 condition on the byte copy.
 
+### The colour-target copy by draw does not extend to depth
+
+The obvious way to write that path is the way the single-sample copy already
+works: bind the destination aspect as a colour target of the same block size,
+bind the source as a texture, and draw the destination rectangle. Extending it
+to multisampling needs only one draw per sample, with `PA_SC_AA_MASK` set to
+that sample and the shader fetching the same sample of the source, and it was
+built and measured:
+
+- Forced onto `terakan_copy_image_multisample`, a four-sample 8x8
+  `r8g8b8a8_unorm` whole-surface copy, through
+  `TERAKAN_DEBUG_DISABLE_IMAGE_CP_DMA=1`, it copies all 64 texels of all four
+  samples correctly. The mechanism itself works.
+- On `depth_stencil_msaa_copy` it fixes nothing, and the same `whole` cases the
+  byte copy passes fail through it -- `d32_sfloat_optimal_optimal_D_2_bit`
+  reports texel (0,1) sample 0 still holding the clear value while (0,0) is
+  correct. Same image, same region, only the mechanism differs.
+
+So a multisample depth surface does not carry its samples where the colour
+block puts a colour surface's, and reinterpreting one as the other -- which is
+exactly what makes the single-sample copy simple -- stops working as soon as
+there is more than one sample. The rasterization sample mask is not the cause:
+a full mask leaves the same texel unwritten.
+
+What remains is therefore a genuine DB path: bind the destination as a depth
+target, write the fetched sample from the fragment shader through a Z export
+with `DB_DEPTH_CONTROL` set to always-pass depth writes, one draw per sample as
+above; and for stencil, which no shader on this hardware can write directly,
+one draw per bit with `STENCILWRITEMASK` set to that bit and the fragment
+discarded where the source bit is clear. The measurement above is what says the
+cheaper shape is not available, so this is not a first attempt but the
+remaining one.
+
 ## gl_SampleMaskIn reports the wrong number of bits
 
 `dEQP-VK.pipeline.*.multisample_shader_builtin.sample_mask` passes 20 of 30 and
