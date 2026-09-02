@@ -1359,58 +1359,52 @@ than this composition shape.
 
 ## Multisample depth/stencil copies of anything but the whole image
 
-`dEQP-VK.api.copy_and_blit.*.depth_stencil_msaa_copy` passes 216 of the 324
-cases it supports and fails 108, split cleanly by one axis: every `whole` case
-passes and every `partial` and `array_to_array` case fails, at all three sample
-counts and every depth/stencil format.
+`dEQP-VK.api.copy_and_blit.*.depth_stencil_msaa_copy` passed 216 of the 324
+cases it supports and failed 108, split cleanly by one axis: every `whole` case
+passed and every `partial` and `array_to_array` case failed, at all three
+sample counts and every depth/stencil format. It now passes 324 of 324.
 
-These copies are done as a byte copy of the aspect plane, which
-`terakan_meta_copy_image_multisample_aspect_plane` accepts only for a region
-covering the whole level at the same array layer on both sides -- the meta draw
-that would otherwise handle it cannot read or write multisample depth. A
-partial rectangle of a tiled surface is not a contiguous byte range, and the
-layer index feeds the bank and pipe swizzle of a macro-tiled surface, so the
-bytes of one slice do not decode as another.
+`whole` was, and still is, an aspect-plane byte copy. That is all it can be:
+a partial rectangle is not a contiguous byte range of a tiled surface, and on a
+macro-tiled one -- which these are, `TERAKAN_DEBUG_IMAGE_OPS` reports `mode=4`
+-- the array layer feeds the bank and pipe swizzle, so the bytes of one slice
+do not decode as another. Relaxing the layer condition for linear and 1D-tiled
+surfaces was tried first and changed nothing for exactly that reason.
 
-Relaxing the layer condition for linear and 1D-tiled surfaces, where slices are
-laid out identically and the swizzle does not rotate, was tried and changed
-nothing: `TERAKAN_DEBUG_IMAGE_OPS` shows these images at `mode=4`, which is
-`ARRAY_2D_TILED_THIN1`. Closing this needs the multisample depth/stencil copy
-path the `TODO(Triang3l)` in `terakan_CmdCopyImage2` already names, not another
-condition on the byte copy.
+The obvious next shape was the one the single-sample copy uses: bind the
+destination aspect as a colour target of the same block size, bind the source
+as a texture, draw the destination rectangle, and for multisampling do one draw
+per sample with `PA_SC_AA_MASK` restricting each. That was built and measured,
+and it does not work:
 
-### The colour-target copy by draw does not extend to depth
-
-The obvious way to write that path is the way the single-sample copy already
-works: bind the destination aspect as a colour target of the same block size,
-bind the source as a texture, and draw the destination rectangle. Extending it
-to multisampling needs only one draw per sample, with `PA_SC_AA_MASK` set to
-that sample and the shader fetching the same sample of the source, and it was
-built and measured:
-
-- Forced onto `terakan_copy_image_multisample`, a four-sample 8x8
+- forced onto `terakan_copy_image_multisample`, a four-sample 8x8
   `r8g8b8a8_unorm` whole-surface copy, through
   `TERAKAN_DEBUG_DISABLE_IMAGE_CP_DMA=1`, it copies all 64 texels of all four
-  samples correctly. The mechanism itself works.
-- On `depth_stencil_msaa_copy` it fixes nothing, and the same `whole` cases the
-  byte copy passes fail through it -- `d32_sfloat_optimal_optimal_D_2_bit`
-  reports texel (0,1) sample 0 still holding the clear value while (0,0) is
-  correct. Same image, same region, only the mechanism differs.
+  samples correctly, so the mechanism itself is sound;
+- on depth it fixed nothing and broke the `whole` cases the byte copy gets
+  right -- same image, same region, only the mechanism differing, with texel
+  (0,1) still holding the clear value while (0,0) was correct. A full sample
+  mask left the same texel unwritten, so the mask was not the cause.
 
-So a multisample depth surface does not carry its samples where the colour
-block puts a colour surface's, and reinterpreting one as the other -- which is
-exactly what makes the single-sample copy simple -- stops working as soon as
-there is more than one sample. The rasterization sample mask is not the cause:
-a full mask leaves the same texel unwritten.
+A multisample depth surface therefore does not carry its samples where the
+colour block puts a colour surface's, and the reinterpretation that makes the
+single-sample copy simple stops working past one sample.
 
-What remains is therefore a genuine DB path: bind the destination as a depth
-target, write the fetched sample from the fragment shader through a Z export
-with `DB_DEPTH_CONTROL` set to always-pass depth writes, one draw per sample as
-above; and for stencil, which no shader on this hardware can write directly,
-one draw per bit with `STENCILWRITEMASK` set to that bit and the fragment
-discarded where the source bit is clear. The measurement above is what says the
-cheaper shape is not available, so this is not a first attempt but the
-remaining one.
+What works is a DB destination: `terakan_meta_copy_image_multisample_depth_stencil`
+binds the destination as a depth target, and the fragment shader exports the
+sample it fetched, one draw per sample with the rasterization sample mask
+restricting each to the sample it carries. Stencil needs no per-bit trick, which
+is what this was expected to need: `STENCIL_EXPORT_ENABLE` lets the shader
+supply the value a `REPLACE` operation writes, which the resolve path already
+relied on, so both aspects are the same draw with a different export slot and
+`DB_DEPTH_CONTROL`. The source offset reaches the shader through the constants
+the single-sample copy already uses, which is what makes `partial` work, and the
+source and destination layers are selected independently -- the source through
+its texture descriptor's `BASE_ARRAY`, the destination through `SLICE_START` in
+DB -- which is what makes `array_to_array` work.
+
+`whole` still takes the byte copy: it is attempted first and this path runs only
+when it declines.
 
 ## gl_SampleMaskIn reports the wrong number of bits
 

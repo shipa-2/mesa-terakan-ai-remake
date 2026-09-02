@@ -160,6 +160,16 @@ enum terakan_meta_shader_index {
    TERAKAN_META_SHADER_COPY_EXPAND_3X_16_PS,
    TERAKAN_META_SHADER_COPY_EXPAND_3X_32_PS,
 
+   /* Copies one sample of a multisample depth or stencil aspect, the sample index and the source
+    * offset coming from the constants, exporting the fetched value so DB writes it. A multisample
+    * depth surface does not carry its samples where the colour block puts a colour surface's, so
+    * the reinterpret-as-colour copy the single-sample path uses cannot be extended to more than
+    * one sample; only a whole-plane byte copy could, and that needs the region to be the whole
+    * level at the same array layer. Built as NIR; see meta/terakan_meta_nir.c.
+    */
+   TERAKAN_META_SHADER_COPY_DEPTH_MSAA_PS,
+   TERAKAN_META_SHADER_COPY_STENCIL_MSAA_PS,
+
    TERAKAN_META_SHADER_COUNT,
 };
 

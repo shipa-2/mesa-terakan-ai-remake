@@ -40,6 +40,10 @@ enum {
    /* In blocks, signed. */
    TERAKAN_META_COPY_IMAGE_CONST_SRC_MINUS_DST_OFFSET_X,
    TERAKAN_META_COPY_IMAGE_CONST_SRC_MINUS_DST_OFFSET_Y,
+   /* Multisample depth/stencil copies only; the hand-written single-sample shader reads neither
+    * this nor past it, so adding it does not disturb the kcache layout it was written against.
+    */
+   TERAKAN_META_COPY_IMAGE_CONST_SAMPLE_INDEX,
 
    TERAKAN_META_COPY_IMAGE_CONSTS_COUNT,
 };
@@ -281,6 +285,239 @@ terakan_meta_copy_image_multisample_aspect_plane(struct terakan_image const * co
    return true;
 }
 
+/* A multisample depth or stencil region the whole-plane byte copy cannot express: a partial
+ * rectangle is not a contiguous byte range of a tiled surface, and on a macro-tiled one the array
+ * layer feeds the bank and pipe swizzle, so the bytes of one slice do not decode as another.
+ *
+ * Reinterpreting the aspect as a colour target, which is what makes the single-sample copy simple,
+ * does not survive multisampling: a multisample depth surface does not carry its samples where the
+ * colour block puts a colour surface's. Measured -- the same whole-image copies the byte path gets
+ * right come back with texels missing through a colour-target draw, while the identical draw
+ * copies a four-sample colour image exactly.
+ *
+ * So the destination is bound as a depth target and the fetched sample is exported, one draw per
+ * sample with the rasterization sample mask restricting each to the sample it carries. Stencil
+ * needs no per-bit trick: `STENCIL_EXPORT_ENABLE` lets the shader supply the value a REPLACE
+ * operation writes, which is what the resolve path already relies on.
+ *
+ * Returns whether the copy was performed here.
+ */
+static bool
+terakan_meta_copy_image_multisample_depth_stencil(
+   struct terakan_gfx_command_writer * const command_writer,
+   struct terakan_image const * const src_image, struct terakan_image const * const dst_image,
+   VkCopyImageInfo2 const * const copy_info)
+{
+   if (src_image->vk.samples <= VK_SAMPLE_COUNT_1_BIT ||
+       src_image->vk.samples != dst_image->vk.samples) {
+      return false;
+   }
+   enum terascale_r8xx_depth_format dst_depth_format = TERASCALE_R8XX_DEPTH_FORMAT_INVALID;
+   bool dst_has_stencil = false;
+   if (!terascale_get_r8xx_depth_stencil_format(vk_format_to_pipe_format(dst_image->vk.format),
+                                                &dst_depth_format, &dst_has_stencil)) {
+      return false;
+   }
+   /* Only a copy that stays within the depth/stencil aspects of both images: anything else is not
+    * what a depth target can write.
+    */
+   VkImageAspectFlags const depth_stencil_aspects =
+      VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+   for (uint32_t region_index = 0; region_index < copy_info->regionCount; ++region_index) {
+      VkImageCopy2 const * const region = &copy_info->pRegions[region_index];
+      if (region->srcSubresource.aspectMask != region->dstSubresource.aspectMask ||
+          (region->srcSubresource.aspectMask & ~depth_stencil_aspects) != 0 ||
+          region->srcSubresource.aspectMask == 0 || region->extent.depth != 1) {
+         return false;
+      }
+   }
+   if (copy_info->regionCount == 0) {
+      return false;
+   }
+
+   uint32_t const sample_count = (uint32_t)src_image->vk.samples;
+   unsigned const samples_log2 = util_logbase2(sample_count);
+
+   /* The source has just been written as a depth attachment and is about to be read as a texture,
+    * and the destination is about to be written as one.
+    */
+   terakan_barrier_emit_actions_unconditionally(
+      command_writer, TERAKAN_BARRIER_ACTION_FLUSH_INV_DB_DATA |
+                         TERAKAN_BARRIER_ACTION_FLUSH_INV_DB_META |
+                         TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_PS |
+                         TERAKAN_BARRIER_ACTION_INV_TC);
+
+   struct terakan_meta_config_draw_begin_options const begin_options = {
+      .vgt_primitive_type = V_008958_DI_PT_RECTLIST,
+      .cb_and_db_shader_control_mode = TERAKAN_META_CONFIG_DRAW_BEGIN_CB_MODE_DYNAMIC,
+      .rasterization = {.enable = true,
+                        .db_explicit = true,
+                        .msaa_num_samples_log2 = (unsigned char)samples_log2,
+                        .msaa_num_anchor_samples_log2 = (unsigned char)samples_log2},
+   };
+   terakan_meta_config_draw_begin(command_writer, &begin_options);
+   terakan_meta_config_draw_set_cb_color_control_for_mode(command_writer, V_028808_CB_DISABLE);
+   terakan_meta_config_draw_set_sq_pgm_vs(command_writer,
+                                          TERAKAN_META_SHADER_POSITION_AND_LAYER_FROM_INDEX_VS);
+   /* The reference is what a REPLACE writes, but with STENCIL_EXPORT_ENABLE the shader's value
+    * takes its place, so only the write mask matters.
+    */
+   terakan_meta_config_draw_set_db_stencilrefmask(command_writer, false,
+                                                  S_028430_STENCILWRITEMASK(0xFF));
+
+   unsigned const meta_resource_index = TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META;
+   struct terakan_hw_config_sqk_stage * const fs_sqk_stage =
+      &command_writer->hw_config_sqk.stages_[MESA_SHADER_FRAGMENT];
+   bool const saved_fs_resource_bound =
+      BITSET_TEST(fs_sqk_stage->resources_bound, meta_resource_index);
+   struct terakan_hw_config_sqk_resource saved_fs_resource;
+   if (saved_fs_resource_bound) {
+      saved_fs_resource = command_writer->hw_config_sqk.resources_fs_[meta_resource_index];
+   }
+
+   for (uint32_t region_index = 0; region_index < copy_info->regionCount; ++region_index) {
+      VkImageCopy2 const * const region = &copy_info->pRegions[region_index];
+      VkRect2D const dst_region_rect = {
+         .offset = {.x = region->dstOffset.x, .y = region->dstOffset.y},
+         .extent = {.width = region->extent.width, .height = region->extent.height}};
+      int32_t constants[TERAKAN_META_COPY_IMAGE_CONSTS_COUNT] = {};
+      constants[TERAKAN_META_COPY_IMAGE_CONST_SRC_MINUS_DST_OFFSET_X] =
+         region->srcOffset.x - region->dstOffset.x;
+      constants[TERAKAN_META_COPY_IMAGE_CONST_SRC_MINUS_DST_OFFSET_Y] =
+         region->srcOffset.y - region->dstOffset.y;
+
+      uint32_t const layer_count =
+         MIN2(region->srcSubresource.layerCount, region->dstSubresource.layerCount);
+
+      u_foreach_bit (aspect_bit_index, region->srcSubresource.aspectMask) {
+         VkImageAspectFlags const aspect = (VkImageAspectFlags)1 << aspect_bit_index;
+         bool const aspect_is_depth = aspect == VK_IMAGE_ASPECT_DEPTH_BIT;
+         if (!aspect_is_depth && !dst_has_stencil) {
+            continue;
+         }
+         if (aspect_is_depth && dst_depth_format == TERASCALE_R8XX_DEPTH_FORMAT_INVALID) {
+            continue;
+         }
+
+         terakan_meta_config_draw_set_db_shader_control(
+            command_writer, TERAKAN_SHADER_DB_SHADER_CONTROL_IDENTITY |
+                               (aspect_is_depth ? S_02880C_Z_EXPORT_ENABLE(1)
+                                                : S_02880C_STENCIL_EXPORT_ENABLE(1)));
+         terakan_meta_config_draw_set_sq_pgm_ps(command_writer,
+                                                aspect_is_depth
+                                                   ? TERAKAN_META_SHADER_COPY_DEPTH_MSAA_PS
+                                                   : TERAKAN_META_SHADER_COPY_STENCIL_MSAA_PS);
+         /* Every copied texel is written whatever the destination holds, and only the aspect being
+          * copied is touched.
+          */
+         terakan_meta_config_draw_set_db_depth_control(
+            command_writer,
+            aspect_is_depth ? (S_028800_Z_ENABLE(true) | S_028800_Z_WRITE_ENABLE(true) |
+                               S_028800_ZFUNC(V_028800_STENCILFUNC_ALWAYS))
+                            : (S_028800_STENCIL_ENABLE(1) |
+                               S_028800_STENCILFUNC(V_028800_STENCILFUNC_ALWAYS) |
+                               S_028800_STENCILFAIL(V_028800_STENCIL_REPLACE) |
+                               S_028800_STENCILZPASS(V_028800_STENCIL_REPLACE) |
+                               S_028800_STENCILZFAIL(V_028800_STENCIL_REPLACE)));
+
+         unsigned const src_aspect_index =
+            terakan_format_aspect_index(src_image->format_info.aspect_map, aspect, 0);
+         if (src_aspect_index >= TERAKAN_FORMAT_MAX_ASPECTS) {
+            continue;
+         }
+         struct terascale_format_info src_view_format =
+            src_image->format_info.aspect_formats[src_aspect_index];
+         if (!aspect_is_depth) {
+            src_view_format = terakan_image_stencil_aspect_sampled_format(src_view_format);
+         }
+
+         for (uint32_t layer_index = 0; layer_index < layer_count; ++layer_index) {
+            struct terakan_image_descriptor_subresource_range src_range = {
+               .base_mip_level = region->srcSubresource.mipLevel,
+               .max_level_count = 1,
+               .base_z_or_array_layer = region->srcSubresource.baseArrayLayer + layer_index,
+               .max_depth_or_layer_count = 1,
+            };
+            if (!terakan_image_descriptor_subresource_range_sanitize(src_image, &src_range,
+                                                                     false)) {
+               continue;
+            }
+            struct terakan_image_descriptor_create_info const src_descriptor_info = {
+               .image = src_image,
+               .view_format = src_view_format,
+               .image_aspect_index = src_aspect_index,
+               .subresource_range = src_range,
+            };
+            struct terakan_resource_descriptor src_resource;
+            if (!terakan_image_create_resource_descriptor(
+                   &src_descriptor_info, V_030000_SQ_TEX_DIM_2D_ARRAY_MSAA, NULL, &src_resource)) {
+               continue;
+            }
+
+            struct terakan_image_descriptor_subresource_range dst_range = {
+               .base_mip_level = region->dstSubresource.mipLevel,
+               .max_level_count = 1,
+               .base_z_or_array_layer = region->dstSubresource.baseArrayLayer + layer_index,
+               .max_depth_or_layer_count = 1,
+            };
+            if (!terakan_image_descriptor_subresource_range_sanitize(dst_image, &dst_range,
+                                                                     false)) {
+               continue;
+            }
+            struct terakan_depth_stencil_descriptor dst_descriptor;
+            if (!terakan_image_create_depth_stencil_descriptor(dst_image, dst_depth_format,
+                                                               dst_has_stencil, &dst_range,
+                                                               &dst_descriptor)) {
+               continue;
+            }
+
+            terakan_hw_config_sqk_set_resource_fs(&command_writer->hw_config_sqk,
+                                                  meta_resource_index, src_image->bo,
+                                                  &src_resource);
+            terakan_meta_config_draw_set_db_depth_stencil_buffer(command_writer, dst_image->bo,
+                                                                 &dst_descriptor);
+
+            struct terakan_screen_rect const screen_bounds = {
+               .bounds = {
+                  [1] = {
+                     u_minify(dst_image->vk.extent.width, dst_range.base_mip_level),
+                     u_minify(dst_image->vk.extent.height, dst_range.base_mip_level),
+                  },
+               },
+            };
+            struct terakan_screen_rect const draw_rect =
+               terakan_vk_rect_to_screen_rect(dst_region_rect, screen_bounds);
+
+            for (uint32_t sample_index = 0; sample_index < sample_count; ++sample_index) {
+               constants[TERAKAN_META_COPY_IMAGE_CONST_SAMPLE_INDEX] = (int32_t)sample_index;
+               terakan_meta_config_draw_set_kcache_push_constants(
+                  command_writer, sizeof(constants), constants, false, true);
+               /* A plain per-sample bitmask, the same shape the application's own `pSampleMask` is
+                * handed to this register in.
+                */
+               terakan_app_config_draw_set_pending(&command_writer->app_config_draw,
+                                                   TERAKAN_APP_CONFIG_DRAW_ENTRY_PA_SC_AA_MASK);
+               terakan_hw_config_draw_set_pa_sc_aa_mask(&command_writer->hw_config_draw,
+                                                        (uint16_t)(1u << sample_index));
+               terakan_meta_draw_rect(command_writer, draw_rect, 1);
+            }
+         }
+      }
+   }
+
+   terakan_hw_config_sqk_set_resource_fs(
+      &command_writer->hw_config_sqk, meta_resource_index,
+      saved_fs_resource_bound ? saved_fs_resource.bo : NULL,
+      saved_fs_resource_bound ? &saved_fs_resource.descriptor : NULL);
+
+   terakan_barrier_emit_actions_unconditionally(
+      command_writer, TERAKAN_BARRIER_ACTION_FLUSH_INV_DB_DATA |
+                         TERAKAN_BARRIER_ACTION_FLUSH_INV_DB_META |
+                         TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_PS |
+                         TERAKAN_BARRIER_ACTION_INV_TC);
+   return true;
+}
+
 VKAPI_ATTR void VKAPI_CALL
 terakan_CmdCopyImage2(VkCommandBuffer const commandBuffer,
                       VkCopyImageInfo2 const * const pCopyImageInfo)
@@ -467,6 +704,17 @@ terakan_CmdCopyImage2(VkCommandBuffer const commandBuffer,
          }
          return;
       }
+   }
+
+   /* A multisample depth or stencil region the byte copy could not take: the meta draw below binds
+    * the aspect as a colour target, which multisampling does not survive.
+    */
+   if (terakan_meta_copy_image_multisample_depth_stencil(command_writer, src_image, dst_image,
+                                                         pCopyImageInfo)) {
+      if (debug_copy_call < 4096) {
+         fprintf(stderr, "[TERAKAN_IMAGE_OP]   path=meta-draw-ds-msaa\n");
+      }
+      return;
    }
 
    if (debug_copy_call < 4096) {
