@@ -1341,6 +1341,45 @@ closed "many distinct compute pipelines rather than one" -- every concrete
 gap this note originally named. So whatever the application hits is narrower
 than this composition shape.
 
+## Multisample depth/stencil copies of anything but the whole image
+
+`dEQP-VK.api.copy_and_blit.*.depth_stencil_msaa_copy` passes 216 of the 324
+cases it supports and fails 108, split cleanly by one axis: every `whole` case
+passes and every `partial` and `array_to_array` case fails, at all three sample
+counts and every depth/stencil format.
+
+These copies are done as a byte copy of the aspect plane, which
+`terakan_meta_copy_image_multisample_aspect_plane` accepts only for a region
+covering the whole level at the same array layer on both sides -- the meta draw
+that would otherwise handle it cannot read or write multisample depth. A
+partial rectangle of a tiled surface is not a contiguous byte range, and the
+layer index feeds the bank and pipe swizzle of a macro-tiled surface, so the
+bytes of one slice do not decode as another.
+
+Relaxing the layer condition for linear and 1D-tiled surfaces, where slices are
+laid out identically and the swizzle does not rotate, was tried and changed
+nothing: `TERAKAN_DEBUG_IMAGE_OPS` shows these images at `mode=4`, which is
+`ARRAY_2D_TILED_THIN1`. Closing this needs the multisample depth/stencil copy
+path the `TODO(Triang3l)` in `terakan_CmdCopyImage2` already names, not another
+condition on the byte copy.
+
+## gl_SampleMaskIn reports the wrong number of bits
+
+`dEQP-VK.pipeline.*.multisample_shader_builtin.sample_mask` passes 20 of 30 and
+fails 10. `pattern`, `correct_bit` and `write` all pass, so the bit positions
+and the output path are right; `bit_count` fails at every sample count and
+`bit_count_0_5` fails at four and eight samples while passing at two. The
+message is "gl_SampleMaskIn has an illegal number of bits for some shader
+invocations".
+
+SFN reads the value from the face register's third component and, since
+Terakan never sets `r600_shader_key::ps::apply_sample_id_mask` -- the pipeline
+leaves the key zeroed, as its own TODO says -- passes it through unchanged
+rather than reducing it to the current sample's bit. Narrowing it to
+`BITFIELD_MASK(rasterization_samples)` was tried and changed nothing, so the
+surplus is not above the sample count; what that register actually holds on
+this hardware has still to be established.
+
 ## Depth/stencil clears of high array layers on small images
 
 `dEQP-VK.api.image_clearing.*.clear_depth_stencil_image` passes 350 of the 450
