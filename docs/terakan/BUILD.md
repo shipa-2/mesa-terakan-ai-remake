@@ -26,8 +26,8 @@ Meson builds this driver, and no wrapper is needed for it. From the repository
 root:
 
 ```bash
-meson setup build --native-file build-support/terakan.ini
-meson compile -C build
+meson setup build-vulkan --native-file build-support/terakan.ini
+meson compile -C build-vulkan
 ```
 
 `build-support/terakan.ini` carries every option a Terakan build needs, so the
@@ -35,11 +35,16 @@ setup line above is the whole configuration. Add anything that varies on the
 command line, where it takes precedence over the file:
 
 ```bash
-meson setup build --native-file build-support/terakan.ini --buildtype=debug
-meson setup build --native-file build-support/terakan.ini \
+meson setup build-vulkan --native-file build-support/terakan.ini --buildtype=debug
+meson setup build-vulkan --native-file build-support/terakan.ini \
   -Dterakan-target-generation=r700
-meson setup --wipe build --native-file build-support/terakan.ini
+meson setup --wipe build-vulkan --native-file build-support/terakan.ini
 ```
+
+`build-vulkan/` is the directory the helper scripts use by default, so building
+into it directly keeps `./bin/terakan-test` and `./bin/terakan-run` working
+against the same build. Meson writes its own `.gitignore` into a build
+directory, so the name is otherwise free.
 
 `bin/terakan-build` is a convenience wrapper around exactly that, and passes the
 same file, so the two cannot describe different builds:
@@ -48,11 +53,11 @@ same file, so the two cannot describe different builds:
 ./bin/terakan-build
 ```
 
-This configures `build-vulkan/` as a release build containing only the
-`amd_terascale` Vulkan driver and the focused Terakan regression suite. With
-the Vulkan loader and `glslang` available, the build includes four CPU tests,
-seven CAICOS GPU tests, and the optional shader-corpus runner. It does not
-install or replace the system Mesa stack.
+Either way the result is a release build containing only the `amd_terascale`
+Vulkan driver and the focused Terakan regression suite. With the Vulkan loader
+and `glslang` available, the build includes 13 CPU tests, 68 CAICOS GPU tests,
+and the optional shader-corpus runner. It does not install or replace the
+system Mesa stack.
 
 Useful variants:
 

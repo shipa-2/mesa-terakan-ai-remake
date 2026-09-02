@@ -44,9 +44,23 @@ sudo pacman -S --needed base-devel git glslang libdrm libx11 libxcb \
 git clone --branch Terakan_state_rework --single-branch \
   https://github.com/shipa-2/mesa-terakan-ai-remake.git
 cd mesa-terakan-ai-remake
-./bin/terakan-build
+meson setup build-vulkan --native-file build-support/terakan.ini
+meson compile -C build-vulkan
 ./bin/terakan-test
 ```
+
+Meson builds the driver; `build-support/terakan.ini` carries every option the
+build needs, so that setup line is the whole configuration. `./bin/terakan-build`
+is a convenience wrapper around the same two commands and the same file, adding
+only the build type and, if asked for, the target generation:
+
+```bash
+./bin/terakan-build          # same build as above
+./bin/terakan-build --debug  # meson setup --buildtype=debug
+```
+
+`./bin/terakan-test` runs the focused suite -- 13 CPU tests and 68 CAICOS GPU
+tests -- against the build in `build-vulkan/`.
 
 Run applications against the local build without installing it:
 
