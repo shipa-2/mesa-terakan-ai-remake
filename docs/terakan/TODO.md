@@ -133,9 +133,7 @@ Evergreen-only `CB8...CB11_DEST_BASE_ENA` bits from the end-of-recording `SURFAC
 the CB0...CB7 subset in `r600_flush_emit()`. A repeatable dry-run
 `TERAKAN_DEBUG_DRY_RUN_SUBMIT=1` paired with `TERAKAN_DUMP_CS=1` records the exact IB without
 issuing `DRM_RADEON_CS`; on RV710 it proved the 216-dword post-change stream contains no `0x07`
-event and carries `CP_COHER_CNTL = 0x9E807FC0` rather than the old `0x9E87FFC0`. B2 is therefore
-**not done**: do not repeat a real submit until the remaining preamble differs from
-`r600_init_atom_start_cs()` by documented, justified packets.
+event and carries `CP_COHER_CNTL = 0x9E807FC0` rather than the old `0x9E87FFC0`.
 
 Fence completion has a second, aligned IB generated in `terakan_queue.c`, not the recorded
 command-buffer IB. A fence gives it `ALL_COMMANDS` even for an empty submit, which had made it
@@ -156,6 +154,13 @@ and no `PKT3_SURFACE_SYNC` tail. The real RV710 fence then completed once, follo
 clean repetitions with no kernel-journal entries after the series. This establishes the
 start-atom/prelude portion of B2; it is deliberately test-only and not a cache-coherency mode.
 It does not validate the omitted normal cache tail, any draw/copy/readback, or rendering.
+
+The normal 216-dword empty command-buffer path, including that cache tail, subsequently completed
+once and then 5/5 further times on RV710, again with no kernel-journal entries after either run.
+This closes **B2 only**: a normal empty recorded IB plus its fence completion is now validated on
+hardware. It does not lift the default `VK_ERROR_DEVICE_LOST` guard or validate any GPU work;
+CP DMA/readback, descriptors and every draw/dispatch packet remain separate gates before general
+submission can be enabled.
 
 ## Completed and regression-covered
 
