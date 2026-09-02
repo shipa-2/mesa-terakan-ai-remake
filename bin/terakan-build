@@ -34,28 +34,12 @@ while (($#)); do
   shift
 done
 
+# The options themselves live in the Meson native file, which works on its own:
+#   meson setup build --native-file build-support/terakan.ini
+# This script only adds what varies per invocation, so the two cannot describe different builds.
 meson_args=(
-  --prefix=/usr
-  --libdir=lib
+  --native-file "$repo_root/build-support/terakan.ini"
   "--buildtype=$build_type"
-  -Dwrap_mode=nodownload
-  -Dvulkan-drivers=amd_terascale
-  -Dgallium-drivers=
-  -Dglx=disabled
-  -Degl=disabled
-  -Dgbm=disabled
-  -Dopengl=false
-  -Dgles1=disabled
-  -Dgles2=disabled
-  -Dllvm=disabled
-  -Dvalgrind=disabled
-  -Dlmsensors=disabled
-  -Dzstd=enabled
-  -Dshader-cache=enabled
-  -Dlibunwind=disabled
-  -Dplatforms=x11,wayland
-  -Dbuild-tests=true
-  '-Dtools=[]'
 )
 
 # Passed on every setup and reconfigure, so switching an existing build directory between
@@ -64,7 +48,7 @@ if [[ -n ${TERAKAN_TARGET_GENERATION:-} ]]; then
   meson_args+=("-Dterakan-target-generation=$TERAKAN_TARGET_GENERATION")
 fi
 
-export PKG_CONFIG_PATH=/usr/lib/pkgconfig:/usr/share/pkgconfig
+# PKG_CONFIG_PATH is set by the native file's pkg_config_path instead, so it is stated once.
 export CCACHE_DIR=${TERAKAN_CCACHE_DIR:-"$build_dir/.ccache"}
 mkdir -p -- "$CCACHE_DIR"
 

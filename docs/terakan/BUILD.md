@@ -22,7 +22,27 @@ sudo pacman -S --needed base-devel git glslang libdrm libx11 libxcb \
 
 ## Development build
 
-From the repository root:
+Meson builds this driver, and no wrapper is needed for it. From the repository
+root:
+
+```bash
+meson setup build --native-file build-support/terakan.ini
+meson compile -C build
+```
+
+`build-support/terakan.ini` carries every option a Terakan build needs, so the
+setup line above is the whole configuration. Add anything that varies on the
+command line, where it takes precedence over the file:
+
+```bash
+meson setup build --native-file build-support/terakan.ini --buildtype=debug
+meson setup build --native-file build-support/terakan.ini \
+  -Dterakan-target-generation=r700
+meson setup --wipe build --native-file build-support/terakan.ini
+```
+
+`bin/terakan-build` is a convenience wrapper around exactly that, and passes the
+same file, so the two cannot describe different builds:
 
 ```bash
 ./bin/terakan-build
@@ -80,12 +100,18 @@ another Vulkan ICD.
 
 ## Manual Meson invocation
 
-The wrapper is the source of truth for Meson options. To inspect the exact
-configuration, read `bin/terakan-build` or run:
+`build-support/terakan.ini` is the source of truth for Meson options; the
+wrapper adds only the build type and, if asked for, the target generation. To
+inspect what a configured directory actually ended up with:
 
 ```bash
 meson configure build-vulkan
 ```
+
+Its `pkg_config_path` is stated in that file because a `PKG_CONFIG_PATH` in the
+environment pointing at `/usr/lib32/pkgconfig` -- which a machine set up to
+build 32-bit software has -- otherwise makes every test binary fail to link
+against the 32-bit `libvulkan`.
 
 Do not combine the Terakan development build with a full Gallium/OpenGL
 installation. Terakan needs only its Vulkan ICD; the distribution's Mesa
