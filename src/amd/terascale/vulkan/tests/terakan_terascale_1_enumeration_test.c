@@ -54,6 +54,41 @@ terascale_1_submit_opted_in(void)
    return value != NULL && strcmp(value, "1") == 0;
 }
 
+static bool
+terascale_1_signal_only_opted_in(void)
+{
+   char const * const value = getenv("TERAKAN_DEBUG_TERASCALE_1_SIGNAL_ONLY");
+   return value != NULL && strcmp(value, "1") == 0;
+}
+
+static uint32_t
+check_rv710_signal_only_submit(VkDevice const device, VkQueue const queue)
+{
+   VkFence fence = VK_NULL_HANDLE;
+   VkFenceCreateInfo const fence_info = {
+      .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+   };
+   VkResult result = vkCreateFence(device, &fence_info, NULL, &fence);
+   if (result != VK_SUCCESS) {
+      fprintf(stderr, "  RV710 signal-only vkCreateFence failed with %d\n", result);
+      return 1;
+   }
+   VkSubmitInfo const submit_info = {
+      .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+   };
+   result = vkQueueSubmit(queue, 1, &submit_info, fence);
+   if (result == VK_SUCCESS) {
+      result = vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_C(5000000000));
+   }
+   if (result != VK_SUCCESS) {
+      fprintf(stderr, "  RV710 signal-only fence submission failed with %d\n", result);
+   } else {
+      fprintf(stderr, "  RV710 signal-only fence submission completed\n");
+   }
+   vkDestroyFence(device, fence, NULL);
+   return result != VK_SUCCESS;
+}
+
 static uint32_t
 check_rv710_empty_submit(VkDevice const device, VkQueue const queue)
 {
@@ -561,7 +596,9 @@ main(void)
                fprintf(stderr, "  TeraScale 1 queue submission remains safely disabled\n");
             }
          } else if (properties.deviceID == 0x954f) {
-            failures += check_rv710_empty_submit(device, queue);
+            failures += terascale_1_signal_only_opted_in()
+                           ? check_rv710_signal_only_submit(device, queue)
+                           : check_rv710_empty_submit(device, queue);
          } else {
             fprintf(stderr,
                     "  TeraScale 1 submit opt-in deliberately skips non-RV710 device 0x%04x\n",

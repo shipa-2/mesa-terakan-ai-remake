@@ -137,6 +137,14 @@ event and carries `CP_COHER_CNTL = 0x9E807FC0` rather than the old `0x9E87FFC0`.
 **not done**: do not repeat a real submit until the remaining preamble differs from
 `r600_init_atom_start_cs()` by documented, justified packets.
 
+Fence completion has a second, aligned IB generated in `terakan_queue.c`, not the recorded
+command-buffer IB. A fence gives it `ALL_COMMANDS` even for an empty submit, which had made it
+reintroduce the same `eg+` CS flush and CB8...CB11 bits. The existing RV710 probe accepts the
+additional exact opt-in `TERAKAN_DEBUG_TERASCALE_1_SIGNAL_ONLY=1`; with `DRY_RUN` it produced a
+16-dword signal IB containing `PS_PARTIAL_FLUSH` (`0x16`) and `CP_COHER_CNTL = 0x86007FC0`, with
+no CS flush or CB8...CB11 bits. This validates only the chosen packet fields, not a completed
+fence or cache coherency.
+
 ## Completed and regression-covered
 
 - Multisample correctness, closed as a group. Seven defects, each with a probe or

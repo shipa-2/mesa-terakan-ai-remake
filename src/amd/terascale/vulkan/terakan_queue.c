@@ -159,6 +159,7 @@ terakan_queue_get_graphics_signal_indirect_buffer(
    uint32_t indirect_buffer[TERAKAN_QUEUE_SIGNAL_INDIRECT_BUFFER_MAX_DWORDS])
 {
    uint32_t indirect_buffer_size_dwords = 0;
+   bool const is_terascale_1 = terakan_device_physical_device(device)->chip_info.is_terascale_1;
 
    /* Disable register shadowing before executing any packets that may set registers (not clear if
     * CP_COHER_CNTL setting in SURFACE_SYNC interacts with it, but for safety it's preferable to do
@@ -192,8 +193,14 @@ terakan_queue_get_graphics_signal_indirect_buffer(
          S_0085F0_CB2_DEST_BASE_ENA(1) | S_0085F0_CB3_DEST_BASE_ENA(1) |
          S_0085F0_CB4_DEST_BASE_ENA(1) | S_0085F0_CB5_DEST_BASE_ENA(1) |
          S_0085F0_CB6_DEST_BASE_ENA(1) | S_0085F0_CB7_DEST_BASE_ENA(1) |
-         S_0085F0_CB8_DEST_BASE_ENA(1) | S_0085F0_CB9_DEST_BASE_ENA(1) |
-         S_0085F0_CB10_DEST_BASE_ENA(1) | S_0085F0_CB11_DEST_BASE_ENA(1);
+         (is_terascale_1
+            ? 0
+            : S_0085F0_CB8_DEST_BASE_ENA(1) | S_0085F0_CB9_DEST_BASE_ENA(1) |
+                 S_0085F0_CB10_DEST_BASE_ENA(1) | S_0085F0_CB11_DEST_BASE_ENA(1));
+      /* r600d.h makes CB8...CB11 (bits 15:18) Evergreen-only. This IB is also used just to
+       * signal an otherwise empty fence, so the Vulkan ALL_COMMANDS signal stage must not smuggle
+       * four invalid CB base enables into an R700 submission. r600_flush_emit() uses CB0...CB7.
+       */
       cp_coher_cntl |= S_0085F0_CB_ACTION_ENA(1);
    }
    if (flush_rtv) {
@@ -250,7 +257,12 @@ terakan_queue_get_graphics_signal_indirect_buffer(
       }
    }
 
-   if (partial_flush_stages & VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT) {
+   /* R7xx has no CS stage. EVENT_TYPE_CS_PARTIAL_FLUSH is explicitly `eg+` in r600d.h, but a
+    * fence's Vulkan ALL_COMMANDS scope includes COMPUTE_SHADER even when the submitted command
+    * buffer is empty. Do not turn that abstract scope into an unsupported packet; compute itself
+    * remains unavailable on TeraScale 1 until its SQ state is independently ported.
+    */
+   if (!is_terascale_1 && (partial_flush_stages & VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT)) {
       assert(TERAKAN_QUEUE_SIGNAL_INDIRECT_BUFFER_MAX_DWORDS - indirect_buffer_size_dwords >= 2);
       indirect_buffer[indirect_buffer_size_dwords++] = PKT3(PKT3_EVENT_WRITE, 1 - 1, 0);
       indirect_buffer[indirect_buffer_size_dwords++] =
