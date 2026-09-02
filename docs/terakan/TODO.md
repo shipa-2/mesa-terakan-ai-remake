@@ -1428,6 +1428,11 @@ this hardware has still to be established.
 `dEQP-VK.api.image_clearing.*.clear_depth_stencil_image` passes 350 of the 450
 cases it supports and fails 100. The axes are sharp:
 
+- It is order dependent. `clear_depth_stencil_image.2d.single_layer\
+  .d32_sfloat_s8_uint_33x128` passes inside a full-suite run and fails three
+  times out of three when run on its own, so this family has to be measured as
+  a whole family and a single-case reproduction can mislead. The counts below
+  are from whole-family runs.
 - The layer range decides it. `multiple_layers`, which clears layers 2 to 6,
   passes every case. `remaining_array_layers` and its `twostep` variant, which
   clear from layer 8 to the end of a sixteen-layer image, account for almost
@@ -1497,12 +1502,35 @@ correct:
 - Shader size and register pressure: the failing shaders use 6 and 9 GPRs
   against 13 for a passing one, and 458 and 544 dwords against 418.
 
+Later rounds excluded three more, each reproduced the same way and each leaving
+all 64 texels correct: two typed image RATs in one fragment shader, a
+dynamically indexed array of uniform buffers read the way the failing shaders
+read theirs (`values[accum + N]`, with `accum` an SSA value the compiler cannot
+fold), and a dynamically indexed array of storage images written from divergent
+control flow -- which is what makes the backend emit `MEM_RAT ... RATn[IDXm]`,
+the indexed RAT writes the failing shaders contain and no earlier reproducer
+had. Neither the copy mechanism nor mega-fetch coalescing moves the set either:
+`TERAKAN_DEBUG_DISABLE_IMAGE_CP_DMA` and
+`TERAKAN_DEBUG_DISABLE_MEGA_FETCH_COALESCING` leave it identical.
+
 Two things are known to change the outcome and are the place to start next.
 `TERAKAN_DEBUG_FORCE_LINEAR_IMAGES=1` changes the failing set entirely, to 33
-different texels, so image tiling reaches the result even though coverage and
-the final store in isolation are correct. And the failing shaders bind between
-four and eight UAVs while the reproducer binds one, which is the largest
-remaining difference from the shapes already excluded.
+different texels following the clean rule "missing iff `((x>>1)&1) != (y&1)`"
+with exactly one exception, texel 62 -- which is also missing in the tiled case.
+A rule that misses exactly half the texels is a pairwise address collision, not
+a permutation, and a permutation would be invisible here because every written
+texel gets the same value. So the write address loses a bit somewhere, and the
+bit it loses depends on the tiling.
+
+The other is that the whole reproduce-and-eliminate approach may be aimed
+wrongly: the depth/stencil clear family turned out to be order dependent --
+`clear_depth_stencil_image.2d.single_layer.d32_sfloat_s8_uint_33x128` passes
+inside a full-suite run and fails three times out of three on its own -- so a
+defect here need not be a property of the failing draw at all, and a reproducer
+that runs the same shapes in isolation would never show it.
+
+`TERAKAN_DEBUG_DUMP_FRAGMENT_BYTECODE=1` dumps the fragment programs the way
+the compute one already did, which is how the indexed RAT writes were found.
 
 ## In-shader memory model: RAT returns, and a GPU hang
 
