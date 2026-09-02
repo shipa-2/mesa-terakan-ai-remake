@@ -1108,6 +1108,21 @@ terakan_BeginCommandBuffer(VkCommandBuffer const commandBuffer,
     * This is only necessary for the first command buffer in a submission, but doing that here for
     * simplicity of submitting.
     */
+   uint32_t const invalidate_caches_cb_dest_base_ena =
+      S_0085F0_CB0_DEST_BASE_ENA(1) | S_0085F0_CB1_DEST_BASE_ENA(1) |
+      S_0085F0_CB2_DEST_BASE_ENA(1) | S_0085F0_CB3_DEST_BASE_ENA(1) |
+      S_0085F0_CB4_DEST_BASE_ENA(1) | S_0085F0_CB5_DEST_BASE_ENA(1) |
+      S_0085F0_CB6_DEST_BASE_ENA(1) | S_0085F0_CB7_DEST_BASE_ENA(1) |
+      (physical_device->chip_info.is_terascale_1
+         ? 0
+         : S_0085F0_CB8_DEST_BASE_ENA(1) | S_0085F0_CB9_DEST_BASE_ENA(1) |
+              S_0085F0_CB10_DEST_BASE_ENA(1) | S_0085F0_CB11_DEST_BASE_ENA(1));
+   /* r600d.h marks CP_COHER_CNTL bits 15:18 (CB8...CB11) Evergreen-only, and r600_flush_emit()
+    * only enables CB0...CB7 for R700 CB coherency. The common first-submit invalidation previously
+    * set the four unsupported bits even for an empty RV710 command buffer. Keep the complete
+    * Evergreen mask and use the documented R7xx subset rather than relying on a validator to
+    * reject field values it cannot understand.
+    */
    uint32_t const invalidate_caches_packets[] = {
       PKT3(PKT3_SET_CONTEXT_REG, 1, 0),
       TERAKAN_CONTEXT_REG_OFFSET(R_028354_SX_SURFACE_SYNC),
@@ -1123,13 +1138,7 @@ terakan_BeginCommandBuffer(VkCommandBuffer const commandBuffer,
       EVENT_TYPE(EVENT_TYPE_CACHE_FLUSH_AND_INV_EVENT) | EVENT_INDEX(0),
 
       PKT3(PKT3_SURFACE_SYNC, 4 - 1, 0),
-      S_0085F0_CB0_DEST_BASE_ENA(1) | S_0085F0_CB1_DEST_BASE_ENA(1) |
-         S_0085F0_CB2_DEST_BASE_ENA(1) | S_0085F0_CB3_DEST_BASE_ENA(1) |
-         S_0085F0_CB4_DEST_BASE_ENA(1) | S_0085F0_CB5_DEST_BASE_ENA(1) |
-         S_0085F0_CB6_DEST_BASE_ENA(1) | S_0085F0_CB7_DEST_BASE_ENA(1) |
-         S_0085F0_CB8_DEST_BASE_ENA(1) | S_0085F0_CB9_DEST_BASE_ENA(1) |
-         S_0085F0_CB10_DEST_BASE_ENA(1) | S_0085F0_CB11_DEST_BASE_ENA(1) |
-         S_0085F0_DB_DEST_BASE_ENA(1) | S_0085F0_TC_ACTION_ENA(1) |
+      invalidate_caches_cb_dest_base_ena | S_0085F0_DB_DEST_BASE_ENA(1) | S_0085F0_TC_ACTION_ENA(1) |
          S_0085F0_VC_ACTION_ENA(physical_device->chip_info.has_vertex_cache) |
          S_0085F0_CB_ACTION_ENA(1) | S_0085F0_DB_ACTION_ENA(1) | S_0085F0_SH_ACTION_ENA(1) |
          S_0085F0_SMX_ACTION_ENA(1) | TERAKAN_BARRIER_SURFACE_SYNC_ENGINE_ME,

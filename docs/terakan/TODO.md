@@ -128,11 +128,14 @@ Evergreen-only `PKT3_PFP_SYNC_ME` (`0x42`), so TeraScale 1 now omits it; after t
 kernel accepted the IB but ring 0 locked up and its fence timed out. The offline audit also found
 `EVENT_TYPE_CS_PARTIAL_FLUSH` (`0x07`) marked `eg+` in `r600d.h`; unlike the former packet, it
 passed validation and therefore could plausibly have caused the stall. TeraScale 1 now emits only
-the `PS_PARTIAL_FLUSH` used by `r600_init_atom_start_cs()`. A repeatable dry-run
+the `PS_PARTIAL_FLUSH` used by `r600_init_atom_start_cs()`. The same audit removed the
+Evergreen-only `CB8...CB11_DEST_BASE_ENA` bits from the end-of-recording `SURFACE_SYNC`, matching
+the CB0...CB7 subset in `r600_flush_emit()`. A repeatable dry-run
 `TERAKAN_DEBUG_DRY_RUN_SUBMIT=1` paired with `TERAKAN_DUMP_CS=1` records the exact IB without
 issuing `DRM_RADEON_CS`; on RV710 it proved the 216-dword post-change stream contains no `0x07`
-event. B2 is therefore **not done**: do not repeat a real submit until the remaining preamble
-differs from `r600_init_atom_start_cs()` by documented, justified packets.
+event and carries `CP_COHER_CNTL = 0x9E807FC0` rather than the old `0x9E87FFC0`. B2 is therefore
+**not done**: do not repeat a real submit until the remaining preamble differs from
+`r600_init_atom_start_cs()` by documented, justified packets.
 
 ## Completed and regression-covered
 
