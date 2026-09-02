@@ -311,6 +311,19 @@ terakan_GetPhysicalDeviceFormatProperties2(UNUSED VkPhysicalDevice const physica
          image_tiled_only_features = 0;
       }
 
+      /* The YCbCr formats -- both the multi-planar ones and the single-plane 422 pairs -- are
+       * usable only through a sampler YCbCr conversion, and `samplerYcbcrConversion` is not
+       * supported here, so an image of one of them cannot be created at all. Terakan decomposed
+       * them into their plane formats like any other multi-aspect format and reported whatever
+       * those planes could do, which advertised colour attachment, blending, blitting and storage
+       * for formats the specification forbids all four on -- every one of the fourteen YCbCr cases
+       * of dEQP-VK.api.info.format_properties failed on exactly that.
+       */
+      if (vk_format_get_ycbcr_info(format) != NULL) {
+         image_features = 0;
+         image_tiled_only_features = 0;
+      }
+
       bool const image_linear_only = (TERASCALE_FORMATS_LINEAR_ONLY & image_formats_used) != 0;
       bool const image_tiled_only = (TERASCALE_FORMATS_TILED_ONLY_R8XX & image_formats_used) != 0;
       if (!(image_linear_only && image_tiled_only)) {
