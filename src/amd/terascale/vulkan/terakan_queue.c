@@ -548,6 +548,17 @@ terakan_queue_submit(struct vk_queue * const queue_base, struct vk_queue_submit 
             command_buffer_indirect_buffer->indirect_buffer_size_dwords;
          /* The winsys may not support empty indirect buffers. */
          assert(command_buffer_indirect_buffer->indirect_buffer_size_dwords != 0);
+         if (physical_device->chip_info.is_terascale_1 &&
+             getenv("TERAKAN_DEBUG_TERASCALE_1_DUMP_IB") != NULL) {
+            fprintf(stderr, "[TERAKAN_R700_IB] dwords=%u relocs=%u\\n",
+                    command_buffer_indirect_buffer->indirect_buffer_size_dwords,
+                    command_buffer_indirect_buffer->relocation_count);
+            for (uint32_t dword = 0;
+                 dword < command_buffer_indirect_buffer->indirect_buffer_size_dwords; ++dword) {
+               fprintf(stderr, "[TERAKAN_R700_IB] %04u: %08x\\n", dword,
+                       command_buffer_indirect_buffer->indirect_buffer[dword]);
+            }
+         }
          VkResult const command_buffer_submit_result = device->winsys_fn->queue->submit(
             queue->submission_context, command_buffer_indirect_buffer->bo_reference_count,
             command_buffer_indirect_buffer->bo_references,
