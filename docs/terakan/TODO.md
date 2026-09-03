@@ -1925,6 +1925,24 @@ read is spelled -- makes the family 14 of 14 supported cases, from 4 failing. Tw
 tried first and measured to do nothing, and were reverted: `EXEC_ON_NOOP` in the same register,
 and `NOOP_CULL_DISABLE` in `DB_RENDER_OVERRIDE`.
 
+## An exclusive scan of a vector read past its identity
+
+The driver reports a subgroup size of one, so an exclusive scan has nothing to its left and must
+return the identity of its operation. `terakan_nir_lower_subgroups` builds that identity from
+`nir_alu_binop_identity`, which is right, and then handed `nir_build_imm` a single
+`nir_const_value` while telling it the result had one component -- whatever the scan's width
+actually was. For a vector the builder read past the one value it was given.
+
+Which is why the failures picked themselves out so oddly. Scalars passed; `vec2`, `vec3` and
+`vec4` failed. And of the operations, only `mul` and `and` failed, because theirs are the
+identities that are not zero: one and all-ones. `add`, `or` and `xor` have an identity of zero
+and passed on whatever the read past the end happened to be, which was zero.
+
+Filling one value per component fixes it. A 4029-case sample of `subgroups.arithmetic` goes from
+53 failures to none, with 252 passing where 199 did; a 6958-case sample of all of `subgroups` has
+one failure left, a compute pipeline that will not create, which is the shared-memory atomic
+defect the compare-and-swap work already ran into.
+
 ## textureSize on a cube array has nowhere to read the cube count from
 
 The ten `texturesize` failures left in `glsl.texture_functions.query` are all
