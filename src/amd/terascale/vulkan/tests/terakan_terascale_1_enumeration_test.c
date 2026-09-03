@@ -89,6 +89,13 @@ terascale_1_linear_image_readback_opted_in(void)
    return value != NULL && strcmp(value, "1") == 0;
 }
 
+static bool
+terascale_1_linear_image_clear_opted_in(void)
+{
+   char const * const value = getenv("TERAKAN_DEBUG_TERASCALE_1_LINEAR_IMAGE_CLEAR");
+   return value != NULL && strcmp(value, "1") == 0;
+}
+
 static uint32_t
 check_rv710_signal_only_submit(VkDevice const device, VkQueue const queue)
 {
@@ -362,7 +369,7 @@ cleanup:
  */
 static uint32_t
 check_rv710_linear_image_readback(VkPhysicalDevice const physical_device, VkDevice const device,
-                                  VkQueue const queue)
+                                  VkQueue const queue, bool const clear_only)
 {
    enum { width = 2, height = 2, byte_count = width * height * 4 };
    uint32_t const source_words[width * height] = {
@@ -389,7 +396,7 @@ check_rv710_linear_image_readback(VkPhysicalDevice const physical_device, VkDevi
       .arrayLayers = 1,
       .samples = VK_SAMPLE_COUNT_1_BIT,
       .tiling = VK_IMAGE_TILING_LINEAR,
-      .usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+      .usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
       .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
       .initialLayout = VK_IMAGE_LAYOUT_GENERAL,
    };
@@ -505,6 +512,12 @@ check_rv710_linear_image_readback(VkPhysicalDevice const physical_device, VkDevi
       .imageSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .layerCount = 1},
       .imageExtent = {width, height, 1},
    };
+   VkClearColorValue const clear_value = {.uint32 = {0x10203040, 0, 0, 0}};
+   VkImageSubresourceRange const clear_range = {
+      .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+      .levelCount = 1,
+      .layerCount = 1,
+   };
    VkFenceCreateInfo const fence_info = {.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
    result = vkCreateCommandPool(device, &command_pool_info, NULL, &command_pool);
    if (result == VK_SUCCESS) {
@@ -518,7 +531,12 @@ check_rv710_linear_image_readback(VkPhysicalDevice const physical_device, VkDevi
        * CmdCopyImageToBuffer2 implementation. Calling the core-1.3 entrypoint directly here
        * instead invokes a NULL dispatch slot on this driver and tests no meta code at all.
        */
-      vkCmdCopyImageToBuffer(command_buffer, image, VK_IMAGE_LAYOUT_GENERAL, buffer, 1, &region);
+      if (clear_only)
+         vkCmdClearColorImage(command_buffer, image, VK_IMAGE_LAYOUT_GENERAL, &clear_value, 1,
+                              &clear_range);
+      else
+         vkCmdCopyImageToBuffer(command_buffer, image, VK_IMAGE_LAYOUT_GENERAL, buffer, 1,
+                                &region);
       result = vkEndCommandBuffer(command_buffer);
    }
    if (result == VK_SUCCESS)
@@ -533,6 +551,10 @@ check_rv710_linear_image_readback(VkPhysicalDevice const physical_device, VkDevi
    if (result != VK_SUCCESS) {
       fprintf(stderr, "  RV710 linear image readback submission failed with %d\n", result);
       failures = 1;
+      goto cleanup;
+   }
+   if (clear_only) {
+      fprintf(stderr, "  RV710 linear image clear submission completed\n");
       goto cleanup;
    }
    VkMappedMemoryRange const buffer_invalidate = {
@@ -1001,9 +1023,11 @@ main(void)
                fprintf(stderr, "  TeraScale 1 queue submission remains safely disabled\n");
             }
          } else if (properties.deviceID == 0x954f) {
-            failures += terascale_1_linear_image_readback_opted_in()
+            failures += terascale_1_linear_image_readback_opted_in() ||
+                           terascale_1_linear_image_clear_opted_in()
                            ? check_rv710_linear_image_readback(physical_devices[device_index],
-                                                               device, queue)
+                                                               device, queue,
+                                                               terascale_1_linear_image_clear_opted_in())
                            : terascale_1_cp_dma_unaligned_copy_opted_in()
                            ? check_rv710_cp_dma_buffer_copy(physical_devices[device_index], device,
                                                             queue, false, true)
