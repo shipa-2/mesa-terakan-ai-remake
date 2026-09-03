@@ -456,6 +456,72 @@ terakan_meta_nir_build_copy_expand_3x_32_ps(struct terakan_device const * const 
    return terakan_meta_nir_build_copy_expand_3x_ps(device, 4, "terakan_meta_copy_expand_3x_32_ps");
 }
 
+nir_shader *
+terakan_meta_nir_build_copy_image_to_buffer_ps(struct terakan_device const * const device)
+{
+   /* This mirrors the r8xx/r9xx hand-written shader in
+    * terakan_meta_copy_buffer_image.c: fetch an image texel and write it at
+    * (x - image_offset_x_minus_buffer_offset) +
+    * (y - image_offset_y) * buffer_y_pitch + layer * buffer_z_pitch.
+    *
+    * The ABI of POSITION/VAR0 and the descriptor encodings are not yet
+    * validated by an RV710 readback; this only avoids assuming an R8xx CF/ALU
+    * encoding on TeraScale 1.
+    */
+   nir_builder builder = nir_builder_init_simple_shader(
+      MESA_SHADER_FRAGMENT, &terakan_device_physical_device(device)->nir_options_fs,
+      "terakan_meta_copy_image_to_buffer_ps");
+   nir_builder * const b = &builder;
+   nir_variable * const position =
+      nir_variable_create(b->shader, nir_var_shader_in, glsl_vec4_type(), "gl_FragCoord");
+   position->data.location = VARYING_SLOT_POS;
+   position->data.interpolation = INTERP_MODE_NOPERSPECTIVE;
+   nir_variable * const layer =
+      nir_variable_create(b->shader, nir_var_shader_in, glsl_float_type(), "layer");
+   layer->data.location = VARYING_SLOT_VAR0;
+   layer->data.interpolation = INTERP_MODE_FLAT;
+   b->shader->info.inputs_read = BITFIELD64_BIT(VARYING_SLOT_POS) | BITFIELD64_BIT(VARYING_SLOT_VAR0);
+
+   enum {
+      image_offset_x_minus_buffer_offset,
+      image_offset_y,
+      buffer_y_pitch,
+      buffer_z_pitch,
+   };
+
+   nir_def * const p = nir_load_var(b, position);
+   nir_def * const c = nir_load_ubo_vec4(
+      b, 4, 32, nir_imm_int(b, TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS), nir_imm_int(b, 0));
+   nir_def * const x = nir_f2i32(b, nir_channel(b, p, 0));
+   nir_def * const y = nir_f2i32(b, nir_channel(b, p, 1));
+   nir_def * const z = nir_f2i32(b, nir_load_var(b, layer));
+   nir_tex_instr * const fetch = nir_tex_instr_create(b->shader, 1);
+   fetch->op = nir_texop_txf;
+   fetch->sampler_dim = GLSL_SAMPLER_DIM_2D;
+   fetch->is_array = true;
+   fetch->dest_type = nir_type_uint32;
+   fetch->coord_components = 3;
+   fetch->texture_index = TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META;
+   fetch->src[0] = nir_tex_src_for_ssa(nir_tex_src_coord, nir_vec3(b, x, y, z));
+   nir_def_init(&fetch->instr, &fetch->def, 4, 32);
+   nir_builder_instr_insert(b, &fetch->instr);
+   nir_def * const address = nir_iadd(
+      b, nir_isub(b, x, nir_channel(b, c, image_offset_x_minus_buffer_offset)),
+      nir_iadd(b,
+               nir_imul(b, nir_isub(b, y, nir_channel(b, c, image_offset_y)),
+                        nir_channel(b, c, buffer_y_pitch)),
+               nir_imul(b, z, nir_channel(b, c, buffer_z_pitch))));
+   nir_uav_instr_r600(b, nir_imm_zero(b, 1, 32), address, &fetch->def,
+                      nir_undef(b, 1, 32), .uav_op_r600 = V_RAT_INST_STORE_TYPED, .id_base = 0);
+   nir_variable * const dummy =
+      nir_variable_create(b->shader, nir_var_shader_out, glsl_vec4_type(), "dummy");
+   dummy->data.location = FRAG_RESULT_DATA0;
+   dummy->data.driver_location = 0;
+   nir_store_var(b, dummy, nir_imm_vec4(b, 0, 0, 0, 0), 0xF);
+   b->shader->info.outputs_written = BITFIELD64_BIT(FRAG_RESULT_DATA0);
+   return b->shader;
+}
+
 terakan_meta_nir_builder const terakan_meta_nir_builders[TERAKAN_META_SHADER_COUNT] = {
    [TERAKAN_META_SHADER_DUMMY_OPAQUE_PS] = terakan_meta_nir_build_opaque_ps,
    [TERAKAN_META_SHADER_RESOLVE_SAMPLE_ZERO_PS] = terakan_meta_nir_build_resolve_sample_zero_ps,
@@ -467,4 +533,5 @@ terakan_meta_nir_builder const terakan_meta_nir_builders[TERAKAN_META_SHADER_COU
 };
 
 terakan_meta_nir_builder const terakan_meta_nir_terascale_1_builders[TERAKAN_META_SHADER_COUNT] = {
+   [TERAKAN_META_SHADER_COPY_IMAGE_TO_BUFFER_PS] = terakan_meta_nir_build_copy_image_to_buffer_ps,
 };

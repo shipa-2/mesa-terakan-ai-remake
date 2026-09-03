@@ -47,6 +47,8 @@ struct nir_shader * terakan_meta_nir_build_copy_expand_3x_16_ps(
    struct terakan_device const * device);
 struct nir_shader * terakan_meta_nir_build_copy_expand_3x_32_ps(
    struct terakan_device const * device);
+struct nir_shader * terakan_meta_nir_build_copy_image_to_buffer_ps(
+   struct terakan_device const * device);
 
 
 /* Builds the NIR for one meta shader. */
