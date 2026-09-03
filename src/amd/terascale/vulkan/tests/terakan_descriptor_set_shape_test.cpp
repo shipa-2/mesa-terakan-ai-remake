@@ -577,7 +577,7 @@ main()
    std::printf("descriptor_set_shape wrong texels:");
    for (uint32_t i = 0; i < kDim * kDim; ++i) {
       if (readback_mapping[i] != 1) {
-         std::printf(" %u", i);
+         std::printf(" %u(=%d)", i, readback_mapping[i]);
          ++wrong;
       }
    }

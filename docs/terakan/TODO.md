@@ -1565,11 +1565,42 @@ what they are -- and not a single descriptor, since either texel binding serves.
 The smallest failure so far is three texel-buffer reads, one storage-buffer
 read, and one dynamically indexed storage-buffer store.
 
-The next step is to take that smallest shape into the emitted bytecode --
-`TERAKAN_DEBUG_DUMP_FRAGMENT_BYTECODE=1` -- and compare it against the same
-shape with the store's index made constant, which passes. Two programs
-differing by one thing, one of which is wrong, is a far smaller object than the
-original shader.
+### The cause
+
+Reducing further gave a pair of shaders differing in one thing only: statement
+order. With the dynamically indexed store placed *before* the storage buffer
+read it fails; with the same statements in the other order it passes. Writing
+`accum` out instead of the pass/fail flag says what the failing lanes computed:
+`-34`, which is `accum |= temp - 34` with `temp == 0`, so that one read returned
+zero instead of the value it holds, and only for those lanes. The texels are
+written, with the wrong value; they are not missing.
+
+The bytecode of the failing order shows why:
+
+    0016 ALU:  MOVA_INT __.x, R5.x ; SET_CF_IDX0     <- inside the if
+    0022 MEM_RAT WRITE_IND RAT1[IDX0] STORE_TYPED
+    0024 POP
+    0026 VFETCH R0.x, R3.x, RID:36 ... SQ_CF_INDEX_0 <- outside, index not set
+
+The indexed store inside the branch and the indexed read after it share one
+`SET_CF_IDX0`, and it sits inside the branch. `SET_CF_IDX0` loads a wave-scalar
+index from a lane of whatever is active when it runs, so the value the read
+outside gets is the one an active lane of the branch produced -- here the store's
+index, not its own -- and the read lands on the wrong resource and returns zero.
+Whether a wave sees it depends on whether that wave took the branch, which is why
+some fragments are wrong and not all: the draw is two triangles, and every wrong
+texel is on the same side of the diagonal as invocation 33, the one the branch is
+taken for.
+
+This is not the assembler's to fix. `emit_index_reg` re-emits the index when the
+source register changes or inside a loop, and adding branches to that condition
+changes nothing, because the fetch does not ask the assembler for an index: its
+`buffer_index_mode` is decided earlier and the index-setting ALU was already
+placed inside the branch. The placement is SFN's, and the rule it is missing is
+that a value carrying `addr_or_idx` must not be shared with a consumer outside
+the block it is established in.
+
+
 
 ## In-shader memory model: RAT returns, and a GPU hang
 
