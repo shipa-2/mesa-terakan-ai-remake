@@ -274,9 +274,20 @@ VKAPI_ATTR void VKAPI_CALL
 terakan_CmdFillBuffer(VkCommandBuffer const commandBuffer, VkBuffer const dstBuffer,
                       VkDeviceSize const dstOffset, VkDeviceSize const size, uint32_t const data)
 {
+   struct terakan_gfx_command_writer * const command_writer =
+      terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx;
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
+      /* CP_DMA DATA source is only used by evergreen_cp_dma_clear_buffer(), which deliberately
+       * excludes pre-Evergreen. RV710's DRM parser rejects the Evergreen-shaped packet as a
+       * source-BO access. Do not turn that observed rejection into a silent no-op or a guessed
+       * R7xx encoding.
+       */
+      vk_command_buffer_set_error(&command_writer->base.command_buffer->vk, VK_ERROR_UNKNOWN);
+      return;
+   }
    struct terakan_buffer const * const dst_buffer = terakan_buffer_from_handle(dstBuffer);
    VkDeviceSize const dst_offset_aligned = dstOffset & ~(VkDeviceSize)(sizeof(uint32_t) - 1);
-   terakan_cp_dma_fill(terakan_command_buffer_from_handle(commandBuffer)->command_writer.gfx, data,
+   terakan_cp_dma_fill(command_writer, data,
                        dst_buffer->bo, dst_buffer->va + dst_offset_aligned,
                        TERAKAN_BO_PRIORITY_CP_DMA,
                        ((dstOffset + vk_buffer_range(&dst_buffer->vk, dstOffset, size)) &
