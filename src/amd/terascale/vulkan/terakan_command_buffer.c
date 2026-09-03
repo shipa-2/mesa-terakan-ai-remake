@@ -62,16 +62,16 @@ terakan_debug_terascale_1_preamble_only(void)
 }
 
 /* Used only together with META_STATE_ONLY to bisect the first kernel-rejected TeraScale 1 state
- * batch. 0 emits none, 1 emits shared state, 2 adds draw state, and 3 additionally adds SQK.
- * Any other value preserves normal emission. */
+ * batch. 0 emits none, 1 emits shared state, 2 adds draw constants, 3 adds modified draw state,
+ * and 4 additionally adds SQK. Any other value preserves normal emission. */
 static unsigned
 terakan_debug_terascale_1_meta_config_stage(void)
 {
    char const * const value = getenv("TERAKAN_DEBUG_TERASCALE_1_META_CONFIG_STAGE");
-   if (value != NULL && value[0] >= '0' && value[0] <= '3' && value[1] == '\0') {
+   if (value != NULL && value[0] >= '0' && value[0] <= '4' && value[1] == '\0') {
       return (unsigned)(value[0] - '0');
    }
-   return 3;
+   return 4;
 }
 
 void
@@ -660,7 +660,7 @@ terakan_gfx_command_writer_emit_hw_config(
          (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1 &&
           getenv("TERAKAN_DEBUG_TERASCALE_1_META_STATE_ONLY") != NULL)
             ? terakan_debug_terascale_1_meta_config_stage()
-            : 3;
+            : 4;
       if (t1_meta_config_stage == 0) {
          return;
       }
@@ -674,8 +674,11 @@ terakan_gfx_command_writer_emit_hw_config(
          terakan_hw_config_draw_set_all_modified(&command_writer->hw_config_draw);
          terakan_hw_config_draw_emit_constant(command_writer);
       }
-      terakan_hw_config_draw_emit_modified(command_writer);
       if (t1_meta_config_stage == 2) {
+         return;
+      }
+      terakan_hw_config_draw_emit_modified(command_writer);
+      if (t1_meta_config_stage == 3) {
          return;
       }
 
