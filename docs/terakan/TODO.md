@@ -1656,6 +1656,38 @@ failures of 2752 to 52, with the stride survey going 3378 and 8 to 3379 and 7.
 30 `dynindexed` and 22 `runtimesize`, all fragment. `terakan_indexed_image_array` is
 the reduced case, and it fails 48 of 64 texels without the fix.
 
+### What the last 52 are, and what they are not
+
+They are one thing, and it is not the rendered image. Every one of the 52 fails on the
+write check and only on it -- `Failure in write operation; expected N and found -1` --
+so the invocation ran, computed the right `accum` and wrote the right colour, and then
+its conditional store to a dynamically indexed resource did not land anywhere. The
+destination still holds the -1 it was filled with, and no other element of the array
+holds the value instead, so the store was dropped rather than misdirected. Both storage
+buffers and storage images are hit, and the index is `accum + 0` as often as `accum + 3`,
+so neither the resource kind nor the index value is the variable.
+
+Several things have been ruled out:
+
+* **Not the compaction.** `TERAKAN_DEBUG_RAT` on a failing case gives app indices
+  0, 5..8, 30..32 mapping to RAT 0..7 in order, so the four elements of the array the
+  lost store targets are contiguous RATs 1..4, exactly what `RAT1[IDX0]` with the index
+  in 0..3 addresses. The store that lands and the store that does not are the same
+  instruction shape against the same array, one RAT apart.
+* **Not the placement of the index load.** The bytecode of both branches is symmetric:
+  `MOVA_INT` then `SET_CF_IDX0` inside the branch, then the `MEM_RAT`.
+* **Not a lane of the fragment quad.** The failing invocation ids are 8 and 26, both at
+  even x and odd y; but stores at 10, 12, 14 and 24 are at even x and odd y too and land.
+* **Not a race, though it looked like one.** Running the 52 alone gives 52, 51 and 50
+  failures over three runs with the membership moving, but running the whole 2752-case
+  group twice gives exactly the same 52 both times. The subset runs differ because what
+  precedes each case differs, which is order dependence of the same kind the depth and
+  stencil clears show, not nondeterminism within a case.
+
+What is left to explain is why one `MEM_RAT ... WRITE_IND RAT1[IDX0] STORE_TYPED` inside
+a taken branch writes nothing while its neighbour writes correctly. The next step is a
+fragment reproducer -- the compute one passes, so the stage is part of it.
+
 
 
 ## In-shader memory model: RAT returns, and a GPU hang
