@@ -180,6 +180,13 @@ aligned buffer-to-buffer CP-DMA copy with host readback. Unaligned copies, fills
 transitions under GPU work, descriptors and draws remain unvalidated; the default submit guard
 therefore remains in place.
 
+The unaligned branch of B3 is separately checked once on RV710: source offset 4 and 60 copied
+bytes force a 28-byte source head, one 32-byte bulk packet and the four-byte discard tail that
+restores the internal CP-DMA alignment counter. Every copied dword matched and the untouched final
+destination dword retained its inverse-pattern sentinel; the kernel journal stayed clean. This is
+one successful boundary observation, not a substitute for a repeated stress series or for image
+copy validation.
+
 ## Completed and regression-covered
 
 - Multisample correctness, closed as a group. Seven defects, each with a probe or
