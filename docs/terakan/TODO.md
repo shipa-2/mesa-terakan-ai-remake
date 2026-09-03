@@ -171,6 +171,15 @@ has the old fill value as a negative control. It proves only packet-size selecti
 CP-DMA packet, data transfer, or readback has yet run on RV710, so B3 and the submit guard remain
 open.
 
+That first B3 transfer is now hardware-validated on RV710: the opt-in probe copied 64 bytes from
+one host-visible buffer to another, waited for the submission fence, invalidated the destination,
+and compared every dword. The destination was initialized to the inverse pattern, so a skipped
+copy is a negative control rather than a possible false pass. One initial run and five consecutive
+repetitions all matched, with no kernel-journal entries after the series. This establishes only an
+aligned buffer-to-buffer CP-DMA copy with host readback. Unaligned copies, fills, images, cache
+transitions under GPU work, descriptors and draws remain unvalidated; the default submit guard
+therefore remains in place.
+
 ## Completed and regression-covered
 
 - Multisample correctness, closed as a group. Seven defects, each with a probe or
