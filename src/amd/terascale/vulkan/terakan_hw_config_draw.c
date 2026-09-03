@@ -2255,11 +2255,23 @@ terakan_hw_config_draw_emit_cb_color(struct terakan_gfx_command_writer * const c
          bool const is_drm_radeon =
             terakan_gfx_command_writer_physical_device(command_writer)
                ->submission_info_gfx.base.relocation_type == TERAKAN_QUEUE_RELOCATION_TYPE_DRM_NOP;
+         uint32_t drm_field_count = 7;
+         if (is_drm_radeon &&
+             getenv("TERAKAN_DEBUG_TERASCALE_1_META_STATE_ONLY") != NULL) {
+            char const * const value =
+               getenv("TERAKAN_DEBUG_TERASCALE_1_META_CB_COLOR_FIELDS");
+            if (value != NULL && value[0] >= '1' && value[0] <= '7' && value[1] == '\0') {
+               drm_field_count = (uint32_t)(value[0] - '0');
+            }
+         }
          uint32_t * packet = terakan_gfx_command_writer_emit_with_bo(
             command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG,
             /* DRM's three NOP relocations are emitted between CB register packets, while WDDM
              * keeps three equivalent patches out of band. */
-            is_drm_radeon ? 27 : 21, 1, is_drm_radeon ? 0 : 3, 0);
+            is_drm_radeon
+               ? 3 * drm_field_count + 2 * MIN2(MAX2(drm_field_count, 1) - 1, 3)
+               : 21,
+            1, is_drm_radeon ? 0 : 3, 0);
          if (unlikely(packet == NULL)) {
             return;
          }
@@ -2270,8 +2282,9 @@ terakan_hw_config_draw_emit_cb_color(struct terakan_gfx_command_writer * const c
             &command_writer->base.bo_reference_writer, config->cb_color_.bo[color_index], true,
             true, TERAKAN_BO_PRIORITY_COLOR_BUFFER);
          if (is_drm_radeon) {
-            packet = terakan_hw_config_draw_terascale_1_write_cb_color_drm_relocations(
-               packet, color_index, &color_r700, bo_reference);
+            packet =
+               terakan_hw_config_draw_terascale_1_write_cb_color_drm_relocations_prefix(
+                  packet, color_index, &color_r700, bo_reference, drm_field_count);
          } else {
             packet = terakan_hw_config_draw_terascale_1_write_cb_color(packet, color_index,
                                                                          &color_r700);

@@ -441,6 +441,13 @@ uint32_t * terakan_hw_config_draw_terascale_1_write_cb_color_drm_relocations(
    uint32_t * packet, uint32_t color_index,
    struct terakan_hw_config_draw_terascale_1_cb_color const * color, uint32_t bo_reference);
 
+/* Diagnostic prefix writer. `field_count` follows INFO, BASE, FRAG, TILE, SIZE, VIEW, MASK and is
+ * deliberately exposed to the CPU packet oracle used during RV710 bring-up. */
+uint32_t * terakan_hw_config_draw_terascale_1_write_cb_color_drm_relocations_prefix(
+   uint32_t * packet, uint32_t color_index,
+   struct terakan_hw_config_draw_terascale_1_cb_color const * color, uint32_t bo_reference,
+   uint32_t field_count);
+
 uint32_t * terakan_hw_config_draw_terascale_1_write_cb_color_unbound(uint32_t * packet,
                                                                       uint32_t color_index,
                                                                       uint32_t source_format);

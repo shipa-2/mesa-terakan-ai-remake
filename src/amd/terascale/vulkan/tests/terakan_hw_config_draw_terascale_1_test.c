@@ -921,6 +921,13 @@ test_cb_color_packets(void)
    CHECK(drm_packets[8] == PKT3(PKT3_SET_CONTEXT_REG, 1, 0));
    CHECK(drm_packets[13] == PKT3(PKT3_SET_CONTEXT_REG, 1, 0));
    CHECK(drm_packets[18] == PKT3(PKT3_SET_CONTEXT_REG, 1, 0));
+   uint32_t const prefix_dwords[7] = {3, 8, 13, 18, 21, 24, 27};
+   for (uint32_t field_count = 1; field_count <= 7; ++field_count) {
+      uint32_t prefix_packets[27];
+      CHECK(terakan_hw_config_draw_terascale_1_write_cb_color_drm_relocations_prefix(
+               prefix_packets, 2, &color, 7, field_count) ==
+            prefix_packets + prefix_dwords[field_count - 1]);
+   }
 
    uint32_t unbound_packet[3];
    CHECK(terakan_hw_config_draw_terascale_1_write_cb_color_unbound(unbound_packet, 7, 1) ==

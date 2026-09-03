@@ -737,35 +737,64 @@ terakan_hw_config_draw_terascale_1_write_cb_color(
 }
 
 uint32_t *
-terakan_hw_config_draw_terascale_1_write_cb_color_drm_relocations(
+terakan_hw_config_draw_terascale_1_write_cb_color_drm_relocations_prefix(
    uint32_t * packet, uint32_t const color_index,
    struct terakan_hw_config_draw_terascale_1_cb_color const * const color,
-   uint32_t const bo_reference)
+   uint32_t const bo_reference, uint32_t const field_count)
 {
    assert(color_index < 8);
+   assert(field_count >= 1 && field_count <= 7);
 
    /* r600_cs_packet_parse() calls radeon_cs_packet_next_reloc while parsing each of BASE, FRAG
     * and TILE. It therefore cannot consume a batched NOP list after all seven CB registers. */
    packet = write_context_reg(packet, R_0280A0_CB_COLOR0_INFO + color_index * sizeof(uint32_t),
                               color->info);
+   if (field_count == 1) {
+      return packet;
+   }
    packet = write_context_reg(packet, R_028040_CB_COLOR0_BASE + color_index * sizeof(uint32_t),
                               color->base);
    *packet++ = PKT3(PKT3_NOP, 0, 0);
    *packet++ = 4 * bo_reference;
+   if (field_count == 2) {
+      return packet;
+   }
    packet = write_context_reg(packet, R_0280E0_CB_COLOR0_FRAG + color_index * sizeof(uint32_t),
                               color->fmask);
    *packet++ = PKT3(PKT3_NOP, 0, 0);
    *packet++ = 4 * bo_reference;
+   if (field_count == 3) {
+      return packet;
+   }
    packet = write_context_reg(packet, R_0280C0_CB_COLOR0_TILE + color_index * sizeof(uint32_t),
                               color->cmask);
    *packet++ = PKT3(PKT3_NOP, 0, 0);
    *packet++ = 4 * bo_reference;
+   if (field_count == 4) {
+      return packet;
+   }
    packet = write_context_reg(packet, R_028060_CB_COLOR0_SIZE + color_index * sizeof(uint32_t),
                               color->size);
+   if (field_count == 5) {
+      return packet;
+   }
    packet = write_context_reg(packet, R_028080_CB_COLOR0_VIEW + color_index * sizeof(uint32_t),
                               color->view);
+   if (field_count == 6) {
+      return packet;
+   }
    return write_context_reg(packet, R_028100_CB_COLOR0_MASK + color_index * sizeof(uint32_t),
                             color->mask);
+}
+
+uint32_t *
+terakan_hw_config_draw_terascale_1_write_cb_color_drm_relocations(
+   uint32_t * const packet, uint32_t const color_index,
+   struct terakan_hw_config_draw_terascale_1_cb_color const * const color,
+   uint32_t const bo_reference)
+{
+   return terakan_hw_config_draw_terascale_1_write_cb_color_drm_relocations_prefix(
+      packet, color_index, color, bo_reference, 7);
 }
 
 uint32_t *
