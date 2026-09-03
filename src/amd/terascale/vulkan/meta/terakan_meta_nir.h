@@ -48,6 +48,7 @@ struct nir_shader * terakan_meta_nir_build_copy_expand_3x_16_ps(
 struct nir_shader * terakan_meta_nir_build_copy_expand_3x_32_ps(
    struct terakan_device const * device);
 
+
 /* Builds the NIR for one meta shader. */
 typedef struct nir_shader * (*terakan_meta_nir_builder)(struct terakan_device const * device);
 
@@ -56,6 +57,9 @@ typedef struct nir_shader * (*terakan_meta_nir_builder)(struct terakan_device co
  * for it. Declared here rather than in terakan_meta.h so that only this file needs nir_shader.
  */
 extern terakan_meta_nir_builder const terakan_meta_nir_builders[];
+
+/* Additional meta programs used only by the R600/R700 path. */
+extern terakan_meta_nir_builder const terakan_meta_nir_terascale_1_builders[];
 
 #ifdef __cplusplus
 }

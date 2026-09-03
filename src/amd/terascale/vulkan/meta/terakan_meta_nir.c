@@ -465,3 +465,6 @@ terakan_meta_nir_builder const terakan_meta_nir_builders[TERAKAN_META_SHADER_COU
    [TERAKAN_META_SHADER_COPY_EXPAND_3X_16_PS] = terakan_meta_nir_build_copy_expand_3x_16_ps,
    [TERAKAN_META_SHADER_COPY_EXPAND_3X_32_PS] = terakan_meta_nir_build_copy_expand_3x_32_ps,
 };
+
+terakan_meta_nir_builder const terakan_meta_nir_terascale_1_builders[TERAKAN_META_SHADER_COUNT] = {
+};

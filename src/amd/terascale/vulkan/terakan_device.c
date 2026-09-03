@@ -43,6 +43,16 @@
 #include "wsi_common.h"
 
 #include <assert.h>
+
+static terakan_meta_nir_builder
+terakan_meta_nir_builder_for_device(struct terakan_device const * const device, size_t const index)
+{
+   terakan_meta_nir_builder const builder = terakan_meta_nir_builders[index];
+   if (builder != NULL || !terakan_device_physical_device(device)->chip_info.is_terascale_1) {
+      return builder;
+   }
+   return terakan_meta_nir_terascale_1_builders[index];
+}
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -232,7 +242,8 @@ terakan_device_init(struct terakan_device * const device,
    }
    for (size_t meta_shader_index = 0; meta_shader_index < TERAKAN_META_SHADER_COUNT;
         ++meta_shader_index) {
-      terakan_meta_nir_builder const builder = terakan_meta_nir_builders[meta_shader_index];
+      terakan_meta_nir_builder const builder =
+         terakan_meta_nir_builder_for_device(device, meta_shader_index);
       if (builder == NULL) {
          continue;
       }
@@ -252,7 +263,7 @@ terakan_device_init(struct terakan_device * const device,
         ++meta_shader_index) {
       struct terakan_shader_static * const device_meta_shader =
          &device->meta_shaders[meta_shader_index];
-      bool const from_nir = terakan_meta_nir_builders[meta_shader_index] != NULL;
+      bool const from_nir = terakan_meta_nir_builder_for_device(device, meta_shader_index) != NULL;
       struct terakan_meta_shader const * const meta_shader =
          terakan_meta_shaders[meta_shader_index];
       /* A shader built from NIR need not have a hand-written counterpart at all. */
@@ -303,7 +314,7 @@ terakan_device_init(struct terakan_device * const device,
       memset(device->meta_shader_sqk_usage, 0, sizeof(device->meta_shader_sqk_usage));
       for (size_t meta_shader_index = 0; meta_shader_index < TERAKAN_META_SHADER_COUNT;
            ++meta_shader_index) {
-         bool const from_nir = terakan_meta_nir_builders[meta_shader_index] != NULL;
+         bool const from_nir = terakan_meta_nir_builder_for_device(device, meta_shader_index) != NULL;
          struct terakan_meta_shader const * const meta_shader =
             terakan_meta_shaders[meta_shader_index];
          struct terakan_meta_shader_description const * const meta_shader_description =
@@ -345,7 +356,7 @@ terakan_device_init(struct terakan_device * const device,
    }
    for (size_t meta_shader_index = 0; meta_shader_index < TERAKAN_META_SHADER_COUNT;
         ++meta_shader_index) {
-      if (terakan_meta_nir_builders[meta_shader_index] != NULL) {
+      if (terakan_meta_nir_builder_for_device(device, meta_shader_index) != NULL) {
          terakan_shader_impl_finish(&meta_nir_shaders[meta_shader_index]);
       }
    }
@@ -415,7 +426,7 @@ fail_meta_shaders_bo:
 fail_meta_nir_shaders:
    for (size_t meta_shader_index = 0; meta_shader_index < TERAKAN_META_SHADER_COUNT;
         ++meta_shader_index) {
-      if (terakan_meta_nir_builders[meta_shader_index] != NULL) {
+      if (terakan_meta_nir_builder_for_device(device, meta_shader_index) != NULL) {
          terakan_shader_impl_finish(&meta_nir_shaders[meta_shader_index]);
       }
    }
