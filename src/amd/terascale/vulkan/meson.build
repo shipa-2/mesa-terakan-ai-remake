@@ -2067,6 +2067,36 @@ if with_tests
         timeout : 20,
       )
 
+      terakan_indexed_image_array_spv = custom_target(
+        'terakan_indexed_image_array.spv.h',
+        input : 'tests/terakan_indexed_image_array.comp',
+        output : 'terakan_indexed_image_array.spv.h',
+        command : [
+          prog_glslang, '-V', '-x', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_indexed_image_array.spv.h.d',
+      )
+      terakan_indexed_image_array_test = executable(
+        'terakan_indexed_image_array_test',
+        [
+          'tests/terakan_indexed_image_array_test.c',
+          terakan_indexed_image_array_spv,
+        ],
+        dependencies : vulkan_loader_dep,
+      )
+      test(
+        'terakan_indexed_image_array',
+        terakan_indexed_image_array_test,
+        depends : [libvulkan_terascale, _dev_icd],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 20,
+      )
+
       terakan_image_gather_spv = custom_target(
         'terakan_image_gather.spv.h',
         input : 'tests/terakan_image_gather.comp',
