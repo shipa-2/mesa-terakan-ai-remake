@@ -1925,6 +1925,26 @@ read is spelled -- makes the family 14 of 14 supported cases, from 4 failing. Tw
 tried first and measured to do nothing, and were reverted: `EXEC_ON_NOOP` in the same register,
 and `NOOP_CULL_DISABLE` in `DB_RENDER_OVERRIDE`.
 
+## Compare-and-swap named its two values the wrong way round
+
+`dEQP-VK.image.atomic_operations.compare_exchange` failed every one of its 64 supported cases,
+across all eight image types, both formats and both checks, while every other atomic operation
+in the same group passed 76 of 76 in a sample. That narrowness is the whole clue: what
+compare-and-swap has and the others do not is a second value.
+
+NIR names them in the order SPIR-V does. `OpAtomicCompareExchange` lists Value before
+Comparator, and `fill_common_atomic_sources` reverses that when it fills the intrinsic, so an
+image atomic swap gets the comparator in `src[3]` and the value in `src[4]`, and a storage
+buffer one gets them in `src[2]` and `src[3]`. Gallium's own backend reads them that way.
+`terakan_nir_lower_bindings` read both pairs the other way round, so the hardware compared
+against what it should have written and wrote what it should have compared against.
+
+Correcting both takes the image group from 64 failures to none, and
+`glsl.atomic_operations.comp_swap*` from 6 failures and nothing passing to 4 passing and 2
+failing. The two that remain are `_compute_shared`, atomics on shared memory, which fail at
+pipeline creation with `VK_ERROR_UNKNOWN` and failed the same way before this -- a separate
+defect in the compiler, not in the source order.
+
 ## textureQueryLod returned zero where derivatives are zero
 
 `textureQueryLod` gives the level it would sample in `.x` and the unclamped level of detail in
