@@ -36,6 +36,7 @@
 #include "gallium/drivers/r600/r600_isa.h"
 #include "gallium/drivers/r600/sfn/sfn_assembler.h"
 #include "gallium/drivers/r600/sfn/sfn_memorypool.h"
+#include "gallium/drivers/r600/sfn/sfn_instr_mem.h"
 #include "gallium/drivers/r600/sfn/sfn_nir.h"
 #include "gallium/drivers/r600/sfn/sfn_nir_lower_alu.h"
 #include "gallium/include/pipe/p_shader_tokens.h"
@@ -52,6 +53,37 @@
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
+
+/* Whether the shader writes memory through the r600 UAV intrinsics its storage buffer and image
+ * accesses were lowered to. Every UAV operation writes except the two no-ops: `NOP`, and `NOP_RTN`,
+ * which is how a read is spelled -- the other returning ones are atomics.
+ */
+static bool
+terakan_shader_nir_writes_memory_through_uav(nir_shader * const nir)
+{
+   nir_foreach_function_impl (impl, nir) {
+      nir_foreach_block (block, impl) {
+         nir_foreach_instr (instr, block) {
+            if (instr->type != nir_instr_type_intrinsic) {
+               continue;
+            }
+            nir_intrinsic_instr * const intrinsic = nir_instr_as_intrinsic(instr);
+            switch (intrinsic->intrinsic) {
+            case nir_intrinsic_uav_instr_r600:
+            case nir_intrinsic_uav_returning_instr_r600:
+               break;
+            default:
+               continue;
+            }
+            unsigned const uav_op = nir_intrinsic_uav_op_r600(intrinsic);
+            if (uav_op != r600::RatInstr::NOP && uav_op != r600::RatInstr::NOP_RTN) {
+               return true;
+            }
+         }
+      }
+   }
+   return false;
+}
 
 VkResult
 terakan_shader_impl_compile(terakan_shader_impl * const shader, terakan_device * const device,
@@ -96,6 +128,13 @@ terakan_shader_impl_compile(terakan_shader_impl * const shader, terakan_device *
     * DB_SHADER_CONTROL in fragment shaders.
     */
    nir_shader_gather_info(nir, nir_shader_get_entrypoint(nir));
+   /* `nir_shader_gather_info` decides `writes_memory` from the portable intrinsics, and by the
+    * time a shader arrives here its storage buffer and image writes have already been lowered to
+    * the r600 UAV ones, which it has never heard of. The fragment stage needs the answer to be
+    * right: a shader with side effects has to run even where the depth or stencil test rejects
+    * every fragment, and leaving it on early Z means it never does.
+    */
+   nir->info.writes_memory |= terakan_shader_nir_writes_memory_through_uav(nir);
 
    r600_lower_and_optimize_nir(nir, key, gfx_level, &so_info);
 

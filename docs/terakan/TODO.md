@@ -1900,6 +1900,31 @@ suite is 13/13 and 69/69.
 For every format that is not a signed 2_10_10_10 or 10_10_10_2 the emitted fetch shader is
 unchanged: no post-fetch clause is created and no control flow entry is added.
 
+## Fragment side effects were lost wherever the depth or stencil test could never pass
+
+A fragment shader's side effects are specified to happen whether or not the fragment survives:
+the depth and stencil tests run after it unless the shader asks for early fragment tests. On
+this hardware that is `DB_SHADER_CONTROL.Z_ORDER`, which has to be `LATE_Z` for a shader with
+memory writes so DB does not reject the fragment before the shader has run.
+
+Terakan set it from `nir->info.writes_memory`, and that was false for every shader here.
+`nir_shader_gather_info` derives the flag from the portable intrinsics, and by the time a
+shader reaches the backend its storage buffer and image writes have already been lowered by
+`terakan_nir_lower_bindings` into `uav_instr_r600`, which `nir_intrinsic_writes_external_memory`
+has never heard of. Dumping the NIR of a failing case shows it plainly: one `store_deref`, mode
+`nir_var_shader_out`, and the storage buffer write sitting there as `@uav_instr_r600`.
+
+So every fragment shader with side effects ran on `EARLY_Z_THEN_LATE_Z` and without
+`EXEC_ON_HIER_FAIL`. `dEQP-VK.rasterization.frag_side_effects` is what noticed: its
+`depth_never` and `stencil_never` cases failed with the storage buffer untouched, while `kill`,
+`sample_mask` and `alpha_coverage` passed, because a killing shader is late by other means.
+
+Recovering the flag after `nir_shader_gather_info`, by asking whether any UAV instruction is
+something other than `NOP` or `NOP_RTN` -- the two that do not write, the second being how a
+read is spelled -- makes the family 14 of 14 supported cases, from 4 failing. Two guesses were
+tried first and measured to do nothing, and were reverted: `EXEC_ON_NOOP` in the same register,
+and `NOOP_CULL_DISABLE` in `DB_RENDER_OVERRIDE`.
+
 ## Vertex pipeline stage survey (geometry and tessellation)
 
 Surveyed 2026-08-23 while starting the geometry and tessellation items. Both
