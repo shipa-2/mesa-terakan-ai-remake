@@ -434,6 +434,13 @@ uint32_t * terakan_hw_config_draw_terascale_1_write_cb_color(
    uint32_t * packet, uint32_t color_index,
    struct terakan_hw_config_draw_terascale_1_cb_color const * color);
 
+/* Radeon DRM consumes a relocation NOP directly after each CB address register. The ordinary
+ * writer deliberately does not include those NOPs because Radeon Software WDDM carries the same
+ * relocations out of band. `bo_reference` is converted to the dword offset expected by DRM. */
+uint32_t * terakan_hw_config_draw_terascale_1_write_cb_color_drm_relocations(
+   uint32_t * packet, uint32_t color_index,
+   struct terakan_hw_config_draw_terascale_1_cb_color const * color, uint32_t bo_reference);
+
 uint32_t * terakan_hw_config_draw_terascale_1_write_cb_color_unbound(uint32_t * packet,
                                                                       uint32_t color_index,
                                                                       uint32_t source_format);

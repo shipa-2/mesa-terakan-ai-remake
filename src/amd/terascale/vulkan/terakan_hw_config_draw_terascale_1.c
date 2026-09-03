@@ -737,6 +737,38 @@ terakan_hw_config_draw_terascale_1_write_cb_color(
 }
 
 uint32_t *
+terakan_hw_config_draw_terascale_1_write_cb_color_drm_relocations(
+   uint32_t * packet, uint32_t const color_index,
+   struct terakan_hw_config_draw_terascale_1_cb_color const * const color,
+   uint32_t const bo_reference)
+{
+   assert(color_index < 8);
+
+   /* r600_cs_packet_parse() calls radeon_cs_packet_next_reloc while parsing each of BASE, FRAG
+    * and TILE. It therefore cannot consume a batched NOP list after all seven CB registers. */
+   packet = write_context_reg(packet, R_0280A0_CB_COLOR0_INFO + color_index * sizeof(uint32_t),
+                              color->info);
+   packet = write_context_reg(packet, R_028040_CB_COLOR0_BASE + color_index * sizeof(uint32_t),
+                              color->base);
+   *packet++ = PKT3(PKT3_NOP, 0, 0);
+   *packet++ = 4 * bo_reference;
+   packet = write_context_reg(packet, R_0280E0_CB_COLOR0_FRAG + color_index * sizeof(uint32_t),
+                              color->fmask);
+   *packet++ = PKT3(PKT3_NOP, 0, 0);
+   *packet++ = 4 * bo_reference;
+   packet = write_context_reg(packet, R_0280C0_CB_COLOR0_TILE + color_index * sizeof(uint32_t),
+                              color->cmask);
+   *packet++ = PKT3(PKT3_NOP, 0, 0);
+   *packet++ = 4 * bo_reference;
+   packet = write_context_reg(packet, R_028060_CB_COLOR0_SIZE + color_index * sizeof(uint32_t),
+                              color->size);
+   packet = write_context_reg(packet, R_028080_CB_COLOR0_VIEW + color_index * sizeof(uint32_t),
+                              color->view);
+   return write_context_reg(packet, R_028100_CB_COLOR0_MASK + color_index * sizeof(uint32_t),
+                            color->mask);
+}
+
+uint32_t *
 terakan_hw_config_draw_terascale_1_write_cb_color_unbound(uint32_t * const packet,
                                                           uint32_t const color_index,
                                                           uint32_t const source_format)

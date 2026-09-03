@@ -2251,28 +2251,39 @@ terakan_hw_config_draw_emit_cb_color(struct terakan_gfx_command_writer * const c
             continue;
          }
 
+         bool const is_drm_radeon =
+            terakan_gfx_command_writer_physical_device(command_writer)
+               ->submission_info_gfx.base.relocation_type == TERAKAN_QUEUE_RELOCATION_TYPE_DRM_NOP;
          uint32_t * packet = terakan_gfx_command_writer_emit_with_bo(
-            command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG, 21, 1, 3, 0);
+            command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG,
+            /* DRM's three NOP relocations are emitted between CB register packets, while WDDM
+             * keeps three equivalent patches out of band. */
+            is_drm_radeon ? 27 : 21, 1, is_drm_radeon ? 0 : 3, 0);
          if (unlikely(packet == NULL)) {
             return;
          }
          uint32_t * const packet_start = packet;
-         packet = terakan_hw_config_draw_terascale_1_write_cb_color(packet, color_index,
-                                                                    &color_r700);
 
          assert(config->cb_color_.bo[color_index] != NULL);
          uint32_t const bo_reference = terakan_bo_reference_writer_add_reference(
             &command_writer->base.bo_reference_writer, config->cb_color_.bo[color_index], true,
             true, TERAKAN_BO_PRIORITY_COLOR_BUFFER);
-         terakan_gfx_command_writer_add_relocation(
-            command_writer, &packet, &packet_start[5], packet_start[5],
-            TERASCALE_WDDM_PATCH_IDS_CB_COLOR_BASE | color_index, bo_reference);
-         terakan_gfx_command_writer_add_relocation(
-            command_writer, &packet, &packet_start[8], packet_start[8],
-            TERASCALE_WDDM_PATCH_IDS_CB_COLOR_FMASK | color_index, bo_reference);
-         terakan_gfx_command_writer_add_relocation(
-            command_writer, &packet, &packet_start[11], packet_start[11],
-            TERASCALE_WDDM_PATCH_IDS_CB_COLOR_CMASK | color_index, bo_reference);
+         if (is_drm_radeon) {
+            packet = terakan_hw_config_draw_terascale_1_write_cb_color_drm_relocations(
+               packet, color_index, &color_r700, bo_reference);
+         } else {
+            packet = terakan_hw_config_draw_terascale_1_write_cb_color(packet, color_index,
+                                                                         &color_r700);
+            terakan_gfx_command_writer_add_relocation(
+               command_writer, &packet, &packet_start[5], packet_start[5],
+               TERASCALE_WDDM_PATCH_IDS_CB_COLOR_BASE | color_index, bo_reference);
+            terakan_gfx_command_writer_add_relocation(
+               command_writer, &packet, &packet_start[8], packet_start[8],
+               TERASCALE_WDDM_PATCH_IDS_CB_COLOR_FMASK | color_index, bo_reference);
+            terakan_gfx_command_writer_add_relocation(
+               command_writer, &packet, &packet_start[11], packet_start[11],
+               TERASCALE_WDDM_PATCH_IDS_CB_COLOR_CMASK | color_index, bo_reference);
+         }
          terakan_gfx_command_writer_emit_done(command_writer, packet);
       }
       return;

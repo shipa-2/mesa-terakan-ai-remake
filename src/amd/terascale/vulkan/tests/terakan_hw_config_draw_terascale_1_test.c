@@ -906,6 +906,22 @@ test_cb_color_packets(void)
       CHECK(packets[packet_index + 2] == values[register_index]);
    }
 
+   uint32_t drm_packets[27];
+   CHECK(terakan_hw_config_draw_terascale_1_write_cb_color_drm_relocations(
+            drm_packets, 2, &color, 7) == drm_packets + 27);
+   /* Negative control: moving these NOPs to the end makes r600_cs_packet_next_reloc reject
+    * CB_COLOR0_BASE before it can validate a draw. Keep the exact parser-required positions. */
+   uint32_t const relocation_packet_indices[3] = {6, 11, 16};
+   for (uint32_t relocation_index = 0; relocation_index < 3; ++relocation_index) {
+      uint32_t const packet_index = relocation_packet_indices[relocation_index];
+      CHECK(drm_packets[packet_index] == PKT3(PKT3_NOP, 0, 0));
+      CHECK(drm_packets[packet_index + 1] == 4 * 7);
+   }
+   CHECK(drm_packets[3] == PKT3(PKT3_SET_CONTEXT_REG, 1, 0));
+   CHECK(drm_packets[8] == PKT3(PKT3_SET_CONTEXT_REG, 1, 0));
+   CHECK(drm_packets[13] == PKT3(PKT3_SET_CONTEXT_REG, 1, 0));
+   CHECK(drm_packets[18] == PKT3(PKT3_SET_CONTEXT_REG, 1, 0));
+
    uint32_t unbound_packet[3];
    CHECK(terakan_hw_config_draw_terascale_1_write_cb_color_unbound(unbound_packet, 7, 1) ==
          unbound_packet + 3);
