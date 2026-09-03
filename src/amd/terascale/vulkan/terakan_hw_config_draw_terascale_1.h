@@ -202,8 +202,16 @@ uint32_t * terakan_hw_config_draw_terascale_1_write_sq_pgm_fs(uint32_t * packet,
                                                                uint32_t program_va_shr8);
 uint32_t * terakan_hw_config_draw_terascale_1_write_sq_pgm_vs(
    uint32_t * packet, uint32_t program_va_shr8, uint32_t resources);
+uint32_t * terakan_hw_config_draw_terascale_1_write_sq_pgm_vs_start(uint32_t * packet,
+                                                                      uint32_t program_va_shr8);
+uint32_t * terakan_hw_config_draw_terascale_1_write_sq_pgm_vs_resources(uint32_t * packet,
+                                                                          uint32_t resources);
 uint32_t * terakan_hw_config_draw_terascale_1_write_sq_pgm_ps(
    uint32_t * packet, uint32_t program_va_shr8, uint32_t resources, uint32_t exports);
+uint32_t * terakan_hw_config_draw_terascale_1_write_sq_pgm_ps_start(uint32_t * packet,
+                                                                      uint32_t program_va_shr8);
+uint32_t * terakan_hw_config_draw_terascale_1_write_sq_pgm_ps_resources(
+   uint32_t * packet, uint32_t resources, uint32_t exports);
 uint32_t * terakan_hw_config_draw_terascale_1_write_sq_pgm_es(
    uint32_t * packet, uint32_t program_va_shr8, uint32_t resources);
 uint32_t * terakan_hw_config_draw_terascale_1_write_sq_pgm_gs(

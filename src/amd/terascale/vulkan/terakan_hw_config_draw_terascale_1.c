@@ -408,7 +408,21 @@ uint32_t *
 terakan_hw_config_draw_terascale_1_write_sq_pgm_vs(
    uint32_t * packet, uint32_t const program_va_shr8, uint32_t const resources)
 {
-   packet = write_context_reg(packet, R_028858_SQ_PGM_START_VS, program_va_shr8);
+   packet = terakan_hw_config_draw_terascale_1_write_sq_pgm_vs_start(packet, program_va_shr8);
+   return terakan_hw_config_draw_terascale_1_write_sq_pgm_vs_resources(packet, resources);
+}
+
+uint32_t *
+terakan_hw_config_draw_terascale_1_write_sq_pgm_vs_start(uint32_t * const packet,
+                                                           uint32_t const program_va_shr8)
+{
+   return write_context_reg(packet, R_028858_SQ_PGM_START_VS, program_va_shr8);
+}
+
+uint32_t *
+terakan_hw_config_draw_terascale_1_write_sq_pgm_vs_resources(uint32_t * const packet,
+                                                               uint32_t const resources)
+{
    return write_context_reg(packet, R_028868_SQ_PGM_RESOURCES_VS, resources);
 }
 
@@ -417,7 +431,21 @@ terakan_hw_config_draw_terascale_1_write_sq_pgm_ps(
    uint32_t * packet, uint32_t const program_va_shr8, uint32_t const resources,
    uint32_t const exports)
 {
-   packet = write_context_reg(packet, R_028840_SQ_PGM_START_PS, program_va_shr8);
+   packet = terakan_hw_config_draw_terascale_1_write_sq_pgm_ps_start(packet, program_va_shr8);
+   return terakan_hw_config_draw_terascale_1_write_sq_pgm_ps_resources(packet, resources, exports);
+}
+
+uint32_t *
+terakan_hw_config_draw_terascale_1_write_sq_pgm_ps_start(uint32_t * const packet,
+                                                           uint32_t const program_va_shr8)
+{
+   return write_context_reg(packet, R_028840_SQ_PGM_START_PS, program_va_shr8);
+}
+
+uint32_t *
+terakan_hw_config_draw_terascale_1_write_sq_pgm_ps_resources(
+   uint32_t * packet, uint32_t const resources, uint32_t const exports)
+{
    *packet++ = PKT3(PKT3_SET_CONTEXT_REG, 2, 0);
    *packet++ = (R_028850_SQ_PGM_RESOURCES_PS - R600_CONTEXT_REG_OFFSET) >> 2;
    *packet++ = resources;

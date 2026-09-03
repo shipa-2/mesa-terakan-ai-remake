@@ -833,8 +833,8 @@ terakan_hw_config_draw_emit_sq_pgm_vs(struct terakan_gfx_command_writer * const 
    uint32_t const * packet_pgm_start;
    if (is_terascale_1) {
       packet_pgm_start = packet + 2;
-      packet = terakan_hw_config_draw_terascale_1_write_sq_pgm_vs(
-         packet, shader->program_va_shr8, resources_r700);
+      packet = terakan_hw_config_draw_terascale_1_write_sq_pgm_vs_start(
+         packet, shader->program_va_shr8);
    } else {
       *packet++ = PKT3(
          PKT3_SET_CONTEXT_REG,
@@ -852,6 +852,12 @@ terakan_hw_config_draw_emit_sq_pgm_vs(struct terakan_gfx_command_writer * const 
       terakan_bo_reference_writer_add_reference(&command_writer->base.bo_reference_writer,
                                                 shader->program_bo, true, false,
                                                 TERAKAN_BO_PRIORITY_SHADER_BINARY));
+
+   if (is_terascale_1) {
+      /* Radeon DRM requires the relocation NOP immediately after SQ_PGM_START_VS, before the
+       * following SET_CONTEXT_REG. r600_init_atom_start_cs() emits the same ordering. */
+      packet = terakan_hw_config_draw_terascale_1_write_sq_pgm_vs_resources(packet, resources_r700);
+   }
 
    if (is_terascale_1) {
       packet = terakan_hw_config_draw_terascale_1_write_spi_vs_out_id(
@@ -1039,8 +1045,8 @@ terakan_hw_config_draw_emit_sq_pgm_ps(struct terakan_gfx_command_writer * const 
    uint32_t const * packet_pgm_start;
    if (is_terascale_1) {
       packet_pgm_start = packet + 2;
-      packet = terakan_hw_config_draw_terascale_1_write_sq_pgm_ps(
-         packet, shader->program_va_shr8, resources_r700, shader->stage.ps.sq_pgm_exports_ps);
+      packet = terakan_hw_config_draw_terascale_1_write_sq_pgm_ps_start(
+         packet, shader->program_va_shr8);
    } else {
       *packet++ = PKT3(
          PKT3_SET_CONTEXT_REG,
@@ -1058,6 +1064,13 @@ terakan_hw_config_draw_emit_sq_pgm_ps(struct terakan_gfx_command_writer * const 
       terakan_bo_reference_writer_add_reference(&command_writer->base.bo_reference_writer,
                                                 shader->program_bo, true, false,
                                                 TERAKAN_BO_PRIORITY_SHADER_BINARY));
+
+   if (is_terascale_1) {
+      /* See the VS case above: the DRM relocation follows the start register, not the complete
+       * multi-register programming sequence. */
+      packet = terakan_hw_config_draw_terascale_1_write_sq_pgm_ps_resources(
+         packet, resources_r700, shader->stage.ps.sq_pgm_exports_ps);
+   }
 
    if (is_terascale_1) {
       struct terakan_hw_config_draw_terascale_1_spi_ps spi = {
