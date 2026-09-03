@@ -31,6 +31,15 @@
 #include "util/macros.h"
 
 #include <assert.h>
+#include <stdlib.h>
+#include <string.h>
+
+static bool
+terakan_debug_terascale_1_meta_state_only(void)
+{
+   char const * const value = getenv("TERAKAN_DEBUG_TERASCALE_1_META_STATE_ONLY");
+   return value != NULL && strcmp(value, "1") == 0;
+}
 
 struct terakan_meta_shader const * const terakan_meta_shaders[TERAKAN_META_SHADER_COUNT] = {
    [TERAKAN_META_SHADER_DUMMY_NAN_VS] = &terakan_meta_dummy_nan_vs,
@@ -466,6 +475,21 @@ terakan_meta_draw_immediate_32_bit_indexed(struct terakan_gfx_command_writer * c
                                                                VGT_INDEX_32);
 
    terakan_meta_before_draw(command_writer);
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1 &&
+       terakan_debug_terascale_1_meta_state_only()) {
+      /* Hardware bring-up isolator: emit all state that a meta draw would apply, but replace the
+       * draw packet itself with a legal NOP. This is opt-in only and must not be mistaken for a
+       * rendering/readback test. */
+      packet = terakan_gfx_command_writer_emit(command_writer,
+                                               TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DRAW, 2);
+      if (unlikely(packet == NULL)) {
+         return NULL;
+      }
+      *packet++ = PKT3(PKT3_NOP, 0, 0);
+      *packet++ = 0;
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
+      return NULL;
+   }
    packet = terakan_gfx_command_writer_emit(
       command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DRAW, 3 + index_count);
    if (unlikely(packet == NULL)) {
