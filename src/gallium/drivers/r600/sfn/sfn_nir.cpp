@@ -821,6 +821,10 @@ r600_finalize_nir_common(nir_shader *nir, enum amd_gfx_level gfx_level)
    lower_tex_options.lower_txf_offset = true;
    lower_tex_options.lower_invalid_implicit_lod = true;
    lower_tex_options.lower_tg4_offsets = true;
+   /* GET_LOD returns zero for the unclamped level of detail when the derivatives are zero, where
+    * minus infinity is meant; substitute it while the coordinate is still available.
+    */
+   lower_tex_options.lower_lod_zero_width = true;
 
    NIR_PASS(_, nir, nir_lower_tex, &lower_tex_options);
    NIR_PASS(_, nir, r600_nir_lower_txl_txf_array_or_cube);

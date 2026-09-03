@@ -1925,6 +1925,28 @@ read is spelled -- makes the family 14 of 14 supported cases, from 4 failing. Tw
 tried first and measured to do nothing, and were reverted: `EXEC_ON_NOOP` in the same register,
 and `NOOP_CULL_DISABLE` in `DB_RENDER_OVERRIDE`.
 
+## textureQueryLod returned zero where derivatives are zero
+
+`textureQueryLod` gives the level it would sample in `.x` and the unclamped level of detail in
+`.y`. With derivatives of zero the scale factor is zero and that unclamped value is minus
+infinity; `GET_LOD` computes in fixed point and hands back zero instead, which is also what a
+one-texel derivative gives, so nothing downstream can tell the two apart.
+
+`dEQP-VK.glsl.texture_functions.query.texturequerylod` says it exactly: `Expected: level in
+range (0, 0), lod in range (-inf, -31.9961)`, `Result: level: 0, lod: 0`. The upper bound is the
+negative of `maxSamplerLodBias`, which this driver reports as just under 32. Every one of the 38
+failures was a `_zero_uv_width_fragment` case, one per sampler type, and the level was right in
+all of them -- only `.y` was wrong.
+
+NIR already carries the substitution, as `nir_lower_tex_options::lower_lod_zero_width`: it takes
+the derivatives of the coordinate, and where they are all zero replaces the raw level of detail
+with `-FLT_MAX`. It has to run while the coordinate is still in hand, which is why it belongs in
+`nir_lower_tex` rather than anywhere later. Terakan calls `nir_lower_tex` itself, so enabling it
+there is the fix, and Gallium r600's own call gets it too, since the hardware is the same.
+
+The family goes from 38 failures to none, 349 passing of 435 with the 10 remaining being
+`texturesize`, which failed before this and is unrelated.
+
 ## Non-uniform descriptor indexing is advertised and cannot work as things stand
 
 All seven `*ArrayNonUniformIndexing` features are reported as supported. The hardware reaches

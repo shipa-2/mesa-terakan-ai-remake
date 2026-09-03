@@ -529,6 +529,13 @@ terakan_shader_lower_and_optimize_post_link(
    lower_tex_options.lower_txf_offset = true;
    lower_tex_options.lower_invalid_implicit_lod = true;
    lower_tex_options.lower_tg4_offsets = true;
+   /* `GET_LOD` computes in fixed point, so the unclamped level of detail it returns for
+    * derivatives of zero is zero -- indistinguishable from the level a one-texel derivative
+    * gives, where the specification asks for minus infinity, or in practice anything at or below
+    * the negative of `maxSamplerLodBias`. This substitutes it, which needs the coordinate, so it
+    * has to be asked for here rather than recovered later.
+    */
+   lower_tex_options.lower_lod_zero_width = true;
    NIR_PASS(_, nir, nir_lower_tex, &lower_tex_options);
    NIR_PASS(_, nir, r600_nir_lower_txl_txf_array_or_cube);
    NIR_PASS(_, nir, r600_nir_lower_cube_to_2darray);
