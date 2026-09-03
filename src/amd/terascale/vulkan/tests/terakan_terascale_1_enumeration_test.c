@@ -68,6 +68,13 @@ terascale_1_cp_dma_copy_opted_in(void)
    return value != NULL && strcmp(value, "1") == 0;
 }
 
+static bool
+terascale_1_cp_dma_fill_opted_in(void)
+{
+   char const * const value = getenv("TERAKAN_DEBUG_TERASCALE_1_CP_DMA_FILL");
+   return value != NULL && strcmp(value, "1") == 0;
+}
+
 static uint32_t
 check_rv710_signal_only_submit(VkDevice const device, VkQueue const queue)
 {
@@ -178,7 +185,7 @@ cleanup:
  */
 static uint32_t
 check_rv710_cp_dma_buffer_copy(VkPhysicalDevice const physical_device, VkDevice const device,
-                               VkQueue const queue)
+                               VkQueue const queue, bool const fill)
 {
    enum { dword_count = 16, byte_count = dword_count * sizeof(uint32_t) };
    VkBuffer buffers[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
@@ -237,7 +244,7 @@ check_rv710_cp_dma_buffer_copy(VkPhysicalDevice const physical_device, VkDevice 
 
    for (uint32_t index = 0; index < dword_count; ++index) {
       mappings[0][index] = UINT32_C(0x1a2b3c40) + index;
-      mappings[1][index] = ~mappings[0][index];
+      mappings[1][index] = fill ? ~UINT32_C(0x76543210) : ~mappings[0][index];
    }
    VkMappedMemoryRange const source_flush = {
       .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
@@ -270,7 +277,10 @@ check_rv710_cp_dma_buffer_copy(VkPhysicalDevice const physical_device, VkDevice 
    if (result == VK_SUCCESS)
       result = vkBeginCommandBuffer(command_buffer, &begin_info);
    if (result == VK_SUCCESS) {
-      vkCmdCopyBuffer(command_buffer, buffers[0], buffers[1], 1, &copy);
+      if (fill)
+         vkCmdFillBuffer(command_buffer, buffers[1], 0, byte_count, UINT32_C(0x76543210));
+      else
+         vkCmdCopyBuffer(command_buffer, buffers[0], buffers[1], 1, &copy);
       result = vkEndCommandBuffer(command_buffer);
    }
    if (result == VK_SUCCESS)
@@ -300,15 +310,16 @@ check_rv710_cp_dma_buffer_copy(VkPhysicalDevice const physical_device, VkDevice 
       goto cleanup;
    }
    for (uint32_t index = 0; index < dword_count; ++index) {
-      if (mappings[1][index] != mappings[0][index]) {
+      uint32_t const expected = fill ? UINT32_C(0x76543210) : mappings[0][index];
+      if (mappings[1][index] != expected) {
          fprintf(stderr, "  RV710 CP-DMA readback mismatch at %u: got 0x%08x expected 0x%08x\n",
-                 index, mappings[1][index], mappings[0][index]);
+                 index, mappings[1][index], expected);
          failures = 1;
          break;
       }
    }
    if (!failures)
-      fprintf(stderr, "  RV710 CP-DMA 64-byte buffer copy/readback completed\n");
+      fprintf(stderr, "  RV710 CP-DMA 64-byte buffer %s/readback completed\n", fill ? "fill" : "copy");
 
 cleanup:
    vkDestroyFence(device, fence, NULL);
@@ -756,9 +767,12 @@ main(void)
                fprintf(stderr, "  TeraScale 1 queue submission remains safely disabled\n");
             }
          } else if (properties.deviceID == 0x954f) {
-            failures += terascale_1_cp_dma_copy_opted_in()
+            failures += terascale_1_cp_dma_fill_opted_in()
                            ? check_rv710_cp_dma_buffer_copy(physical_devices[device_index], device,
-                                                            queue)
+                                                            queue, true)
+                           : terascale_1_cp_dma_copy_opted_in()
+                                ? check_rv710_cp_dma_buffer_copy(physical_devices[device_index], device,
+                                                                 queue, false)
                            : terascale_1_signal_only_opted_in()
                                 ? check_rv710_signal_only_submit(device, queue)
                                 : check_rv710_empty_submit(device, queue);
