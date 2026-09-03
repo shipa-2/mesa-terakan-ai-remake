@@ -1946,10 +1946,38 @@ picks which channel to gather with the `MODE` field of the fetch instruction. Th
 says `DST_SEL` is consulted; that one does not says its `1` encoding is not, or does not mean
 what it means for an ordinary sample.
 
-What is not yet measured is the value that comes back. Until it is, the choice between fixing
-the descriptor and substituting in the shader cannot be made -- and substituting in the shader
-is awkward, since under Vulkan the swizzle belongs to the view and is not known when the shader
-is compiled.
+### What comes back
+
+`terakan_image_gather` was temporarily pointed at views with chosen swizzles to read the values
+out. The image holds channel `k` of texel `n` as `k * 1000 + n`, so which channel a gather
+actually reached is legible in the result.
+
+| view swizzle | component 0 | 1 | 2 | 3 |
+|---|---|---|---|---|
+| `(A, B, G, R)` | A | B | G | R -- all correct |
+| `(R, G, B, ONE)` | R | G | B | 1 -- all correct |
+| `(B, A, ZERO, ONE)` | B | **G** | **R** | 1 |
+| `(ONE, R, G, ZERO)` | **G** | **B** | **A** | 0 |
+
+A pure permutation is applied exactly, so `DST_SEL` is read and understood. A constant in the
+last component is applied exactly too, in both the `ZERO` and the `ONE` spelling. A constant
+anywhere else makes the gather reach some other channel, and not by a rule these four rows
+settle -- the misses are not a consistent shift.
+
+That boundary matches dEQP case for case. Of the six swizzles of
+`graphics.basic.2d.rgba8.texture_swizzle`, the two that pass are the identity and
+`green_blue_alpha_zero`, whose only constant is in W; the four that fail are exactly those with
+a constant anywhere earlier.
+
+So this is not about `ONE` and not about the offset. It is the hardware's channel selection for
+`GATHER4` reading `DST_SEL` differently from the way an ordinary sample does, in a way that
+happens to agree for a permutation and for a constant in the last slot.
+
+Fixing it in the descriptor is not possible while the same descriptor also has to serve ordinary
+sampling, which is correct as things are. Fixing it in the shader means knowing the swizzle when
+the shader is compiled, and under Vulkan it belongs to the view. What is left is either a
+gather-specific descriptor, written alongside the sampling one and selected by the fetch, or
+accepting the limitation and saying so.
 
 ## Compare-and-swap named its two values the wrong way round
 
