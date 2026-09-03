@@ -1925,6 +1925,37 @@ read is spelled -- makes the family 14 of 14 supported cases, from 4 failing. Tw
 tried first and measured to do nothing, and were reverted: `EXEC_ON_NOOP` in the same register,
 and `NOOP_CULL_DISABLE` in `DB_RENDER_OVERRIDE`.
 
+## textureSize on a cube array has nowhere to read the cube count from
+
+The ten `texturesize` failures left in `glsl.texture_functions.query` are all
+`samplercubearray*`, and the report is short: for a 1x1 image with six layers, `Expecting: 1x1
+and 1 cube(s)`, `Result: (1, 1, 1056964608)`. That number is `0x3F000000`, the bit pattern of
+0.5 -- not a count at all, but whatever happened to be lying in the place the shader read.
+
+The place is Gallium's. `TexInstr::emit_tex_txs` masks the third component out of
+`GET_TEXTURE_RESINFO` for a cube array and loads it from `R600_BUFFER_INFO_CONST_BUFFER`
+instead, which the Gallium driver fills with the cube count. Terakan has no such buffer and
+fills nothing, so the shader reads an unrelated constant.
+
+Two ways round it were tried and measured, and neither works:
+
+* NIR's `lower_txs_cube_array` divides the third component by six. That is right where the
+  descriptor's depth counts faces, and wrong here: Terakan already writes `TEX_DEPTH` in cubes,
+  because that is what a cube map descriptor expresses on this hardware, while `BASE_ARRAY` and
+  `LAST_ARRAY` go on addressing individual faces. One cube came back as zero.
+* Turning the query into a 2D array one, so the backend takes the ordinary path and never looks
+  for the constant buffer, then adding the one `TEX_DEPTH` is short of. One cube then reads
+  correctly and two cubes read as one, which says the third component is zero whatever the
+  descriptor holds: `GET_TEXTURE_RESINFO` does not report depth for a cube map resource. That is
+  presumably why Gallium reaches for a constant buffer rather than the hardware in the first
+  place.
+
+So the count has to come from the driver. The natural home is the driver push constants that
+already carry things of this kind -- `sampler_unnormalized` is the precedent -- but where that
+one needs a bit per sampler this needs a number per texture, which is a good deal more constant
+buffer for a query few shaders make. Left undone deliberately, with the measurement recorded so
+the next attempt starts from it.
+
 ## Texture gather loses a component swizzled to one
 
 `dEQP-VK.glsl.texture_gather` fails 81 of the 231 cases whose view swizzle contains a constant,
