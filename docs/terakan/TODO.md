@@ -1721,6 +1721,41 @@ where `split_address_loads` puts the load rather than to when it reloads. Galliu
 the same pass, so a GLSL shader storing through a dynamically indexed resource inside an
 `if` has the same defect there.
 
+### That placement was tried, and it costs more than it buys
+
+The obvious form of it was written and measured: track the chain of enclosing blocks while
+walking, put an index load whose consumer sits inside a branch into the outermost block
+instead -- right before the branch, which is where the whole wave still runs -- and move the
+arithmetic that computes the index along with it when that arithmetic had been sunk into the
+branch. Keeping the per-block invalidation honest then means keeping a load whose block still
+encloses the current one rather than clearing unconditionally.
+
+It does what it was meant to. The bytecode puts `SET_CF_IDX0` in the clause before the
+`JUMP`, ahead of the `PRED_SET`, so it runs under the pre-branch mask, and the store that had
+been landing on the previous statement's resource lands on its own.
+
+It also loses far more than that. Measured over the whole 2752-case group against the 52 the
+current tree fails: moving the arithmetic as well gives **208** failures, and the same change
+restricted to indices already established before the branch, moving nothing, still gives
+**80**. The stride survey goes from 3379 passing and 7 failing to 3378 and 8. Reverted.
+
+Two holes account for it, and neither is incidental:
+
+* **Every hoisted load lands at the same point.** Two consumers in one branch needing two
+  different indices fit, one per index register; a third has to evict one of them, and the
+  eviction sits at the same point in the parent as the load it replaces, so it reaches the
+  earlier consumer too. Guarding against that by refusing to hoist the third is what the
+  measured version did, and it is not enough.
+* **Keeping a load because its block encloses the current one is wrong inside a loop.** On the
+  second iteration the register may have been rewritten by a load in the body, and the pass
+  has no way to tell -- the block list is flat, with a nesting depth and no dominance or
+  back-edge information at all.
+
+So the placement this needs is not "the outermost block" but "the nearest enclosing block the
+whole wave runs, that the definition dominates and that no other load of the same register
+lies between" -- a dominance and liveness question. `split_address_loads` has neither, which
+is the actual size of the work: give the pass that analysis first, then the placement follows.
+
 
 
 ## In-shader memory model: RAT returns, and a GPU hang
