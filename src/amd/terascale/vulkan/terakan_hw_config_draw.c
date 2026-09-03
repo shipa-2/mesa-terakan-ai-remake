@@ -41,6 +41,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define TERAKAN_STANDARD_SAMPLE_LOCS(s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13,   \
@@ -2494,9 +2495,25 @@ static terakan_hw_config_draw_emit_function const
 void
 terakan_hw_config_draw_emit_modified(struct terakan_gfx_command_writer * const command_writer)
 {
+   unsigned max_entry = TERAKAN_HW_CONFIG_DRAW_ENTRY_COUNT - 1;
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1 &&
+       getenv("TERAKAN_DEBUG_TERASCALE_1_META_STATE_ONLY") != NULL) {
+      char const * const value = getenv("TERAKAN_DEBUG_TERASCALE_1_META_DRAW_MAX_ENTRY");
+      if (value != NULL && value[0] != '\0') {
+         char * end = NULL;
+         unsigned long const parsed = strtoul(value, &end, 10);
+         if (end != value && *end == '\0' && parsed < TERAKAN_HW_CONFIG_DRAW_ENTRY_COUNT) {
+            max_entry = (unsigned)parsed;
+         }
+      }
+   }
+
    unsigned entry_index;
    BITSET_FOREACH_SET (entry_index, command_writer->hw_config_draw.entries_modified_,
                        TERAKAN_HW_CONFIG_DRAW_ENTRY_COUNT) {
+      if (entry_index > max_entry) {
+         continue;
+      }
       terakan_hw_config_draw_emit_functions[entry_index](command_writer);
    }
    BITSET_ZERO(command_writer->hw_config_draw.entries_modified_);
