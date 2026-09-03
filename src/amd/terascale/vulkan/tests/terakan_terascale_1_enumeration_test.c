@@ -254,18 +254,19 @@ check_rv710_cp_dma_buffer_copy(VkPhysicalDevice const physical_device, VkDevice 
       .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
       .queueFamilyIndex = 0,
    };
-   VkCommandBufferAllocateInfo const command_buffer_info = {
+   VkCommandBufferAllocateInfo command_buffer_info = {
       .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
       .commandBufferCount = 1,
-      .commandPool = command_pool,
       .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
    };
    VkCommandBufferBeginInfo const begin_info = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
    VkBufferCopy const copy = {.size = byte_count};
    VkFenceCreateInfo const fence_info = {.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
    VkResult result = vkCreateCommandPool(device, &command_pool_info, NULL, &command_pool);
-   if (result == VK_SUCCESS)
+   if (result == VK_SUCCESS) {
+      command_buffer_info.commandPool = command_pool;
       result = vkAllocateCommandBuffers(device, &command_buffer_info, &command_buffer);
+   }
    if (result == VK_SUCCESS)
       result = vkBeginCommandBuffer(command_buffer, &begin_info);
    if (result == VK_SUCCESS) {
