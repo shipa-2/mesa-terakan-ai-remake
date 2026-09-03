@@ -478,15 +478,15 @@ terakan_meta_draw_immediate_32_bit_indexed(struct terakan_gfx_command_writer * c
    if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1 &&
        terakan_debug_terascale_1_meta_state_only()) {
       /* Hardware bring-up isolator: emit all state that a meta draw would apply, but replace the
-       * draw packet itself with a legal NOP. This is opt-in only and must not be mistaken for a
-       * rendering/readback test. */
+       * draw packet itself with TYPE2 padding. Unlike PKT3_NOP, TYPE2 can't be mistaken for the
+       * relocation expected after certain address-bearing register packets. This is opt-in only
+       * and must not be mistaken for a rendering/readback test. */
       packet = terakan_gfx_command_writer_emit(command_writer,
-                                               TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DRAW, 2);
+                                               TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DRAW, 1);
       if (unlikely(packet == NULL)) {
          return NULL;
       }
-      *packet++ = PKT3(PKT3_NOP, 0, 0);
-      *packet++ = 0;
+      *packet++ = PKT_TYPE_S(2);
       terakan_gfx_command_writer_emit_done(command_writer, packet);
       return NULL;
    }
