@@ -1925,6 +1925,36 @@ read is spelled -- makes the family 14 of 14 supported cases, from 4 failing. Tw
 tried first and measured to do nothing, and were reverted: `EXEC_ON_NOOP` in the same register,
 and `NOOP_CULL_DISABLE` in `DB_RENDER_OVERRIDE`.
 
+## Non-uniform descriptor indexing is advertised and cannot work as things stand
+
+All seven `*ArrayNonUniformIndexing` features are reported as supported. The hardware reaches
+an indexed resource through `SET_CF_IDX`, which is wave-scalar: one lane's value decides the
+resource for every lane of the wave. That is exactly right for a dynamically uniform index --
+which is what `descriptorset_random`'s `unifindexed` and `dynindexed` use, and why they pass --
+and wrong for anything else.
+
+`dEQP-VK.descriptor_indexing` is where it shows: 13 of its 15 supported cases fail on image
+comparison, across every descriptor type, and their shaders all index through `nonuniformEXT`.
+The two that pass, `sampler` and `storage_image_lifetime`, do not.
+
+Adding `nir_lower_non_uniform_access` before the binding pass was tried and measured to change
+nothing -- 14 failures of 15 before and after -- although `nir_has_non_uniform_access` reports
+the access and the pass reports progress. The reason is that the lowering it emits reads one
+lane's index with a subgroup operation and loops until every lane has been served, and this
+driver reports `subgroupSize = 1`. Under that model each invocation is its own subgroup, the
+loop collapses to a single iteration using the lane's own index, and the wave-scalar hardware
+index is right back where it started.
+
+Two ways out, neither small:
+
+* Report a real subgroup size and give the backend wave-level `readFirstInvocation` and ballot,
+  after which the standard lowering would work. `SET_CF_IDX` is itself a read-from-one-active-lane
+  primitive, so the piece the loop needs is not missing from the hardware, only from the compiler.
+* Withdraw the seven features, as `descriptorBindingUpdateAfterBind` was withdrawn for being
+  advertised and unimplementable. That makes the driver honest at the cost of the capability.
+
+Until one of them is done the features are a claim the driver does not honour.
+
 ## Vertex pipeline stage survey (geometry and tessellation)
 
 Surveyed 2026-08-23 while starting the geometry and tessellation items. Both
