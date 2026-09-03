@@ -1867,11 +1867,38 @@ chips` in `terakan_vertex_input.c` names. Gallium r600 carries the same fixup, f
 `CHIP_PALM` onwards, in `r600_shader.c` -- but only under `!num_format`, the NORM case,
 so it would not have covered `sscaled` either.
 
-The fix belongs in the fetch shader, which is where the driver already has the format in
-hand: after the fetch clause, for an attribute whose format is a signed 2_10_10_10 or
-10_10_10_2, correct the alpha channel from the unsigned value the hardware produced.
-`terakan_vertex_input_fs_code` has pre-fetch ALU clauses but no post-fetch ones, so the
-generator needs one added alongside the existing clause list.
+### The fix
+
+It belongs in the fetch shader and nowhere else: vertex input can be dynamic, so the fetch
+shader is regenerated at bind time and is the only place that always has the attribute's
+format in hand. `terakan_vertex_input_fs_code` had pre-fetch ALU clauses and no post-fetch
+ones, so the generator gained them, emitted between the fetch clause and the return, with
+the first one carrying `BARRIER` so it sees what the fetch wrote.
+
+The correction runs in place on the fetched component. For an integer attribute the raw bits
+are already there, so two instructions suffice -- `LSHL_INT` by 30 and `ASHR_INT` back, which
+is sign extension written out. For the float ones the hardware has already divided by three
+in the normalized case, so:
+
+    MULADD  v = v * (normalized ? 0.75 : 0.25) + 0.625
+    FRACT   v
+    MULADD  v = v * 4.0 - 2.5
+    MAX     v = max(v, -1.0)                     (normalized only)
+
+giving 0, 1, -2, -1 and, normalized, 0, 1, -1, -1. The bias is 0.625 rather than 0.5 on
+purpose: the normalized path starts from inexact thirds, and an eighth of clearance keeps
+every intermediate away from the integer boundary `FRACT` wraps on, where 2/3 would otherwise
+be a coin toss.
+
+Measured on Caicos. The probe reports no disagreement with the specification in any of the
+four number types. The whole 10574-case `pipeline.monolithic.vertex_input` group goes from 9
+failures to 3 -- the four `sscaled` cases and the two `sint` ones are fixed, and what remains
+is `max_attributes.query_max_attributes`, which failed before this too and is unrelated. An
+11261-case stride sample gives exactly the same 13 failures before and after, and the local
+suite is 13/13 and 69/69.
+
+For every format that is not a signed 2_10_10_10 or 10_10_10_2 the emitted fetch shader is
+unchanged: no post-fetch clause is created and no control flow entry is added.
 
 ## Vertex pipeline stage survey (geometry and tessellation)
 
