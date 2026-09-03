@@ -1574,9 +1574,9 @@ if with_tests
         ],
         dependencies : vulkan_loader_dep,
       )
-      # Reproduces an open defect, so it is expected to fail: it loses ten of its sixty-four
-      # texels, exactly as the dEQP case it was reduced from does. When it starts passing the
-      # defect is fixed and this line is what says so.
+      # Reduced from a `descriptorset_random` case that lost ten of its sixty-four texels: a
+      # dynamically indexed store inside a branch and an indexed read after it shared one
+      # `SET_CF_IDX0` that sat inside the branch, so the read landed on the store's resource.
       test(
         'terakan_descriptor_set_shape',
         terakan_descriptor_set_shape_test,
@@ -1586,7 +1586,6 @@ if with_tests
           'VK_ICD_FILENAMES' : _dev_icd.full_path(),
           'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
         },
-        should_fail : true,
         timeout : 20,
       )
 

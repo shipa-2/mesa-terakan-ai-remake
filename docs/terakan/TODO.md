@@ -1600,6 +1600,29 @@ placed inside the branch. The placement is SFN's, and the rule it is missing is
 that a value carrying `addr_or_idx` must not be shared with a consumer outside
 the block it is established in.
 
+### The fix
+
+`AddressSplitVisitor` in `sfn_split_address_loads.cpp` keeps `m_current_idx_src[2]`,
+the source register each index register was last loaded from, and `reuse_loaded_idx`
+skips emitting a load whenever the requested source matches one of them. `visit(Block *)`
+resets everything else it carries between blocks -- the address load, the address
+register, the pending uses, the non-ALU predecessors -- but not that pair, so a
+`SET_CF_IDX` emitted inside a conditional block stayed on the books for consumers in
+every block after it. Clearing the two entries at the start of each block is the whole
+fix: each block now loads the index it uses, where it uses it.
+
+It costs one `SET_CF_IDX` per block that indexes a resource, and buys 21 cases in the
+1465-case `descriptorset_random` sample -- 145 passing and 9 failing where it was 124
+and 30 -- and six more in the 26745-case stride survey, which goes from 3372 passing
+and 13 failing to 3378 and 8. Nothing regressed in either. What still fails is a
+different shape: every remaining `descriptorset_random` failure is `unifindexed`,
+`dynindexed` or `runtimesize`, where the descriptor *array* index is itself dynamic,
+and none is the plain `noarray` case this was reduced from.
+
+The rule generalises past this driver. Gallium r600 runs the same pass on the same
+hardware, so a GLSL shader that stores through a dynamically indexed image inside a
+branch and reads an indexed resource after it had the same defect.
+
 
 
 ## In-shader memory model: RAT returns, and a GPU hang
