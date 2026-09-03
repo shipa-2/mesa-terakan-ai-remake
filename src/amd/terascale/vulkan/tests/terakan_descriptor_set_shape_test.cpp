@@ -260,6 +260,18 @@ main()
    std::vector<VkBufferView> texel_views[sizeof(kBindings) / sizeof(kBindings[0])];
    VkImage output_image = VK_NULL_HANDLE;
    VkDeviceSize next_offset = 0;
+   /* Where each buffer-backed element ended up and what it was filled with, so a conditional store
+    * the shader makes into one can be checked after the draw. The rendered texels say the reads
+    * were right; only this says the writes landed.
+    */
+   struct BufferElement {
+      uint32_t set;
+      uint32_t binding;
+      uint32_t element;
+      VkDeviceSize offset;
+      int32_t fill;
+   };
+   std::vector<BufferElement> buffer_element_offsets;
 
    for (size_t spec_index = 0; spec_index < sizeof(kBindings) / sizeof(kBindings[0]); ++spec_index) {
       BindingSpec const &spec = kBindings[spec_index];
@@ -283,6 +295,7 @@ main()
          }
          int32_t const value = spec.first_value != 0 ? spec.first_value + int32_t(element) : 0;
          std::memcpy(buffer_mapping + next_offset, &value, sizeof(value));
+         buffer_element_offsets.push_back({spec.set, spec.binding, element, next_offset, value});
          if (spec.kind == KIND_TEXEL) {
             VkBufferViewCreateInfo const view_info = {
                .sType = VK_STRUCTURE_TYPE_BUFFER_VIEW_CREATE_INFO,
@@ -573,6 +586,36 @@ main()
    VK_CHECK(vkQueueSubmit(queue, 1, &submit, VK_NULL_HANDLE));
    VK_CHECK(vkQueueWaitIdle(queue));
 
+   /* The conditional stores the shader makes, and what they must leave behind. A store that is
+    * dropped leaves the element at its fill value, which is what dEQP sees as `found -1`.
+    */
+   static const struct {
+      uint32_t set, binding, element;
+      int32_t value;
+   } kExpectedWrites[] = {
+      {2, 2, 0, 23},
+      {3, 0, 0, 33},
+   };
+   uint32_t lost_writes = 0;
+   for (auto const &expected : kExpectedWrites) {
+      for (BufferElement const &element : buffer_element_offsets) {
+         if (element.set != expected.set || element.binding != expected.binding ||
+             element.element != expected.element)
+            continue;
+         int32_t actual;
+         std::memcpy(&actual, buffer_mapping + element.offset, sizeof(actual));
+         if (actual == expected.value)
+            break;
+         std::printf("descriptor_set_shape set %u binding %u element %u = %d, expected the %d the "
+                     "shader stores%s\n",
+                     expected.set, expected.binding, expected.element, actual, expected.value,
+                     actual == element.fill ? " (still the fill value -- the store was dropped)"
+                                            : "");
+         ++lost_writes;
+         break;
+      }
+   }
+
    uint32_t wrong = 0;
    std::printf("descriptor_set_shape wrong texels:");
    for (uint32_t i = 0; i < kDim * kDim; ++i) {
@@ -581,7 +624,7 @@ main()
          ++wrong;
       }
    }
-   std::printf("\ndescriptor_set_shape wrong=%u/%u %s\n", wrong, kDim * kDim,
-               wrong == 0 ? "PASS" : "FAIL");
-   return wrong == 0 ? 0 : 1;
+   std::printf("\ndescriptor_set_shape wrong=%u/%u lost_writes=%u %s\n", wrong, kDim * kDim,
+               lost_writes, wrong == 0 && lost_writes == 0 ? "PASS" : "FAIL");
+   return wrong == 0 && lost_writes == 0 ? 0 : 1;
 }

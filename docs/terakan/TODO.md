@@ -1684,9 +1684,42 @@ Several things have been ruled out:
   precedes each case differs, which is order dependence of the same kind the depth and
   stencil clears show, not nondeterminism within a case.
 
-What is left to explain is why one `MEM_RAT ... WRITE_IND RAT1[IDX0] STORE_TYPED` inside
-a taken branch writes nothing while its neighbour writes correctly. The next step is a
-fragment reproducer -- the compute one passes, so the stage is part of it.
+### The cause: SET_CF_IDX inside a divergent branch
+
+`terakan_descriptor_set_shape` turns out to already have the shape, so the reproducer was
+four lines: grow `ssbo3_1` from two elements to four, store to elements 2 and 3 -- which
+nothing reads, so a store landing cannot change what any other invocation computes --
+under `if (8 == invocationID)` and `if (26 == invocationID)`, and check afterwards what
+the buffer holds. Both stores go missing while all 64 texels stay right, exactly as in
+dEQP, and printing the whole buffer says where they went: **not nowhere, but to element 1**.
+
+Element 1 is what `CF_IDX1` held before the branch, from the read of `ssbo3_1[accum + 1]`
+that precedes it. The `SET_CF_IDX1` the branch contains, correctly placed before the store,
+did not take. `SET_CF_IDX` is wave-scalar and takes its value from one lane; inside a branch
+one invocation matches, and the lane it reads did not run the `MOVA_INT`, so the index keeps
+its pre-branch value and the store lands on the previous statement's resource.
+
+The negative control is decisive: replacing `if (8 == invocationID)` with `if (0 == accum)`,
+true for every lane, leaves everything else identical and the store lands on element 2.
+Divergence is the variable, not the branch, the resource or the index.
+
+Other things this explains and rules out:
+
+* The store is misdirected, not dropped, so no element ends up holding the value only when
+  the wrong element is one dEQP does not check -- which is why it reads as `found -1`.
+* Which invocations lose their store is a property of the pixel, not of the shader: with
+  every other conditional store removed and one parameterised store left, scanning all 64
+  invocations gives exactly 8 and 26, the same two dEQP reports across 52 different shaders.
+* Both ingredients are needed. A constant index under the same branch lands, and the same
+  dynamic index without the branch lands.
+
+The fix is not a small one, because it pulls against the rule above it. That rule says a
+block must load the index it uses; this one says a divergent block cannot load an index at
+all. Both are satisfied only by placing the load where the whole wave runs it -- the nearest
+enclosing non-divergent block that the index's definition dominates -- which is a change to
+where `split_address_loads` puts the load rather than to when it reloads. Gallium r600 runs
+the same pass, so a GLSL shader storing through a dynamically indexed resource inside an
+`if` has the same defect there.
 
 
 
