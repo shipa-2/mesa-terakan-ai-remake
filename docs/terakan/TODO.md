@@ -1925,6 +1925,32 @@ read is spelled -- makes the family 14 of 14 supported cases, from 4 failing. Tw
 tried first and measured to do nothing, and were reverted: `EXEC_ON_NOOP` in the same register,
 and `NOOP_CULL_DISABLE` in `DB_RENDER_OVERRIDE`.
 
+## Texture gather loses a component swizzled to one
+
+`dEQP-VK.glsl.texture_gather` fails 81 of the 231 cases whose view swizzle contains a constant,
+and the split is exact. Taking `graphics.basic.2d.rgba8.texture_swizzle`, whose six swizzles are
+cyclic shifts of `red_green_blue_alpha`:
+
+* `red_green_blue_alpha` -- passes, it is the identity.
+* `green_blue_alpha_zero` -- passes, and it has a constant channel.
+* `blue_alpha_zero_one`, `alpha_zero_one_red`, `zero_one_red_green`, `one_red_green_blue` --
+  all fail, and each contains `ONE`.
+
+So a channel the view maps to zero gathers correctly and one mapped to one does not, in every
+gather mode -- `basic`, `offset`, `offset_dynamic` and `offsets` alike, and for `rgba8`,
+`rgba8ui` and `rgba8i` -- which rules out the offset handling that the first sighting of this
+in the stride sample suggested.
+
+The swizzle reaches the hardware as `DST_SEL_X..W` of the resource descriptor, and `GATHER4`
+picks which channel to gather with the `MODE` field of the fetch instruction. That zero works
+says `DST_SEL` is consulted; that one does not says its `1` encoding is not, or does not mean
+what it means for an ordinary sample.
+
+What is not yet measured is the value that comes back. Until it is, the choice between fixing
+the descriptor and substituting in the shader cannot be made -- and substituting in the shader
+is awkward, since under Vulkan the swizzle belongs to the view and is not known when the shader
+is compiled.
+
 ## Compare-and-swap named its two values the wrong way round
 
 `dEQP-VK.image.atomic_operations.compare_exchange` failed every one of its 64 supported cases,
