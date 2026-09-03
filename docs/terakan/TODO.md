@@ -1838,6 +1838,41 @@ barrier needs.
 Until this is understood, a full-suite CTS run must exclude
 `payload_*.image.guard_*.image`, or it aborts partway through.
 
+## Signed 2_10_10_10 vertex attributes: the two-bit alpha comes back unsigned
+
+`dEQP-VK.pipeline.*.vertex_input` fails on `a2r10g10b10_sscaled_pack32` and on nothing
+else of that family -- the `unorm`, `snorm` and `uscaled` members of the same packed
+format all pass. That is four cases, and it would be easy to leave them; the reason not
+to is that measuring what the hardware actually returns says the passing `snorm` is
+broken too, in a way dEQP happens not to look at.
+
+`terakan_vertex_format_2_10_10_10_probe` fetches one attribute per draw and prints the
+four components against what the specification says they should be, over packed words
+covering both signs of every field. On Caicos:
+
+* Every one of the three **ten-bit** components is right, in all four number types,
+  including at the sign boundary: `sscaled` reads 512 as -512 and 1023 as -1.
+* The **two-bit alpha** is decoded as unsigned no matter what the number type says.
+  `sscaled` returns 2 for the bit pattern that means -2, and 3 for the one that means -1.
+  `snorm` returns 1/3, 2/3 and 1 where the specification asks for 1, -1 and -1.
+
+So `snorm` is wrong for every alpha other than zero. dEQP's `vertex_input` case for it
+passes because the values it feeds do not distinguish the two, which is why this went
+unnoticed while the `sscaled` case, whose values are exact integers, failed. It matters
+beyond conformance: `A2B10G10R10_SNORM_PACK32` is the ordinary way to hand the vertex
+stage a packed normal, and its alpha is where a sign or a handedness flag lives.
+
+This is what `TODO(Triang3l): Signed 2_10_10_10 and 10_10_10_2 alpha fixup on certain
+chips` in `terakan_vertex_input.c` names. Gallium r600 carries the same fixup, from
+`CHIP_PALM` onwards, in `r600_shader.c` -- but only under `!num_format`, the NORM case,
+so it would not have covered `sscaled` either.
+
+The fix belongs in the fetch shader, which is where the driver already has the format in
+hand: after the fetch clause, for an attribute whose format is a signed 2_10_10_10 or
+10_10_10_2, correct the alpha channel from the unsigned value the hardware produced.
+`terakan_vertex_input_fs_code` has pre-fetch ALU clauses but no post-fetch ones, so the
+generator needs one added alongside the existing clause list.
+
 ## Vertex pipeline stage survey (geometry and tessellation)
 
 Surveyed 2026-08-23 while starting the geometry and tessellation items. Both
