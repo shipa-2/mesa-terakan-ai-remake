@@ -202,6 +202,9 @@ uint32_t terakan_hw_config_draw_terascale_1_cb_immed_packet_dwords(void);
  * INDEX_BUFFER_SIZE packet must therefore not be emitted merely to represent an unbound buffer. */
 uint32_t terakan_hw_config_draw_terascale_1_index_buffer_unbind_packet_dwords(void);
 
+/* Diagnostic draw used to distinguish packet/state validation from shader execution. */
+uint32_t * terakan_hw_config_draw_terascale_1_write_zero_count_draw(uint32_t * packet);
+
 uint32_t * terakan_hw_config_draw_terascale_1_write_sq_pgm_fs(uint32_t * packet,
                                                                uint32_t program_va_shr8);
 uint32_t * terakan_hw_config_draw_terascale_1_write_sq_pgm_vs(

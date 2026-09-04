@@ -780,6 +780,16 @@ test_absent_index_buffer_unbind(void)
    CHECK(terakan_hw_config_draw_terascale_1_index_buffer_unbind_packet_dwords() == 0);
 }
 
+static void
+test_zero_count_draw(void)
+{
+   uint32_t packet[3];
+   CHECK(terakan_hw_config_draw_terascale_1_write_zero_count_draw(packet) == packet + 3);
+   CHECK(packet[0] == PKT3(PKT3_DRAW_INDEX_AUTO, 1, 0));
+   CHECK(packet[1] == 0);
+   CHECK(packet[2] == S_0287F0_SOURCE_SELECT(V_0287F0_DI_SRC_SEL_AUTO_INDEX));
+}
+
 static struct terakan_hw_config_draw_terascale_1_cb_color_input
 representative_cb_color_input(void)
 {
@@ -1014,6 +1024,7 @@ main(void)
    test_absent_ls_bool_const();
    test_absent_cb_immed();
    test_absent_index_buffer_unbind();
+   test_zero_count_draw();
    test_cb_color_encode();
    test_cb_color_encode_multisample_metadata();
    test_cb_color_encode_rejects_unported_surfaces();

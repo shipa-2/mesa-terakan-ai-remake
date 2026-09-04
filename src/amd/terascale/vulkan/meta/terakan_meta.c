@@ -24,6 +24,7 @@
 #include "terakan_meta_impl.h"
 
 #include "terakan_device.h"
+#include "terakan_hw_config_draw_terascale_1.h"
 #include "terakan_physical_device.h"
 
 #include "amd/terascale/common/terascale_format.h"
@@ -38,6 +39,13 @@ static bool
 terakan_debug_terascale_1_meta_state_only(void)
 {
    char const * const value = getenv("TERAKAN_DEBUG_TERASCALE_1_META_STATE_ONLY");
+   return value != NULL && strcmp(value, "1") == 0;
+}
+
+static bool
+terakan_debug_terascale_1_meta_zero_count_draw(void)
+{
+   char const * const value = getenv("TERAKAN_DEBUG_TERASCALE_1_META_ZERO_COUNT_DRAW");
    return value != NULL && strcmp(value, "1") == 0;
 }
 
@@ -475,6 +483,19 @@ terakan_meta_draw_immediate_32_bit_indexed(struct terakan_gfx_command_writer * c
                                                                VGT_INDEX_32);
 
    terakan_meta_before_draw(command_writer);
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1 &&
+       terakan_debug_terascale_1_meta_zero_count_draw()) {
+      /* Executes the complete state-validation path without launching shader waves. This is a
+       * hardware localization probe only; it proves no rendering or memory access. */
+      packet = terakan_gfx_command_writer_emit(command_writer,
+                                               TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DRAW, 3);
+      if (unlikely(packet == NULL)) {
+         return NULL;
+      }
+      packet = terakan_hw_config_draw_terascale_1_write_zero_count_draw(packet);
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
+      return NULL;
+   }
    if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1 &&
        terakan_debug_terascale_1_meta_state_only()) {
       /* Hardware bring-up isolator: emit all state that a meta draw would apply, but replace the
