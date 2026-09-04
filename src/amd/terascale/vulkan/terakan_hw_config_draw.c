@@ -2207,6 +2207,9 @@ terakan_hw_config_draw_emit_cb_color(struct terakan_gfx_command_writer * const c
             }
          }
       }
+      bool const debug_zero_info =
+         getenv("TERAKAN_DEBUG_TERASCALE_1_META_STATE_ONLY") != NULL &&
+         getenv("TERAKAN_DEBUG_TERASCALE_1_META_CB_COLOR_INFO_ZERO") != NULL;
 
       while (config->cb_color_.modified_bits) {
          unsigned const color_index = (unsigned)(ffs(config->cb_color_.modified_bits) - 1);
@@ -2259,9 +2262,13 @@ terakan_hw_config_draw_emit_cb_color(struct terakan_gfx_command_writer * const c
                return;
             }
             packet = terakan_hw_config_draw_terascale_1_write_cb_color_unbound(
-               packet, color_index, input.source_format <= 1 ? input.source_format : 0);
+               packet, color_index,
+               debug_zero_info ? 0 : input.source_format <= 1 ? input.source_format : 0);
             terakan_gfx_command_writer_emit_done(command_writer, packet);
             continue;
+         }
+         if (debug_zero_info) {
+            color_r700.info = 0;
          }
 
          bool const is_drm_radeon =
