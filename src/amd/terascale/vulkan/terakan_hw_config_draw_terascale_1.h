@@ -198,6 +198,10 @@ bool terakan_hw_config_draw_terascale_1_absent_ls_bool_const_encode(
 /* R600/R700 has no Evergreen CB_IMMEDn_BASE UAV immediate-address block. */
 uint32_t terakan_hw_config_draw_terascale_1_cb_immed_packet_dwords(void);
 
+/* R600/R700 direct indexed draws carry their address in DRAW_INDEX. The Evergreen-only
+ * INDEX_BUFFER_SIZE packet must therefore not be emitted merely to represent an unbound buffer. */
+uint32_t terakan_hw_config_draw_terascale_1_index_buffer_unbind_packet_dwords(void);
+
 uint32_t * terakan_hw_config_draw_terascale_1_write_sq_pgm_fs(uint32_t * packet,
                                                                uint32_t program_va_shr8);
 uint32_t * terakan_hw_config_draw_terascale_1_write_sq_pgm_vs(
