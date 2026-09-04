@@ -187,6 +187,23 @@ destination dword retained its inverse-pattern sentinel; the kernel journal stay
 one successful boundary observation, not a substitute for a repeated stress series or for image
 copy validation.
 
+The first graphics-state submission has now passed the RV710 kernel parser and fence through the
+complete draw-state and SQK emission when the draw packet itself is replaced by TYPE2 padding.
+The earlier apparent failure at `CB_COLORn_INFO` was a localization error: the passing prefix
+already contained the same INFO write, while the next entry appended Evergreen-only
+`EG_PKT3_INDEX_BUFFER_SIZE` (opcode `0x13`) for an unbound index buffer. Classic
+`r600_draw_vbo()` places a direct indexed address in `PKT3_DRAW_INDEX` and emits no unbind packet;
+omitting opcode `0x13` made both state stages complete on RV710. This does not validate bound or
+indexed application draws.
+
+A real three-index meta draw is accepted by the parser but locks ring 0. A zero-count
+`PKT3_DRAW_INDEX_AUTO` isolator was added to distinguish draw/state validation from shader-wave
+execution. Its first apparent success overlapped the delayed reset from the preceding lockup, and
+subsequent attempts timed out while the adapter repeatedly failed its post-reset IB self-test.
+Consequently there is deliberately no zero-count hardware claim yet. After the machine/GPU is
+cleanly recovered, run the zero-count draw with meta configuration stages 0 through 4; do not
+repeat the real meta draw until the first failing stage is known.
+
 ## Completed and regression-covered
 
 - Multisample correctness, closed as a group. Seven defects, each with a probe or
