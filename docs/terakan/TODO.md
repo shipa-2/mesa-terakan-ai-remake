@@ -1925,6 +1925,41 @@ read is spelled -- makes the family 14 of 14 supported cases, from 4 failing. Tw
 tried first and measured to do nothing, and were reverted: `EXEC_ON_NOOP` in the same register,
 and `NOOP_CULL_DISABLE` in `DB_RENDER_OVERRIDE`.
 
+## Shared memory: a large copy runs out of registers
+
+Every `_compute_shared` case of `dEQP-VK.glsl.atomic_operations` fails, all sixteen of them, and
+every `_compute` and `_fragment` case passes -- eleven operations, signed and unsigned, without
+exception. So it is not the atomic. It is the shader around it, which copies a structure of 161
+integers from a storage buffer into shared memory and back:
+
+    if (gl_LocalInvocationIndex == 0u) buf.data = result.data;
+    ...
+    if (gl_LocalInvocationIndex == 0u) result.data = buf.data;
+
+The failure is `r600_schedule_shader: Register allocation failed`, and the shader never compiles,
+so the pipeline creation returns `VK_ERROR_UNKNOWN`. Register allocation colours each component
+separately and has 123 colours; 161 values wanting the same component do not fit.
+
+They want it at once because of how the two halves are ordered. Every LDS instruction is chained
+to the one before it in `LDSReadInstr::split`, so the shared-memory side runs strictly in
+sequence, while the storage buffer loads that feed it are independent of each other and the
+scheduler hoists them freely. The loaded values then wait, all of them, for a chain that consumes
+one per step.
+
+Two things were tried and measured to change nothing, and neither was kept:
+
+* `nir_schedule` in its `fallback` mode, which exists for exactly this ("can be used as a fallback
+  when register allocation fails"), run on a retry after the first attempt fails. The retry does
+  happen -- the allocator reports its failure twice -- and the second attempt fails the same way,
+  so the ordering NIR produces is not what creates the pressure.
+* Adding `nir_var_mem_shared` to the load/store vectorizer's modes, which would have turned the
+  scalar copy into vector accesses. No change either.
+
+What would work is pressure awareness in the backend scheduler, which currently batches fetches
+by count -- fifteen texture instructions, eight memory ones -- and not by how many results are
+waiting. That is a change to `BlockScheduler`, and worth taking only with a way to measure it
+across the whole suite.
+
 ## Two families measured but not yet reduced
 
 Both were turned up by the wider stride sample and are recorded here with what a first pass
