@@ -29,12 +29,15 @@
 #include "terakan_sampler_terascale_1.h"
 
 #include "gallium/drivers/r600/evergreend.h"
+#include "util/format/u_format.h"
+#include "vk_format.h"
 #include "vk_log.h"
 
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 VKAPI_ATTR void VKAPI_CALL
 terakan_DestroySampler(VkDevice const deviceHandle, VkSampler const samplerHandle,
@@ -151,4 +154,71 @@ terakan_CreateSampler(VkDevice const deviceHandle, VkSamplerCreateInfo const * c
 
    *pSampler = terakan_sampler_to_handle(sampler);
    return VK_SUCCESS;
+}
+
+/* The border colour registers hold normalized floats, not the raw values the border colour was
+ * specified with. Evergreen denormalizes what they hold by the format of the view being sampled,
+ * so an integer border colour has to be divided by its channel's maximum on the way in --
+ * `evergreen_convert_border_color` in Gallium r600 does the same thing for the same reason.
+ * Writing the integer 1 straight into the register makes it a denormal that reads back as zero,
+ * which is what `sampler.border_swizzle` saw: `INT_OPAQUE_WHITE` came back as zero for every
+ * integer format while the fixed border colour types, which never touch these registers, were
+ * right.
+ *
+ * The format is the view's, not the sampler's, so this cannot be done when the sampler is created.
+ */
+void
+terakan_sampler_descriptor_normalize_integer_border_color(
+   struct terakan_sampler_descriptor * const sampler_descriptor, VkFormat const view_format,
+   bool const stencil_aspect)
+{
+   if (G_03C000_BORDER_COLOR_TYPE(sampler_descriptor->sampler[0]) !=
+       V_03C000_SQ_TEX_BORDER_COLOR_REGISTER) {
+      return;
+   }
+
+   /* The stencil aspect of a combined format is an 8-bit unsigned integer, and its own format
+    * description would describe the depth part instead.
+    */
+   unsigned channel_bits[4] = {8, 8, 8, 8};
+   bool channel_signed[4] = {false, false, false, false};
+   if (!stencil_aspect) {
+      struct util_format_description const * const description =
+         util_format_description(vk_format_to_pipe_format(view_format));
+      if (description == NULL || !util_format_is_pure_integer(vk_format_to_pipe_format(view_format))) {
+         return;
+      }
+      for (unsigned component_index = 0; component_index < 4; ++component_index) {
+         unsigned const channel_index =
+            MIN2(component_index, (unsigned)description->nr_channels - 1u);
+         channel_bits[component_index] = description->channel[channel_index].size;
+         channel_signed[component_index] =
+            description->channel[channel_index].type == UTIL_FORMAT_TYPE_SIGNED;
+      }
+   }
+
+   for (unsigned component_index = 0; component_index < 4; ++component_index) {
+      unsigned const bits = channel_bits[component_index];
+      if (bits == 0 || bits > 32) {
+         continue;
+      }
+      /* 32-bit integer formats get nothing out of these registers at all: writing a plain 0.5f
+       * and sampling the border reads back zero, while the same probe on a 16-bit format reads
+       * back 32768, which is 0.5 * 2^16. So the denormalization is by 2^bits, and 32 bits is past
+       * what the border colour path carries. Those cases are left failing rather than papered
+       * over.
+       */
+      double const maximum = channel_signed[component_index]
+                                ? (double)((1ull << (bits - 1u)) - 1ull)
+                                : (double)((1ull << bits) - 1ull);
+      double value;
+      if (channel_signed[component_index]) {
+         value = (double)(int32_t)sampler_descriptor->register_border_color[component_index];
+      } else {
+         value = (double)sampler_descriptor->register_border_color[component_index];
+      }
+      float const normalized = (float)(value / maximum);
+      memcpy(&sampler_descriptor->register_border_color[component_index], &normalized,
+             sizeof(float));
+   }
 }
