@@ -363,9 +363,11 @@ cleanup:
 
 /* This is deliberately opt-in: it is the first TeraScale 1 meta-draw/readback probe. The source
  * is a host-written linear image, avoiding the not-yet-portable buffer-to-image meta shader. Four
- * different texels and an inverse-pattern destination are the negative control: neither a skipped
- * draw nor a uniform/wrong-coordinate fetch can pass. It does not validate tiled images, layers,
- * non-RGBA8 formats, or the generic buffer-to-image direction.
+ * different texels and an inverse-pattern destination are the copy negative control: neither a
+ * skipped draw nor a uniform/wrong-coordinate fetch can pass. For clear, every initial texel is
+ * different from the expected clear result, so fence completion without a write also fails. It
+ * does not validate tiled images, layers, non-RGBA8 formats, or the generic buffer-to-image
+ * direction.
  */
 static uint32_t
 check_rv710_linear_image_readback(VkPhysicalDevice const physical_device, VkDevice const device,
@@ -512,7 +514,8 @@ check_rv710_linear_image_readback(VkPhysicalDevice const physical_device, VkDevi
       .imageSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .layerCount = 1},
       .imageExtent = {width, height, 1},
    };
-   VkClearColorValue const clear_value = {.uint32 = {0x10203040, 0, 0, 0}};
+   VkClearColorValue const clear_value = {.float32 = {0.0f, 1.0f, 0.0f, 1.0f}};
+   uint32_t const clear_word = UINT32_C(0xff00ff00);
    VkImageSubresourceRange const clear_range = {
       .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
       .levelCount = 1,
@@ -549,12 +552,36 @@ check_rv710_linear_image_readback(VkPhysicalDevice const physical_device, VkDevi
    if (result == VK_SUCCESS)
       result = vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_C(5000000000));
    if (result != VK_SUCCESS) {
-      fprintf(stderr, "  RV710 linear image readback submission failed with %d\n", result);
+      fprintf(stderr, "  RV710 linear image %s submission failed with %d\n",
+              clear_only ? "clear" : "readback", result);
       failures = 1;
       goto cleanup;
    }
    if (clear_only) {
-      fprintf(stderr, "  RV710 linear image clear submission completed\n");
+      VkMappedMemoryRange const image_invalidate = {
+         .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+         .memory = image_memory,
+         .size = VK_WHOLE_SIZE,
+      };
+      if (vkInvalidateMappedMemoryRanges(device, 1, &image_invalidate) != VK_SUCCESS) {
+         fprintf(stderr, "  RV710 linear image clear invalidate failed\n");
+         failures = 1;
+         goto cleanup;
+      }
+      for (uint32_t y = 0; y < height; ++y) {
+         uint32_t const * const row =
+            (uint32_t const *)(image_mapping + image_layout.offset + y * image_layout.rowPitch);
+         for (uint32_t x = 0; x < width; ++x) {
+            if (row[x] != clear_word) {
+               fprintf(stderr,
+                       "  RV710 linear clear mismatch at (%u,%u): got 0x%08x expected 0x%08x\n",
+                       x, y, row[x], clear_word);
+               failures = 1;
+            }
+         }
+      }
+      if (!failures)
+         fprintf(stderr, "  RV710 linear image 2x2 clear readback completed\n");
       goto cleanup;
    }
    VkMappedMemoryRange const buffer_invalidate = {
