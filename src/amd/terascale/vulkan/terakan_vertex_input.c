@@ -568,6 +568,66 @@ terakan_vertex_input_try_emit_unbound_attribute_mov(
    return attribute_index;
 }
 
+/* #Signed2101010Alpha: whether this attribute's fetch produces a two-bit field the hardware
+ * decoded as unsigned but the format calls signed, and if so, which destination components carry
+ * it. The ten-bit fields of the same formats come back correct and are not touched.
+ *
+ * Returns the mask of destination components to correct, zero when there is nothing to do, and
+ * writes the number format, which decides which correction the component needs.
+ */
+static unsigned
+terakan_vertex_input_signed_2_bit_alpha_components(uint32_t const format_fetch_word1,
+                                                   unsigned * const number_format_out)
+{
+   *number_format_out = TERASCALE_FORMAT_SQ_NUM_FORMAT_NORM;
+   if (!G_SQ_VTX_WORD1_FORMAT_COMP_ALL(format_fetch_word1)) {
+      return 0;
+   }
+   unsigned const num_format = G_SQ_VTX_WORD1_NUM_FORMAT_ALL(format_fetch_word1);
+   unsigned two_bit_data_channel;
+   switch (G_SQ_VTX_WORD1_DATA_FORMAT(format_fetch_word1)) {
+   case TERASCALE_FORMAT_INDEX_2_10_10_10:
+      /* The two-bit field is the most significant one, which is data channel W. */
+      two_bit_data_channel = TERASCALE_SWIZZLE_W;
+      break;
+   case TERASCALE_FORMAT_INDEX_10_10_10_2:
+      two_bit_data_channel = TERASCALE_SWIZZLE_X;
+      break;
+   default:
+      return 0;
+   }
+   *number_format_out = num_format;
+   unsigned components = 0;
+   for (unsigned component_index = 0; component_index < 4; ++component_index) {
+      if (((format_fetch_word1 >> (9 + 3 * component_index)) & 0b111) == two_bit_data_channel) {
+         components |= BITFIELD_BIT(component_index);
+      }
+   }
+   return components;
+}
+
+/* Emits one post-fetch ALU instruction group holding a single instruction, plus its literals. */
+static void
+terakan_vertex_input_emit_post_fetch_alu(struct terakan_vertex_input_fs_code * const code_out,
+                                         uint32_t const word0, uint32_t const word1,
+                                         unsigned const literal_count,
+                                         uint32_t const * const literals)
+{
+   assert(literal_count <= 2);
+   assert(code_out->post_fetch_alu_qwords < TERAKAN_VERTEX_INPUT_FS_MAX_POST_FETCH_ALU_QWORDS);
+   uint32_t * const alu = &code_out->post_fetch_alu[2 * code_out->post_fetch_alu_qwords++];
+   /* Each instruction depends on the one before it, so every group holds exactly one. */
+   alu[0] = word0 | S_SQ_ALU_WORD0_LAST(true);
+   alu[1] = word1;
+   if (literal_count != 0) {
+      assert(code_out->post_fetch_alu_qwords < TERAKAN_VERTEX_INPUT_FS_MAX_POST_FETCH_ALU_QWORDS);
+      uint32_t * const literal_qword =
+         &code_out->post_fetch_alu[2 * code_out->post_fetch_alu_qwords++];
+      literal_qword[0] = literals[0];
+      literal_qword[1] = literal_count > 1 ? literals[1] : 0;
+   }
+}
+
 void
 terakan_vertex_input_create_fs_code(
    struct terakan_vertex_input_fs_layout const * const layout, bool const is_r9xx,
@@ -867,6 +927,7 @@ terakan_vertex_input_create_fs_code(
     */
 
    code_out->pre_fetch_alu_qwords = 0;
+   code_out->post_fetch_alu_qwords = 0;
    uint32_t current_pre_fetch_alu_clause_address = code_out->pre_fetch_alu_qwords;
    unsigned pre_fetch_alu_clause_count = 0;
    uint8_t pre_fetch_alu_clauses_qwords[TERAKAN_VERTEX_INPUT_FS_MAX_PRE_FETCH_ALU_CLAUSES];
@@ -1526,14 +1587,129 @@ terakan_vertex_input_create_fs_code(
       }
    }
 
-   /* TODO(Triang3l): Signed 2_10_10_10 and 10_10_10_2 alpha fixup on certain chips. */
+   /* #Signed2101010Alpha: correct the two-bit field of signed 2_10_10_10 and 10_10_10_2
+    * attributes, which the hardware decodes as unsigned. Only bound attributes are corrected: an
+    * unbound one was filled with a constant 0 or 1 by the pre-fetch ALU, which is already what the
+    * shader must see.
+    */
+   uint32_t post_fetch_alu_clauses_qwords[TERAKAN_VERTEX_INPUT_FS_MAX_POST_FETCH_ALU_CLAUSES];
+   unsigned post_fetch_alu_clause_count = 0;
+   {
+      uint32_t current_post_fetch_alu_clause_address = 0;
+      for (unsigned sorted_index = 0; sorted_index < bound_used_attribute_count; ++sorted_index) {
+         unsigned const attribute_index = sorted_attribute_indices[sorted_index];
+         unsigned number_format;
+         unsigned components = terakan_vertex_input_signed_2_bit_alpha_components(
+            layout->attribute_format_fetch_word1[attribute_index], &number_format);
+         unsigned const destination_gpr = 1 + attribute_index;
+         while (components) {
+            unsigned const component_index = (unsigned)u_bit_scan(&components);
+            uint32_t const qwords_before_component = code_out->post_fetch_alu_qwords;
+            uint32_t const source =
+               S_SQ_ALU_WORD0_SRC0_SEL(destination_gpr) |
+               S_SQ_ALU_WORD0_SRC0_CHAN(component_index);
+            uint32_t const destination = S_SQ_ALU_WORD1_DST_GPR(destination_gpr) |
+                                         S_SQ_ALU_WORD1_DST_CHAN(component_index);
+
+            if (number_format == TERASCALE_FORMAT_SQ_NUM_FORMAT_INT) {
+               /* An integer attribute keeps the raw bits, so the two of them only have to be moved
+                * to the top of the register and brought back with an arithmetic shift, which is
+                * what sign extension is.
+                */
+               uint32_t const shift_literal[1] = {32 - 2};
+               terakan_vertex_input_emit_post_fetch_alu(
+                  code_out,
+                  source | S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_LITERAL) |
+                     S_SQ_ALU_WORD0_SRC1_CHAN(0),
+                  S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_LSHL_INT) |
+                     S_SQ_ALU_WORD1_OP2_WRITE_MASK(true) | destination,
+                  1, shift_literal);
+               terakan_vertex_input_emit_post_fetch_alu(
+                  code_out,
+                  source | S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_LITERAL) |
+                     S_SQ_ALU_WORD0_SRC1_CHAN(0),
+                  S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_ASHR_INT) |
+                     S_SQ_ALU_WORD1_OP2_WRITE_MASK(true) | destination,
+                  1, shift_literal);
+               goto component_done;
+            }
+
+            bool const is_normalized = number_format == TERASCALE_FORMAT_SQ_NUM_FORMAT_NORM;
+
+            /* v = v * (normalized ? 0.75 : 0.25) + 0.625. The bias is deliberately not 0.5: it
+             * keeps every intermediate an eighth away from the integer boundary FRACT turns on, so
+             * that the inexact thirds the normalized path starts from cannot land on the wrong
+             * side of it.
+             */
+            uint32_t const scale_literals[2] = {is_normalized ? 0x3F400000u : 0x3E800000u,
+                                                0x3F200000u};
+            terakan_vertex_input_emit_post_fetch_alu(
+               code_out,
+               source | S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_LITERAL) |
+                  S_SQ_ALU_WORD0_SRC1_CHAN(0),
+               S_SQ_ALU_WORD1_OP3_SRC2_SEL(V_SQ_ALU_SRC_LITERAL) |
+                  S_SQ_ALU_WORD1_OP3_SRC2_CHAN(1) |
+                  S_SQ_ALU_WORD1_OP3_ALU_INST(EG_V_SQ_ALU_WORD1_OP3_SQ_OP3_INST_MULADD) |
+                  destination,
+               2, scale_literals);
+
+            /* v = fract(v), which is where the wrap that makes the value signed happens. */
+            terakan_vertex_input_emit_post_fetch_alu(
+               code_out, source | S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_0),
+               S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_FRACT) |
+                  S_SQ_ALU_WORD1_OP2_WRITE_MASK(true) | destination,
+               0, NULL);
+
+            /* v = v * 4.0 - 2.5, undoing the scale and the bias, giving 0, 1, -2, -1. */
+            uint32_t const unscale_literals[2] = {0x40800000u, 0xC0200000u};
+            terakan_vertex_input_emit_post_fetch_alu(
+               code_out,
+               source | S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_LITERAL) |
+                  S_SQ_ALU_WORD0_SRC1_CHAN(0),
+               S_SQ_ALU_WORD1_OP3_SRC2_SEL(V_SQ_ALU_SRC_LITERAL) |
+                  S_SQ_ALU_WORD1_OP3_SRC2_CHAN(1) |
+                  S_SQ_ALU_WORD1_OP3_ALU_INST(EG_V_SQ_ALU_WORD1_OP3_SQ_OP3_INST_MULADD) |
+                  destination,
+               2, unscale_literals);
+
+            if (is_normalized) {
+               /* -2 is the smallest two-bit signed value and normalizes to -1, which is what the
+                * specification asks a signed normalized -2 to clamp to.
+                */
+               terakan_vertex_input_emit_post_fetch_alu(
+                  code_out,
+                  source | S_SQ_ALU_WORD0_SRC1_SEL(V_SQ_ALU_SRC_1) |
+                     S_SQ_ALU_WORD0_SRC1_NEG(true),
+                  S_SQ_ALU_WORD1_OP2_ALU_INST(EG_V_SQ_ALU_WORD1_OP2_SQ_OP2_INST_MAX) |
+                     S_SQ_ALU_WORD1_OP2_WRITE_MASK(true) | destination,
+                  0, NULL);
+            }
+
+         component_done:
+            /* Split the clause before this component's sequence if it no longer fits. */
+            if (code_out->post_fetch_alu_qwords - current_post_fetch_alu_clause_address > 0x80) {
+               assert(post_fetch_alu_clause_count <
+                      TERAKAN_VERTEX_INPUT_FS_MAX_POST_FETCH_ALU_CLAUSES);
+               post_fetch_alu_clauses_qwords[post_fetch_alu_clause_count++] =
+                  qwords_before_component - current_post_fetch_alu_clause_address;
+               current_post_fetch_alu_clause_address = qwords_before_component;
+            }
+         }
+      }
+      if (code_out->post_fetch_alu_qwords > current_post_fetch_alu_clause_address) {
+         assert(post_fetch_alu_clause_count < TERAKAN_VERTEX_INPUT_FS_MAX_POST_FETCH_ALU_CLAUSES);
+         post_fetch_alu_clauses_qwords[post_fetch_alu_clause_count++] =
+            code_out->post_fetch_alu_qwords - current_post_fetch_alu_clause_address;
+      }
+   }
 
    /* Construct the control flow program. */
 
    code_out->control_flow_qwords = 0;
    bool const has_fetch_clause = code_out->fetch_count != 0;
-   unsigned const control_flow_qword_count =
-      pre_fetch_alu_clause_count + (unsigned)has_fetch_clause + 1;
+   unsigned const control_flow_qword_count = pre_fetch_alu_clause_count +
+                                             (unsigned)has_fetch_clause +
+                                             post_fetch_alu_clause_count + 1;
    assert(control_flow_qword_count <= TERAKAN_VERTEX_INPUT_FS_MAX_CONTROL_FLOW_QWORDS);
    unsigned next_clause_qword_offset = control_flow_qword_count;
 
@@ -1566,7 +1742,26 @@ terakan_vertex_input_create_fs_code(
          S_SQ_CF_WORD1_COUNT(code_out->fetch_count - 1) |
          S_SQ_CF_WORD1_BARRIER(code_out->pre_fetch_alu_qwords != 0) |
          (is_r9xx ? EG_V_SQ_CF_WORD1_SQ_CF_INST_TEX : EG_V_SQ_CF_WORD1_SQ_CF_INST_VTX);
-      next_clause_qword_offset += 2;
+      next_clause_qword_offset += 2 * code_out->fetch_count;
+   }
+
+   /* Post-fetch ALU clauses. */
+   for (unsigned post_fetch_alu_clause_index = 0;
+        post_fetch_alu_clause_index < post_fetch_alu_clause_count; ++post_fetch_alu_clause_index) {
+      uint32_t const post_fetch_alu_clause_qwords =
+         post_fetch_alu_clauses_qwords[post_fetch_alu_clause_index];
+      assert(post_fetch_alu_clause_qwords <= 128);
+      assert(code_out->control_flow_qwords < control_flow_qword_count);
+      uint32_t * const control_flow_post_fetch_alu_clause =
+         &code_out->control_flow[2 * code_out->control_flow_qwords++];
+      control_flow_post_fetch_alu_clause[0] = S_SQ_CF_WORD0_ADDR(next_clause_qword_offset);
+      control_flow_post_fetch_alu_clause[1] =
+         S_SQ_CF_ALU_WORD1_COUNT(post_fetch_alu_clause_qwords - 1) |
+         /* The first of these clauses reads what the fetch clause wrote, so it has to wait for it.
+          */
+         S_SQ_CF_ALU_WORD1_BARRIER(post_fetch_alu_clause_index == 0) |
+         EG_V_SQ_CF_ALU_WORD1_SQ_CF_INST_ALU;
+      next_clause_qword_offset += post_fetch_alu_clause_qwords;
    }
 
    /* Return. */
@@ -1601,6 +1796,10 @@ terakan_vertex_input_combine_fs(struct terakan_vertex_input_fs_code const * cons
                               sizeof(uint32_t) * 4 * code->fetch_count);
       program_offset_qwords += 2 * code->fetch_count;
    }
+
+   util_memcpy_cpu_to_le32(program_out + 2 * program_offset_qwords, code->post_fetch_alu,
+                           sizeof(uint32_t) * 2 * code->post_fetch_alu_qwords);
+   program_offset_qwords += code->post_fetch_alu_qwords;
 
    assert(program_offset_qwords == terakan_vertex_input_fs_code_qwords(code));
 }

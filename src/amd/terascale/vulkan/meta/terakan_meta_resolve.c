@@ -810,12 +810,26 @@ terakan_meta_resolve_color(VkCommandBuffer const command_buffer_handle,
 
    struct terakan_gfx_command_writer * const command_writer =
       terakan_command_buffer_from_handle(command_buffer_handle)->command_writer.gfx;
-   /* The 2x averaging shader stays disabled: the initial R8xx TXF_MS fallback did not decode
-    * direct sample coordinates correctly and corrupted the entire frame, and the fixed function
-    * does that case correctly anyway. The scaffolding it needed is what the sample-zero shader
-    * uses, which is why the flag is shared.
+   /* The fixed function reads and writes the same coordinate, so a region that moves the rectangle
+    * is not something it can express. Those used to be skipped, which is what left the partial and
+    * with_regions groups of dEQP-VK.api.copy_and_blit.core.resolve_image failing; they take the
+    * shader path instead, which reaches the source through a fetch and can offset it.
     */
-   bool const shader_resolve_2x = resolve_selects_sample_zero;
+   bool any_region_moves_the_rectangle = false;
+   for (uint32_t region_index = 0; region_index < resolve_info->regionCount; ++region_index) {
+      VkImageResolve2 const * const region = &resolve_info->pRegions[region_index];
+      if (region->srcSubresource.aspectMask == VK_IMAGE_ASPECT_COLOR_BIT &&
+          region->dstSubresource.aspectMask == VK_IMAGE_ASPECT_COLOR_BIT &&
+          !terakan_meta_resolve_region_is_fixed_function_compatible(src_image, dst_image, region)) {
+         any_region_moves_the_rectangle = true;
+      }
+   }
+
+   /* The old hand-written 2x averaging shader stays unused: it did not decode direct sample
+    * coordinates correctly and corrupted the entire frame. The NIR ones below do, and the fixed
+    * function still takes every case it can, so they run only where it cannot.
+    */
+   bool const shader_resolve_2x = resolve_selects_sample_zero || any_region_moves_the_rectangle;
 
    /* The fixed function consumes the source through CB, which keeps the RTV metadata coherent on
     * its own. The shader path samples the source as a texture instead, bypassing CB entirely, so
@@ -847,9 +861,23 @@ terakan_meta_resolve_color(VkCommandBuffer const command_buffer_handle,
    terakan_meta_config_draw_begin(command_writer, &begin_options);
    terakan_meta_config_draw_set_sq_pgm_vs(command_writer,
                                           TERAKAN_META_SHADER_POSITION_AND_LAYER_FROM_INDEX_VS);
+   /* An integer format resolves by selecting a sample, which is what Vulkan asks for and what the
+    * fixed function cannot be told to do; everything else averages, as the fixed function does.
+    */
+   enum terakan_meta_shader_index const average_shaders[] = {
+      TERAKAN_META_SHADER_RESOLVE_AVERAGE_2X_PS,
+      TERAKAN_META_SHADER_RESOLVE_AVERAGE_4X_PS,
+      TERAKAN_META_SHADER_RESOLVE_AVERAGE_8X_PS,
+   };
+   unsigned const average_shader_index =
+      util_logbase2((uint32_t)src_image->vk.samples) - 1u;
    terakan_meta_config_draw_set_sq_pgm_ps(
-      command_writer, shader_resolve_2x ? TERAKAN_META_SHADER_RESOLVE_SAMPLE_ZERO_PS
-                                        : TERAKAN_META_SHADER_DUMMY_OPAQUE_PS);
+      command_writer,
+      shader_resolve_2x
+         ? (resolve_selects_sample_zero || average_shader_index >= ARRAY_SIZE(average_shaders)
+               ? TERAKAN_META_SHADER_RESOLVE_SAMPLE_ZERO_PS
+               : average_shaders[average_shader_index])
+         : TERAKAN_META_SHADER_DUMMY_OPAQUE_PS);
    terakan_meta_config_draw_set_cb_color_control_for_mode(
       command_writer, shader_resolve_2x ? V_028808_CB_NORMAL : V_028808_CB_RESOLVE);
 
@@ -871,9 +899,23 @@ terakan_meta_resolve_color(VkCommandBuffer const command_buffer_handle,
        */
       if (unlikely(region->srcSubresource.aspectMask != VK_IMAGE_ASPECT_COLOR_BIT ||
                    region->dstSubresource.aspectMask != VK_IMAGE_ASPECT_COLOR_BIT ||
-                   !terakan_meta_resolve_region_is_fixed_function_compatible(src_image, dst_image,
-                                                                             region))) {
+                   (!shader_resolve_2x &&
+                    !terakan_meta_resolve_region_is_fixed_function_compatible(src_image, dst_image,
+                                                                              region)))) {
          continue;
+      }
+
+      if (shader_resolve_2x) {
+         /* The shader reads the source at the fragment's position plus this, so a region that
+          * moves the rectangle is expressed here rather than in the descriptors.
+          */
+         /* The first two of the constant vector, matching what the shaders read; the layout is the
+          * one meta/terakan_meta_nir.c documents next to the copy shaders.
+          */
+         int32_t const constants[4] = {region->srcOffset.x - region->dstOffset.x,
+                                       region->srcOffset.y - region->dstOffset.y};
+         terakan_meta_config_draw_set_kcache_push_constants(command_writer, sizeof(constants),
+                                                            constants, false, true);
       }
 
       uint32_t const layer_count =

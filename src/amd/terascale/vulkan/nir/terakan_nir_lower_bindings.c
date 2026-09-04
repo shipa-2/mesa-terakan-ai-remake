@@ -1133,10 +1133,14 @@ terakan_nir_lower_bindings_instr_ssbo_atomic(nir_builder * const b,
    nir_def * const value =
       uav_op_non_rtn == V_RAT_INST_INC_UINT || uav_op_non_rtn == V_RAT_INST_DEC_UINT
          ? nir_imm_int(b, (int)UINT32_MAX)
-         : intrin->src[2].ssa;
+         : (intrin->intrinsic == nir_intrinsic_ssbo_atomic_swap ? intrin->src[3].ssa
+                                                                : intrin->src[2].ssa);
 
+   /* A compare-and-swap takes the value it compares against first and the value it writes
+    * second, so for it the two sources are the other way round from every other atomic.
+    */
    nir_def * const compare_value = intrin->intrinsic == nir_intrinsic_ssbo_atomic_swap
-                                      ? intrin->src[3].ssa
+                                      ? intrin->src[2].ssa
                                       : nir_undef(b, 1, 32);
 
    unsigned const uav_id_base = state->uav_base + uav_index_zero_based;
@@ -1467,10 +1471,14 @@ terakan_nir_lower_bindings_instr_image_deref_atomic(
    nir_def * const value =
       uav_op_non_rtn == V_RAT_INST_INC_UINT || uav_op_non_rtn == V_RAT_INST_DEC_UINT
          ? nir_imm_int(b, (int)UINT32_MAX)
-         : intrin->src[3].ssa;
+         : (intrin->intrinsic == nir_intrinsic_image_deref_atomic_swap ? intrin->src[4].ssa
+                                                                      : intrin->src[3].ssa);
 
+   /* As for storage buffers, a compare-and-swap names the value it compares against before the
+    * value it writes.
+    */
    nir_def * const compare_value = intrin->intrinsic == nir_intrinsic_image_deref_atomic_swap
-                                      ? intrin->src[4].ssa
+                                      ? intrin->src[3].ssa
                                       : nir_undef(b, 1, 32);
 
    unsigned const uav_id_base = state->uav_base + uav_index_zero_based;

@@ -1069,6 +1069,15 @@ LowerTexToBackend::lower_txf(nir_tex_instr *tex)
    int lod_idx = nir_tex_instr_src_index(tex, nir_tex_src_lod);
    new_coord[3] = tex->src[lod_idx].src.ssa;
 
+   /* A 1D image the driver could not describe with a 1D resource -- a tiled one, which every
+    * block-compressed image is -- is bound as a 2D one, and then the second coordinate is a real
+    * one. Sampling survives that, since the address modes fold any row onto the only row there is,
+    * but a fetch of an out-of-range integer coordinate returns zero rather than clamping.
+    */
+   if (!new_coord[1] && tex->sampler_dim == GLSL_SAMPLER_DIM_1D && !tex->is_array) {
+      new_coord[1] = nir_imm_int(b, 0);
+   }
+
    int used_coord_mask = 0;
    nir_def *backend1 = prep_src(new_coord, used_coord_mask);
    nir_def *backend2 =

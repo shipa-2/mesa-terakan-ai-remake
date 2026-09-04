@@ -310,6 +310,14 @@ void AddressSplitVisitor::visit(Block *instr)
     * retaining them can leave inserted address loads chained to dead code.
     */
    m_prev_non_alu.clear();
+   /* An index register loaded in another block cannot be reused here. `SET_CF_IDX` takes a
+    * wave-scalar value from a lane that is active where it runs, so a load placed inside a
+    * conditional block does not establish the index for a use outside that block -- the use gets
+    * whatever an active lane of the block produced -- and for a wave that skipped the block it
+    * never ran at all. Forgetting what was loaded makes each block load the index it needs.
+    */
+   m_current_idx_src[0] = nullptr;
+   m_current_idx_src[1] = nullptr;
    auto e = instr->end(); 
    while (m_block_iterator != e) {
       (*m_block_iterator)->accept(*this); 
