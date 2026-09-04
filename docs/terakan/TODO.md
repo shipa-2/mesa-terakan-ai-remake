@@ -1622,11 +1622,35 @@ rectangle and the whole depth/stencil descriptor from inside the driver gives
 byte-identical lines for the failing dEQP case and the passing probe --
 `rect=64x11 size=0x00000807 slice=0x0000000f zinfo=0x00002023`.
 
-So it is not what the clear is asked to do, and not the sequence around it. What
-is left is the state the rest of the process leaves behind, which is where the
-order dependence this family has shown from the start was pointing all along --
-and it means the next step is to find what dEQP has done before the case rather
-than to keep refining what it does during it.
+So it is not what the clear is asked to do, and not the sequence around it.
+
+### A neighbouring defect the probe did find
+
+Instrumenting `vkCreateImage` says dEQP creates these images with **one mip level**, not the
+chain the probe had been giving them. Matching that turns the probe's six clean lines into two
+failures -- and they are the two sizes dEQP passes, not the four it fails:
+
+    200x180   1568 of 36000 texels left at the fill value, rows 160..175 from x 128
+              and rows 176..179 from x 96
+    55x21x11  1678 of 12705, in the last two depth slices
+
+So a single-level depth image loses the tail of its clear, and the same image with a full mip
+chain does not -- `TERAKAN_PROBE_MIPS=1` in the probe is the control, and it comes back clean at
+every size. What makes it worth chasing is how little else differs. The depth descriptor is
+identical either way: `size=0x0000b018`, pitch 200, height 184, `slice_tile_max=574` for the full
+36800-texel slice. So is the memory requirement, 147200 bytes, exactly that aligned slice. The
+missing texels hold precisely what the fill copy wrote, so the copy reached them and the draw did
+not, and forcing linear images or changing the barrier alters nothing.
+
+That leaves the mip count deciding the outcome while nothing the driver programs for the clear
+depends on it, which is the shape of a defect in how the surface is laid out for a single-level
+image rather than in the clear.
+
+### And dEQP's own failures are still unexplained
+
+The four sizes dEQP fails at stay clean in the probe under every combination tried, single level
+included. So there are two defects here, selecting opposite sizes, and the one dEQP sees still
+needs what the process did before the case rather than what it does during it.
 
 The colour path is not affected in the same shape: `clear_color_image` with
 `remaining_array_layers` on `r8_uint` passes at 64x11 and 1x33, one byte per
