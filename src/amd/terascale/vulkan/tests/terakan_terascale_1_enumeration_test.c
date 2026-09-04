@@ -534,12 +534,31 @@ check_rv710_linear_image_readback(VkPhysicalDevice const physical_device, VkDevi
        * CmdCopyImageToBuffer2 implementation. Calling the core-1.3 entrypoint directly here
        * instead invokes a NULL dispatch slot on this driver and tests no meta code at all.
        */
-      if (clear_only)
+      if (clear_only) {
          vkCmdClearColorImage(command_buffer, image, VK_IMAGE_LAYOUT_GENERAL, &clear_value, 1,
                               &clear_range);
-      else
+         /* Queue/fence completion alone does not make dirty CB cache lines visible to a host
+          * mapping. Exercise the driver's ordinary transfer-to-host dependency path so this probe
+          * validates both the draw and the TeraScale 1 cache tail rather than merely rereading the
+          * pre-draw host cache contents. */
+         VkImageMemoryBarrier const host_read_barrier = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+            .dstAccessMask = VK_ACCESS_HOST_READ_BIT,
+            .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
+            .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = image,
+            .subresourceRange = clear_range,
+         };
+         vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                              VK_PIPELINE_STAGE_HOST_BIT, 0, 0, NULL, 0, NULL, 1,
+                              &host_read_barrier);
+      } else {
          vkCmdCopyImageToBuffer(command_buffer, image, VK_IMAGE_LAYOUT_GENERAL, buffer, 1,
                                 &region);
+      }
       result = vkEndCommandBuffer(command_buffer);
    }
    if (result == VK_SUCCESS)
