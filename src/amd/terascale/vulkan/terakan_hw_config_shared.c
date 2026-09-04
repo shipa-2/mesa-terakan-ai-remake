@@ -39,6 +39,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 static bool
@@ -600,6 +601,31 @@ void
 terakan_hw_config_shared_draw_emit_modified(struct terakan_gfx_command_writer * const command_writer)
 {
    struct terakan_hw_config_shared * const config = &command_writer->hw_config_shared;
+   unsigned max_entry = TERAKAN_HW_CONFIG_SHARED_ENTRIES_COMMON_AND_DRAW_COUNT - 1;
+   unsigned skip_entry = TERAKAN_HW_CONFIG_SHARED_ENTRIES_COMMON_AND_DRAW_COUNT;
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1 &&
+       getenv("TERAKAN_DEBUG_TERASCALE_1_META_STATE_ONLY") != NULL) {
+      char const * const max_value =
+         getenv("TERAKAN_DEBUG_TERASCALE_1_META_SHARED_MAX_ENTRY");
+      if (max_value != NULL && max_value[0] != '\0') {
+         char * end = NULL;
+         unsigned long const parsed = strtoul(max_value, &end, 10);
+         if (end != max_value && *end == '\0' &&
+             parsed < TERAKAN_HW_CONFIG_SHARED_ENTRIES_COMMON_AND_DRAW_COUNT) {
+            max_entry = (unsigned)parsed;
+         }
+      }
+      char const * const skip_value =
+         getenv("TERAKAN_DEBUG_TERASCALE_1_META_SHARED_SKIP_ENTRY");
+      if (skip_value != NULL && skip_value[0] != '\0') {
+         char * end = NULL;
+         unsigned long const parsed = strtoul(skip_value, &end, 10);
+         if (end != skip_value && *end == '\0' &&
+             parsed < TERAKAN_HW_CONFIG_SHARED_ENTRIES_COMMON_AND_DRAW_COUNT) {
+            skip_entry = (unsigned)parsed;
+         }
+      }
+   }
 
    if (config->is_compute_active_) {
       /* Flush before changing hardware resource allocation registers, as well as LS-related ones.
@@ -673,6 +699,9 @@ terakan_hw_config_shared_draw_emit_modified(struct terakan_gfx_command_writer * 
    }
 
    u_foreach_bit (entry_index, config->draw_.entries_modified) {
+      if (entry_index > max_entry || entry_index == skip_entry) {
+         continue;
+      }
       terakan_hw_config_shared_draw_emit_functions[entry_index](command_writer);
    }
    config->draw_.entries_modified = 0b0;
