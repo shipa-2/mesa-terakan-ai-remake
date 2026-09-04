@@ -1925,6 +1925,39 @@ read is spelled -- makes the family 14 of 14 supported cases, from 4 failing. Tw
 tried first and measured to do nothing, and were reverted: `EXEC_ON_NOOP` in the same register,
 and `NOOP_CULL_DISABLE` in `DB_RENDER_OVERRIDE`.
 
+## Two families measured but not yet reduced
+
+Both were turned up by the wider stride sample and are recorded here with what a first pass
+established, so a later reduction does not start from nothing.
+
+### Block-compatible views: only `texelFetch` fails, and only for some shapes
+
+`dEQP-VK.image.texel_view_compatible` reads a block-compressed image through an uncompressed
+view. Of the five operations it tries, four are clean in a 2160-case sample -- `image_load`,
+`image_store`, `texture` and the graphics `texture_read` all pass 102 of 102 -- and
+`texel_fetch` splits exactly in half, 51 passing and 51 failing. The split follows the shape:
+
+| | no mipmaps (`basic`) | mipmaps (`extended`) |
+|---|---|---|
+| 1D | fails | fails |
+| 2D | passes | fails |
+| 3D | passes | passes |
+
+The failure is `Decompression failed` with a difference of `-nan`, so the fetched texels are not
+merely displaced. That `texture` passes where `texelFetch` fails on the same view says the view
+itself is set up right and the integer fetch is not, and that 3D passes with mipmaps while 2D
+does not says it is not simply the mip level's size either.
+
+### Border colour: white is four times likelier to be wrong than black
+
+`dEQP-VK.pipeline.monolithic.sampler.border_swizzle` samples outside the image with a border
+colour, through a view with a component swizzle. In a 2855-case sample 37 of the 279 supported
+cases fail, and the border colour is the strongest axis: `opaque_white` fails 31 of 120 while
+`transparent_black` fails 4 of 121 and `opaque_black` 2 of 38. The swizzle kind barely matters --
+permutations fail at 14% and swizzles with a constant at 12% -- so this is not the gather
+constant-swizzle defect above wearing another hat, although `gather_0` is the worst of the
+gather modes at 24%.
+
 ## An exclusive scan of a vector read past its identity
 
 The driver reports a subgroup size of one, so an exclusive scan has nothing to its left and must
