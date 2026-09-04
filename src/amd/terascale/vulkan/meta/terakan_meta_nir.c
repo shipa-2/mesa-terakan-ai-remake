@@ -211,6 +211,15 @@ terakan_meta_nir_build_clear_color_ps(struct terakan_device const * const device
  * the two comparable: both compile to two dwords that encode (0, 0, 0, 1) into the export
  * instruction's swizzle selects.
  */
+/* Constants shared by the shaders that move a rectangle: the difference of the source and
+ * destination offsets, and the sample index where one draw takes one sample.
+ */
+enum {
+   TERAKAN_META_NIR_COPY_CONST_SRC_MINUS_DST_OFFSET_X,
+   TERAKAN_META_NIR_COPY_CONST_SRC_MINUS_DST_OFFSET_Y,
+   TERAKAN_META_NIR_COPY_CONST_SAMPLE_INDEX,
+};
+
 nir_shader *
 terakan_meta_nir_build_resolve_sample_zero_ps(struct terakan_device const * const device)
 {
@@ -233,9 +242,19 @@ terakan_meta_nir_build_resolve_sample_zero_ps(struct terakan_device const * cons
    position->data.interpolation = INTERP_MODE_NOPERSPECTIVE;
    b->shader->info.inputs_read = BITFIELD64_BIT(VARYING_SLOT_POS);
    nir_def * const frag_coord = nir_load_var(b, position);
-   nir_def * const coord =
-      nir_vec3(b, nir_f2i32(b, nir_channel(b, frag_coord, 0)),
-               nir_f2i32(b, nir_channel(b, frag_coord, 1)), nir_imm_int(b, 0));
+   /* The draw is scissored to the destination rectangle, so the fragment's own position is the
+    * destination texel; the source texel is that plus the difference of the two offsets, which is
+    * zero whenever the fixed function could have done the resolve and is not otherwise.
+    */
+   nir_def * const constants = nir_load_ubo_vec4(
+      b, 4, 32, nir_imm_int(b, TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS), nir_imm_int(b, 0));
+   nir_def * const coord = nir_vec3(
+      b,
+      nir_iadd(b, nir_f2i32(b, nir_channel(b, frag_coord, 0)),
+               nir_channel(b, constants, TERAKAN_META_NIR_COPY_CONST_SRC_MINUS_DST_OFFSET_X)),
+      nir_iadd(b, nir_f2i32(b, nir_channel(b, frag_coord, 1)),
+               nir_channel(b, constants, TERAKAN_META_NIR_COPY_CONST_SRC_MINUS_DST_OFFSET_Y)),
+      nir_imm_int(b, 0));
 
    /* The source is bound as a 2D array multisample resource in the primary meta slot, with the
     * layer already selected by the descriptor, so the array coordinate is zero.
@@ -522,6 +541,229 @@ terakan_meta_nir_build_copy_expand_3x_32_ps(struct terakan_device const * const 
    return terakan_meta_nir_build_copy_expand_3x_ps(device, 4, "terakan_meta_copy_expand_3x_32_ps");
 }
 
+/* The copy constants, matching what terakan_meta_copy_image.c writes into the constant cache. The
+ * first two are shared with the hand-written single-sample shader and keep their positions.
+ */
+
+static nir_shader *
+terakan_meta_nir_build_copy_depth_stencil_msaa_ps(struct terakan_device const * const device,
+                                                  bool const is_depth, char const * const name)
+{
+   nir_builder builder = nir_builder_init_simple_shader(
+      MESA_SHADER_FRAGMENT, &terakan_device_physical_device(device)->nir_options_fs, "%s", name);
+   nir_builder * const b = &builder;
+
+   nir_variable * const position = nir_variable_create(
+      b->shader, nir_var_shader_in, glsl_vec4_type(), "gl_FragCoord");
+   position->data.location = VARYING_SLOT_POS;
+   position->data.interpolation = INTERP_MODE_NOPERSPECTIVE;
+   b->shader->info.inputs_read = BITFIELD64_BIT(VARYING_SLOT_POS);
+   nir_def * const frag_coord = nir_load_var(b, position);
+
+   nir_def * const constants = nir_load_ubo_vec4(
+      b, 4, 32, nir_imm_int(b, TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS), nir_imm_int(b, 0));
+
+   /* The destination rectangle is what is rasterized, so the fragment's own position is the
+    * destination texel and the source texel is that plus the difference of the two offsets. The
+    * layer is already selected by the descriptor, so the array coordinate is zero.
+    */
+   nir_def * const coord = nir_vec3(
+      b,
+      nir_iadd(b, nir_f2i32(b, nir_channel(b, frag_coord, 0)),
+               nir_channel(b, constants, TERAKAN_META_NIR_COPY_CONST_SRC_MINUS_DST_OFFSET_X)),
+      nir_iadd(b, nir_f2i32(b, nir_channel(b, frag_coord, 1)),
+               nir_channel(b, constants, TERAKAN_META_NIR_COPY_CONST_SRC_MINUS_DST_OFFSET_Y)),
+      nir_imm_int(b, 0));
+
+   /* One sample per draw, selected by the constant, with the rasterization sample mask restricting
+    * the destination to the same one: the fragment shader has one depth and one stencil export,
+    * and both go to whichever samples the draw covers.
+    */
+   nir_tex_instr * const fetch = nir_tex_instr_create(b->shader, 2);
+   fetch->op = nir_texop_txf_ms;
+   fetch->sampler_dim = GLSL_SAMPLER_DIM_MS;
+   fetch->is_array = true;
+   fetch->dest_type = is_depth ? nir_type_float32 : nir_type_uint32;
+   fetch->coord_components = 3;
+   fetch->texture_index = TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META;
+   fetch->sampler_index = 0;
+   fetch->src[0] = nir_tex_src_for_ssa(nir_tex_src_coord, coord);
+   fetch->src[1] = nir_tex_src_for_ssa(
+      nir_tex_src_ms_index, nir_channel(b, constants, TERAKAN_META_NIR_COPY_CONST_SAMPLE_INDEX));
+   nir_def_init(&fetch->instr, &fetch->def, 4, 32);
+   nir_builder_instr_insert(b, &fetch->instr);
+
+   nir_variable * const output = nir_variable_create(
+      b->shader, nir_var_shader_out, is_depth ? glsl_float_type() : glsl_int_type(),
+      is_depth ? "gl_FragDepth" : "gl_FragStencilRef");
+   output->data.location = is_depth ? FRAG_RESULT_DEPTH : FRAG_RESULT_STENCIL;
+   output->data.driver_location = 0;
+   nir_store_var(b, output, nir_channel(b, &fetch->def, 0), 0x1);
+
+   b->shader->info.outputs_written =
+      BITFIELD64_BIT(is_depth ? FRAG_RESULT_DEPTH : FRAG_RESULT_STENCIL);
+   b->shader->info.fs.uses_sample_shading = false;
+   return b->shader;
+}
+
+static nir_shader *
+terakan_meta_nir_build_copy_depth_msaa_ps(struct terakan_device const * const device)
+{
+   return terakan_meta_nir_build_copy_depth_stencil_msaa_ps(device, true,
+                                                            "terakan_meta_copy_depth_msaa_ps");
+}
+
+static nir_shader *
+terakan_meta_nir_build_copy_stencil_msaa_ps(struct terakan_device const * const device)
+{
+   return terakan_meta_nir_build_copy_depth_stencil_msaa_ps(device, false,
+                                                            "terakan_meta_copy_stencil_msaa_ps");
+}
+
+/* One sample of a multisample colour source, exported as raw bits.
+ *
+ * The single-sample copy shader samples the source and lets the hardware resolve, which is not a
+ * copy: a multisample destination has to receive each sample separately. This is the colour
+ * counterpart of the depth and stencil ones above -- one draw per sample, the sample chosen by the
+ * constant and the destination restricted to the same one by the rasterization sample mask.
+ */
+static nir_shader *
+terakan_meta_nir_build_copy_color_msaa_ps(struct terakan_device const * const device)
+{
+   nir_builder builder = nir_builder_init_simple_shader(
+      MESA_SHADER_FRAGMENT, &terakan_device_physical_device(device)->nir_options_fs,
+      "terakan_meta_copy_color_msaa_ps");
+   nir_builder * const b = &builder;
+
+   nir_variable * const position = nir_variable_create(
+      b->shader, nir_var_shader_in, glsl_vec4_type(), "gl_FragCoord");
+   position->data.location = VARYING_SLOT_POS;
+   position->data.interpolation = INTERP_MODE_NOPERSPECTIVE;
+   b->shader->info.inputs_read = BITFIELD64_BIT(VARYING_SLOT_POS);
+   nir_def * const frag_coord = nir_load_var(b, position);
+
+   nir_def * const constants = nir_load_ubo_vec4(
+      b, 4, 32, nir_imm_int(b, TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS), nir_imm_int(b, 0));
+
+   nir_def * const coord = nir_vec3(
+      b,
+      nir_iadd(b, nir_f2i32(b, nir_channel(b, frag_coord, 0)),
+               nir_channel(b, constants, TERAKAN_META_NIR_COPY_CONST_SRC_MINUS_DST_OFFSET_X)),
+      nir_iadd(b, nir_f2i32(b, nir_channel(b, frag_coord, 1)),
+               nir_channel(b, constants, TERAKAN_META_NIR_COPY_CONST_SRC_MINUS_DST_OFFSET_Y)),
+      nir_imm_int(b, 0));
+
+   nir_tex_instr * const fetch = nir_tex_instr_create(b->shader, 2);
+   fetch->op = nir_texop_txf_ms;
+   fetch->sampler_dim = GLSL_SAMPLER_DIM_MS;
+   fetch->is_array = true;
+   fetch->dest_type = nir_type_uint32;
+   fetch->coord_components = 3;
+   fetch->texture_index = TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META;
+   fetch->sampler_index = 0;
+   fetch->src[0] = nir_tex_src_for_ssa(nir_tex_src_coord, coord);
+   fetch->src[1] = nir_tex_src_for_ssa(
+      nir_tex_src_ms_index, nir_channel(b, constants, TERAKAN_META_NIR_COPY_CONST_SAMPLE_INDEX));
+   nir_def_init(&fetch->instr, &fetch->def, 4, 32);
+   nir_builder_instr_insert(b, &fetch->instr);
+
+   /* Raw bits, as for the sample-zero resolve: a copy moves the value rather than converting it,
+    * so one shader serves every format the destination can be bound with.
+    */
+   nir_variable * const colour = nir_variable_create(
+      b->shader, nir_var_shader_out, glsl_uvec4_type(), "colour");
+   colour->data.location = FRAG_RESULT_DATA0;
+   colour->data.driver_location = 0;
+   nir_store_var(b, colour, &fetch->def, 0xF);
+
+   b->shader->info.outputs_written = BITFIELD64_BIT(FRAG_RESULT_DATA0);
+   b->shader->info.fs.uses_sample_shading = false;
+   return b->shader;
+}
+
+/* Averages every sample of a multisample colour source, which is what Evergreen's fixed-function
+ * CB resolve does -- and it can only do it when the source and destination coordinates agree,
+ * because it reads and writes the same one. A region that moves the rectangle needs this instead.
+ *
+ * The source is bound with its own format rather than a transfer one, so the fetch returns values
+ * already converted and the average is taken in the format's own terms.
+ */
+static nir_shader *
+terakan_meta_nir_build_resolve_average_ps(struct terakan_device const * const device,
+                                          unsigned const sample_count, char const * const name)
+{
+   nir_builder builder = nir_builder_init_simple_shader(
+      MESA_SHADER_FRAGMENT, &terakan_device_physical_device(device)->nir_options_fs, "%s", name);
+   nir_builder * const b = &builder;
+
+   nir_variable * const position = nir_variable_create(
+      b->shader, nir_var_shader_in, glsl_vec4_type(), "gl_FragCoord");
+   position->data.location = VARYING_SLOT_POS;
+   position->data.interpolation = INTERP_MODE_NOPERSPECTIVE;
+   b->shader->info.inputs_read = BITFIELD64_BIT(VARYING_SLOT_POS);
+   nir_def * const frag_coord = nir_load_var(b, position);
+
+   nir_def * const constants = nir_load_ubo_vec4(
+      b, 4, 32, nir_imm_int(b, TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS), nir_imm_int(b, 0));
+
+   nir_def * const coord = nir_vec3(
+      b,
+      nir_iadd(b, nir_f2i32(b, nir_channel(b, frag_coord, 0)),
+               nir_channel(b, constants, TERAKAN_META_NIR_COPY_CONST_SRC_MINUS_DST_OFFSET_X)),
+      nir_iadd(b, nir_f2i32(b, nir_channel(b, frag_coord, 1)),
+               nir_channel(b, constants, TERAKAN_META_NIR_COPY_CONST_SRC_MINUS_DST_OFFSET_Y)),
+      nir_imm_int(b, 0));
+
+   nir_def *sum = NULL;
+   for (unsigned sample_index = 0; sample_index < sample_count; ++sample_index) {
+      nir_tex_instr * const fetch = nir_tex_instr_create(b->shader, 2);
+      fetch->op = nir_texop_txf_ms;
+      fetch->sampler_dim = GLSL_SAMPLER_DIM_MS;
+      fetch->is_array = true;
+      fetch->dest_type = nir_type_float32;
+      fetch->coord_components = 3;
+      fetch->texture_index = TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META;
+      fetch->sampler_index = 0;
+      fetch->src[0] = nir_tex_src_for_ssa(nir_tex_src_coord, coord);
+      fetch->src[1] =
+         nir_tex_src_for_ssa(nir_tex_src_ms_index, nir_imm_int(b, (int)sample_index));
+      nir_def_init(&fetch->instr, &fetch->def, 4, 32);
+      nir_builder_instr_insert(b, &fetch->instr);
+      sum = sum != NULL ? nir_fadd(b, sum, &fetch->def) : &fetch->def;
+   }
+
+   nir_variable * const colour = nir_variable_create(
+      b->shader, nir_var_shader_out, glsl_vec4_type(), "colour");
+   colour->data.location = FRAG_RESULT_DATA0;
+   colour->data.driver_location = 0;
+   nir_store_var(b, colour, nir_fmul_imm(b, sum, 1.0 / (double)sample_count), 0xF);
+
+   b->shader->info.outputs_written = BITFIELD64_BIT(FRAG_RESULT_DATA0);
+   b->shader->info.fs.uses_sample_shading = false;
+   return b->shader;
+}
+
+static nir_shader *
+terakan_meta_nir_build_resolve_average_2x_ps(struct terakan_device const * const device)
+{
+   return terakan_meta_nir_build_resolve_average_ps(device, 2,
+                                                    "terakan_meta_resolve_average_2x_ps");
+}
+
+static nir_shader *
+terakan_meta_nir_build_resolve_average_4x_ps(struct terakan_device const * const device)
+{
+   return terakan_meta_nir_build_resolve_average_ps(device, 4,
+                                                    "terakan_meta_resolve_average_4x_ps");
+}
+
+static nir_shader *
+terakan_meta_nir_build_resolve_average_8x_ps(struct terakan_device const * const device)
+{
+   return terakan_meta_nir_build_resolve_average_ps(device, 8,
+                                                    "terakan_meta_resolve_average_8x_ps");
+}
+
 nir_shader *
 terakan_meta_nir_build_copy_image_to_buffer_ps(struct terakan_device const * const device)
 {
@@ -596,6 +838,12 @@ terakan_meta_nir_builder const terakan_meta_nir_builders[TERAKAN_META_SHADER_COU
    [TERAKAN_META_SHADER_COPY_EXPAND_3X_8_PS] = terakan_meta_nir_build_copy_expand_3x_8_ps,
    [TERAKAN_META_SHADER_COPY_EXPAND_3X_16_PS] = terakan_meta_nir_build_copy_expand_3x_16_ps,
    [TERAKAN_META_SHADER_COPY_EXPAND_3X_32_PS] = terakan_meta_nir_build_copy_expand_3x_32_ps,
+   [TERAKAN_META_SHADER_COPY_DEPTH_MSAA_PS] = terakan_meta_nir_build_copy_depth_msaa_ps,
+   [TERAKAN_META_SHADER_COPY_STENCIL_MSAA_PS] = terakan_meta_nir_build_copy_stencil_msaa_ps,
+   [TERAKAN_META_SHADER_COPY_COLOR_MSAA_PS] = terakan_meta_nir_build_copy_color_msaa_ps,
+   [TERAKAN_META_SHADER_RESOLVE_AVERAGE_2X_PS] = terakan_meta_nir_build_resolve_average_2x_ps,
+   [TERAKAN_META_SHADER_RESOLVE_AVERAGE_4X_PS] = terakan_meta_nir_build_resolve_average_4x_ps,
+   [TERAKAN_META_SHADER_RESOLVE_AVERAGE_8X_PS] = terakan_meta_nir_build_resolve_average_8x_ps,
 };
 
 terakan_meta_nir_builder const terakan_meta_nir_terascale_1_builders[TERAKAN_META_SHADER_COUNT] = {

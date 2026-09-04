@@ -1,0 +1,43 @@
+#version 450
+
+/* A transcription of dEQP-VK.binding_model.descriptorset_random.sets4.unifindexed.noubo.nosbo.
+ * nosampledimg.lowimgnotex.noiub.nouab.comp.noia.0, which is the poorest in resources of the cases
+ * that failed: no uniform buffer, no storage buffer, no sampled image, no input attachment, just an
+ * array of storage images indexed through a push constant.
+ *
+ * `identity[i]` holds `i`, so every index here is a constant as far as the program is concerned but
+ * an indirection as far as the compiler is concerned: the array element is selected at run time and
+ * the hardware reaches it through an index register loaded by SET_CF_IDX. The load below is what
+ * breaks when that register is not loaded in time -- it is a MEM_RAT read, and the scheduler used
+ * not to treat the index register as one of its operands, so the read could be issued before the
+ * ALU that sets the index and land on whichever array element the register happened to hold.
+ *
+ * The two conditional stores are what makes the scheduler willing to move things about; they write
+ * back the values their targets already hold, so nothing observable depends on them.
+ */
+
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, r32i) uniform iimage2D output_image;
+layout(set = 0, binding = 1, r32i) uniform iimage2D indexed_images[3];
+
+layout(push_constant) uniform Push {
+   int identity[4];
+} push;
+
+void
+main()
+{
+   const int invocation_id = int(gl_GlobalInvocationID.y) * 8 + int(gl_GlobalInvocationID.x);
+
+   /* indexed_images[0] holds 1, so accum stays zero unless the read went to the wrong element. */
+   int accum = 0;
+   accum |= imageLoad(indexed_images[push.identity[0]], ivec2(0, 0)).x - 1;
+
+   if (invocation_id == 2)
+      imageStore(indexed_images[push.identity[1]], ivec2(0, 0), ivec4(2, 0, 0, 0));
+   if (invocation_id == 3)
+      imageStore(indexed_images[push.identity[2]], ivec2(0, 0), ivec4(3, 0, 0, 0));
+
+   imageStore(output_image, ivec2(gl_GlobalInvocationID.xy), ivec4(accum == 0 ? 1 : 0, 0, 0, 0));
+}

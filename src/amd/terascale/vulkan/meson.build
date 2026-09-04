@@ -1568,6 +1568,40 @@ if with_tests
         timeout : 20,
       )
 
+      terakan_descriptor_set_shape_fragment_spv = custom_target(
+        'terakan_descriptor_set_shape.frag.spv.h',
+        input : 'tests/terakan_descriptor_set_shape.frag',
+        output : 'terakan_descriptor_set_shape.frag.spv.h',
+        command : [
+          prog_glslang, '-V', '-x', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_descriptor_set_shape.frag.spv.h.d',
+      )
+      terakan_descriptor_set_shape_test = executable(
+        'terakan_descriptor_set_shape_test',
+        [
+          'tests/terakan_descriptor_set_shape_test.cpp',
+          terakan_color_msaa_write_vertex_spv,
+          terakan_descriptor_set_shape_fragment_spv,
+        ],
+        dependencies : vulkan_loader_dep,
+      )
+      # Reduced from a `descriptorset_random` case that lost ten of its sixty-four texels: a
+      # dynamically indexed store inside a branch and an indexed read after it shared one
+      # `SET_CF_IDX0` that sat inside the branch, so the read landed on the store's resource.
+      test(
+        'terakan_descriptor_set_shape',
+        terakan_descriptor_set_shape_test,
+        depends : [libvulkan_terascale, _dev_icd],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 20,
+      )
+
       terakan_attachmentless_atomic_fragment_spv = custom_target(
         'terakan_attachmentless_atomic.frag.spv.h',
         input : 'tests/terakan_attachmentless_atomic.frag',
@@ -2046,6 +2080,36 @@ if with_tests
         timeout : 20,
       )
 
+      terakan_indexed_image_array_spv = custom_target(
+        'terakan_indexed_image_array.spv.h',
+        input : 'tests/terakan_indexed_image_array.comp',
+        output : 'terakan_indexed_image_array.spv.h',
+        command : [
+          prog_glslang, '-V', '-x', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_indexed_image_array.spv.h.d',
+      )
+      terakan_indexed_image_array_test = executable(
+        'terakan_indexed_image_array_test',
+        [
+          'tests/terakan_indexed_image_array_test.c',
+          terakan_indexed_image_array_spv,
+        ],
+        dependencies : vulkan_loader_dep,
+      )
+      test(
+        'terakan_indexed_image_array',
+        terakan_indexed_image_array_test,
+        depends : [libvulkan_terascale, _dev_icd],
+        env : {
+          'VK_DRIVER_FILES' : _dev_icd.full_path(),
+          'VK_ICD_FILENAMES' : _dev_icd.full_path(),
+          'VK_LOADER_LAYERS_DISABLE' : '~implicit~',
+        },
+        timeout : 20,
+      )
+
       terakan_image_gather_spv = custom_target(
         'terakan_image_gather.spv.h',
         input : 'tests/terakan_image_gather.comp',
@@ -2296,6 +2360,46 @@ if with_tests
           'tests/terakan_vertex_fetch_bounds_probe.c',
           terakan_vertex_fetch_bounds_vertex_spv,
           terakan_vertex_fetch_bounds_fragment_spv,
+        ],
+        dependencies : vulkan_loader_dep,
+      )
+
+      # Deliberately not wired into test(): a characterization tool whose output is a table to
+      # read, not a pass/fail result. See the comment at the top of its source.
+      terakan_depth_clear_extent_probe = executable(
+        'terakan_depth_clear_extent_probe',
+        ['tests/terakan_depth_clear_extent_probe.c'],
+        dependencies : vulkan_loader_dep,
+      )
+
+      terakan_vertex_format_2_10_10_10_vertex_spv = custom_target(
+        'terakan_vertex_format_2_10_10_10.vert.spv.h',
+        input : 'tests/terakan_vertex_format_2_10_10_10.vert',
+        output : 'terakan_vertex_format_2_10_10_10.vert.spv.h',
+        command : [
+          prog_glslang, '-V', '-x', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_vertex_format_2_10_10_10.vert.spv.h.d',
+      )
+      terakan_vertex_format_2_10_10_10_fragment_spv = custom_target(
+        'terakan_vertex_format_2_10_10_10.frag.spv.h',
+        input : 'tests/terakan_vertex_format_2_10_10_10.frag',
+        output : 'terakan_vertex_format_2_10_10_10.frag.spv.h',
+        command : [
+          prog_glslang, '-V', '-x', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_vertex_format_2_10_10_10.frag.spv.h.d',
+      )
+      # Deliberately not wired into test(): a characterization tool whose output is a table to
+      # read, not a pass/fail result. See the comment at the top of its source.
+      terakan_vertex_format_2_10_10_10_probe = executable(
+        'terakan_vertex_format_2_10_10_10_probe',
+        [
+          'tests/terakan_vertex_format_2_10_10_10_probe.c',
+          terakan_vertex_format_2_10_10_10_vertex_spv,
+          terakan_vertex_format_2_10_10_10_fragment_spv,
         ],
         dependencies : vulkan_loader_dep,
       )

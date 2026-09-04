@@ -413,7 +413,11 @@ RatInstr::do_ready() const
       }
    }
 
-   return m_data.ready(block_id(), index()) && m_index.ready(block_id(), index());
+   /* The resource offset is the index register the RAT id is taken from, so the ALU that
+    * loads it has to be scheduled first -- exactly as for GDS, fetch and tex instructions.
+    */
+   return m_data.ready(block_id(), index()) && m_index.ready(block_id(), index()) &&
+          resource_ready(block_id(), index());
 }
 
 void

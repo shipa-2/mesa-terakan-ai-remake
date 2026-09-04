@@ -160,6 +160,32 @@ enum terakan_meta_shader_index {
    TERAKAN_META_SHADER_COPY_EXPAND_3X_16_PS,
    TERAKAN_META_SHADER_COPY_EXPAND_3X_32_PS,
 
+   /* Copies one sample of a multisample depth or stencil aspect, the sample index and the source
+    * offset coming from the constants, exporting the fetched value so DB writes it. A multisample
+    * depth surface does not carry its samples where the colour block puts a colour surface's, so
+    * the reinterpret-as-colour copy the single-sample path uses cannot be extended to more than
+    * one sample; only a whole-plane byte copy could, and that needs the region to be the whole
+    * level at the same array layer. Built as NIR; see meta/terakan_meta_nir.c.
+    */
+   TERAKAN_META_SHADER_COPY_DEPTH_MSAA_PS,
+   TERAKAN_META_SHADER_COPY_STENCIL_MSAA_PS,
+
+   /* Copies one sample of a multisample colour image, the sample index and the source offset
+    * coming from the constants. The single-sample copy shader samples the source and lets the
+    * hardware pick, which is a resolve rather than a copy: a multisample destination has to be
+    * given each sample separately. Built as NIR; see meta/terakan_meta_nir.c.
+    */
+   TERAKAN_META_SHADER_COPY_COLOR_MSAA_PS,
+
+   /* Averages every sample of a multisample colour source, which is what the fixed-function CB
+    * resolve does. It can only do it where the source and destination coordinates agree, since it
+    * reads and writes the same one, so a region that moves the rectangle comes here. The indices
+    * for the three sample counts must be consecutive. Built as NIR; see meta/terakan_meta_nir.c.
+    */
+   TERAKAN_META_SHADER_RESOLVE_AVERAGE_2X_PS,
+   TERAKAN_META_SHADER_RESOLVE_AVERAGE_4X_PS,
+   TERAKAN_META_SHADER_RESOLVE_AVERAGE_8X_PS,
+
    TERAKAN_META_SHADER_COUNT,
 };
 

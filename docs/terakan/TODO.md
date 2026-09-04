@@ -14,9 +14,9 @@ accept the work. Both use a 1–5 scale.
 | ~~Implement and validate FMASK/CMASK allocation, identity initialization and sampled MSAA addressing~~ **FIXED** | 5/5 | 5/5 | **Acceptance criteria met.** Per-sample reads pass at 2x/4x/8x (`terakan_color_msaa_fetch_2x`/`_4x`/`_8x`, each sample given its own distinct colour so a fetch landing on the wrong plane is caught), resolved reads pass at 2x/4x/8x against a genuinely multi-valued surface whose mean differs from every individual sample (`terakan_color_resolve_multivalued_2x`/`_4x`/`_8x`, which also keeps CB compression and fast clear enabled and so covers the compressed CB write and CB_RESOLVE path), and the rest of the suite stays green, which is the "without corrupting ordinary color targets" half. Three real bugs were found and fixed -- see the note below | Per-sample reads and resolved reads pass for 2x/4x/8x images without corrupting ordinary color targets |
 | ~~Fix stencil-only render targets on combined depth/stencil images~~ **FIXED** | 4/5 | 3/5 | **Root-caused and fixed.** `terakan_hw_config_draw_set_db_depth_stencil_buffer()` stored the two aspects' base addresses *swapped* whenever depth was not bound, so the stencil-only emit path wrote the depth plane's address into `DB_STENCIL_READ_BASE`/`DB_STENCIL_WRITE_BASE` and every stencil write landed in the depth plane. Verified directly with register-level instrumentation: the incoming descriptor had `z_base=0x0`/`stencil_base=0x4` and the emit chose `0x0`. Fixed by storing each base as itself; the emit path never writes the unbound aspect's base registers at all, so the swap accomplished nothing, and the setter's own dedup comparison (which compares each stored base against the incoming descriptor's same-named field) was silently broken by it too. `terakan_stencil_only_render` regression-covers both the previously broken shape and the depth-bound workaround shape, and is a verified negative control: against the unfixed driver it fails 15/16 stencil-only iterations while the depth-bound pass still passes | A stencil-only `vkCmdBeginRendering` (`pDepthAttachment == NULL`, `pStencilAttachment` naming a combined-format image) writes and reads back correctly without a depth attachment bound alongside, at any sample count, repeatably |
 | Complete cache and barrier coherency | 5/5 | 4/5 | Implementable. Composition coverage now exists (`terakan_frame_chain` with the render-pass producer, the compute producer, `--compute-ssbo` for a storage-buffer producer/consumer alongside the storage-image one, `--multi-size` for a second, independently sized 4x4 chain recorded within the same per-frame block as the main 16x16 one, and `--compute-multi-pipeline` for six distinct `VkPipeline` objects bound round-robin across frames instead of rebinding one) and all pass, closing every concrete gap the original coverage note named. Whatever remains is narrower than this composition shape, not a specific named scenario | Focused attachment, texture, storage, transfer, graphics/compute and query producer-consumer chains pass without application-specific waits |
-| Cover remaining copy, blit and resolve format/subresource combinations | 5/5 | 4/5 | **The CTS binary is available after all** -- a built `deqp-vk` from VK-GL-CTS 1.4.6.1 sits beside the repository and runs against Terakan through `bin/terakan-run`, contradicting the note repeated here and in FUNCTIONAL_COVERAGE.md that it was not installed. `dEQP-VK.api.copy_and_blit.core.resolve_image` was run for the first time: 15 passed, 87 failed, 138 unsupported. Two self-inflicted causes are fixed (an unmeasured requirement that source and destination surface dimensions match, and cross-layer resolve, now handled by shifting the destination base rather than being skipped), taking it to 33 passed and 69 failed. The remainder decomposes exactly: **multisample `vkCmdCopyImage` is no longer a silent no-op** for the whole-surface case -- two identically laid out surfaces are now copied verbatim through CP DMA, metadata included, covered by `terakan_copy_image_multisample` with a negative control -- which takes the group to **69 passing and 33 failing**. Of those 33, 24 are multisample copies that are not the whole of two identical surfaces (subregion, single layer, differing layouts) and still need the meta-draw path the `TODO(Triang3l)` in `terakan_meta_copy_image.c` describes, and 9 (`partial`, `with_regions`) need differing source and destination offsets, which wants the disabled shader resolve path. The earlier subresource and cross-layer findings still stand and are regression-covered by `terakan_copy_image_subresource` and `terakan_color_resolve_subresource`. Blit groups have not been rerun since the binary was found | Boundary tests cover non-zero offsets, partial extents, mip levels, array/3D layers and every advertised compatible format class A 2778-case copy batch (`image_to_image` simple/dimensions/array/cube/3d, and all of `buffer_to_image`, `image_to_buffer`, `buffer_to_buffer`, `buffer_to_depthstencil`) passes **1146 with zero failures**, including 672 `dimensions` cases of varying extents and offsets -- which is the boundary coverage the acceptance criteria name. A sampled `image_to_image.all_formats` run adds 1439 passing and zero failing, so image-to-image copying is clean across the format matrix; blitting is not, see the row above |
+| ~~Cover remaining copy, blit and resolve format/subresource combinations~~ **FIXED** | 5/5 | 4/5 | **Acceptance criteria met.** The group was run with the CTS binary that turned out to be available after all, and closed in three steps. `resolve_image` started at 15 passing and 87 failing; two self-inflicted causes went first (an unmeasured requirement that source and destination surface dimensions match, and cross-layer resolve, now done by shifting the destination base), then multisample `vkCmdCopyImage` stopped being a silent no-op for the whole-surface case through CP DMA, then the two remaining shapes were implemented: a multisample colour copy a sample at a time for regions the byte copy cannot express, and a shader resolve for regions whose source and destination offsets differ, with NIR shaders averaging two, four or eight samples. `resolve_image` is now **102 passing and none failing**. Around it: a 7600-case sample of `blit_image` passes 1117 with none failing, a 5906-case sample of `image_to_image` and `depth_stencil_msaa_copy` passes 2823 with none failing, and an 8536-case stride sample of the whole of `api.copy_and_blit` passes 1701 with none failing. Regression-covered by `terakan_copy_image_subresource`, `terakan_color_resolve_subresource`, `terakan_copy_image_multisample` and `terakan_blit_format_matrix` | Boundary tests cover non-zero offsets, partial extents, mip levels, array/3D layers and every advertised compatible format class A 2778-case copy batch (`image_to_image` simple/dimensions/array/cube/3d, and all of `buffer_to_image`, `image_to_buffer`, `buffer_to_buffer`, `buffer_to_depthstencil`) passes **1146 with zero failures**, including 672 `dimensions` cases of varying extents and offsets -- which is the boundary coverage the acceptance criteria name. A sampled `image_to_image.all_formats` run adds 1439 passing and zero failing, so image-to-image copying is clean across the format matrix; blitting is not, see the row above |
 | ~~Correct meta blit format coverage~~ | 5/5 | 3/5 | **Acceptance criteria met.** `blit_image.simple_tests` passes 114 with none failing, and it is exactly what the criteria name: mirrored X, Y and XY, mirrored subregions, and the 3D variant of each. `terakan_blit_format_matrix` covers RGBA to BGRA straight and mirrored, and identity R32. The sampled per-format matrix went from 204 failures to 18 through four fixes and three measured withdrawals; what remains of it is 6 3D linear blits, whose cause is identified -- a 3D source is sampled as a 2D array, which has no depth filter -- and which now needs a shader rather than more bytecode | All basic CTS blits pass for RGBA, BGRA, R32, reversed source/destination axes and 3D slices |
-| ~~Correct descriptor binding across arrays, slices and update timing~~ **mostly closed** | 5/5 | 3/5 | `dEQP-VK.binding_model` was run for the first time and four separate defects came out of it. Arrays of uniform texel buffers all read element zero, because `nir_chase_binding` collects array indices only for images and samplers and a separate texture is `GLSL_TYPE_TEXTURE`; a dynamically indexed one failed separately, because `TexInstr::emit_buf_txf` read the resource offset from `sampler_offset` and a sampled buffer has no sampler. Non-array storage image views ignored `baseArrayLayer`, because the view type asked for `TEXTURE2D` and the hardware has no slice to select under a non-array resource type; cube storage images lost their face for the same reason. Update after bind was advertised and cannot work, since `terakan_CmdBindDescriptorSets` snapshots the descriptors into the command stream as register state, and has been withdrawn. `shader_access` is now clean at 1470 of 1470 supported storage image cases and 108 of 108 texel buffer array cases, and `api.buffer_view` is at 411 passing and 0 failing. **What remains is `descriptorset_random` at 649 failing of 2752**, down from 1752; no single further cause was found -- combined image sampler arrays pass under both constant and dynamic indexing in a direct probe, and the failure rate is an even ~30% across every axis of the group, which reads as a combination effect rather than one defect | Descriptor arrays, single-slice and cube views, and the advertised update timings all behave as specified |
+| ~~Correct descriptor binding across arrays, slices and update timing~~ **mostly closed** | 5/5 | 3/5 | `dEQP-VK.binding_model` was run for the first time and four separate defects came out of it. Arrays of uniform texel buffers all read element zero, because `nir_chase_binding` collects array indices only for images and samplers and a separate texture is `GLSL_TYPE_TEXTURE`; a dynamically indexed one failed separately, because `TexInstr::emit_buf_txf` read the resource offset from `sampler_offset` and a sampled buffer has no sampler. Non-array storage image views ignored `baseArrayLayer`, because the view type asked for `TEXTURE2D` and the hardware has no slice to select under a non-array resource type; cube storage images lost their face for the same reason. Update after bind was advertised and cannot work, since `terakan_CmdBindDescriptorSets` snapshots the descriptors into the command stream as register state, and has been withdrawn. `shader_access` is now clean at 1470 of 1470 supported storage image cases and 108 of 108 texel buffer array cases, and `api.buffer_view` is at 411 passing and 0 failing. `descriptorset_random` came down from 1752 failing to 649, and two SFN defects reduced out of it took that to 211 and then 52 of 2752. Both were about the index register a resource id is taken from: the pass that inserts the load reused one established inside a conditional block for consumers after it, and the scheduler did not count that register among a `MEM_RAT`'s operands, so a RAT read could be issued ahead of its own `SET_CF_IDX`. **What remains is 52**, all fragment and all `dynindexed` (30) or `runtimesize` (22); `noarray`, `constant`, `unifindexed` and every compute case are clean | Descriptor arrays, single-slice and cube views, and the advertised update timings all behave as specified |
 
 ## P1 — broad DXVK and D3D11 compatibility
 
@@ -1463,27 +1463,99 @@ closed "many distinct compute pipelines rather than one" -- every concrete
 gap this note originally named. So whatever the application hits is narrower
 than this composition shape.
 
+## Multisample colour copies that are not the whole of two identical surfaces
+
+`vkCmdCopyImage` between two multisample colour images had one path: a byte copy of the whole
+surface through CP DMA, which needs the two to be laid out identically and the region to cover
+all of both. Anything else fell to the single-sample meta draw, which cannot stand in for it --
+it samples the source, and sampling a multisample image resolves rather than copies, and it
+writes a single-sample destination.
+
+`dEQP-VK.api.copy_and_blit.core.resolve_image` is where that showed, since five of its groups
+copy the multisample image before resolving it. The shape they use is a one-layer source
+broadcast into five destination layers, one region per layer, so the two surfaces differ and the
+byte copy cannot apply.
+
+The colour counterpart of the depth and stencil path is what it wanted: bind the destination as a
+multisample colour target, draw once per sample with `PA_SC_AA_MASK` restricting the draw to the
+sample the shader fetched, and fetch that sample from the source with `txf_ms`. Unlike the depth
+one it needs nothing from DB, and unlike the byte copy it does not care whether the layouts match
+or which layer goes where, because the samples travel through the shader rather than through
+memory. One layer per draw, since the source and destination layers are independent.
+
+`resolve_image` goes from 33 failures to 9, all 24 of the copy cases fixed, and a 5906-case
+sample of `image_to_image` and `depth_stencil_msaa_copy` stays at 2823 passing and none failing.
+
+### Resolves that move the rectangle
+
+The 9 left were `partial` and `with_regions`: resolves whose source and destination offsets
+differ. Evergreen's fixed-function CB resolve reads and writes the same coordinate, so it cannot
+express one, and those regions were being skipped -- the resolve silently did nothing for them.
+
+The driver already had a shader path, used for integer formats because averaging is not what
+Vulkan asks of them and `CB_RESOLVE` cannot be told to stop. It reaches the source through a
+fetch, so it can offset it; what it lacked was a reason to run for anything else, and an average.
+Both are now there: the path is taken whenever a region moves the rectangle, the source offset
+arrives in the same constants the copy shaders use, and three NIR shaders average two, four or
+eight samples for the formats that want an average rather than a selected sample.
+
+The hand-written 2x averaging shader that has sat unused since the beginning is still unused --
+it did not decode direct sample coordinates correctly and corrupted the whole frame, which is why
+it was disabled, and the NIR ones replace it rather than revive it.
+
+`resolve_image` is now 102 passing and none failing, from 33 failing when this row was written.
+A 460-case sample of `renderpass`, `renderpass2` and `pipeline.multisample` has one failure,
+`min_sample_shading.min_0_75.samples_2.primitive_triangle`, which fails identically without this
+change.
+
 ## Multisample depth/stencil copies of anything but the whole image
 
-`dEQP-VK.api.copy_and_blit.*.depth_stencil_msaa_copy` passes 216 of the 324
-cases it supports and fails 108, split cleanly by one axis: every `whole` case
-passes and every `partial` and `array_to_array` case fails, at all three sample
-counts and every depth/stencil format.
+`dEQP-VK.api.copy_and_blit.*.depth_stencil_msaa_copy` passed 216 of the 324
+cases it supports and failed 108, split cleanly by one axis: every `whole` case
+passed and every `partial` and `array_to_array` case failed, at all three
+sample counts and every depth/stencil format. It now passes 324 of 324.
 
-These copies are done as a byte copy of the aspect plane, which
-`terakan_meta_copy_image_multisample_aspect_plane` accepts only for a region
-covering the whole level at the same array layer on both sides -- the meta draw
-that would otherwise handle it cannot read or write multisample depth. A
-partial rectangle of a tiled surface is not a contiguous byte range, and the
-layer index feeds the bank and pipe swizzle of a macro-tiled surface, so the
-bytes of one slice do not decode as another.
+`whole` was, and still is, an aspect-plane byte copy. That is all it can be:
+a partial rectangle is not a contiguous byte range of a tiled surface, and on a
+macro-tiled one -- which these are, `TERAKAN_DEBUG_IMAGE_OPS` reports `mode=4`
+-- the array layer feeds the bank and pipe swizzle, so the bytes of one slice
+do not decode as another. Relaxing the layer condition for linear and 1D-tiled
+surfaces was tried first and changed nothing for exactly that reason.
 
-Relaxing the layer condition for linear and 1D-tiled surfaces, where slices are
-laid out identically and the swizzle does not rotate, was tried and changed
-nothing: `TERAKAN_DEBUG_IMAGE_OPS` shows these images at `mode=4`, which is
-`ARRAY_2D_TILED_THIN1`. Closing this needs the multisample depth/stencil copy
-path the `TODO(Triang3l)` in `terakan_CmdCopyImage2` already names, not another
-condition on the byte copy.
+The obvious next shape was the one the single-sample copy uses: bind the
+destination aspect as a colour target of the same block size, bind the source
+as a texture, draw the destination rectangle, and for multisampling do one draw
+per sample with `PA_SC_AA_MASK` restricting each. That was built and measured,
+and it does not work:
+
+- forced onto `terakan_copy_image_multisample`, a four-sample 8x8
+  `r8g8b8a8_unorm` whole-surface copy, through
+  `TERAKAN_DEBUG_DISABLE_IMAGE_CP_DMA=1`, it copies all 64 texels of all four
+  samples correctly, so the mechanism itself is sound;
+- on depth it fixed nothing and broke the `whole` cases the byte copy gets
+  right -- same image, same region, only the mechanism differing, with texel
+  (0,1) still holding the clear value while (0,0) was correct. A full sample
+  mask left the same texel unwritten, so the mask was not the cause.
+
+A multisample depth surface therefore does not carry its samples where the
+colour block puts a colour surface's, and the reinterpretation that makes the
+single-sample copy simple stops working past one sample.
+
+What works is a DB destination: `terakan_meta_copy_image_multisample_depth_stencil`
+binds the destination as a depth target, and the fragment shader exports the
+sample it fetched, one draw per sample with the rasterization sample mask
+restricting each to the sample it carries. Stencil needs no per-bit trick, which
+is what this was expected to need: `STENCIL_EXPORT_ENABLE` lets the shader
+supply the value a `REPLACE` operation writes, which the resolve path already
+relied on, so both aspects are the same draw with a different export slot and
+`DB_DEPTH_CONTROL`. The source offset reaches the shader through the constants
+the single-sample copy already uses, which is what makes `partial` work, and the
+source and destination layers are selected independently -- the source through
+its texture descriptor's `BASE_ARRAY`, the destination through `SLICE_START` in
+DB -- which is what makes `array_to_array` work.
+
+`whole` still takes the byte copy: it is attempted first and this path runs only
+when it declines.
 
 ## gl_SampleMaskIn reports the wrong number of bits
 
@@ -1502,21 +1574,83 @@ rather than reducing it to the current sample's bit. Narrowing it to
 surplus is not above the sample count; what that register actually holds on
 this hardware has still to be established.
 
-## Depth/stencil clears of high array layers on small images
+## Depth/stencil clears on small images
 
-`dEQP-VK.api.image_clearing.*.clear_depth_stencil_image` passes 350 of the 450
-cases it supports and fails 100. The axes are sharp:
+`dEQP-VK.api.image_clearing.*.clear_depth_stencil_image` passes 349 of the 450
+cases it supports and fails 101, and it is the whole of what
+`api.image_clearing` still fails. The axes, remeasured:
 
-- The layer range decides it. `multiple_layers`, which clears layers 2 to 6,
-  passes every case. `remaining_array_layers` and its `twostep` variant, which
-  clear from layer 8 to the end of a sixteen-layer image, account for almost
-  all the failures.
-- The image size decides it. At 200x180 and 55x21x11 every layer range passes;
-  the failures are at 1x33, 32x29x3, 33x128 and 64x11.
-- The aspect decides it. `d32_sfloat_64x11` at `remaining_array_layers` passes
-  while `s8_uint_64x11` fails, and the message is always a stencil one:
-  `Ref:6 Threshold:0 Stencil:0`, a texel inside the clear range still holding
-  the initial value, so the clear did not reach it.
+- **The image size decides it, and it is the only axis that decides it
+  outright.** At 200x180 and 55x21x11 everything passes, whatever the format,
+  aspect or layer range. The failures are all at 1x33, 64x11, 33x128 and
+  32x29x3, and at 1x33 every single format fails.
+- **Not the layer range**, which the earlier reading of this had wrong. Of the
+  101, 63 are `single_layer` -- a one-layer image cleared whole -- against 22
+  for `remaining_array_layers` and 16 for its `twostep` variant.
+- **Not the aspect**, which the earlier reading also had wrong. Depth-only
+  formats fail too: 11 `d16_unorm`, 8 `x8_d24_unorm_pack32`, 7 `d32_sfloat`,
+  and the message for those is `Depth value mismatch! Ref:0.1 Threshold:1.4e-44
+  Depth:0` -- a texel that should have been cleared to 0.1 still holding zero.
+- **Not the mip level.** Instrumenting the clear shows one draw at level 0 for
+  these cases; the images have a single level.
+- It stays order dependent at the edges: `d32_sfloat_64x11` fails under one of
+  the two allocation prefixes and passes under the other in the same run. The
+  four sizes and `1x33`'s completeness are stable.
+
+The single-case reproduction the earlier note warned against does work for the
+clear ones: `2d.single_layer.d32_sfloat_64x11` and `_1x33` fail on their own,
+three times out of three, while `_200x180` passes.
+
+Excluded by measurement, in addition to the older list below: the depth
+descriptor. `DB_DEPTH_SIZE` and `DB_DEPTH_SLICE` were printed for a failing
+64x11 and a passing 200x180 and both decode exactly right -- pitch 64 and 200,
+height 16 and 184, slice 1024 and 36800 texels, matching the aligned extents.
+
+### The command sequence is excluded too
+
+`terakan_depth_clear_extent_probe` rebuilds dEQP's sequence ingredient by
+ingredient and passes at every one of the six sizes, the four that fail and the
+two that pass alike. It has the full mip chain with only level zero cleared,
+the fill from a buffer of zeroes rather than from a clear, `TRANSFER_DST_OPTIMAL`
+for the clear and both copies, image barriers naming transfer access on both
+sides of the clear -- which is what Vulkan calls it, rather than the depth write
+this driver implements it as -- and a readback of every level in one command at
+dEQP's four-byte-aligned offsets.
+
+And the clear itself was compared directly rather than inferred: printing the
+rectangle and the whole depth/stencil descriptor from inside the driver gives
+byte-identical lines for the failing dEQP case and the passing probe --
+`rect=64x11 size=0x00000807 slice=0x0000000f zinfo=0x00002023`.
+
+So it is not what the clear is asked to do, and not the sequence around it.
+
+### A neighbouring defect the probe did find
+
+Instrumenting `vkCreateImage` says dEQP creates these images with **one mip level**, not the
+chain the probe had been giving them. Matching that turns the probe's six clean lines into two
+failures -- and they are the two sizes dEQP passes, not the four it fails:
+
+    200x180   1568 of 36000 texels left at the fill value, rows 160..175 from x 128
+              and rows 176..179 from x 96
+    55x21x11  1678 of 12705, in the last two depth slices
+
+So a single-level depth image loses the tail of its clear, and the same image with a full mip
+chain does not -- `TERAKAN_PROBE_MIPS=1` in the probe is the control, and it comes back clean at
+every size. What makes it worth chasing is how little else differs. The depth descriptor is
+identical either way: `size=0x0000b018`, pitch 200, height 184, `slice_tile_max=574` for the full
+36800-texel slice. So is the memory requirement, 147200 bytes, exactly that aligned slice. The
+missing texels hold precisely what the fill copy wrote, so the copy reached them and the draw did
+not, and forcing linear images or changing the barrier alters nothing.
+
+That leaves the mip count deciding the outcome while nothing the driver programs for the clear
+depends on it, which is the shape of a defect in how the surface is laid out for a single-level
+image rather than in the clear.
+
+### And dEQP's own failures are still unexplained
+
+The four sizes dEQP fails at stay clean in the probe under every combination tried, single level
+included. So there are two defects here, selecting opposite sizes, and the one dEQP sees still
+needs what the process did before the case rather than what it does during it.
 
 The colour path is not affected in the same shape: `clear_color_image` with
 `remaining_array_layers` on `r8_uint` passes at 64x11 and 1x33, one byte per
@@ -1576,12 +1710,261 @@ correct:
 - Shader size and register pressure: the failing shaders use 6 and 9 GPRs
   against 13 for a passing one, and 458 and 544 dwords against 418.
 
+Later rounds excluded three more, each reproduced the same way and each leaving
+all 64 texels correct: two typed image RATs in one fragment shader, a
+dynamically indexed array of uniform buffers read the way the failing shaders
+read theirs (`values[accum + N]`, with `accum` an SSA value the compiler cannot
+fold), and a dynamically indexed array of storage images written from divergent
+control flow -- which is what makes the backend emit `MEM_RAT ... RATn[IDXm]`,
+the indexed RAT writes the failing shaders contain and no earlier reproducer
+had. Neither the copy mechanism nor mega-fetch coalescing moves the set either:
+`TERAKAN_DEBUG_DISABLE_IMAGE_CP_DMA` and
+`TERAKAN_DEBUG_DISABLE_MEGA_FETCH_COALESCING` leave it identical.
+
 Two things are known to change the outcome and are the place to start next.
 `TERAKAN_DEBUG_FORCE_LINEAR_IMAGES=1` changes the failing set entirely, to 33
-different texels, so image tiling reaches the result even though coverage and
-the final store in isolation are correct. And the failing shaders bind between
-four and eight UAVs while the reproducer binds one, which is the largest
-remaining difference from the shapes already excluded.
+different texels following the clean rule "missing iff `((x>>1)&1) != (y&1)`"
+with exactly one exception, texel 62 -- which is also missing in the tiled case.
+A rule that misses exactly half the texels is a pairwise address collision, not
+a permutation, and a permutation would be invisible here because every written
+texel gets the same value. So the write address loses a bit somewhere, and the
+bit it loses depends on the tiling.
+
+Order dependence was considered and ruled out for this family, though it is
+real for the depth/stencil clears: the same case fails with the same ten texels
+run on its own and run after fifteen unrelated passing cases in one process, so
+reproducing these shapes in isolation is a valid method here even though it is
+not for the clears.
+
+Two further shapes were excluded the same way, both taken from what the failing
+shaders actually contain: three separate 1x1 storage images bound alongside the
+8x8 destination, and stores into them from divergent control flow through a
+dynamically indexed array. Ten reproductions now stand at all 64 texels
+correct.
+
+`TERAKAN_DEBUG_DUMP_FRAGMENT_BYTECODE=1` dumps the fragment programs the way
+the compute one already did, which is how the indexed RAT writes were found.
+
+### The reduction
+
+`terakan_descriptor_set_shape` is that case standing on its own: the four
+descriptor sets it declares, the values it checks for, and its fragment shader
+as a file next to the test, so statements can be deleted from it. It reproduces
+the failure exactly -- the same ten texels, 44, 50-53 and 58-62 -- and is
+registered with `should_fail : true`, so the suite stays green while the defect
+is open and says so loudly when it closes.
+
+Deleting statements gives a shape no single ingredient has:
+
+- The reads alone pass and the conditional stores alone pass. Only together do
+  they fail, which is why ten reductions that each took one ingredient came back
+  clean.
+- The store has to be **dynamically indexed**. Keeping only
+  `ssbo3_0[accum + 0].val = 33` fails, and so does keeping only the two
+  `simage2_4[accum + N]` stores; keeping only `simage1_10` or only `ssbo2_2`,
+  the two that are not arrays, passes.
+- The reads have to include a **storage buffer** read. Three texel-buffer reads
+  plus one SSBO read fail, from either texel binding. Four texel-buffer reads
+  without an SSBO read pass, whether they come from one binding or two. Five
+  uniform-buffer reads pass. Two texel reads plus an SSBO read pass.
+
+So it is not a count -- four fetches pass and four fetches fail depending on
+what they are -- and not a single descriptor, since either texel binding serves.
+The smallest failure so far is three texel-buffer reads, one storage-buffer
+read, and one dynamically indexed storage-buffer store.
+
+### The cause
+
+Reducing further gave a pair of shaders differing in one thing only: statement
+order. With the dynamically indexed store placed *before* the storage buffer
+read it fails; with the same statements in the other order it passes. Writing
+`accum` out instead of the pass/fail flag says what the failing lanes computed:
+`-34`, which is `accum |= temp - 34` with `temp == 0`, so that one read returned
+zero instead of the value it holds, and only for those lanes. The texels are
+written, with the wrong value; they are not missing.
+
+The bytecode of the failing order shows why:
+
+    0016 ALU:  MOVA_INT __.x, R5.x ; SET_CF_IDX0     <- inside the if
+    0022 MEM_RAT WRITE_IND RAT1[IDX0] STORE_TYPED
+    0024 POP
+    0026 VFETCH R0.x, R3.x, RID:36 ... SQ_CF_INDEX_0 <- outside, index not set
+
+The indexed store inside the branch and the indexed read after it share one
+`SET_CF_IDX0`, and it sits inside the branch. `SET_CF_IDX0` loads a wave-scalar
+index from a lane of whatever is active when it runs, so the value the read
+outside gets is the one an active lane of the branch produced -- here the store's
+index, not its own -- and the read lands on the wrong resource and returns zero.
+Whether a wave sees it depends on whether that wave took the branch, which is why
+some fragments are wrong and not all: the draw is two triangles, and every wrong
+texel is on the same side of the diagonal as invocation 33, the one the branch is
+taken for.
+
+This is not the assembler's to fix. `emit_index_reg` re-emits the index when the
+source register changes or inside a loop, and adding branches to that condition
+changes nothing, because the fetch does not ask the assembler for an index: its
+`buffer_index_mode` is decided earlier and the index-setting ALU was already
+placed inside the branch. The placement is SFN's, and the rule it is missing is
+that a value carrying `addr_or_idx` must not be shared with a consumer outside
+the block it is established in.
+
+### The fix
+
+`AddressSplitVisitor` in `sfn_split_address_loads.cpp` keeps `m_current_idx_src[2]`,
+the source register each index register was last loaded from, and `reuse_loaded_idx`
+skips emitting a load whenever the requested source matches one of them. `visit(Block *)`
+resets everything else it carries between blocks -- the address load, the address
+register, the pending uses, the non-ALU predecessors -- but not that pair, so a
+`SET_CF_IDX` emitted inside a conditional block stayed on the books for consumers in
+every block after it. Clearing the two entries at the start of each block is the whole
+fix: each block now loads the index it uses, where it uses it.
+
+It costs one `SET_CF_IDX` per block that indexes a resource, and buys 21 cases in the
+1465-case `descriptorset_random` sample -- 145 passing and 9 failing where it was 124
+and 30 -- and six more in the 26745-case stride survey, which goes from 3372 passing
+and 13 failing to 3378 and 8. Nothing regressed in either. What still fails is a
+different shape. Over the whole group the fix takes 649 failures of 2752 down to 211,
+and every one of the 211 is `unifindexed` (100), `dynindexed` (60) or `runtimesize`
+(51), where the descriptor *array* index is itself dynamic. Not one `noarray` case
+fails any more, which is the shape this was reduced from.
+
+The rule generalises past this driver. Gallium r600 runs the same pass on the same
+hardware, so a GLSL shader that stores through a dynamically indexed image inside a
+branch and reads an indexed resource after it had the same defect.
+
+### A second one behind it: the scheduler did not wait for the index
+
+With the placement fixed the remainder was all `unifindexed`, `dynindexed` and
+`runtimesize`, so the next reduction started from the poorest of those in resources:
+a compute case with no uniform buffer, no storage buffer, no sampled image and no
+input attachment, just an array of three storage images indexed through a push
+constant holding the identity. It is small enough to read whole, and 49 of its 64
+invocations were wrong.
+
+Its bytecode puts the fault in one line:
+
+    0004 MEM_RAT WRITE_IND_ACK RAT1[IDX0] NOP_RTN   <- reads through IDX0
+    0006 ALU 7 @68 ... SET_CF_IDX0                  <- sets IDX0, too late
+    0008 WAIT_ACK
+    0010 VFETCH R2.x, R2.z, RID:165, SQ_CF_INDEX_0
+
+The `imageLoad` is a RAT read, and the instruction that loads the index register it
+takes its RAT id from was scheduled after it. `split_address_loads` had inserted that
+ALU before the RAT, correctly -- but that pass runs before scheduling, and
+`RatInstr::do_ready()` reported the RAT ready once its data and coordinate registers
+were, without ever consulting its resource offset. `GDSInstr`, `FetchInstr` and
+`TexInstr` all check theirs; `RatInstr` was the one that did not, so the scheduler was
+free to hoist the read past its own `SET_CF_IDX0` and let it land on whichever element
+the register still held. A shader whose array index is a literal never notices, which
+is why the rest of `binding_model` passed throughout.
+
+Adding `resource_ready()` to the condition takes `descriptorset_random` from 211
+failures of 2752 to 52, with the stride survey going 3378 and 8 to 3379 and 7.
+`unifindexed` is now clean outright, as is every compute case; the 52 that remain are
+30 `dynindexed` and 22 `runtimesize`, all fragment. `terakan_indexed_image_array` is
+the reduced case, and it fails 48 of 64 texels without the fix.
+
+### What the last 52 are, and what they are not
+
+They are one thing, and it is not the rendered image. Every one of the 52 fails on the
+write check and only on it -- `Failure in write operation; expected N and found -1` --
+so the invocation ran, computed the right `accum` and wrote the right colour, and then
+its conditional store to a dynamically indexed resource did not land anywhere. The
+destination still holds the -1 it was filled with, and no other element of the array
+holds the value instead, so the store was dropped rather than misdirected. Both storage
+buffers and storage images are hit, and the index is `accum + 0` as often as `accum + 3`,
+so neither the resource kind nor the index value is the variable.
+
+Several things have been ruled out:
+
+* **Not the compaction.** `TERAKAN_DEBUG_RAT` on a failing case gives app indices
+  0, 5..8, 30..32 mapping to RAT 0..7 in order, so the four elements of the array the
+  lost store targets are contiguous RATs 1..4, exactly what `RAT1[IDX0]` with the index
+  in 0..3 addresses. The store that lands and the store that does not are the same
+  instruction shape against the same array, one RAT apart.
+* **Not the placement of the index load.** The bytecode of both branches is symmetric:
+  `MOVA_INT` then `SET_CF_IDX0` inside the branch, then the `MEM_RAT`.
+* **Not a lane of the fragment quad.** The failing invocation ids are 8 and 26, both at
+  even x and odd y; but stores at 10, 12, 14 and 24 are at even x and odd y too and land.
+* **Not a race, though it looked like one.** Running the 52 alone gives 52, 51 and 50
+  failures over three runs with the membership moving, but running the whole 2752-case
+  group twice gives exactly the same 52 both times. The subset runs differ because what
+  precedes each case differs, which is order dependence of the same kind the depth and
+  stencil clears show, not nondeterminism within a case.
+
+### The cause: SET_CF_IDX inside a divergent branch
+
+`terakan_descriptor_set_shape` turns out to already have the shape, so the reproducer was
+four lines: grow `ssbo3_1` from two elements to four, store to elements 2 and 3 -- which
+nothing reads, so a store landing cannot change what any other invocation computes --
+under `if (8 == invocationID)` and `if (26 == invocationID)`, and check afterwards what
+the buffer holds. Both stores go missing while all 64 texels stay right, exactly as in
+dEQP, and printing the whole buffer says where they went: **not nowhere, but to element 1**.
+
+Element 1 is what `CF_IDX1` held before the branch, from the read of `ssbo3_1[accum + 1]`
+that precedes it. The `SET_CF_IDX1` the branch contains, correctly placed before the store,
+did not take. `SET_CF_IDX` is wave-scalar and takes its value from one lane; inside a branch
+one invocation matches, and the lane it reads did not run the `MOVA_INT`, so the index keeps
+its pre-branch value and the store lands on the previous statement's resource.
+
+The negative control is decisive: replacing `if (8 == invocationID)` with `if (0 == accum)`,
+true for every lane, leaves everything else identical and the store lands on element 2.
+Divergence is the variable, not the branch, the resource or the index.
+
+Other things this explains and rules out:
+
+* The store is misdirected, not dropped, so no element ends up holding the value only when
+  the wrong element is one dEQP does not check -- which is why it reads as `found -1`.
+* Which invocations lose their store is a property of the pixel, not of the shader: with
+  every other conditional store removed and one parameterised store left, scanning all 64
+  invocations gives exactly 8 and 26, the same two dEQP reports across 52 different shaders.
+* Both ingredients are needed. A constant index under the same branch lands, and the same
+  dynamic index without the branch lands.
+
+The fix is not a small one, because it pulls against the rule above it. That rule says a
+block must load the index it uses; this one says a divergent block cannot load an index at
+all. Both are satisfied only by placing the load where the whole wave runs it -- the nearest
+enclosing non-divergent block that the index's definition dominates -- which is a change to
+where `split_address_loads` puts the load rather than to when it reloads. Gallium r600 runs
+the same pass, so a GLSL shader storing through a dynamically indexed resource inside an
+`if` has the same defect there.
+
+### That placement was tried, and it costs more than it buys
+
+The obvious form of it was written and measured: track the chain of enclosing blocks while
+walking, put an index load whose consumer sits inside a branch into the outermost block
+instead -- right before the branch, which is where the whole wave still runs -- and move the
+arithmetic that computes the index along with it when that arithmetic had been sunk into the
+branch. Keeping the per-block invalidation honest then means keeping a load whose block still
+encloses the current one rather than clearing unconditionally.
+
+It does what it was meant to. The bytecode puts `SET_CF_IDX0` in the clause before the
+`JUMP`, ahead of the `PRED_SET`, so it runs under the pre-branch mask, and the store that had
+been landing on the previous statement's resource lands on its own.
+
+It also loses far more than that. Measured over the whole 2752-case group against the 52 the
+current tree fails: moving the arithmetic as well gives **208** failures, and the same change
+restricted to indices already established before the branch, moving nothing, still gives
+**80**. The stride survey goes from 3379 passing and 7 failing to 3378 and 8. Reverted.
+
+Two holes account for it, and neither is incidental:
+
+* **Every hoisted load lands at the same point.** Two consumers in one branch needing two
+  different indices fit, one per index register; a third has to evict one of them, and the
+  eviction sits at the same point in the parent as the load it replaces, so it reaches the
+  earlier consumer too. Guarding against that by refusing to hoist the third is what the
+  measured version did, and it is not enough.
+* **Keeping a load because its block encloses the current one is wrong inside a loop.** On the
+  second iteration the register may have been rewritten by a load in the body, and the pass
+  has no way to tell -- the block list is flat, with a nesting depth and no dominance or
+  back-edge information at all.
+
+So the placement this needs is not "the outermost block" but "the nearest enclosing block the
+whole wave runs, that the definition dominates and that no other load of the same register
+lies between" -- a dominance and liveness question. `split_address_loads` has neither, which
+is the actual size of the work: give the pass that analysis first, then the placement follows.
+
+
 
 ## In-shader memory model: RAT returns, and a GPU hang
 
@@ -1662,6 +2045,358 @@ barrier needs.
 
 Until this is understood, a full-suite CTS run must exclude
 `payload_*.image.guard_*.image`, or it aborts partway through.
+
+## Signed 2_10_10_10 vertex attributes: the two-bit alpha comes back unsigned
+
+`dEQP-VK.pipeline.*.vertex_input` fails on `a2r10g10b10_sscaled_pack32` and on nothing
+else of that family -- the `unorm`, `snorm` and `uscaled` members of the same packed
+format all pass. That is four cases, and it would be easy to leave them; the reason not
+to is that measuring what the hardware actually returns says the passing `snorm` is
+broken too, in a way dEQP happens not to look at.
+
+`terakan_vertex_format_2_10_10_10_probe` fetches one attribute per draw and prints the
+four components against what the specification says they should be, over packed words
+covering both signs of every field. On Caicos:
+
+* Every one of the three **ten-bit** components is right, in all four number types,
+  including at the sign boundary: `sscaled` reads 512 as -512 and 1023 as -1.
+* The **two-bit alpha** is decoded as unsigned no matter what the number type says.
+  `sscaled` returns 2 for the bit pattern that means -2, and 3 for the one that means -1.
+  `snorm` returns 1/3, 2/3 and 1 where the specification asks for 1, -1 and -1.
+
+So `snorm` is wrong for every alpha other than zero. dEQP's `vertex_input` case for it
+passes because the values it feeds do not distinguish the two, which is why this went
+unnoticed while the `sscaled` case, whose values are exact integers, failed. It matters
+beyond conformance: `A2B10G10R10_SNORM_PACK32` is the ordinary way to hand the vertex
+stage a packed normal, and its alpha is where a sign or a handedness flag lives.
+
+This is what `TODO(Triang3l): Signed 2_10_10_10 and 10_10_10_2 alpha fixup on certain
+chips` in `terakan_vertex_input.c` names. Gallium r600 carries the same fixup, from
+`CHIP_PALM` onwards, in `r600_shader.c` -- but only under `!num_format`, the NORM case,
+so it would not have covered `sscaled` either.
+
+### The fix
+
+It belongs in the fetch shader and nowhere else: vertex input can be dynamic, so the fetch
+shader is regenerated at bind time and is the only place that always has the attribute's
+format in hand. `terakan_vertex_input_fs_code` had pre-fetch ALU clauses and no post-fetch
+ones, so the generator gained them, emitted between the fetch clause and the return, with
+the first one carrying `BARRIER` so it sees what the fetch wrote.
+
+The correction runs in place on the fetched component. For an integer attribute the raw bits
+are already there, so two instructions suffice -- `LSHL_INT` by 30 and `ASHR_INT` back, which
+is sign extension written out. For the float ones the hardware has already divided by three
+in the normalized case, so:
+
+    MULADD  v = v * (normalized ? 0.75 : 0.25) + 0.625
+    FRACT   v
+    MULADD  v = v * 4.0 - 2.5
+    MAX     v = max(v, -1.0)                     (normalized only)
+
+giving 0, 1, -2, -1 and, normalized, 0, 1, -1, -1. The bias is 0.625 rather than 0.5 on
+purpose: the normalized path starts from inexact thirds, and an eighth of clearance keeps
+every intermediate away from the integer boundary `FRACT` wraps on, where 2/3 would otherwise
+be a coin toss.
+
+Measured on Caicos. The probe reports no disagreement with the specification in any of the
+four number types. The whole 10574-case `pipeline.monolithic.vertex_input` group goes from 9
+failures to 3 -- the four `sscaled` cases and the two `sint` ones are fixed, and what remains
+is `max_attributes.query_max_attributes`, which failed before this too and is unrelated. An
+11261-case stride sample gives exactly the same 13 failures before and after, and the local
+suite is 13/13 and 69/69.
+
+For every format that is not a signed 2_10_10_10 or 10_10_10_2 the emitted fetch shader is
+unchanged: no post-fetch clause is created and no control flow entry is added.
+
+## Fragment side effects were lost wherever the depth or stencil test could never pass
+
+A fragment shader's side effects are specified to happen whether or not the fragment survives:
+the depth and stencil tests run after it unless the shader asks for early fragment tests. On
+this hardware that is `DB_SHADER_CONTROL.Z_ORDER`, which has to be `LATE_Z` for a shader with
+memory writes so DB does not reject the fragment before the shader has run.
+
+Terakan set it from `nir->info.writes_memory`, and that was false for every shader here.
+`nir_shader_gather_info` derives the flag from the portable intrinsics, and by the time a
+shader reaches the backend its storage buffer and image writes have already been lowered by
+`terakan_nir_lower_bindings` into `uav_instr_r600`, which `nir_intrinsic_writes_external_memory`
+has never heard of. Dumping the NIR of a failing case shows it plainly: one `store_deref`, mode
+`nir_var_shader_out`, and the storage buffer write sitting there as `@uav_instr_r600`.
+
+So every fragment shader with side effects ran on `EARLY_Z_THEN_LATE_Z` and without
+`EXEC_ON_HIER_FAIL`. `dEQP-VK.rasterization.frag_side_effects` is what noticed: its
+`depth_never` and `stencil_never` cases failed with the storage buffer untouched, while `kill`,
+`sample_mask` and `alpha_coverage` passed, because a killing shader is late by other means.
+
+Recovering the flag after `nir_shader_gather_info`, by asking whether any UAV instruction is
+something other than `NOP` or `NOP_RTN` -- the two that do not write, the second being how a
+read is spelled -- makes the family 14 of 14 supported cases, from 4 failing. Two guesses were
+tried first and measured to do nothing, and were reverted: `EXEC_ON_NOOP` in the same register,
+and `NOOP_CULL_DISABLE` in `DB_RENDER_OVERRIDE`.
+
+## Shared memory: a large copy runs out of registers
+
+Every `_compute_shared` case of `dEQP-VK.glsl.atomic_operations` fails, all sixteen of them, and
+every `_compute` and `_fragment` case passes -- eleven operations, signed and unsigned, without
+exception. So it is not the atomic. It is the shader around it, which copies a structure of 161
+integers from a storage buffer into shared memory and back:
+
+    if (gl_LocalInvocationIndex == 0u) buf.data = result.data;
+    ...
+    if (gl_LocalInvocationIndex == 0u) result.data = buf.data;
+
+The failure is `r600_schedule_shader: Register allocation failed`, and the shader never compiles,
+so the pipeline creation returns `VK_ERROR_UNKNOWN`. Register allocation colours each component
+separately and has 123 colours; 161 values wanting the same component do not fit.
+
+They want it at once because of how the two halves are ordered. Every LDS instruction is chained
+to the one before it in `LDSReadInstr::split`, so the shared-memory side runs strictly in
+sequence, while the storage buffer loads that feed it are independent of each other and the
+scheduler hoists them freely. The loaded values then wait, all of them, for a chain that consumes
+one per step.
+
+Two things were tried and measured to change nothing, and neither was kept:
+
+* `nir_schedule` in its `fallback` mode, which exists for exactly this ("can be used as a fallback
+  when register allocation fails"), run on a retry after the first attempt fails. The retry does
+  happen -- the allocator reports its failure twice -- and the second attempt fails the same way,
+  so the ordering NIR produces is not what creates the pressure.
+* Adding `nir_var_mem_shared` to the load/store vectorizer's modes, which would have turned the
+  scalar copy into vector accesses. No change either.
+
+What would work is pressure awareness in the backend scheduler, which currently batches fetches
+by count -- fifteen texture instructions, eight memory ones -- and not by how many results are
+waiting. That is a change to `BlockScheduler`, and worth taking only with a way to measure it
+across the whole suite.
+
+## Two families measured but not yet reduced
+
+Both were turned up by the wider stride sample and are recorded here with what a first pass
+established, so a later reduction does not start from nothing.
+
+### Block-compatible views: `texelFetch` was reading a coordinate nobody wrote
+
+`dEQP-VK.image.texel_view_compatible` reads a block-compressed image through an uncompressed
+view. Of the five operations it tries, four were clean in a 2160-case sample -- `image_load`,
+`image_store`, `texture` and the graphics `texture_read` all passed 102 of 102 -- and
+`texel_fetch` split exactly in half, 51 passing and 51 failing, along the shape rather than the
+format: 1D failed with and without mipmaps, 2D failed only with them, 3D passed either way.
+
+The 1D half had nothing to do with mipmaps. Every block-compressed image is tiled, and a tiled
+1D image cannot be described by a 1D resource, so the driver promotes it to a 2D one -- with a
+height of one, which sampling never notices because the address modes fold any row onto the only
+row there is. A fetch does notice: an integer coordinate outside the image returns zero rather
+than clamping, and the second coordinate was never written. `LowerTexToBackend::lower_txf` fills
+the first coordinate and the level and leaves the second null for a non-array 1D fetch, so what
+the fetch used was whatever the register held.
+
+Writing a zero there closes the 1D half: 51 failures become 34, all of them `extended`, and
+`glsl.texture_functions.texelfetch` stays at 240 of 240.
+
+The `extended` half is a different defect, and it is not one the driver can reach from here. A
+view of a non-base mip level is described with a fake base level twice the size, so the wanted
+level is reached as level 1 -- the hardware derives the slice pitch of a non-base level from the
+height, and a level bound as the base addresses multiple layers wrongly. `BASE_LEVEL` and
+`LAST_LEVEL` are both set to 1, which is what keeps sampling on the right level; a fetch takes
+its level from the instruction and lands on the fake base instead.
+
+The fake base was measured to be load-bearing rather than merely conservative. Suppressing it
+behind an environment variable and running the 540 `extended` cases gives 102 failures against 34
+with it, so it is holding up three times as much as it costs -- the operations that pass today
+pass because of it.
+
+That leaves biasing the fetch's level by one, and the shader cannot do it. The level a
+`texelFetch` names is relative to the view, and for a block-compatible view the only legal value
+is zero, so the correction is a property of the descriptor -- which is bound long after the shader
+is compiled. The same shader must serve views that need the bias and views that do not.
+
+What would work is a second descriptor for such views, written for fetching rather than sampling
+and selected by the instruction, or the count carried in the driver push constants. Both are the
+same shape of answer as the cube array size query needs, and neither is small.
+
+### Border colour: white is four times likelier to be wrong than black
+
+`dEQP-VK.pipeline.monolithic.sampler.border_swizzle` samples outside the image with a border
+colour, through a view with a component swizzle. In a 2855-case sample 37 of the 279 supported
+cases fail, and the border colour is the strongest axis: `opaque_white` fails 31 of 120 while
+`transparent_black` fails 4 of 121 and `opaque_black` 2 of 38. The swizzle kind barely matters --
+permutations fail at 14% and swizzles with a constant at 12% -- so this is not the gather
+constant-swizzle defect above wearing another hat, although `gather_0` is the worst of the
+gather modes at 24%.
+
+## An exclusive scan of a vector read past its identity
+
+The driver reports a subgroup size of one, so an exclusive scan has nothing to its left and must
+return the identity of its operation. `terakan_nir_lower_subgroups` builds that identity from
+`nir_alu_binop_identity`, which is right, and then handed `nir_build_imm` a single
+`nir_const_value` while telling it the result had one component -- whatever the scan's width
+actually was. For a vector the builder read past the one value it was given.
+
+Which is why the failures picked themselves out so oddly. Scalars passed; `vec2`, `vec3` and
+`vec4` failed. And of the operations, only `mul` and `and` failed, because theirs are the
+identities that are not zero: one and all-ones. `add`, `or` and `xor` have an identity of zero
+and passed on whatever the read past the end happened to be, which was zero.
+
+Filling one value per component fixes it. A 4029-case sample of `subgroups.arithmetic` goes from
+53 failures to none, with 252 passing where 199 did; a 6958-case sample of all of `subgroups` has
+one failure left, a compute pipeline that will not create, which is the shared-memory atomic
+defect the compare-and-swap work already ran into.
+
+## textureSize on a cube array has nowhere to read the cube count from
+
+The ten `texturesize` failures left in `glsl.texture_functions.query` are all
+`samplercubearray*`, and the report is short: for a 1x1 image with six layers, `Expecting: 1x1
+and 1 cube(s)`, `Result: (1, 1, 1056964608)`. That number is `0x3F000000`, the bit pattern of
+0.5 -- not a count at all, but whatever happened to be lying in the place the shader read.
+
+The place is Gallium's. `TexInstr::emit_tex_txs` masks the third component out of
+`GET_TEXTURE_RESINFO` for a cube array and loads it from `R600_BUFFER_INFO_CONST_BUFFER`
+instead, which the Gallium driver fills with the cube count. Terakan has no such buffer and
+fills nothing, so the shader reads an unrelated constant.
+
+Two ways round it were tried and measured, and neither works:
+
+* NIR's `lower_txs_cube_array` divides the third component by six. That is right where the
+  descriptor's depth counts faces, and wrong here: Terakan already writes `TEX_DEPTH` in cubes,
+  because that is what a cube map descriptor expresses on this hardware, while `BASE_ARRAY` and
+  `LAST_ARRAY` go on addressing individual faces. One cube came back as zero.
+* Turning the query into a 2D array one, so the backend takes the ordinary path and never looks
+  for the constant buffer, then adding the one `TEX_DEPTH` is short of. One cube then reads
+  correctly and two cubes read as one, which says the third component is zero whatever the
+  descriptor holds: `GET_TEXTURE_RESINFO` does not report depth for a cube map resource. That is
+  presumably why Gallium reaches for a constant buffer rather than the hardware in the first
+  place.
+
+So the count has to come from the driver. The natural home is the driver push constants that
+already carry things of this kind -- `sampler_unnormalized` is the precedent -- but where that
+one needs a bit per sampler this needs a number per texture, which is a good deal more constant
+buffer for a query few shaders make. Left undone deliberately, with the measurement recorded so
+the next attempt starts from it.
+
+## Texture gather loses a component swizzled to one
+
+`dEQP-VK.glsl.texture_gather` fails 81 of the 231 cases whose view swizzle contains a constant,
+and the split is exact. Taking `graphics.basic.2d.rgba8.texture_swizzle`, whose six swizzles are
+cyclic shifts of `red_green_blue_alpha`:
+
+* `red_green_blue_alpha` -- passes, it is the identity.
+* `green_blue_alpha_zero` -- passes, and it has a constant channel.
+* `blue_alpha_zero_one`, `alpha_zero_one_red`, `zero_one_red_green`, `one_red_green_blue` --
+  all fail, and each contains `ONE`.
+
+So a channel the view maps to zero gathers correctly and one mapped to one does not, in every
+gather mode -- `basic`, `offset`, `offset_dynamic` and `offsets` alike, and for `rgba8`,
+`rgba8ui` and `rgba8i` -- which rules out the offset handling that the first sighting of this
+in the stride sample suggested.
+
+The swizzle reaches the hardware as `DST_SEL_X..W` of the resource descriptor, and `GATHER4`
+picks which channel to gather with the `MODE` field of the fetch instruction. That zero works
+says `DST_SEL` is consulted; that one does not says its `1` encoding is not, or does not mean
+what it means for an ordinary sample.
+
+### What comes back
+
+`terakan_image_gather` was temporarily pointed at views with chosen swizzles to read the values
+out. The image holds channel `k` of texel `n` as `k * 1000 + n`, so which channel a gather
+actually reached is legible in the result.
+
+| view swizzle | component 0 | 1 | 2 | 3 |
+|---|---|---|---|---|
+| `(A, B, G, R)` | A | B | G | R -- all correct |
+| `(R, G, B, ONE)` | R | G | B | 1 -- all correct |
+| `(B, A, ZERO, ONE)` | B | **G** | **R** | 1 |
+| `(ONE, R, G, ZERO)` | **G** | **B** | **A** | 0 |
+
+A pure permutation is applied exactly, so `DST_SEL` is read and understood. A constant in the
+last component is applied exactly too, in both the `ZERO` and the `ONE` spelling. A constant
+anywhere else makes the gather reach some other channel, and not by a rule these four rows
+settle -- the misses are not a consistent shift.
+
+That boundary matches dEQP case for case. Of the six swizzles of
+`graphics.basic.2d.rgba8.texture_swizzle`, the two that pass are the identity and
+`green_blue_alpha_zero`, whose only constant is in W; the four that fail are exactly those with
+a constant anywhere earlier.
+
+So this is not about `ONE` and not about the offset. It is the hardware's channel selection for
+`GATHER4` reading `DST_SEL` differently from the way an ordinary sample does, in a way that
+happens to agree for a permutation and for a constant in the last slot.
+
+Fixing it in the descriptor is not possible while the same descriptor also has to serve ordinary
+sampling, which is correct as things are. Fixing it in the shader means knowing the swizzle when
+the shader is compiled, and under Vulkan it belongs to the view. What is left is either a
+gather-specific descriptor, written alongside the sampling one and selected by the fetch, or
+accepting the limitation and saying so.
+
+## Compare-and-swap named its two values the wrong way round
+
+`dEQP-VK.image.atomic_operations.compare_exchange` failed every one of its 64 supported cases,
+across all eight image types, both formats and both checks, while every other atomic operation
+in the same group passed 76 of 76 in a sample. That narrowness is the whole clue: what
+compare-and-swap has and the others do not is a second value.
+
+NIR names them in the order SPIR-V does. `OpAtomicCompareExchange` lists Value before
+Comparator, and `fill_common_atomic_sources` reverses that when it fills the intrinsic, so an
+image atomic swap gets the comparator in `src[3]` and the value in `src[4]`, and a storage
+buffer one gets them in `src[2]` and `src[3]`. Gallium's own backend reads them that way.
+`terakan_nir_lower_bindings` read both pairs the other way round, so the hardware compared
+against what it should have written and wrote what it should have compared against.
+
+Correcting both takes the image group from 64 failures to none, and
+`glsl.atomic_operations.comp_swap*` from 6 failures and nothing passing to 4 passing and 2
+failing. The two that remain are `_compute_shared`, atomics on shared memory, which fail at
+pipeline creation with `VK_ERROR_UNKNOWN` and failed the same way before this -- a separate
+defect in the compiler, not in the source order.
+
+## textureQueryLod returned zero where derivatives are zero
+
+`textureQueryLod` gives the level it would sample in `.x` and the unclamped level of detail in
+`.y`. With derivatives of zero the scale factor is zero and that unclamped value is minus
+infinity; `GET_LOD` computes in fixed point and hands back zero instead, which is also what a
+one-texel derivative gives, so nothing downstream can tell the two apart.
+
+`dEQP-VK.glsl.texture_functions.query.texturequerylod` says it exactly: `Expected: level in
+range (0, 0), lod in range (-inf, -31.9961)`, `Result: level: 0, lod: 0`. The upper bound is the
+negative of `maxSamplerLodBias`, which this driver reports as just under 32. Every one of the 38
+failures was a `_zero_uv_width_fragment` case, one per sampler type, and the level was right in
+all of them -- only `.y` was wrong.
+
+NIR already carries the substitution, as `nir_lower_tex_options::lower_lod_zero_width`: it takes
+the derivatives of the coordinate, and where they are all zero replaces the raw level of detail
+with `-FLT_MAX`. It has to run while the coordinate is still in hand, which is why it belongs in
+`nir_lower_tex` rather than anywhere later. Terakan calls `nir_lower_tex` itself, so enabling it
+there is the fix, and Gallium r600's own call gets it too, since the hardware is the same.
+
+The family goes from 38 failures to none, 349 passing of 435 with the 10 remaining being
+`texturesize`, which failed before this and is unrelated.
+
+## Non-uniform descriptor indexing is advertised and cannot work as things stand
+
+All seven `*ArrayNonUniformIndexing` features are reported as supported. The hardware reaches
+an indexed resource through `SET_CF_IDX`, which is wave-scalar: one lane's value decides the
+resource for every lane of the wave. That is exactly right for a dynamically uniform index --
+which is what `descriptorset_random`'s `unifindexed` and `dynindexed` use, and why they pass --
+and wrong for anything else.
+
+`dEQP-VK.descriptor_indexing` is where it shows: 13 of its 15 supported cases fail on image
+comparison, across every descriptor type, and their shaders all index through `nonuniformEXT`.
+The two that pass, `sampler` and `storage_image_lifetime`, do not.
+
+Adding `nir_lower_non_uniform_access` before the binding pass was tried and measured to change
+nothing -- 14 failures of 15 before and after -- although `nir_has_non_uniform_access` reports
+the access and the pass reports progress. The reason is that the lowering it emits reads one
+lane's index with a subgroup operation and loops until every lane has been served, and this
+driver reports `subgroupSize = 1`. Under that model each invocation is its own subgroup, the
+loop collapses to a single iteration using the lane's own index, and the wave-scalar hardware
+index is right back where it started.
+
+Two ways out, neither small:
+
+* Report a real subgroup size and give the backend wave-level `readFirstInvocation` and ballot,
+  after which the standard lowering would work. `SET_CF_IDX` is itself a read-from-one-active-lane
+  primitive, so the piece the loop needs is not missing from the hardware, only from the compiler.
+* Withdraw the seven features, as `descriptorBindingUpdateAfterBind` was withdrawn for being
+  advertised and unimplementable. That makes the driver honest at the cost of the capability.
+
+Until one of them is done the features are a claim the driver does not honour.
 
 ## Vertex pipeline stage survey (geometry and tessellation)
 

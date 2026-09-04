@@ -73,7 +73,14 @@ terakan_nir_subgroup_identity(nir_builder * const b, nir_intrinsic_instr const *
 {
    nir_op const reduction_op = (nir_op)nir_intrinsic_reduction_op(intrin);
    nir_const_value const identity = nir_alu_binop_identity(reduction_op, intrin->def.bit_size);
-   return nir_build_imm(b, 1, intrin->def.bit_size, &identity);
+   /* One value per component: `nir_build_imm` reads as many as it is told there are, so handing it
+    * a single one for a vector result reads past it. The identity is the same in every component.
+    */
+   nir_const_value identity_components[NIR_MAX_VEC_COMPONENTS];
+   for (unsigned component = 0; component < intrin->def.num_components; ++component) {
+      identity_components[component] = identity;
+   }
+   return nir_build_imm(b, intrin->def.num_components, intrin->def.bit_size, identity_components);
 }
 
 static nir_def *

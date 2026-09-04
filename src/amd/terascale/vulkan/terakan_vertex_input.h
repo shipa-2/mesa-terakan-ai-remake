@@ -183,23 +183,47 @@ terakan_vertex_input_fs_resource_usage_equal(
 #define TERAKAN_VERTEX_INPUT_FS_MAX_PRE_FETCH_ALU_CLAUSES                                          \
    DIV_ROUND_UP(TERAKAN_VERTEX_INPUT_FS_MAX_PRE_FETCH_ALU_QWORDS, 0x80 - (7 - 1))
 
+/* #Signed2101010Alpha: the hardware decodes the two-bit field of `2_10_10_10` and `10_10_10_2` as
+ * unsigned whatever `FORMAT_COMP_ALL` says, so a signed attribute of one of those formats needs its
+ * alpha corrected after the fetch. The ten-bit fields are decoded correctly and are left alone.
+ *
+ * The correction runs in place on the fetched component, one dependent instruction per group:
+ * - MULADD  v = v * s + 0.5    (s is 0.25 for SCALED, where v is 0..3, and 0.75 for NORM, where the
+ *                               hardware produced v/3), giving 0.5, 0.75, 1.0, 1.25
+ * - FRACT   v                  giving 0.5, 0.75, 0.0, 0.25
+ * - MULADD  v = v * 4.0 - 2.0  giving 0, 1, -2, -1, which is the signed value of the two bits
+ * - MAX     v = max(v, -1.0)   for NORM only, where -2 clamps to -1
+ *
+ * Longest per corrected component: two MULADDs of one qword each carrying one and two literals (one
+ * literal qword each), a FRACT and a MAX of one qword each, so 6 qwords. A format has at most one
+ * two-bit field, but `DST_SEL` may route it to more than one destination component.
+ */
+#define TERAKAN_VERTEX_INPUT_FS_MAX_POST_FETCH_ALU_QWORDS_PER_ATTRIBUTE 24
+#define TERAKAN_VERTEX_INPUT_FS_MAX_POST_FETCH_ALU_QWORDS                                          \
+   (TERAKAN_VERTEX_INPUT_FS_MAX_POST_FETCH_ALU_QWORDS_PER_ATTRIBUTE *                              \
+    TERAKAN_RESOURCE_HW_COUNT_FETCH)
+#define TERAKAN_VERTEX_INPUT_FS_MAX_POST_FETCH_ALU_CLAUSES                                         \
+   DIV_ROUND_UP(TERAKAN_VERTEX_INPUT_FS_MAX_POST_FETCH_ALU_QWORDS, 0x80 - (7 - 1))
+
 /* Pre-fetch ALU clauses, one fetch clause (up to 64 fetches per clause, but currently always doing
- * one fetch per attribute), return.
+ * one fetch per attribute), post-fetch ALU clauses, return.
  */
 #define TERAKAN_VERTEX_INPUT_FS_MAX_CONTROL_FLOW_QWORDS                                            \
-   (TERAKAN_VERTEX_INPUT_FS_MAX_PRE_FETCH_ALU_CLAUSES + 2)
+   (TERAKAN_VERTEX_INPUT_FS_MAX_PRE_FETCH_ALU_CLAUSES +                                            \
+    TERAKAN_VERTEX_INPUT_FS_MAX_POST_FETCH_ALU_CLAUSES + 2)
 
-/* Control flow, pre-fetch ALU instruction, 2-qwords-aligned fetches. */
+/* Control flow, pre-fetch ALU instruction, 2-qwords-aligned fetches, post-fetch ALU. */
 #define TERAKAN_VERTEX_INPUT_FS_MAX_QWORDS                                                         \
    (DIV_ROUND_UP(TERAKAN_VERTEX_INPUT_FS_MAX_CONTROL_FLOW_QWORDS +                                 \
                     TERAKAN_VERTEX_INPUT_FS_MAX_PRE_FETCH_ALU_QWORDS,                              \
                  2) +                                                                              \
-    2 * TERAKAN_RESOURCE_HW_COUNT_FETCH)
+    2 * TERAKAN_RESOURCE_HW_COUNT_FETCH + TERAKAN_VERTEX_INPUT_FS_MAX_POST_FETCH_ALU_QWORDS)
 
 struct terakan_vertex_input_fs_code {
    uint32_t control_flow_qwords;
    uint32_t pre_fetch_alu_qwords;
    uint32_t fetch_count;
+   uint32_t post_fetch_alu_qwords;
 
    /* The 32-bit instruction words have the host endianness, must be copied to the device shader
     * program as little-endian.
@@ -207,6 +231,7 @@ struct terakan_vertex_input_fs_code {
    uint32_t control_flow[2 * TERAKAN_VERTEX_INPUT_FS_MAX_CONTROL_FLOW_QWORDS];
    uint32_t pre_fetch_alu[2 * TERAKAN_VERTEX_INPUT_FS_MAX_PRE_FETCH_ALU_QWORDS];
    uint32_t fetch[4 * TERAKAN_RESOURCE_HW_COUNT_FETCH];
+   uint32_t post_fetch_alu[2 * TERAKAN_VERTEX_INPUT_FS_MAX_POST_FETCH_ALU_QWORDS];
 };
 
 void terakan_vertex_input_create_fs_code(
@@ -222,6 +247,7 @@ terakan_vertex_input_fs_code_qwords(struct terakan_vertex_input_fs_code const * 
       /* Fetch instructions must be aligned to 2 qwords. */
       fs_code_qwords += (fs_code_qwords & 1) + 2 * code->fetch_count;
    }
+   fs_code_qwords += code->post_fetch_alu_qwords;
    return fs_code_qwords;
 }
 
