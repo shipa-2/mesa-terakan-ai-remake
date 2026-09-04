@@ -2364,6 +2364,14 @@ if with_tests
         dependencies : vulkan_loader_dep,
       )
 
+      # Deliberately not wired into test(): a characterization tool whose output is a table to
+      # read, not a pass/fail result. See the comment at the top of its source.
+      terakan_depth_clear_extent_probe = executable(
+        'terakan_depth_clear_extent_probe',
+        ['tests/terakan_depth_clear_extent_probe.c'],
+        dependencies : vulkan_loader_dep,
+      )
+
       terakan_vertex_format_2_10_10_10_vertex_spv = custom_target(
         'terakan_vertex_format_2_10_10_10.vert.spv.h',
         input : 'tests/terakan_vertex_format_2_10_10_10.vert',

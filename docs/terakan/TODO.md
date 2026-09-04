@@ -1606,6 +1606,28 @@ descriptor. `DB_DEPTH_SIZE` and `DB_DEPTH_SLICE` were printed for a failing
 64x11 and a passing 200x180 and both decode exactly right -- pitch 64 and 200,
 height 16 and 184, slice 1024 and 36800 texels, matching the aligned extents.
 
+### The command sequence is excluded too
+
+`terakan_depth_clear_extent_probe` rebuilds dEQP's sequence ingredient by
+ingredient and passes at every one of the six sizes, the four that fail and the
+two that pass alike. It has the full mip chain with only level zero cleared,
+the fill from a buffer of zeroes rather than from a clear, `TRANSFER_DST_OPTIMAL`
+for the clear and both copies, image barriers naming transfer access on both
+sides of the clear -- which is what Vulkan calls it, rather than the depth write
+this driver implements it as -- and a readback of every level in one command at
+dEQP's four-byte-aligned offsets.
+
+And the clear itself was compared directly rather than inferred: printing the
+rectangle and the whole depth/stencil descriptor from inside the driver gives
+byte-identical lines for the failing dEQP case and the passing probe --
+`rect=64x11 size=0x00000807 slice=0x0000000f zinfo=0x00002023`.
+
+So it is not what the clear is asked to do, and not the sequence around it. What
+is left is the state the rest of the process leaves behind, which is where the
+order dependence this family has shown from the start was pointing all along --
+and it means the next step is to find what dEQP has done before the case rather
+than to keep refining what it does during it.
+
 The colour path is not affected in the same shape: `clear_color_image` with
 `remaining_array_layers` on `r8_uint` passes at 64x11 and 1x33, one byte per
 texel and the same sixteen layers with base layer 8. Since the readback of a
