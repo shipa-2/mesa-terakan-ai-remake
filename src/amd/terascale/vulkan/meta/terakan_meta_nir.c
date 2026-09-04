@@ -138,6 +138,72 @@ terakan_meta_nir_build_opaque_ps(struct terakan_device const * const device)
    return b->shader;
 }
 
+static nir_shader *
+terakan_meta_nir_build_position_from_index_vs_common(
+   struct terakan_device const * const device, bool const export_layer)
+{
+   nir_builder builder = nir_builder_init_simple_shader(
+      MESA_SHADER_VERTEX, &terakan_device_physical_device(device)->nir_options_non_fs,
+      export_layer ? "terakan_meta_position_and_layer_from_index_vs"
+                   : "terakan_meta_position_from_index_vs");
+   nir_builder * const b = &builder;
+
+   /* Immediate meta indices pack unsigned pixel X in bits 15:0 and Y in bits 31:16. Use
+    * load_vertex_id, not the zero-based variant: Terakan keeps vertex_id_zero_based disabled and
+    * R0.X already contains Vulkan's final index, as in the application shader path. */
+   nir_def * const index = nir_load_vertex_id(b);
+   nir_def * const x = nir_u2f32(b, nir_iand_imm(b, index, 0xFFFF));
+   nir_def * const y = nir_u2f32(b, nir_ushr_imm(b, index, 16));
+   nir_variable * const position =
+      nir_variable_create(b->shader, nir_var_shader_out, glsl_vec4_type(), "gl_Position");
+   position->data.location = VARYING_SLOT_POS;
+   position->data.driver_location = 0;
+   nir_store_var(b, position, nir_vec4(b, x, y, nir_imm_float(b, 0.0f),
+                                      nir_imm_float(b, 1.0f)), 0xF);
+   b->shader->info.outputs_written = BITFIELD64_BIT(VARYING_SLOT_POS);
+
+   if (export_layer) {
+      nir_variable * const layer =
+         nir_variable_create(b->shader, nir_var_shader_out, glsl_uint_type(), "gl_Layer");
+      layer->data.location = VARYING_SLOT_LAYER;
+      layer->data.driver_location = 1;
+      nir_store_var(b, layer, nir_load_instance_id(b), 0x1);
+      b->shader->info.outputs_written |= BITFIELD64_BIT(VARYING_SLOT_LAYER);
+   }
+   return b->shader;
+}
+
+nir_shader *
+terakan_meta_nir_build_position_from_index_vs(struct terakan_device const * const device)
+{
+   return terakan_meta_nir_build_position_from_index_vs_common(device, false);
+}
+
+nir_shader *
+terakan_meta_nir_build_position_and_layer_from_index_vs(
+   struct terakan_device const * const device)
+{
+   return terakan_meta_nir_build_position_from_index_vs_common(device, true);
+}
+
+nir_shader *
+terakan_meta_nir_build_clear_color_ps(struct terakan_device const * const device)
+{
+   nir_builder builder = nir_builder_init_simple_shader(
+      MESA_SHADER_FRAGMENT, &terakan_device_physical_device(device)->nir_options_fs,
+      "terakan_meta_clear_color_ps");
+   nir_builder * const b = &builder;
+   nir_def * const clear_value = nir_load_ubo_vec4(
+      b, 4, 32, nir_imm_int(b, TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS), nir_imm_int(b, 0));
+   nir_variable * const colour =
+      nir_variable_create(b->shader, nir_var_shader_out, glsl_vec4_type(), "colour");
+   colour->data.location = FRAG_RESULT_DATA0;
+   colour->data.driver_location = 0;
+   nir_store_var(b, colour, clear_value, 0xF);
+   b->shader->info.outputs_written = BITFIELD64_BIT(FRAG_RESULT_DATA0);
+   return b->shader;
+}
+
 /* The opaque pixel shader is the one conversion this table starts with, chosen because it is the
  * smallest possible shader and because the driver uses it as the fallback whenever a pipeline has
  * no fragment shader -- so every depth-only draw in the test suite exercises it. Its hand-written
@@ -533,5 +599,10 @@ terakan_meta_nir_builder const terakan_meta_nir_builders[TERAKAN_META_SHADER_COU
 };
 
 terakan_meta_nir_builder const terakan_meta_nir_terascale_1_builders[TERAKAN_META_SHADER_COUNT] = {
+   [TERAKAN_META_SHADER_POSITION_FROM_INDEX_VS] =
+      terakan_meta_nir_build_position_from_index_vs,
+   [TERAKAN_META_SHADER_POSITION_AND_LAYER_FROM_INDEX_VS] =
+      terakan_meta_nir_build_position_and_layer_from_index_vs,
+   [TERAKAN_META_SHADER_CLEAR_COLOR_PS] = terakan_meta_nir_build_clear_color_ps,
    [TERAKAN_META_SHADER_COPY_IMAGE_TO_BUFFER_PS] = terakan_meta_nir_build_copy_image_to_buffer_ps,
 };
