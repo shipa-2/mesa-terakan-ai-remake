@@ -21,6 +21,14 @@
 #include <stddef.h>
 
 uint32_t *
+terakan_hw_config_shared_terascale_1_write_pipelinestat_start(uint32_t * packet)
+{
+   *packet++ = PKT3(PKT3_EVENT_WRITE, 0, 0);
+   *packet++ = EVENT_TYPE(EVENT_TYPE_PIPELINESTAT_START) | EVENT_INDEX(0);
+   return packet;
+}
+
+uint32_t *
 terakan_hw_config_shared_terascale_1_write_start_3d_cmdbuf(uint32_t * packet)
 {
    *packet++ = PKT3(PKT3_START_3D_CMDBUF, 0, 0);

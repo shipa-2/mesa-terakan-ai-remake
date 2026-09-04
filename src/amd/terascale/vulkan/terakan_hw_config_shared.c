@@ -107,7 +107,8 @@ terakan_hw_config_shared_indirect_buffer_begun(
    if (chip_info->is_terascale_1) {
       uint32_t * packet = terakan_gfx_command_writer_emit(
          command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG,
-         TERAKAN_HW_CONFIG_SHARED_TERASCALE_1_SQ_CONFIG_DWORDS +
+         TERAKAN_HW_CONFIG_SHARED_TERASCALE_1_PIPELINESTAT_START_DWORDS +
+            TERAKAN_HW_CONFIG_SHARED_TERASCALE_1_SQ_CONFIG_DWORDS +
             TERAKAN_HW_CONFIG_SHARED_TERASCALE_1_CONTEXT_DEFAULTS_MAX_DWORDS);
       if (unlikely(packet == NULL)) {
          return;
@@ -128,6 +129,7 @@ terakan_hw_config_shared_indirect_buffer_begun(
          .num_gs_stack_entries = chip_info->terascale_1.num_gs_stack_entries,
          .num_es_stack_entries = chip_info->terascale_1.num_es_stack_entries,
       };
+      packet = terakan_hw_config_shared_terascale_1_write_pipelinestat_start(packet);
       packet = terakan_hw_config_shared_terascale_1_write_sq_config(packet, &sq_config_info);
       packet = terakan_hw_config_shared_terascale_1_write_context_defaults(
          packet, terakan_physical_device_chip_family_is_r700(chip_info->chip_family));

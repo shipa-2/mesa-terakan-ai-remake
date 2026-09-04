@@ -44,6 +44,10 @@ struct terakan_hw_config_shared_terascale_1_sq_config_info {
 
 uint32_t * terakan_hw_config_shared_terascale_1_write_start_3d_cmdbuf(uint32_t * packet);
 
+/* r600_init_atom_start_cs() enables pipeline statistics before any blit may stop them. */
+#define TERAKAN_HW_CONFIG_SHARED_TERASCALE_1_PIPELINESTAT_START_DWORDS 2
+uint32_t * terakan_hw_config_shared_terascale_1_write_pipelinestat_start(uint32_t * packet);
+
 /* Writes TERAKAN_HW_CONFIG_SHARED_TERASCALE_1_SQ_CONFIG_DWORDS dwords to `packet` and returns the
  * advanced pointer, the same convention terakan_hw_config_loop_constants_write() uses.
  */

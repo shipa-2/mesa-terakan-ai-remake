@@ -324,6 +324,13 @@ test_context_defaults_packets_r600(void)
 int
 main(void)
 {
+   uint32_t pipelinestat_start[TERAKAN_HW_CONFIG_SHARED_TERASCALE_1_PIPELINESTAT_START_DWORDS];
+   CHECK(terakan_hw_config_shared_terascale_1_write_pipelinestat_start(pipelinestat_start) ==
+         pipelinestat_start + TERAKAN_HW_CONFIG_SHARED_TERASCALE_1_PIPELINESTAT_START_DWORDS);
+   CHECK(pipelinestat_start[0] == PKT3(PKT3_EVENT_WRITE, 0, 0));
+   CHECK(pipelinestat_start[1] ==
+         (EVENT_TYPE(EVENT_TYPE_PIPELINESTAT_START) | EVENT_INDEX(0)));
+
    test_start_3d_cmdbuf_packet();
    test_sq_config_packets();
    test_compute_lds_packet_is_empty();
