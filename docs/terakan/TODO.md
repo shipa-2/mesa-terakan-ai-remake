@@ -220,6 +220,28 @@ replacing the old table (`SQ_PGM_RESOURCES_VS` changed from `0x00200001` to `0x0
 characterization only. The GPU was still in a repeated post-lockup reset/self-test loop, so no
 execution or readback claim is made.
 
+After a clean reboot, the NIR-generated three-index clear completed its fence six times without a
+kernel error, but initially left all four distinct host-written RGBA8 texels unchanged. A dedicated
+vertex-bytecode diagnostic confirms that the R700 meta VS reads the immediate index from `R0.x`,
+unpacks its two 16-bit coordinates and exports `POS0 = xy01`; therefore source NIR compilation and
+the position export are not the explanation for that silent no-op. Removing the unused single-slice
+layer export also changed nothing, and adding the required transfer-write-to-host-read barrier did
+emit the cache flush and `SURFACE_SYNC` tail but still changed no texel.
+
+Two omissions relative to the classic framebuffer path were then corrected. R600/R700 now writes
+`CB_SHADER_CONTROL`, enabling all RT slots through the highest bound color target as
+`r600_emit_framebuffer_state()` does; this was required state, but on its own still produced four
+unchanged texels. More importantly, the TeraScale 1 context baseline had never initialized
+`PA_SC_WINDOW_SCISSOR_TL/BR`: the classic driver writes it for every framebuffer, while Terakan's
+actual render-area clipping uses `VPORT_SCISSOR`. Initializing the outer window scissor to the same
+8192-by-8192 limit as the classic start atom's screen/generic scissors made the 2-by-2 linear RGBA8
+clear and host readback pass on real RV710. It passed once immediately after the remote source build
+and then 10/10 repeated runs, with no new radeon kernel-journal error. The four input texels are all
+different and none equals the requested `0xff00ff00`, so a skipped draw cannot pass this check.
+This proves one single-sample linear clear through CB and its host-visible cache tail. It does not
+yet prove texture sampling, image-to-buffer meta copying, tiled CB addressing, layers, MSAA,
+application rendering or general queue safety; the default TeraScale 1 submit guard remains.
+
 Direct indexed application draws now follow `r600_draw_vbo()` too: R600/R700 binding emits no
 Evergreen `INDEX_BASE`/`INDEX_BUFFER_SIZE`, and `vkCmdDrawIndexed` carries the adjusted absolute
 40-bit address in `PKT3_DRAW_INDEX` with an immediate DRM relocation. The exact packet has a CPU
