@@ -1930,23 +1930,33 @@ and `NOOP_CULL_DISABLE` in `DB_RENDER_OVERRIDE`.
 Both were turned up by the wider stride sample and are recorded here with what a first pass
 established, so a later reduction does not start from nothing.
 
-### Block-compatible views: only `texelFetch` fails, and only for some shapes
+### Block-compatible views: `texelFetch` was reading a coordinate nobody wrote
 
 `dEQP-VK.image.texel_view_compatible` reads a block-compressed image through an uncompressed
-view. Of the five operations it tries, four are clean in a 2160-case sample -- `image_load`,
-`image_store`, `texture` and the graphics `texture_read` all pass 102 of 102 -- and
-`texel_fetch` splits exactly in half, 51 passing and 51 failing. The split follows the shape:
+view. Of the five operations it tries, four were clean in a 2160-case sample -- `image_load`,
+`image_store`, `texture` and the graphics `texture_read` all passed 102 of 102 -- and
+`texel_fetch` split exactly in half, 51 passing and 51 failing, along the shape rather than the
+format: 1D failed with and without mipmaps, 2D failed only with them, 3D passed either way.
 
-| | no mipmaps (`basic`) | mipmaps (`extended`) |
-|---|---|---|
-| 1D | fails | fails |
-| 2D | passes | fails |
-| 3D | passes | passes |
+The 1D half had nothing to do with mipmaps. Every block-compressed image is tiled, and a tiled
+1D image cannot be described by a 1D resource, so the driver promotes it to a 2D one -- with a
+height of one, which sampling never notices because the address modes fold any row onto the only
+row there is. A fetch does notice: an integer coordinate outside the image returns zero rather
+than clamping, and the second coordinate was never written. `LowerTexToBackend::lower_txf` fills
+the first coordinate and the level and leaves the second null for a non-array 1D fetch, so what
+the fetch used was whatever the register held.
 
-The failure is `Decompression failed` with a difference of `-nan`, so the fetched texels are not
-merely displaced. That `texture` passes where `texelFetch` fails on the same view says the view
-itself is set up right and the integer fetch is not, and that 3D passes with mipmaps while 2D
-does not says it is not simply the mip level's size either.
+Writing a zero there closes the 1D half: 51 failures become 34, all of them `extended`, and
+`glsl.texture_functions.texelfetch` stays at 240 of 240.
+
+The `extended` half is a different defect. A view of a non-base mip level is described with a
+fake base level twice the size, so the wanted level is reached as level 1 -- the hardware derives
+the slice pitch of a non-base level from the height, and a level bound as the base would address
+multiple layers wrongly. `BASE_LEVEL` and `LAST_LEVEL` are both set to 1, which is what keeps
+sampling on the right level; a fetch takes its level from the instruction and lands on the fake
+base instead. The level a `texelFetch` names is relative to the view, and for these views the
+only legal value is zero, so the driver would have to bias it by one -- which the shader cannot
+know, since the base level belongs to the descriptor.
 
 ### Border colour: white is four times likelier to be wrong than black
 
