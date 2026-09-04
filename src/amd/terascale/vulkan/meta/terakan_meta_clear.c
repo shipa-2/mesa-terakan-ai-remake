@@ -639,6 +639,16 @@ terakan_CmdClearColorImage(VkCommandBuffer const commandBuffer, VkImage const im
             if (unlikely(image_descriptor_slices == 0)) {
                break;
             }
+            /* R600/R700 layered rendering from a vertex shader has not been validated. Avoid
+             * exporting gl_Layer for the common single-slice case, where it is semantically
+             * unnecessary. Keep Evergreen and actual multi-slice draws unchanged; the latter
+             * remains an explicit TeraScale 1 hardware-validation boundary. */
+            if (terakan_gfx_command_writer_physical_device(command_writer)
+                   ->chip_info.is_terascale_1 &&
+                image_descriptor_slices == 1) {
+               terakan_meta_config_draw_set_sq_pgm_vs(command_writer,
+                                                      TERAKAN_META_SHADER_POSITION_FROM_INDEX_VS);
+            }
 #if UTIL_ARCH_BIG_ENDIAN
             /* Reinterpreting as a raw format with the clear value pre-swapped. */
             image_descriptor.info &= C_028C70_ENDIAN;
