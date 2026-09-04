@@ -486,7 +486,11 @@ terakan_meta_draw_immediate_32_bit_indexed(struct terakan_gfx_command_writer * c
    if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1 &&
        terakan_debug_terascale_1_meta_zero_count_draw()) {
       /* Executes the complete state-validation path without launching shader waves. This is a
-       * hardware localization probe only; it proves no rendering or memory access. */
+       * hardware localization probe only; it proves no rendering or memory access. On RV710 a
+       * zero-count DRAW_INDEX_AUTO completes with only the pipeline-stat event before it, but
+       * locks ring 0 once ordinary shared draw state is present. Thus it must not be treated as a
+       * generally safe substitute for a draw, nor may survival of an earlier prefix validate a
+       * later one. */
       packet = terakan_gfx_command_writer_emit(command_writer,
                                                TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DRAW, 3);
       if (unlikely(packet == NULL)) {

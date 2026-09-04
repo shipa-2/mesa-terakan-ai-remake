@@ -200,9 +200,16 @@ A real three-index meta draw is accepted by the parser but locks ring 0. A zero-
 `PKT3_DRAW_INDEX_AUTO` isolator was added to distinguish draw/state validation from shader-wave
 execution. Its first apparent success overlapped the delayed reset from the preceding lockup, and
 subsequent attempts timed out while the adapter repeatedly failed its post-reset IB self-test.
-Consequently there is deliberately no zero-count hardware claim yet. After the machine/GPU is
-cleanly recovered, run the zero-count draw with meta configuration stages 0 through 4; do not
-repeat the real meta draw until the first failing stage is known.
+Two clean-boot attempts have now bounded the zero-count behavior more precisely. With shared-state
+entry 0 only (the pipeline-stat event), the submission and fence complete. Adding entry 1 makes the
+zero-count draw lock ring 0; however, the same `VGT_PRIMITIVE_TYPE = RECTLIST` register packet with
+the draw replaced by TYPE2 padding completes cleanly, so the register packet by itself is not the
+cause. On another clean boot, skipping entry 1 but adding the remaining shared entries also locks
+the zero-count draw. Therefore a zero-count `DRAW_INDEX_AUTO` on RV710 is not a valid safety oracle
+once normal draw state has been configured. These are single clean-boot observations per variant,
+not repetition-qualified rendering results. Continue localization with TYPE2 for state-only checks
+and audit the real nonzero draw path against Gallium; do not infer shader-wave behavior from the
+zero-count packet.
 
 The first two shaders needed by that clear no longer reuse their hand-written Evergreen bytecode
 on TeraScale 1. The packed-index position VS (including the layered variant) and constant-colour
