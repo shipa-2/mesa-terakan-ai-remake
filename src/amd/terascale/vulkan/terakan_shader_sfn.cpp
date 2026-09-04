@@ -239,6 +239,15 @@ terakan_shader_impl_compile(terakan_shader_impl * const shader, terakan_device *
       r600_bytecode_disasm(&shader->shader.bc);
       fprintf(stderr, "===== END TERAKAN FRAGMENT BYTECODE =====\n");
    }
+   if (unlikely(getenv("TERAKAN_DEBUG_DUMP_VERTEX_BYTECODE") != nullptr) &&
+       nir->info.stage == MESA_SHADER_VERTEX) {
+      static std::mutex vertex_disasm_mutex;
+      std::lock_guard<std::mutex> const disasm_lock(vertex_disasm_mutex);
+      fprintf(stderr, "\n===== TERAKAN VERTEX BYTECODE %s =====\n",
+              nir->info.name != nullptr ? nir->info.name : "unnamed");
+      r600_bytecode_disasm(&shader->shader.bc);
+      fprintf(stderr, "===== END TERAKAN VERTEX BYTECODE =====\n");
+   }
    char const * const graphics_machine_hash =
       getenv("TERAKAN_DEBUG_DUMP_GRAPHICS_MACHINE_BLAKE3");
    if (unlikely(graphics_machine_hash != nullptr &&
