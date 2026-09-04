@@ -11,8 +11,12 @@ repository.
 
 ## Hardware and current status
 
-Development is currently validated on AMD CAICOS using the Linux `radeon`
-kernel driver.
+Development is validated on AMD CAICOS (Evergreen/R8xx) using the Linux
+`radeon` kernel driver. A separate port to TeraScale 1 (R600/R700) is under
+way on real RV610 and RV710 hardware; it is described below and is not usable
+for rendering yet.
+
+### Evergreen (CAICOS)
 
 | Area | Current result |
 |---|---|
@@ -26,10 +30,48 @@ kernel driver.
 | vkQuake3 | Vulkan renderer works in a 640x480 window |
 | DXVK-Sarek | D3D11 FL 11_1; Katamari and Disco Elysium render, Green Hell creates its 1920x1080 swapchain |
 
-The main unfinished areas are complete depth/stencil resolve behavior,
-FMASK/CMASK-backed multisample sampling, unusual MSAA formats and subresources,
-complete cache/barrier coverage, and Vulkan conformance. See the detailed
-[status page](docs/terakan/STATUS.md).
+Copies, blits and resolves are complete: `dEQP-VK.api.copy_and_blit.core.resolve_image`
+passes 102 of 102, and none of a 8536-case stride sample across the whole group
+fails. The main unfinished areas are complete cache/barrier coverage, the
+vertex pipeline stages (geometry, tessellation, transform feedback), and Vulkan
+conformance. See the detailed [status page](docs/terakan/STATUS.md).
+
+### TeraScale 1 (R600/R700)
+
+R600 and R700 need a genuinely separate code path rather than different values
+in the Evergreen one: no tessellator, a fixed 64-lane wavefront, and a
+differently shaped `SQ_THREAD_RESOURCE_MGMT`/`SQ_GPR_RESOURCE_MGMT` register
+set. The work is deliberately incremental, and the boundary between what the
+hardware has confirmed and what is only packet-level is kept explicit.
+
+| Area | Current result |
+|---|---|
+| Device enumeration and properties | Real RV610 `1002:94c1` and RV710 `1002:954f` are recognized and report their own limits |
+| Logical device creation | Passes create/destroy on both, ten consecutive runs |
+| Image layout and allocation | Linear and tiled create/layout/allocate/bind pass on hardware, including mip chains and the classic FMASK/CMASK pair for MSAA |
+| Shader compilation | Real application vertex and fragment pipelines compile for `ISA_CC_R600` and `ISA_CC_R700` |
+| Command submission | An empty recorded command buffer completes its fence on RV710, once and then five more times, with a clean kernel journal |
+| CP DMA | Chunk limits and packet construction have exact CPU oracles; a buffer-to-buffer copy probe is built |
+| Rendering | **Not working.** No draw has produced correct output on TeraScale 1 |
+
+Submission is off by default and stays off unless asked for explicitly:
+`terakan_queue_submit` returns `VK_ERROR_DEVICE_LOST` unless
+`TERAKAN_DEBUG_TERASCALE_1_SUBMIT=1` is set exactly. That guard is a bring-up
+tool, not a switch that makes the driver usable -- submitting real work on this
+path has locked the adapter and needed a reboot.
+
+Most of the register work behind these rows is verified by exact CPU oracles
+over the emitted packets rather than by the hardware: per-draw CB/DB/SPI state,
+the direct indexed draw packet, the preamble, and the NIR meta shaders for
+clearing are all in that state. Building for these generations:
+
+```bash
+TERAKAN_TARGET_GENERATION=r700 ./bin/terakan-build
+```
+
+`auto` -- the default -- reads the card in the build machine, so an Evergreen
+machine labels the build `r800` whatever the target is; set the variable when
+cross-building.
 
 ## Quick start
 
@@ -59,7 +101,7 @@ only the build type and, if asked for, the target generation:
 ./bin/terakan-build --debug  # meson setup --buildtype=debug
 ```
 
-`./bin/terakan-test` runs the focused suite -- 13 CPU tests and 68 CAICOS GPU
+`./bin/terakan-test` runs the focused suite -- 13 CPU tests and 69 CAICOS GPU
 tests -- against the build in `build-vulkan/`.
 
 Run applications against the local build without installing it:
