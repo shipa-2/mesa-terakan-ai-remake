@@ -1468,26 +1468,37 @@ rather than reducing it to the current sample's bit. Narrowing it to
 surplus is not above the sample count; what that register actually holds on
 this hardware has still to be established.
 
-## Depth/stencil clears of high array layers on small images
+## Depth/stencil clears on small images
 
-`dEQP-VK.api.image_clearing.*.clear_depth_stencil_image` passes 350 of the 450
-cases it supports and fails 100. The axes are sharp:
+`dEQP-VK.api.image_clearing.*.clear_depth_stencil_image` passes 349 of the 450
+cases it supports and fails 101, and it is the whole of what
+`api.image_clearing` still fails. The axes, remeasured:
 
-- It is order dependent. `clear_depth_stencil_image.2d.single_layer\
-  .d32_sfloat_s8_uint_33x128` passes inside a full-suite run and fails three
-  times out of three when run on its own, so this family has to be measured as
-  a whole family and a single-case reproduction can mislead. The counts below
-  are from whole-family runs.
-- The layer range decides it. `multiple_layers`, which clears layers 2 to 6,
-  passes every case. `remaining_array_layers` and its `twostep` variant, which
-  clear from layer 8 to the end of a sixteen-layer image, account for almost
-  all the failures.
-- The image size decides it. At 200x180 and 55x21x11 every layer range passes;
-  the failures are at 1x33, 32x29x3, 33x128 and 64x11.
-- The aspect decides it. `d32_sfloat_64x11` at `remaining_array_layers` passes
-  while `s8_uint_64x11` fails, and the message is always a stencil one:
-  `Ref:6 Threshold:0 Stencil:0`, a texel inside the clear range still holding
-  the initial value, so the clear did not reach it.
+- **The image size decides it, and it is the only axis that decides it
+  outright.** At 200x180 and 55x21x11 everything passes, whatever the format,
+  aspect or layer range. The failures are all at 1x33, 64x11, 33x128 and
+  32x29x3, and at 1x33 every single format fails.
+- **Not the layer range**, which the earlier reading of this had wrong. Of the
+  101, 63 are `single_layer` -- a one-layer image cleared whole -- against 22
+  for `remaining_array_layers` and 16 for its `twostep` variant.
+- **Not the aspect**, which the earlier reading also had wrong. Depth-only
+  formats fail too: 11 `d16_unorm`, 8 `x8_d24_unorm_pack32`, 7 `d32_sfloat`,
+  and the message for those is `Depth value mismatch! Ref:0.1 Threshold:1.4e-44
+  Depth:0` -- a texel that should have been cleared to 0.1 still holding zero.
+- **Not the mip level.** Instrumenting the clear shows one draw at level 0 for
+  these cases; the images have a single level.
+- It stays order dependent at the edges: `d32_sfloat_64x11` fails under one of
+  the two allocation prefixes and passes under the other in the same run. The
+  four sizes and `1x33`'s completeness are stable.
+
+The single-case reproduction the earlier note warned against does work for the
+clear ones: `2d.single_layer.d32_sfloat_64x11` and `_1x33` fail on their own,
+three times out of three, while `_200x180` passes.
+
+Excluded by measurement, in addition to the older list below: the depth
+descriptor. `DB_DEPTH_SIZE` and `DB_DEPTH_SLICE` were printed for a failing
+64x11 and a passing 200x180 and both decode exactly right -- pitch 64 and 200,
+height 16 and 184, slice 1024 and 36800 texels, matching the aligned extents.
 
 The colour path is not affected in the same shape: `clear_color_image` with
 `remaining_array_layers` on `r8_uint` passes at 64x11 and 1x33, one byte per
