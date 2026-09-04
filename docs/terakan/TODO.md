@@ -204,6 +204,20 @@ Consequently there is deliberately no zero-count hardware claim yet. After the m
 cleanly recovered, run the zero-count draw with meta configuration stages 0 through 4; do not
 repeat the real meta draw until the first failing stage is known.
 
+The first two shaders needed by that clear no longer reuse their hand-written Evergreen bytecode
+on TeraScale 1. The packed-index position VS (including the layered variant) and constant-colour
+PS are now built as NIR and compiled by SFN with the runtime family. RV710 device creation proves
+that all three compile with `ISA_CC_R700`; a kernel-facing dry-run also shows generated R700 state
+replacing the old table (`SQ_PGM_RESOURCES_VS` changed from `0x00200001` to `0x00200102`, and
+`SPI_PS_IN_CONTROL_0` from `0x20000001` to `0x10000000`). This is compilation and packet
+characterization only. The GPU was still in a repeated post-lockup reset/self-test loop, so no
+execution or readback claim is made.
+
+Direct indexed application draws now follow `r600_draw_vbo()` too: R600/R700 binding emits no
+Evergreen `INDEX_BASE`/`INDEX_BUFFER_SIZE`, and `vkCmdDrawIndexed` carries the adjusted absolute
+40-bit address in `PKT3_DRAW_INDEX` with an immediate DRM relocation. The exact packet has a CPU
+oracle; indirect indexed draws and all indexed hardware execution remain unverified.
+
 ## Completed and regression-covered
 
 - Multisample correctness, closed as a group. Seven defects, each with a probe or
