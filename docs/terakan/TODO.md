@@ -1379,8 +1379,28 @@ memory. One layer per draw, since the source and destination layers are independ
 
 `resolve_image` goes from 33 failures to 9, all 24 of the copy cases fixed, and a 5906-case
 sample of `image_to_image` and `depth_stencil_msaa_copy` stays at 2823 passing and none failing.
-The 9 that remain are `partial` and `with_regions`, which are resolves rather than copies and
-need differing source and destination offsets -- the disabled shader resolve path.
+
+### Resolves that move the rectangle
+
+The 9 left were `partial` and `with_regions`: resolves whose source and destination offsets
+differ. Evergreen's fixed-function CB resolve reads and writes the same coordinate, so it cannot
+express one, and those regions were being skipped -- the resolve silently did nothing for them.
+
+The driver already had a shader path, used for integer formats because averaging is not what
+Vulkan asks of them and `CB_RESOLVE` cannot be told to stop. It reaches the source through a
+fetch, so it can offset it; what it lacked was a reason to run for anything else, and an average.
+Both are now there: the path is taken whenever a region moves the rectangle, the source offset
+arrives in the same constants the copy shaders use, and three NIR shaders average two, four or
+eight samples for the formats that want an average rather than a selected sample.
+
+The hand-written 2x averaging shader that has sat unused since the beginning is still unused --
+it did not decode direct sample coordinates correctly and corrupted the whole frame, which is why
+it was disabled, and the NIR ones replace it rather than revive it.
+
+`resolve_image` is now 102 passing and none failing, from 33 failing when this row was written.
+A 460-case sample of `renderpass`, `renderpass2` and `pipeline.multisample` has one failure,
+`min_sample_shading.min_0_75.samples_2.primitive_triangle`, which fails identically without this
+change.
 
 ## Multisample depth/stencil copies of anything but the whole image
 

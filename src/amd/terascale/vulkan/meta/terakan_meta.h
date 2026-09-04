@@ -177,6 +177,15 @@ enum terakan_meta_shader_index {
     */
    TERAKAN_META_SHADER_COPY_COLOR_MSAA_PS,
 
+   /* Averages every sample of a multisample colour source, which is what the fixed-function CB
+    * resolve does. It can only do it where the source and destination coordinates agree, since it
+    * reads and writes the same one, so a region that moves the rectangle comes here. The indices
+    * for the three sample counts must be consecutive. Built as NIR; see meta/terakan_meta_nir.c.
+    */
+   TERAKAN_META_SHADER_RESOLVE_AVERAGE_2X_PS,
+   TERAKAN_META_SHADER_RESOLVE_AVERAGE_4X_PS,
+   TERAKAN_META_SHADER_RESOLVE_AVERAGE_8X_PS,
+
    TERAKAN_META_SHADER_COUNT,
 };
 
