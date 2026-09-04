@@ -1357,6 +1357,31 @@ closed "many distinct compute pipelines rather than one" -- every concrete
 gap this note originally named. So whatever the application hits is narrower
 than this composition shape.
 
+## Multisample colour copies that are not the whole of two identical surfaces
+
+`vkCmdCopyImage` between two multisample colour images had one path: a byte copy of the whole
+surface through CP DMA, which needs the two to be laid out identically and the region to cover
+all of both. Anything else fell to the single-sample meta draw, which cannot stand in for it --
+it samples the source, and sampling a multisample image resolves rather than copies, and it
+writes a single-sample destination.
+
+`dEQP-VK.api.copy_and_blit.core.resolve_image` is where that showed, since five of its groups
+copy the multisample image before resolving it. The shape they use is a one-layer source
+broadcast into five destination layers, one region per layer, so the two surfaces differ and the
+byte copy cannot apply.
+
+The colour counterpart of the depth and stencil path is what it wanted: bind the destination as a
+multisample colour target, draw once per sample with `PA_SC_AA_MASK` restricting the draw to the
+sample the shader fetched, and fetch that sample from the source with `txf_ms`. Unlike the depth
+one it needs nothing from DB, and unlike the byte copy it does not care whether the layouts match
+or which layer goes where, because the samples travel through the shader rather than through
+memory. One layer per draw, since the source and destination layers are independent.
+
+`resolve_image` goes from 33 failures to 9, all 24 of the copy cases fixed, and a 5906-case
+sample of `image_to_image` and `depth_stencil_msaa_copy` stays at 2823 passing and none failing.
+The 9 that remain are `partial` and `with_regions`, which are resolves rather than copies and
+need differing source and destination offsets -- the disabled shader resolve path.
+
 ## Multisample depth/stencil copies of anything but the whole image
 
 `dEQP-VK.api.copy_and_blit.*.depth_stencil_msaa_copy` passed 216 of the 324

@@ -170,6 +170,13 @@ enum terakan_meta_shader_index {
    TERAKAN_META_SHADER_COPY_DEPTH_MSAA_PS,
    TERAKAN_META_SHADER_COPY_STENCIL_MSAA_PS,
 
+   /* Copies one sample of a multisample colour image, the sample index and the source offset
+    * coming from the constants. The single-sample copy shader samples the source and lets the
+    * hardware pick, which is a resolve rather than a copy: a multisample destination has to be
+    * given each sample separately. Built as NIR; see meta/terakan_meta_nir.c.
+    */
+   TERAKAN_META_SHADER_COPY_COLOR_MSAA_PS,
+
    TERAKAN_META_SHADER_COUNT,
 };
 

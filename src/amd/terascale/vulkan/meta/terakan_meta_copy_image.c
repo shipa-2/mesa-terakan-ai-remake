@@ -518,6 +518,179 @@ terakan_meta_copy_image_multisample_depth_stencil(
    return true;
 }
 
+/* A multisample colour copy the whole-surface byte copy cannot take: differing layouts, a single
+ * layer of a multi-layer destination, one source layer broadcast into several destination ones, or
+ * a partial rectangle. The single-sample meta draw below cannot stand in for it -- it samples the
+ * source, which on a multisample one resolves rather than copies, and it writes a single-sample
+ * destination.
+ *
+ * So the destination is bound as a multisample colour target and drawn once per sample, with the
+ * rasterization mask restricting each draw to the sample the shader fetched. That is the same
+ * shape as the depth and stencil path above, and unlike it needs nothing from DB.
+ *
+ * Returns false for a copy this cannot express, having emitted nothing.
+ */
+static bool
+terakan_meta_copy_image_multisample_color(struct terakan_gfx_command_writer * const command_writer,
+                                          struct terakan_image const * const src_image,
+                                          struct terakan_image const * const dst_image,
+                                          VkCopyImageInfo2 const * const copy_info)
+{
+   if (src_image->vk.samples <= VK_SAMPLE_COUNT_1_BIT ||
+       src_image->vk.samples != dst_image->vk.samples || copy_info->regionCount == 0) {
+      return false;
+   }
+   /* Only colour, and only one aspect: anything else is not what a colour target writes. */
+   for (uint32_t region_index = 0; region_index < copy_info->regionCount; ++region_index) {
+      VkImageCopy2 const * const region = &copy_info->pRegions[region_index];
+      if (region->srcSubresource.aspectMask != VK_IMAGE_ASPECT_COLOR_BIT ||
+          region->dstSubresource.aspectMask != VK_IMAGE_ASPECT_COLOR_BIT ||
+          region->extent.depth != 1) {
+         return false;
+      }
+   }
+   /* The fetch and the export both move raw bits, so the two formats only have to be the same
+    * size. terakan_meta_transfer_image_block_format_info gives each side a view of that size.
+    */
+   unsigned const src_bytes_per_block =
+      terascale_format_bytes_per_block[src_image->format_info.aspect_formats[0].format];
+   if (src_bytes_per_block !=
+       terascale_format_bytes_per_block[dst_image->format_info.aspect_formats[0].format]) {
+      return false;
+   }
+
+   uint32_t const sample_count = (uint32_t)src_image->vk.samples;
+   unsigned const samples_log2 = util_logbase2(sample_count);
+
+   /* The source has just been written as a colour attachment and is about to be read as a texture,
+    * and the destination is about to be written as one.
+    */
+   terakan_barrier_emit_actions_unconditionally(
+      command_writer, TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RTV_DATA |
+                         TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_PS |
+                         TERAKAN_BARRIER_ACTION_INV_TC);
+
+   struct terakan_meta_config_draw_begin_options const begin_options = {
+      .vgt_primitive_type = V_008958_DI_PT_RECTLIST,
+      .cb_and_db_shader_control_mode =
+         TERAKAN_META_CONFIG_DRAW_BEGIN_CB_MODE_NORMAL_WITH_RTV_AND_DYNAMIC_DB_SHADER_CONTROL,
+      .rasterization = {.enable = true,
+                        .msaa_num_samples_log2 = (unsigned char)samples_log2,
+                        .msaa_num_anchor_samples_log2 = (unsigned char)samples_log2},
+   };
+   terakan_meta_config_draw_begin(command_writer, &begin_options);
+   terakan_meta_config_draw_set_sq_pgm_vs(command_writer,
+                                          TERAKAN_META_SHADER_POSITION_AND_LAYER_FROM_INDEX_VS);
+   terakan_meta_config_draw_set_sq_pgm_ps(command_writer, TERAKAN_META_SHADER_COPY_COLOR_MSAA_PS);
+
+   unsigned const meta_resource_index = TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META;
+   struct terakan_hw_config_sqk_stage * const fs_sqk_stage =
+      &command_writer->hw_config_sqk.stages_[MESA_SHADER_FRAGMENT];
+   bool const saved_fs_resource_bound =
+      BITSET_TEST(fs_sqk_stage->resources_bound, meta_resource_index);
+   struct terakan_hw_config_sqk_resource saved_fs_resource;
+   if (saved_fs_resource_bound) {
+      saved_fs_resource = command_writer->hw_config_sqk.resources_fs_[meta_resource_index];
+   }
+
+   struct terascale_format_info const transfer_format =
+      terakan_meta_transfer_image_block_format_info(src_bytes_per_block);
+
+   for (uint32_t region_index = 0; region_index < copy_info->regionCount; ++region_index) {
+      VkImageCopy2 const * const region = &copy_info->pRegions[region_index];
+      VkRect2D const dst_region_rect = {
+         .offset = {.x = region->dstOffset.x, .y = region->dstOffset.y},
+         .extent = {.width = region->extent.width, .height = region->extent.height}};
+      int32_t constants[TERAKAN_META_COPY_IMAGE_CONSTS_COUNT] = {};
+      constants[TERAKAN_META_COPY_IMAGE_CONST_SRC_MINUS_DST_OFFSET_X] =
+         region->srcOffset.x - region->dstOffset.x;
+      constants[TERAKAN_META_COPY_IMAGE_CONST_SRC_MINUS_DST_OFFSET_Y] =
+         region->srcOffset.y - region->dstOffset.y;
+
+      uint32_t const layer_count =
+         MIN2(region->srcSubresource.layerCount, region->dstSubresource.layerCount);
+
+      /* One layer at a time: the source layer and the destination layer are independent, and a
+       * multi-slice draw would tie them together.
+       */
+      for (uint32_t layer_index = 0; layer_index < layer_count; ++layer_index) {
+         struct terakan_image_descriptor_create_info src_descriptor_info = {
+            .image = src_image,
+            .view_format = transfer_format,
+            .image_aspect_index = 0,
+            .subresource_range = {.base_mip_level = region->srcSubresource.mipLevel,
+                                  .max_level_count = 1,
+                                  .base_z_or_array_layer =
+                                     region->srcSubresource.baseArrayLayer + layer_index,
+                                  .max_depth_or_layer_count = 1},
+         };
+         if (!terakan_image_descriptor_subresource_range_sanitize(
+                src_image, &src_descriptor_info.subresource_range, false)) {
+            continue;
+         }
+         struct terakan_resource_descriptor src_descriptor;
+         if (!terakan_image_create_resource_descriptor(
+                &src_descriptor_info, V_030000_SQ_TEX_DIM_2D_ARRAY_MSAA, NULL, &src_descriptor)) {
+            continue;
+         }
+
+         struct terakan_image_descriptor_create_info dst_descriptor_info = {
+            .image = dst_image,
+            .view_format = transfer_format,
+            .image_aspect_index = 0,
+            .subresource_range = {.base_mip_level = region->dstSubresource.mipLevel,
+                                  .max_level_count = 1,
+                                  .base_z_or_array_layer =
+                                     region->dstSubresource.baseArrayLayer + layer_index,
+                                  .max_depth_or_layer_count = 1},
+         };
+         if (!terakan_image_descriptor_subresource_range_sanitize(
+                dst_image, &dst_descriptor_info.subresource_range, false)) {
+            continue;
+         }
+         struct terakan_color_descriptor dst_descriptor;
+         if (terakan_image_create_color_descriptor(&dst_descriptor_info, V_028C70_TEXTURE2DARRAY,
+                                                    &dst_descriptor, NULL) == 0) {
+            continue;
+         }
+
+         terakan_hw_config_sqk_set_resource_fs(&command_writer->hw_config_sqk, meta_resource_index,
+                                               src_image->bo, &src_descriptor);
+         terakan_meta_config_draw_set_cb_rtvs_and_db_shader_control(
+            command_writer, 0xF, &dst_image->bo, &dst_descriptor, NULL,
+            TERAKAN_SHADER_DB_SHADER_CONTROL_IDENTITY);
+
+         struct terakan_screen_rect const draw_rect = terakan_vk_rect_to_screen_rect(
+            dst_region_rect,
+            (struct terakan_screen_rect){
+               .bounds = {[1] = {G_028C78_WIDTH_MAX(dst_descriptor.dim) + 1,
+                                 G_028C78_HEIGHT_MAX(dst_descriptor.dim) + 1}}});
+
+         for (uint32_t sample_index = 0; sample_index < sample_count; ++sample_index) {
+            constants[TERAKAN_META_COPY_IMAGE_CONST_SAMPLE_INDEX] = (int32_t)sample_index;
+            terakan_meta_config_draw_set_kcache_push_constants(command_writer, sizeof(constants),
+                                                               constants, false, true);
+            terakan_app_config_draw_set_pending(&command_writer->app_config_draw,
+                                                TERAKAN_APP_CONFIG_DRAW_ENTRY_PA_SC_AA_MASK);
+            terakan_hw_config_draw_set_pa_sc_aa_mask(&command_writer->hw_config_draw,
+                                                     (uint16_t)(1u << sample_index));
+            terakan_meta_draw_rect(command_writer, draw_rect, 1);
+         }
+      }
+   }
+
+   terakan_hw_config_sqk_set_resource_fs(
+      &command_writer->hw_config_sqk, meta_resource_index,
+      saved_fs_resource_bound ? saved_fs_resource.bo : NULL,
+      saved_fs_resource_bound ? &saved_fs_resource.descriptor : NULL);
+
+   terakan_barrier_emit_actions_unconditionally(
+      command_writer, TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RTV_DATA |
+                         TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_PS |
+                         TERAKAN_BARRIER_ACTION_INV_TC);
+   return true;
+}
+
 VKAPI_ATTR void VKAPI_CALL
 terakan_CmdCopyImage2(VkCommandBuffer const commandBuffer,
                       VkCopyImageInfo2 const * const pCopyImageInfo)
@@ -713,6 +886,17 @@ terakan_CmdCopyImage2(VkCommandBuffer const commandBuffer,
                                                          pCopyImageInfo)) {
       if (debug_copy_call < 4096) {
          fprintf(stderr, "[TERAKAN_IMAGE_OP]   path=meta-draw-ds-msaa\n");
+      }
+      return;
+   }
+
+   /* A multisample colour region the byte copy could not take: the meta draw below samples the
+    * source, which resolves rather than copies, and writes a single-sample destination.
+    */
+   if (terakan_meta_copy_image_multisample_color(command_writer, src_image, dst_image,
+                                                 pCopyImageInfo)) {
+      if (debug_copy_call < 4096) {
+         fprintf(stderr, "[TERAKAN_IMAGE_OP]   path=meta-draw-color-msaa\n");
       }
       return;
    }
