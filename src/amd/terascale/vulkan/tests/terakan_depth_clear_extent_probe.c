@@ -6,47 +6,51 @@
 /* A characterization tool, not a pass/fail test, which is why it is built but not run by
  * bin/terakan-test.
  *
- * dEQP-VK.api.image_clearing.*.clear_depth_stencil_image is the whole of what api.image_clearing
- * still fails, and the axis that decides it is the image size: 200x180 and 55x21x11 pass
- * throughout, while 1x33, 64x11, 33x128 and 32x29x3 fail, every format failing at 1x33. The
- * message says a texel that should have been cleared still holds its old value, and dEQP does not
+ * dEQP-VK.api.image_clearing.*.clear_depth_stencil_image was the whole of what api.image_clearing
+ * still failed, and the axis that decided it was the image size: 200x180 and 55x21x11 passed
+ * throughout, while 1x33, 64x11, 33x128 and 32x29x3 failed, every format failing at 1x33. The
+ * message said a texel that should have been cleared still held its old value, and dEQP does not
  * say which texel.
  *
  * So this clears a depth image of each size to a known value, reads every texel back, and prints
  * the ones that did not take it -- as a coordinate range and a count, so the shape of what the
- * clear missed is visible rather than just its existence.
+ * clear missed is visible rather than just its existence. The command sequence is dEQP's,
+ * ingredient by ingredient: a single mip level, the image filled from a buffer rather than by a
+ * clear, `VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL` throughout, and image barriers naming transfer
+ * access on both sides of the clear -- which is what Vulkan calls a clear and not the depth write
+ * this driver implements it as.
  *
- * What it found is not dEQP's failure but a neighbouring one, and the two select opposite sizes.
- * With a single mip level -- which is what dEQP creates here -- the clear misses the tail of the
- * two largest images and covers the four small ones completely:
+ * What that showed was the opposite of what the name suggests: the clear was never at fault. The
+ * fill was. `vkCmdCopyBufferToImage` draws into its destination through the color block, and it
+ * recorded the flush that makes those writes visible in the command buffer's *color* field. The
+ * barrier that followed named a depth image, so it looked in the depth field, found nothing, and
+ * emitted no flush -- leaving the tail of the fill in the color block to land on top of the clear.
+ * Hence the numbers: a near-constant 1216..1984 texels, at most about 8 KB, lost from the end of
+ * a large image in tiled order, and a small image lost whole because all of it still fitted in
+ * the block. `terakan_CmdCopyBufferToImage2` now picks the field by the destination's aspects,
+ * and every size below comes back clean.
  *
- *     200x180  1568 of 36000 texels left at the fill value, rows 160..175 from x 128 and rows
- *              176..179 from x 96
- *     55x21x11 1678 of 12705, in the last two depth slices
+ * The knobs are the controls that separated the two candidates, kept because they are what makes
+ * a claim about this defect checkable:
  *
- * `TERAKAN_PROBE_MIPS=1` gives the same images a full mip chain and every size comes back clean,
- * which makes the mip count the deciding variable and the control for it. The depth descriptor is
- * identical either way -- `size=0x0000b018` with pitch 200 and height 184, `slice_tile_max=574`
- * for 36800 texels -- and so is the memory requirement, 147200 bytes, exactly the aligned slice.
- * Forcing linear images changes nothing, and neither does the barrier: the missing texels hold
- * exactly the value the fill copy wrote, so the copy reached them and the draw did not.
+ *     TERAKAN_PROBE_SPLIT_FILL   ends the command buffer between the fill and the clear. This is
+ *                                the one that found it -- with the fill in a submit of its own
+ *                                every size passed even before the fix.
+ *     TERAKAN_PROBE_SPLIT        ends it between the clear and the readback instead, which did
+ *                                not help the large images and is how the two were told apart.
+ *     TERAKAN_PROBE_SPLIT_BARRIER  additionally repeats the store barrier at the end of the first
+ *                                buffer under TERAKAN_PROBE_SPLIT.
+ *     TERAKAN_PROBE_MIPS         gives the images a full mip chain, which hid the defect.
+ *     TERAKAN_PROBE_TWICE        clears twice; identical output, so this was never a race in the
+ *                                clear.
+ *     TERAKAN_PROBE_SLACK        pads the allocation by 64 KiB, ruling out a write past its end.
+ *     TERAKAN_PROBE_ONLY         runs a single named size.
+ *     TERAKAN_PROBE_MAP          prints the affected span of every row.
  *
- * dEQP's own failures are elsewhere and this does not reproduce them. The sequence
- * here is dEQP's, ingredient by ingredient: the image carries a full mip chain while only level
- * zero is cleared, it is filled from a buffer of zeroes first rather than by a clear, the clear
- * and both copies use `VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL`, the barriers around the clear are
- * image barriers naming transfer access on both sides -- which is what Vulkan calls a clear and
- * not the depth write this driver implements it as -- and the readback takes every level in one
- * command at dEQP's four-byte-aligned offsets. Every size passes.
- *
- * The clear itself was compared directly: printing the rectangle and the whole depth/stencil
- * descriptor from inside the driver gives byte-identical lines for the failing dEQP case and the
- * passing run here -- `rect=64x11 size=0x00000807 slice=0x0000000f zinfo=0x00002023`. So the
- * defect is not in what the clear is asked to do, and not in the command sequence around it
- * either. What is left is the state the rest of the process leaves behind, which is where the
- * order dependence this family has always shown points.
+ * The readback buffer is stamped with a third value beforehand, so a texel the copy back never
+ * wrote is reported separately from one the clear never wrote. It never fired, which is what
+ * placed the loss in the image rather than in the readback.
  */
-
 #include <vulkan/vulkan.h>
 #include <stdio.h>
 #include <string.h>
@@ -90,9 +94,14 @@ int main(void){
    struct probe_case const cases[]={
       {64,11,1,"64x11"}, {1,33,1,"1x33"}, {33,128,1,"33x128"}, {32,29,3,"32x29x3"},
       {200,180,1,"200x180"}, {55,21,11,"55x21x11"},
+      {200,160,1,"200x160"}, {200,176,1,"200x176"}, {200,184,1,"200x184"},
+      {128,180,1,"128x180"}, {96,180,1,"96x180"}, {256,180,1,"256x180"},
+      {64,180,1,"64x180"}, {200,64,1,"200x64"}, {200,128,1,"200x128"},
    };
 
+   char const * const only = getenv("TERAKAN_PROBE_ONLY");
    for(unsigned c=0;c<sizeof(cases)/sizeof(*cases);++c){
+      if(only!=NULL&&strcmp(only,cases[c].name)!=0) continue;
       uint32_t const w=cases[c].width, h=cases[c].height, d=cases[c].depth;
       /* One level, which is what dEQP creates for this group -- the driver's surface for a
        * single-level image is laid out differently from one carrying a chain.
@@ -114,7 +123,11 @@ int main(void){
        * allocation; the dedicated_allocation variant binds at zero. Both are tried.
        */
       VkDeviceSize const bind_offset = 0u;
-      mai.allocationSize = mr.size + bind_offset;
+      /* Optional slack after the image. If the depth block writes past the surface it was given,
+       * a mip chain would absorb it and a bare single level would not.
+       */
+      VkDeviceSize const slack = getenv("TERAKAN_PROBE_SLACK") != NULL ? 65536u : 0u;
+      mai.allocationSize = mr.size + bind_offset + slack;
       VkDeviceMemory imem; CK(vkAllocateMemory(dev,&mai,NULL,&imem));
       CK(vkBindImageMemory(dev,img,imem,bind_offset));
 
@@ -146,6 +159,10 @@ int main(void){
       VkDeviceMemory fmem; CK(vkAllocateMemory(dev,&fmai,NULL,&fmem)); CK(vkBindBufferMemory(dev,fill_buffer,fmem,0));
       float *fill_map; CK(vkMapMemory(dev,fmem,0,VK_WHOLE_SIZE,0,(void**)&fill_map));
       for(VkDeviceSize i=0;i<total/4u;++i) fill_map[i]=0.75f;
+      /* The readback buffer is stamped with a third value so that a texel the copy back never
+       * writes is told apart from a texel the clear never wrote.
+       */
+      for(VkDeviceSize i=0;i<total/4u;++i) map[i]=0.5f;
       (void)fill_map;
 
       CK(vkResetCommandBuffer(cmd,0));
@@ -173,6 +190,19 @@ int main(void){
       /* dEQP names the clear a transfer operation, which is what Vulkan calls it, rather than the
        * depth write this driver implements it as. Both barriers here are dEQP's.
        */
+      /* `TERAKAN_PROBE_SPLIT_FILL=1` cuts the command buffer between the fill and the clear, which
+       * tells apart a clear whose writes are lost from a fill whose writes land after the clear.
+       */
+      if(getenv("TERAKAN_PROBE_SPLIT_FILL")!=NULL){
+         CK(vkEndCommandBuffer(cmd));
+         CK(vkResetFences(dev,1,&fen));
+         VkSubmitInfo const fill_si={.sType=VK_STRUCTURE_TYPE_SUBMIT_INFO,.commandBufferCount=1,.pCommandBuffers=&cmd};
+         CK(vkQueueSubmit(q,1,&fill_si,fen));
+         if(vkWaitForFences(dev,1,&fen,VK_TRUE,10000000000ull)!=VK_SUCCESS){fprintf(stderr,"%s: fill fence wait failed\n",cases[c].name);return 1;}
+         vkDeviceWaitIdle(dev);
+         CK(vkResetCommandBuffer(cmd,0));
+         CK(vkBeginCommandBuffer(cmd,&bgi));
+      }
       VkImageMemoryBarrier between={.sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
         .srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT,.dstAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT,
         .oldLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,.newLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
@@ -181,12 +211,35 @@ int main(void){
       vkCmdPipelineBarrier(cmd,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,NULL,0,NULL,1,&between);
       VkClearDepthStencilValue const second={.depth=0.1f};
       vkCmdClearDepthStencilImage(cmd,img,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,&second,1,&level_zero);
+      if(getenv("TERAKAN_PROBE_TWICE")!=NULL){
+         vkCmdPipelineBarrier(cmd,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,NULL,0,NULL,1,&between);
+         vkCmdClearDepthStencilImage(cmd,img,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,&second,1,&level_zero);
+      }
+      /* `TERAKAN_PROBE_SPLIT=1` cuts the command buffer in two right here and waits for the queue
+       * to go idle, so the readback cannot possibly observe anything the clear left in a cache.
+       */
       VkImageMemoryBarrier stored={.sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-        .srcAccessMask=VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,.dstAccessMask=VK_ACCESS_TRANSFER_READ_BIT,
+        .srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT,.dstAccessMask=VK_ACCESS_TRANSFER_READ_BIT,
         .oldLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,.newLayout=VK_IMAGE_LAYOUT_GENERAL,
         .srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
         .image=img,.subresourceRange=whole};
-      vkCmdPipelineBarrier(cmd,VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,NULL,0,NULL,1,&stored);
+      /* `TERAKAN_PROBE_SPLIT_BARRIER=1` additionally puts the store barrier at the end of the first
+       * command buffer, which tells apart "the end of a command buffer does not flush the clear"
+       * from "the second command buffer loses it".
+       */
+      if(getenv("TERAKAN_PROBE_SPLIT_BARRIER")!=NULL)
+         vkCmdPipelineBarrier(cmd,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,NULL,0,NULL,1,&stored);
+      if(getenv("TERAKAN_PROBE_SPLIT")!=NULL){
+         CK(vkEndCommandBuffer(cmd));
+         CK(vkResetFences(dev,1,&fen));
+         VkSubmitInfo const split_si={.sType=VK_STRUCTURE_TYPE_SUBMIT_INFO,.commandBufferCount=1,.pCommandBuffers=&cmd};
+         CK(vkQueueSubmit(q,1,&split_si,fen));
+         if(vkWaitForFences(dev,1,&fen,VK_TRUE,10000000000ull)!=VK_SUCCESS){fprintf(stderr,"%s: split fence wait failed\n",cases[c].name);return 1;}
+         vkDeviceWaitIdle(dev);
+         CK(vkResetCommandBuffer(cmd,0));
+         CK(vkBeginCommandBuffer(cmd,&bgi));
+      }
+      vkCmdPipelineBarrier(cmd,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,NULL,0,NULL,1,&stored);
       vkCmdCopyImageToBuffer(cmd,img,VK_IMAGE_LAYOUT_GENERAL,rb,levels,regions);
       VkMemoryBarrier host={.sType=VK_STRUCTURE_TYPE_MEMORY_BARRIER,.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT,.dstAccessMask=VK_ACCESS_HOST_READ_BIT};
       vkCmdPipelineBarrier(cmd,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_HOST_BIT,0,1,&host,0,NULL,0,NULL);
@@ -196,12 +249,12 @@ int main(void){
       CK(vkQueueSubmit(q,1,&si,fen));
       if(vkWaitForFences(dev,1,&fen,VK_TRUE,10000000000ull)!=VK_SUCCESS){fprintf(stderr,"%s: fence wait failed\n",cases[c].name);return 1;}
 
-      unsigned wrong=0, stale=0;
+      unsigned wrong=0, stale=0, unwritten=0;
       uint32_t min_x=~0u,max_x=0,min_y=~0u,max_y=0,min_z=~0u,max_z=0;
       for(uint32_t z=0;z<d;++z) for(uint32_t y=0;y<h;++y) for(uint32_t x=0;x<w;++x){
          float const v=map[(z*h+y)*w+x];
          if(v>=0.0999f&&v<=0.1001f) continue;
-         ++wrong; if(v>=0.749f&&v<=0.751f) ++stale;
+         ++wrong; if(v>=0.749f&&v<=0.751f) ++stale; if(v>=0.499f&&v<=0.501f) ++unwritten;
          if(x<min_x)min_x=x; if(x>max_x)max_x=x;
          if(y<min_y)min_y=y; if(y>max_y)max_y=y;
          if(z<min_z)min_z=z; if(z>max_z)max_z=z;
@@ -218,9 +271,9 @@ int main(void){
          printf("%-10s %ux%ux%u bind_offset=%llu: every texel cleared\n",cases[c].name,w,h,d,
                 (unsigned long long)bind_offset);
       } else {
-         printf("%-10s %ux%ux%u: %u of %llu texels not cleared (%u still the first clear's value),"
+         printf("%-10s %ux%ux%u: %u of %llu texels not cleared (%u still the first clear's value, %u never copied back),"
                 " x %u..%u, y %u..%u, z %u..%u\n",
-                cases[c].name,w,h,d,wrong,(unsigned long long)texels,stale,
+                cases[c].name,w,h,d,wrong,(unsigned long long)texels,stale,unwritten,
                 min_x,max_x,min_y,max_y,min_z,max_z);
       }
 
