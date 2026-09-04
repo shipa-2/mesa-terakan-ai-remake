@@ -1949,14 +1949,26 @@ the fetch used was whatever the register held.
 Writing a zero there closes the 1D half: 51 failures become 34, all of them `extended`, and
 `glsl.texture_functions.texelfetch` stays at 240 of 240.
 
-The `extended` half is a different defect. A view of a non-base mip level is described with a
-fake base level twice the size, so the wanted level is reached as level 1 -- the hardware derives
-the slice pitch of a non-base level from the height, and a level bound as the base would address
-multiple layers wrongly. `BASE_LEVEL` and `LAST_LEVEL` are both set to 1, which is what keeps
-sampling on the right level; a fetch takes its level from the instruction and lands on the fake
-base instead. The level a `texelFetch` names is relative to the view, and for these views the
-only legal value is zero, so the driver would have to bias it by one -- which the shader cannot
-know, since the base level belongs to the descriptor.
+The `extended` half is a different defect, and it is not one the driver can reach from here. A
+view of a non-base mip level is described with a fake base level twice the size, so the wanted
+level is reached as level 1 -- the hardware derives the slice pitch of a non-base level from the
+height, and a level bound as the base addresses multiple layers wrongly. `BASE_LEVEL` and
+`LAST_LEVEL` are both set to 1, which is what keeps sampling on the right level; a fetch takes
+its level from the instruction and lands on the fake base instead.
+
+The fake base was measured to be load-bearing rather than merely conservative. Suppressing it
+behind an environment variable and running the 540 `extended` cases gives 102 failures against 34
+with it, so it is holding up three times as much as it costs -- the operations that pass today
+pass because of it.
+
+That leaves biasing the fetch's level by one, and the shader cannot do it. The level a
+`texelFetch` names is relative to the view, and for a block-compatible view the only legal value
+is zero, so the correction is a property of the descriptor -- which is bound long after the shader
+is compiled. The same shader must serve views that need the bias and views that do not.
+
+What would work is a second descriptor for such views, written for fetching rather than sampling
+and selected by the instruction, or the count carried in the driver push constants. Both are the
+same shape of answer as the cube array size query needs, and neither is small.
 
 ### Border colour: white is four times likelier to be wrong than black
 
