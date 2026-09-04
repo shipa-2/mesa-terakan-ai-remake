@@ -2196,6 +2196,18 @@ terakan_hw_config_draw_emit_cb_color(struct terakan_gfx_command_writer * const c
          return;
       }
 
+      if (getenv("TERAKAN_DEBUG_TERASCALE_1_META_STATE_ONLY") != NULL) {
+         char const * const slots_value =
+            getenv("TERAKAN_DEBUG_TERASCALE_1_META_CB_COLOR_SLOTS");
+         if (slots_value != NULL && slots_value[0] != '\0') {
+            char * end = NULL;
+            unsigned long const parsed = strtoul(slots_value, &end, 0);
+            if (end != slots_value && *end == '\0' && parsed <= UINT8_MAX) {
+               config->cb_color_.modified_bits &= (uint16_t)parsed;
+            }
+         }
+      }
+
       while (config->cb_color_.modified_bits) {
          unsigned const color_index = (unsigned)(ffs(config->cb_color_.modified_bits) - 1);
          config->cb_color_.modified_bits &= ~(uint16_t)BITFIELD_BIT(color_index);
