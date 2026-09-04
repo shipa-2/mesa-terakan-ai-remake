@@ -159,6 +159,13 @@ terakan_hw_config_shared_terascale_1_write_context_defaults(uint32_t * packet, b
    packet = write_context_reg(packet, R_028A48_PA_SC_MPASS_PS_CNTL, 0);
 
    packet = write_context_reg(packet, R_028200_PA_SC_WINDOW_OFFSET, 0);
+   /* r600_emit_framebuffer_state() always programs WINDOW_SCISSOR for the framebuffer. Terakan
+    * performs the Vulkan render-area and explicit-scissor intersection with VPORT_SCISSOR, so use
+    * the same 8192 hardware extent as the classic start atom's SCREEN/GENERIC scissors here. This
+    * makes WINDOW_SCISSOR nonempty without weakening the actual per-draw clipping. */
+   packet = write_context_reg_seq_header(packet, R_028204_PA_SC_WINDOW_SCISSOR_TL, 2);
+   *packet++ = S_028204_WINDOW_OFFSET_DISABLE(1);
+   *packet++ = S_028208_BR_X(8192) | S_028208_BR_Y(8192);
    packet = write_context_reg(packet, R_02820C_PA_SC_CLIPRECT_RULE, 0xFFFF);
 
    if (is_r700) {

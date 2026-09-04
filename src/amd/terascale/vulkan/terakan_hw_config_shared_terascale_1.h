@@ -66,7 +66,7 @@ uint32_t terakan_hw_config_shared_terascale_1_compute_lds_packet_dwords(void);
  * many, use the function's returned end pointer for how many were actually written -- the same
  * pattern terakan_gfx_command_writer_emit() callers already use.
  */
-#define TERAKAN_HW_CONFIG_SHARED_TERASCALE_1_CONTEXT_DEFAULTS_MAX_DWORDS 191
+#define TERAKAN_HW_CONFIG_SHARED_TERASCALE_1_CONTEXT_DEFAULTS_MAX_DWORDS 195
 
 /* The remainder of r600_init_atom_start_cs() (src/gallium/drivers/r600/r600_state.c) after the
  * SQ_CONFIG block above: resets the rest of the 3D context state this driver's command buffers

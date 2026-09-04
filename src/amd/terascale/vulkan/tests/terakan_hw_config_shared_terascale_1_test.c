@@ -107,7 +107,7 @@ test_compute_lds_packet_is_empty(void)
    CHECK(terakan_hw_config_shared_terascale_1_compute_lds_packet_dwords() == 0);
 }
 
-/* R700 (RV710 is R700) writes 191 dwords: two blocks (PA_SC_EDGERULE and SX_MISC) exist only for
+/* R700 (RV710 is R700) writes 195 dwords: two blocks (PA_SC_EDGERULE and SX_MISC) exist only for
  * R700, at 3 dwords each -- see the comment on
  * terakan_hw_config_shared_terascale_1_write_context_defaults()'s declaration.
  */
@@ -227,6 +227,10 @@ test_context_defaults_packets_r700(void)
    CHECK(packets[i++] == PKT3(PKT3_SET_CONTEXT_REG, 1, 0));
    CHECK(packets[i++] == (R_028200_PA_SC_WINDOW_OFFSET - R600_CONTEXT_REG_OFFSET) >> 2);
    CHECK(packets[i++] == 0);
+   CHECK(packets[i++] == PKT3(PKT3_SET_CONTEXT_REG, 2, 0));
+   CHECK(packets[i++] == (R_028204_PA_SC_WINDOW_SCISSOR_TL - R600_CONTEXT_REG_OFFSET) >> 2);
+   CHECK(packets[i++] == S_028204_WINDOW_OFFSET_DISABLE(1));
+   CHECK(packets[i++] == (S_028208_BR_X(8192) | S_028208_BR_Y(8192)));
    CHECK(packets[i++] == PKT3(PKT3_SET_CONTEXT_REG, 1, 0));
    CHECK(packets[i++] == (R_02820C_PA_SC_CLIPRECT_RULE - R600_CONTEXT_REG_OFFSET) >> 2);
    CHECK(packets[i++] == 0xFFFF);
@@ -293,7 +297,7 @@ test_context_defaults_packets_r700(void)
 }
 
 /* R600 (not R700) omits VGT_ENHANCE, PA_SC_EDGERULE and SX_MISC, 3 dwords each, none of which R600
- * has an equivalent for at all: 182 instead of 191. The branch right after VC_ENHANCE takes R600's
+ * has an equivalent for at all: 186 instead of 195. The branch right after VC_ENHANCE takes R600's
  * values and, unlike R700's, has no VGT_ENHANCE store, so it starts 3 dwords earlier than in the
  * R700 test above.
  */
