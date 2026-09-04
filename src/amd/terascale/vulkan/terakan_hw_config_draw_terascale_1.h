@@ -463,6 +463,12 @@ uint32_t * terakan_hw_config_draw_terascale_1_write_cb_color_unbound(uint32_t * 
                                                                       uint32_t color_index,
                                                                       uint32_t source_format);
 
+/* R600/R700 selects enabled render targets in CB_SHADER_CONTROL, a register absent from the
+ * Evergreen framebuffer path. Classic r600_emit_framebuffer_state() enables all slots through the
+ * highest bound color slot, and keeps RT0 enabled even with no color target for alpha testing. */
+uint32_t * terakan_hw_config_draw_terascale_1_write_cb_shader_control(
+   uint32_t * packet, uint32_t bound_color_count);
+
 enum terakan_hw_config_draw_terascale_1_cb_color_operation {
    TERAKAN_HW_CONFIG_DRAW_TERASCALE_1_CB_COLOR_DISABLE,
    TERAKAN_HW_CONFIG_DRAW_TERASCALE_1_CB_COLOR_NORMAL,

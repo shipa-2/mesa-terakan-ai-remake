@@ -1008,6 +1008,21 @@ test_cb_color_control_and_blend_packets(void)
    CHECK(blend_packet[3] == blend_control[1]);
 }
 
+static void
+test_cb_shader_control_packet(void)
+{
+   uint32_t packet[3];
+   CHECK(terakan_hw_config_draw_terascale_1_write_cb_shader_control(packet, 0) == packet + 3);
+   CHECK(packet[0] == PKT3(PKT3_SET_CONTEXT_REG, 1, 0));
+   CHECK(packet[1] == (R_0287A0_CB_SHADER_CONTROL - R600_CONTEXT_REG_OFFSET) >> 2);
+   CHECK(packet[2] == 0x1);
+
+   CHECK(terakan_hw_config_draw_terascale_1_write_cb_shader_control(packet, 3) == packet + 3);
+   CHECK(packet[2] == 0x7);
+   CHECK(terakan_hw_config_draw_terascale_1_write_cb_shader_control(packet, 8) == packet + 3);
+   CHECK(packet[2] == 0xff);
+}
+
 int
 main(void)
 {
@@ -1044,5 +1059,6 @@ main(void)
    test_cb_color_encode_rejects_unported_surfaces();
    test_cb_color_packets();
    test_cb_color_control_and_blend_packets();
+   test_cb_shader_control_packet();
    return 0;
 }

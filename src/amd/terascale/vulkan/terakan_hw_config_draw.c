@@ -2325,6 +2325,26 @@ terakan_hw_config_draw_emit_cb_color(struct terakan_gfx_command_writer * const c
          }
          terakan_gfx_command_writer_emit_done(command_writer, packet);
       }
+
+      /* R600/R700 needs the framebuffer's active target count in CB_SHADER_CONTROL in addition
+       * to CB_TARGET_MASK and the pixel shader's CB_SHADER_MASK. Evergreen has no equivalent in
+       * this path. Match r600_emit_framebuffer_state(): include null holes through the highest
+       * bound slot, and leave RT0 enabled when there are no color targets for alpha testing. */
+      uint32_t bound_color_count = 0;
+      for (uint32_t color_index = 0; color_index < 8; ++color_index) {
+         if (G_028C70_FORMAT(config->cb_color_.color[color_index].info) !=
+             V_028C70_COLOR_INVALID) {
+            bound_color_count = color_index + 1;
+         }
+      }
+      uint32_t * packet = terakan_gfx_command_writer_emit(
+         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_CONFIG, 3);
+      if (unlikely(packet == NULL)) {
+         return;
+      }
+      packet = terakan_hw_config_draw_terascale_1_write_cb_shader_control(
+         packet, bound_color_count);
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
       return;
    }
 

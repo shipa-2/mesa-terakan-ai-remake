@@ -836,6 +836,15 @@ terakan_hw_config_draw_terascale_1_write_cb_color_unbound(uint32_t * const packe
                             S_0280A0_SOURCE_FORMAT(source_format));
 }
 
+uint32_t *
+terakan_hw_config_draw_terascale_1_write_cb_shader_control(
+   uint32_t * const packet, uint32_t const bound_color_count)
+{
+   assert(bound_color_count <= 8);
+   return write_context_reg(packet, R_0287A0_CB_SHADER_CONTROL,
+                            bound_color_count ? ((UINT32_C(1) << bound_color_count) - 1) : 1);
+}
+
 uint32_t
 terakan_hw_config_draw_terascale_1_cb_color_control_encode(
    enum terakan_hw_config_draw_terascale_1_cb_color_operation const operation,
