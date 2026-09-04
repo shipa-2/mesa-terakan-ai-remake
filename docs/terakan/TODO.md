@@ -26,7 +26,7 @@ accept the work. Both use a 1–5 scale.
 | Enable tessellation control/evaluation shaders | 4/5 | 5/5 | Hardware-supported; see the vertex pipeline stage survey below | Tessellation limits are reported from tested hardware behavior and representative pipelines pass |
 | Complete stream output / transform feedback | 4/5 | 4/5 | Hardware-supported | SFN receives NIR stream-output metadata and D3D11 stream-output workloads pass readback tests |
 | ~~Complete storage-image/UAV format and atomic coverage~~ **load/store + atomics covered** | 4/5 | 4/5 | `shaderStorageImageExtendedFormats` is exposed, and both halves of the acceptance criteria now have real coverage. `terakan_storage_format_matrix` walks 28 formats spanning every class Terakan advertises -- UNORM, SNORM, packed 10/11-bit, 16- and 32-bit float, and UINT/SINT at 8/16/32 bits, one to four channels -- storing a known value through a formatless storage image and loading the same texel back in one dispatch. All 28 are advertised as storage images and all 28 round-trip correctly on real CAICOS hardware, with none skipped. `terakan_storage_image_atomic` covers the atomic half (atomicAdd/Min/Max/Exchange across 32768 invocations, exact). What is left is not format breadth but `shaderStorageImageMultisample`, which is its own P1 row below | Every advertised storage-image format passes load, store and applicable integer-atomic tests |
-| Fix image clearing, measured under CTS | 4/5 | 4/5 | A sampled `dEQP-VK.api.image_clearing` run failed 162 of 3042, from three unrelated causes. **117 are three-component formats**, where `vkCmdClearColorImage` returns without doing anything (`TODO(Triang3l): 3x-expanded format clearing` in `terakan_meta_clear.c`) -- a silent no-op, and with 20 in `buffer_view` and 12 in `image_to_image` the largest single cause found anywhere at 149 failures. Closing it means more hand-assembled bytecode of the kind `terakan_meta_copy_expand_3x.c` already carries. **35 are multisample integer formats that turned out not to be clear failures at all**: those tests resolve the image to read it back, and the integer resolve returns early without doing anything, which instrumenting that return confirmed. They belong with the integer resolve gap. Two other hypotheses were tested and dropped -- disabling colour compression and fast clear, the only structural difference between the multisample and single-sample paths, left all 35 failing. **10 are depth/stencil clears returning zero**, concentrated on width 1 and on multiple subresource ranges in one call | Clears produce the requested value for every advertised format, sample count and subresource range |
+| ~~Fix image clearing, measured under CTS~~ **done** | 4/5 | 4/5 | The whole of `dEQP-VK.api.image_clearing` now passes: **0 failures of 45636**, 29340 passed and 16296 unsupported. The three causes the original sample of 3042 found are all closed. The 117 three-component-format cases were `vkCmdClearColorImage` returning without doing anything; the 35 multisample integer ones were never clear failures at all but the integer resolve returning early, which instrumenting that return confirmed; and the last group, depth/stencil clears coming back as zero on small images, turned out not to be in the clear either -- `vkCmdCopyBufferToImage` recorded its flush in the color field while the barrier after it named a depth image, so the tail of the fill landed on top of the clear. See the section below. | Clears produce the requested value for every advertised format, sample count and subresource range |
 | Implement multisample storage images | 4/5 | 4/5 | Implementable with format-aware lowering, FMASK work and RAT validation; single-sample formatless reads/writes now work | Multisample UAV loads/stores pass for every exposed format before the remaining feature bit is enabled |
 | ~~Implement extended image gather~~ | 5/5 | 1/5 | Done, and it turned out to be already implemented: the TODO's premise that `LowerTexToBackend::lower_tg4` drops the offset source was wrong -- `finalize()` removes only the coordinate, LOD, bias, comparator and sample index sources, so `nir_tex_src_offset` reaches `TexInstr::Inputs`, where `GATHER4_O` selection for non-constant offsets and constant-offset folding into the TEX instruction fields both already existed. Only the feature bit, the gather offset limits and coverage were missing. `terakan_image_gather` covers all four components, constant offsets at both extremes, a non-constant offset, `textureGatherOffsets` and ordinary offset sampling, checking the gather order and not just the footprint; all fourteen cases passed unchanged, with two negative controls confirming the coverage bites. `maxTexelOffset` was also corrected from 8 to 7: the five-bit `SQ_TEX_WORD2` offset fields carry the value shifted left by one, so +8 was being applied as -8 | Component selection and constant/dynamic offset gather tests pass for all advertised sampled formats |
 | Implement vertex-pipeline stores and atomics | 4/5 | 4/5 | Hardware-supported with stage-specific RAT synchronization work | VS/GS/TES storage writes and applicable atomics pass readback and cross-stage visibility tests before exposure |
@@ -1574,102 +1574,51 @@ rather than reducing it to the current sample's bit. Narrowing it to
 surplus is not above the sample count; what that register actually holds on
 this hardware has still to be established.
 
-## Depth/stencil clears on small images
+## Depth/stencil clears on small images -- fixed
 
-`dEQP-VK.api.image_clearing.*.clear_depth_stencil_image` passes 349 of the 450
-cases it supports and fails 101, and it is the whole of what
-`api.image_clearing` still fails. The axes, remeasured:
+`dEQP-VK.api.image_clearing.*.clear_depth_stencil_image` failed 101 of the 450 cases it supports
+and was the whole of what `api.image_clearing` still failed. It now fails none of them. The clear
+was never at fault; the fill before it was.
 
-- **The image size decides it, and it is the only axis that decides it
-  outright.** At 200x180 and 55x21x11 everything passes, whatever the format,
-  aspect or layer range. The failures are all at 1x33, 64x11, 33x128 and
-  32x29x3, and at 1x33 every single format fails.
-- **Not the layer range**, which the earlier reading of this had wrong. Of the
-  101, 63 are `single_layer` -- a one-layer image cleared whole -- against 22
-  for `remaining_array_layers` and 16 for its `twostep` variant.
-- **Not the aspect**, which the earlier reading also had wrong. Depth-only
-  formats fail too: 11 `d16_unorm`, 8 `x8_d24_unorm_pack32`, 7 `d32_sfloat`,
-  and the message for those is `Depth value mismatch! Ref:0.1 Threshold:1.4e-44
-  Depth:0` -- a texel that should have been cleared to 0.1 still holding zero.
-- **Not the mip level.** Instrumenting the clear shows one draw at level 0 for
-  these cases; the images have a single level.
-- It stays order dependent at the edges: `d32_sfloat_64x11` fails under one of
-  the two allocation prefixes and passes under the other in the same run. The
-  four sizes and `1x33`'s completeness are stable.
+The size was the only axis that decided the outcome outright: 200x180 and 55x21x11 passed whatever
+the format, aspect or layer range, while 1x33, 64x11, 33x128 and 32x29x3 failed, every format
+failing at 1x33. Neither the layer range, the aspect, nor the mip level separated them, and the
+depth descriptor was byte-identical between a failing and a passing case -- `DB_DEPTH_SIZE` and
+`DB_DEPTH_SLICE` decoded exactly right for both. So it was not what the clear was asked to do.
 
-The single-case reproduction the earlier note warned against does work for the
-clear ones: `2d.single_layer.d32_sfloat_64x11` and `_1x33` fail on their own,
-three times out of three, while `_200x180` passes.
+`terakan_depth_clear_extent_probe` rebuilds dEQP's sequence ingredient by ingredient, and the
+control that found it was `TERAKAN_PROBE_SPLIT_FILL`, which ends the command buffer between the
+fill and the clear: with the fill in a submit of its own, every size passed. Ending it between the
+clear and the readback instead (`TERAKAN_PROBE_SPLIT`) did not help the large images, which is
+what told the two apart.
 
-Excluded by measurement, in addition to the older list below: the depth
-descriptor. `DB_DEPTH_SIZE` and `DB_DEPTH_SLICE` were printed for a failing
-64x11 and a passing 200x180 and both decode exactly right -- pitch 64 and 200,
-height 16 and 184, slice 1024 and 36800 texels, matching the aligned extents.
+`vkCmdCopyBufferToImage` draws into its destination through the color block whatever the image
+holds, and it recorded the flush that makes those writes visible in the command buffer's *color*
+field. The barrier that followed named a depth image, looked in the depth field, found nothing,
+and emitted no flush -- so the tail of the fill was still sitting in the color block and landed on
+top of the clear. That is the whole of it, and the numbers are the block's: a near-constant
+1216..1984 texels, at most about 8 KB, lost from the end of a large image in tiled order, and a
+small image lost whole because all of it still fitted in the block. Hence the size axis, and hence
+1x33 failing for every format.
 
-### The command sequence is excluded too
+`terakan_CmdCopyBufferToImage2` now picks the field by the destination's aspects.
+`clear_depth_stencil_image` goes from 101 failures of 1098 to 0 of 1106, the probe's fifteen sizes
+all come back clean in one command buffer and across a split submit alike, and a stride survey of
+11239 cases has 39 failures, 38 of them the already-diagnosed `sampler.border_swizzle` group. With
+this the whole of `api.image_clearing` passes: 0 failures of 45636, 29340 passed and 16296
+unsupported.
 
-`terakan_depth_clear_extent_probe` rebuilds dEQP's sequence ingredient by
-ingredient and passes at every one of the six sizes, the four that fail and the
-two that pass alike. It has the full mip chain with only level zero cleared,
-the fill from a buffer of zeroes rather than from a clear, `TRANSFER_DST_OPTIMAL`
-for the clear and both copies, image barriers naming transfer access on both
-sides of the clear -- which is what Vulkan calls it, rather than the depth write
-this driver implements it as -- and a readback of every level in one command at
-dEQP's four-byte-aligned offsets.
+Two things ruled out along the way are worth keeping, because they are what the wrong answer would
+have looked like. The DB cache flush was not the problem: forcing the barrier down the
+`FLUSH_AND_INV_DB_DATA_TS` path instead of `DB_CACHE_FLUSH_AND_INV`, and dropping
+`DB_DEST_BASE_ENA` from the `SURFACE_SYNC`, each left the residue exactly as it was. And the loss
+was in the image, not in the readback: the probe stamps its readback buffer with a third value
+beforehand, and no texel ever came back holding it.
 
-And the clear itself was compared directly rather than inferred: printing the
-rectangle and the whole depth/stencil descriptor from inside the driver gives
-byte-identical lines for the failing dEQP case and the passing probe --
-`rect=64x11 size=0x00000807 slice=0x0000000f zinfo=0x00002023`.
-
-So it is not what the clear is asked to do, and not the sequence around it.
-
-### A neighbouring defect the probe did find
-
-Instrumenting `vkCreateImage` says dEQP creates these images with **one mip level**, not the
-chain the probe had been giving them. Matching that turns the probe's six clean lines into two
-failures -- and they are the two sizes dEQP passes, not the four it fails:
-
-    200x180   1568 of 36000 texels left at the fill value, rows 160..175 from x 128
-              and rows 176..179 from x 96
-    55x21x11  1678 of 12705, in the last two depth slices
-
-So a single-level depth image loses the tail of its clear, and the same image with a full mip
-chain does not -- `TERAKAN_PROBE_MIPS=1` in the probe is the control, and it comes back clean at
-every size. What makes it worth chasing is how little else differs. The depth descriptor is
-identical either way: `size=0x0000b018`, pitch 200, height 184, `slice_tile_max=574` for the full
-36800-texel slice. So is the memory requirement, 147200 bytes, exactly that aligned slice. The
-missing texels hold precisely what the fill copy wrote, so the copy reached them and the draw did
-not, and forcing linear images or changing the barrier alters nothing.
-
-That leaves the mip count deciding the outcome while nothing the driver programs for the clear
-depends on it, which is the shape of a defect in how the surface is laid out for a single-level
-image rather than in the clear.
-
-### And dEQP's own failures are still unexplained
-
-The four sizes dEQP fails at stay clean in the probe under every combination tried, single level
-included. So there are two defects here, selecting opposite sizes, and the one dEQP sees still
-needs what the process did before the case rather than what it does during it.
-
-The colour path is not affected in the same shape: `clear_color_image` with
-`remaining_array_layers` on `r8_uint` passes at 64x11 and 1x33, one byte per
-texel and the same sixteen layers with base layer 8. Since the readback of a
-stencil-only image goes through that same copy path, the defect is on the DB
-side of the clear rather than in the layout or the readback.
-
-Excluded by measurement:
-
-- The layout itself. Depth and stencil have identical aligned extents in every
-  case examined, and `DB_DEPTH_SLICE.SLICE_TILE_MAX` derived from them agrees
-  with `slice_size_bytes` exactly: 64x11 aligns to 64x16 with a 1024-byte
-  stencil slice and `SLICE_TILE_MAX` 15, 1x33 to 32x40 with 1280 and 19, and
-  the passing 200x180 to 224x184 with 41216 and 643.
-- The layered draw. Forcing one draw per layer instead of one draw for the run
-  of layers changes nothing.
-- `DB_DEPTH_VIEW.SLICE_START`. Offsetting the depth and stencil base addresses
-  by the base layer and leaving `SLICE_START` at zero changes nothing.
-- Tiling. `TERAKAN_DEBUG_FORCE_LINEAR_IMAGES=1` changes nothing.
+`terakan_CmdCopyImageToBuffer2` has the mirror-image asymmetry -- it writes to a *buffer* through
+the CB UAV path but records its flush in the color image field, where a buffer barrier will not
+look for it. No failing case has been tied to it yet, so it is left alone rather than changed
+blind.
 
 ## Random descriptor sets: two remaining shapes
 
