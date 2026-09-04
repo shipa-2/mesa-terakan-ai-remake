@@ -242,6 +242,18 @@ This proves one single-sample linear clear through CB and its host-visible cache
 yet prove texture sampling, image-to-buffer meta copying, tiled CB addressing, layers, MSAA,
 application rendering or general queue safety; the default TeraScale 1 submit guard remains.
 
+The next image-to-buffer attempt established a separate safety boundary. Its generation-neutral
+NIR shader still writes the destination with `MEM_RAT`, but the R600/R700 CB converter deliberately
+rejects Evergreen-shaped buffer UAV descriptors. Letting the draw continue with that UAV unbound
+locked RV710 ring 0 and timed out with `VK_ERROR_DEVICE_LOST`; therefore this is not a usable route
+to R700 readback. Linear levels now take a row-wise raw CP-DMA path instead, using the already
+validated surface pitch/slice layout and Vulkan's buffer row/slice pitches. Unsupported tiled or
+otherwise invalid TeraScale 1 regions fail command-buffer recording rather than entering RAT.
+The 2-by-2 RGBA8 image-to-buffer probe passed once after rebuilding this diff from source on RV710
+and then 10/10 repeated runs, with four distinct image words replacing four different inverse
+buffer sentinels and no new kernel error. This proves the linear level-zero, single-layer case only;
+mip offsets, layers, compressed formats and tiled detiling still need focused readbacks.
+
 Direct indexed application draws now follow `r600_draw_vbo()` too: R600/R700 binding emits no
 Evergreen `INDEX_BASE`/`INDEX_BUFFER_SIZE`, and `vkCmdDrawIndexed` carries the adjusted absolute
 40-bit address in `PKT3_DRAW_INDEX` with an immediate DRM relocation. The exact packet has a CPU
