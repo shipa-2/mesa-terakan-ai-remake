@@ -2162,15 +2162,40 @@ What would work is a second descriptor for such views, written for fetching rath
 and selected by the instruction, or the count carried in the driver push constants. Both are the
 same shape of answer as the cube array size query needs, and neither is small.
 
-### Border colour: white is four times likelier to be wrong than black
+### Border colour: the registers hold normalized floats, and half of it is fixed
 
 `dEQP-VK.pipeline.monolithic.sampler.border_swizzle` samples outside the image with a border
-colour, through a view with a component swizzle. In a 2855-case sample 37 of the 279 supported
-cases fail, and the border colour is the strongest axis: `opaque_white` fails 31 of 120 while
-`transparent_black` fails 4 of 121 and `opaque_black` 2 of 38. The swizzle kind barely matters --
-permutations fail at 14% and swizzles with a constant at 12% -- so this is not the gather
-constant-swizzle defect above wearing another hat, although `gather_0` is the worst of the
-gather modes at 24%.
+colour, through a view with a component swizzle. The border colour was the strongest axis by far,
+and it turned out not to be about the swizzle at all: `INT_OPAQUE_WHITE` failed 37 of 44 sampled
+cases while every fixed float type was nearly clean.
+
+The per-sampler border colour registers hold **normalized floats**, not the raw values the border
+colour was specified with -- Evergreen denormalizes what they hold by the format of the view being
+sampled. Writing the integer 1 into them made it a denormal that reads back as zero, which is
+exactly what the failures showed. Gallium r600's `evergreen_convert_border_color` divides by the
+channel maximum for the same reason.
+
+Three measurements pinned it down, each on `r8_uint.rgba.opaque_white.no_gather`:
+
+- The register path returned zero for *any* value written, 1 and a marker of 7 alike.
+- Switching that sampler back to the fixed white type returned 255, which is 1.0 denormalized by
+  an 8-bit format -- so the fixed types work and it is the register path that was wrong.
+- Writing 1/255 as a float made the case pass.
+
+`terakan_CmdUpdateDescriptorSets` now divides on the way in, where a combined image sampler brings
+the view's format together with the sampler. A 3000-case sample goes from 49 failures of 249
+supported to 27, and the whole `clamp_to_border` group -- 45779 cases, 3664 supported -- still
+passes entirely.
+
+What is left is almost all 32-bit integer formats, and that is the hardware's limit rather than a
+remaining bug. Writing a plain 0.5f into the registers and sampling the border reads back zero for
+a 32-bit format, while the same probe on a 16-bit one reads back 32768 -- 0.5 * 2^16. So the
+denormalization is by 2^bits and 32 bits is past what this path carries.
+
+Two smaller things are still open. Immutable samplers do not get the conversion, because their
+descriptors are written before any view is known. And six cases in the sample expect zero and get
+one, which is a `ZERO` in the view's swizzle not reaching the border colour -- related to the
+gather constant-swizzle defect above, and not yet sliced.
 
 ## An exclusive scan of a vector read past its identity
 
