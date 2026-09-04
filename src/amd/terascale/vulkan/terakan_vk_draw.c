@@ -24,6 +24,7 @@
 #include "terakan_buffer.h"
 #include "terakan_command_buffer.h"
 #include "terakan_entrypoints.h"
+#include "terakan_hw_config_draw_terascale_1.h"
 #include "terakan_vk_state.h"
 
 #include "amd/terascale/common/terascale_wddm.h"
@@ -278,6 +279,34 @@ terakan_CmdDrawIndexed(VkCommandBuffer const commandBuffer, uint32_t const index
                                                firstInstance);
 
    terakan_vk_before_draw(command_writer);
+
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
+      struct terakan_hw_config_draw_vgt_dma_index_buffer const index_buffer =
+         command_writer->hw_config_draw.vgt_dma_index_buffer_;
+      if (!terakan_hw_config_draw_vgt_dma_index_buffer_is_bound(index_buffer) ||
+          firstIndex >= index_buffer.size_indices) {
+         return;
+      }
+      uint32_t const count = MIN2(indexCount, index_buffer.size_indices - firstIndex);
+      uint32_t const index_size_log2 =
+         command_writer->hw_config_draw.vgt_dma_index_type_ & 1 ? 2 : 1;
+      uint64_t const index_va = index_buffer.va + ((uint64_t)firstIndex << index_size_log2);
+      uint32_t * packet = terakan_gfx_command_writer_emit_with_bo(
+         command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DRAW, 5, 1, 0, 1);
+      if (unlikely(packet == NULL)) {
+         return;
+      }
+      uint32_t const * const packet_va = packet + 1;
+      packet = terakan_hw_config_draw_terascale_1_write_draw_index(packet, index_va, count);
+      terakan_gfx_command_writer_add_relocation_for_40_bits(
+         command_writer, &packet, packet_va, packet_va + 1,
+         TERASCALE_WDDM_PATCH_IDS_INDEX_BASE_LO, TERASCALE_WDDM_PATCH_IDS_INDEX_BASE_HI,
+         terakan_bo_reference_writer_add_reference(
+            &command_writer->base.bo_reference_writer, index_buffer.bo, true, false,
+            TERAKAN_BO_PRIORITY_INDEX_BUFFER));
+      terakan_gfx_command_writer_emit_done(command_writer, packet);
+      return;
+   }
 
    uint32_t * packet = terakan_gfx_command_writer_emit(
       command_writer, TERAKAN_GFX_COMMAND_WRITER_EMIT_CONTENTS_DRAW, 4);

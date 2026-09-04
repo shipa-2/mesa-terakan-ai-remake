@@ -413,6 +413,19 @@ terakan_hw_config_draw_terascale_1_write_zero_count_draw(uint32_t * packet)
 }
 
 uint32_t *
+terakan_hw_config_draw_terascale_1_write_draw_index(uint32_t * packet,
+                                                    uint64_t const index_va,
+                                                    uint32_t const index_count)
+{
+   *packet++ = PKT3(PKT3_DRAW_INDEX, 3, 0);
+   *packet++ = (uint32_t)index_va;
+   *packet++ = (uint32_t)(index_va >> 32) & 0xFF;
+   *packet++ = index_count;
+   *packet++ = S_0287F0_SOURCE_SELECT(V_0287F0_DI_SRC_SEL_DMA);
+   return packet;
+}
+
+uint32_t *
 terakan_hw_config_draw_terascale_1_write_sq_pgm_fs(uint32_t * const packet,
                                                     uint32_t const program_va_shr8)
 {

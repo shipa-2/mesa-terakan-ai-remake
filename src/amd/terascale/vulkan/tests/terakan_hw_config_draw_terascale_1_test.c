@@ -790,6 +790,19 @@ test_zero_count_draw(void)
    CHECK(packet[2] == S_0287F0_SOURCE_SELECT(V_0287F0_DI_SRC_SEL_AUTO_INDEX));
 }
 
+static void
+test_draw_index(void)
+{
+   uint32_t packet[5];
+   uint64_t const va = UINT64_C(0x000000ab12345678);
+   CHECK(terakan_hw_config_draw_terascale_1_write_draw_index(packet, va, 37) == packet + 5);
+   CHECK(packet[0] == PKT3(PKT3_DRAW_INDEX, 3, 0));
+   CHECK(packet[1] == UINT32_C(0x12345678));
+   CHECK(packet[2] == UINT32_C(0xAB));
+   CHECK(packet[3] == 37);
+   CHECK(packet[4] == S_0287F0_SOURCE_SELECT(V_0287F0_DI_SRC_SEL_DMA));
+}
+
 static struct terakan_hw_config_draw_terascale_1_cb_color_input
 representative_cb_color_input(void)
 {
@@ -1025,6 +1038,7 @@ main(void)
    test_absent_cb_immed();
    test_absent_index_buffer_unbind();
    test_zero_count_draw();
+   test_draw_index();
    test_cb_color_encode();
    test_cb_color_encode_multisample_metadata();
    test_cb_color_encode_rejects_unported_surfaces();

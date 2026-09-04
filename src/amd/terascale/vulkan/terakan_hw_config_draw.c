@@ -639,16 +639,13 @@ terakan_hw_config_draw_emit_vgt_dma_index_buffer(
    struct terakan_hw_config_draw_vgt_dma_index_buffer const index_buffer =
       command_writer->hw_config_draw.vgt_dma_index_buffer_;
 
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
+      /* r600_draw_vbo() carries the direct index address in PKT3_DRAW_INDEX. The bind itself has
+       * no packet on R600/R700; terakan_CmdDrawIndexed emits it after all state is applied. */
+      return;
+   }
+
    if (!terakan_hw_config_draw_vgt_dma_index_buffer_is_bound(index_buffer)) {
-      if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
-         /* r600_draw_vbo() emits the index address in PKT3_DRAW_INDEX for direct indexed draws.
-          * EG_PKT3_INDEX_BUFFER_SIZE is needed only by the Evergreen indirect path and opcode
-          * 0x13 is rejected by the RV710 kernel parser. A bound TeraScale 1 index buffer remains
-          * unported below and must not be exercised by the diagnostic submit opt-in.
-          */
-         assert(terakan_hw_config_draw_terascale_1_index_buffer_unbind_packet_dwords() == 0);
-         return;
-      }
       /* TODO(Triang3l): Does GFX6 `has_null_index_buffer_clamping_bug` (`INDEX_BASE = 0` resulting
        * in overflow check upper bound address wraparound) need to be handled by binding a dummy
        * buffer (such as the meta shader buffer) at least once per indirect buffer? Check on R9xx

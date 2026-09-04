@@ -205,6 +205,10 @@ uint32_t terakan_hw_config_draw_terascale_1_index_buffer_unbind_packet_dwords(vo
 /* Diagnostic draw used to distinguish packet/state validation from shader execution. */
 uint32_t * terakan_hw_config_draw_terascale_1_write_zero_count_draw(uint32_t * packet);
 
+/* Direct indexed draws on R600/R700 carry the absolute index address in the draw packet. */
+uint32_t * terakan_hw_config_draw_terascale_1_write_draw_index(
+   uint32_t * packet, uint64_t index_va, uint32_t index_count);
+
 uint32_t * terakan_hw_config_draw_terascale_1_write_sq_pgm_fs(uint32_t * packet,
                                                                uint32_t program_va_shr8);
 uint32_t * terakan_hw_config_draw_terascale_1_write_sq_pgm_vs(
