@@ -1303,6 +1303,15 @@ terakan_vk_pipeline_graphics_create(struct terakan_device * const device,
       switch (shader_stage) {
       case MESA_SHADER_FRAGMENT:
          shader_key.ps.nr_cbufs = util_bitcount(shader->fs.rtv_dsb_uncompacted_exports);
+         /* `SampleMaskIn` comes out of the SPI as the whole fragment's coverage. When the shader
+          * runs once per sample, the value it is supposed to see is that coverage narrowed to the
+          * sample it is running on, and the backend does the narrowing itself when this key is
+          * set. Gallium r600 sets it for the same two cases: per-sample iteration, and
+          * multisampling being off at all, where there is only sample zero to report.
+          */
+         shader_key.ps.apply_sample_id_mask =
+            state.ms == NULL || state.ms->rasterization_samples <= 1 ||
+            (state.ms->sample_shading_enable && isgreater(state.ms->min_sample_shading, 0.0f));
          break;
 
       /* Which hardware stage each software stage is compiled for depends on which other stages
