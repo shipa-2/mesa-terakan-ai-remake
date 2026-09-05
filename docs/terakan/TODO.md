@@ -336,6 +336,17 @@ The existing CPU tiling test also fixes this exact fixture: 384x144 base, 256x12
 failed its new assertion; restoring the calculation passed. The mutation was CPU-only and was
 never submitted to hardware. Both test executables already participate in the normal test lists.
 
+Post-reboot check on 2026-09-05: the user restarted the remote machine (boot ID
+31ee52a4-a784-4762-a541-f33929776637). At source commit 3e2aa864832, rebuilt remotely before
+any GPU probe from this session, the first 2x2 roundtrip passed. Each of the small, 128x128,
+129x65, offset and mip variants then passed 10/10; the kernel journal gained no messages.
+This is ONE post-reboot first-run observation followed by 50 warm repetitions, not 51 cold
+starts. It shows the explicit-sampler implementation does not require our earlier successful
+submissions on this boot. It does not establish the offending old sampler field, rule out
+other boot-time GPU users, or reproduce the old no-sampler implementation after reboot.
+The original missing-state root cause therefore remains open, while this implementation has
+now passed a first-run-after-reboot check on RV710. RV610 was still deliberately skipped.
+
 Direct indexed application draws now follow `r600_draw_vbo()` too: R600/R700 binding emits no
 Evergreen `INDEX_BASE`/`INDEX_BUFFER_SIZE`, and `vkCmdDrawIndexed` carries the adjusted absolute
 40-bit address in `PKT3_DRAW_INDEX` with an immediate DRM relocation. The exact packet has a CPU
