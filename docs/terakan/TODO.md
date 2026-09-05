@@ -2324,10 +2324,35 @@ So this is not about `ONE` and not about the offset. It is the hardware's channe
 happens to agree for a permutation and for a constant in the last slot.
 
 Fixing it in the descriptor is not possible while the same descriptor also has to serve ordinary
-sampling, which is correct as things are. Fixing it in the shader means knowing the swizzle when
-the shader is compiled, and under Vulkan it belongs to the view. What is left is either a
-gather-specific descriptor, written alongside the sampling one and selected by the fetch, or
-accepting the limitation and saying so.
+sampling, which is correct as things are.
+
+**A gather-specific descriptor would not help either, and the earlier note suggesting one was
+wrong.** `terakan_border_color_swizzle_probe` shows what a gather actually does with a constant:
+`1gba` gathers its components as `(Y, Z, W, Y)` rather than `(1, Y, Z, W)`, and `0gba` gathers
+them as the plain identity rather than `(0, Y, Z, W)`. In both cases the constant is not produced
+at all -- a channel is. A second descriptor can only change which channels `DST_SEL` names; it
+cannot make the hardware emit a constant for a gather, and the component a gather asks for is the
+`MODE` field of the instruction, fixed at compile time. So there is nothing to select.
+
+What would actually work is the expensive thing: pass the view's swizzle to the shader in driver
+push constants, gather every channel the swizzle might name, and select between them and the
+constants at run time. That is four gathers where the application asked for one, and it needs a
+push-constant slot on every shader that gathers.
+
+Measured extent, on a 1200-case random sample of `glsl.texture_gather` (267 passing, 62 failing):
+the swizzles whose constant is anywhere but W fail outright -- `one_red_green_blue` 8 of 8,
+`alpha_zero_one_red` 11 of 11, `zero_one_red_green` 4 of 4, `blue_alpha_zero_one` 5 of 5 -- while
+`green_blue_alpha_zero`, whose constant is in W, passes 5 of 7.
+
+### Gather on a cube map is a second, separate defect
+
+The same sample fails 20 of 44 cube gathers, and only some of them are about the swizzle. The rest
+are the wrap-mode variants -- `clamp_to_edge_repeat`, `mirrored_repeat_clamp_to_edge`,
+`repeat_mirrored_repeat` -- at both `size_pot` and `size_npot`, failing roughly half the time,
+and the `no_corners` variants fail too, which is what rules out the face corners on their own as
+the explanation. Shadow gathers on a cube (`compare_less`, `compare_greater`) pass, and so does
+every `filter_mode` variant with a linear filter, while the all-nearest one fails. On a cube even
+`green_blue_alpha_zero` fails, where on 2D it passes. None of this has been sliced yet.
 
 ## Compare-and-swap named its two values the wrong way round
 
