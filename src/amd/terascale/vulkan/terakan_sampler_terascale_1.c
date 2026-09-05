@@ -89,6 +89,17 @@ lod_bias_6_6(float bias)
 }
 
 void
+terakan_sampler_terascale_1_init_meta_fetch(uint32_t descriptor_out[3])
+{
+   /* r600_create_sampler_state(): repeat, point, no mip filtering/bias, LOD zero and TYPE=1.
+    * The RV710 meta LD probe establishes readback with these words, not that LD uses each field.
+    */
+   descriptor_out[0] = 0;
+   descriptor_out[1] = 0;
+   descriptor_out[2] = S_03C008_TYPE(1);
+}
+
+void
 terakan_sampler_terascale_1_create_descriptor(VkSamplerCreateInfo const * const create_info,
                                               bool const force_base_mip, uint32_t descriptor_out[3])
 {

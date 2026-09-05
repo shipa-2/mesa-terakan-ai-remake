@@ -51,6 +51,7 @@ struct nir_shader * terakan_meta_nir_build_copy_image_to_buffer_ps(
    struct terakan_device const * device);
 struct nir_shader * terakan_meta_nir_build_copy_buffer_to_image_ps(
    struct terakan_device const * device);
+struct nir_shader * terakan_meta_nir_build_copy_image_ps(struct terakan_device const * device);
 
 /* R600/R700 replacements for Evergreen hand-written clear shaders. */
 struct nir_shader * terakan_meta_nir_build_position_from_index_vs(

@@ -103,6 +103,13 @@ terascale_1_linear_buffer_upload_opted_in(void)
    return value != NULL && strcmp(value, "1") == 0;
 }
 
+static bool
+terascale_1_tiled_image_roundtrip_opted_in(void)
+{
+   char const * const value = getenv("TERAKAN_DEBUG_TERASCALE_1_TILED_IMAGE_ROUNDTRIP");
+   return value != NULL && strcmp(value, "1") == 0;
+}
+
 static uint32_t
 check_rv710_signal_only_submit(VkDevice const device, VkQueue const queue)
 {
@@ -382,6 +389,7 @@ enum rv710_linear_image_operation {
    RV710_LINEAR_IMAGE_READBACK,
    RV710_LINEAR_IMAGE_CLEAR,
    RV710_LINEAR_BUFFER_UPLOAD,
+   RV710_TILED_IMAGE_ROUNDTRIP,
 };
 
 static uint32_t
@@ -403,8 +411,10 @@ check_rv710_linear_image_readback(VkPhysicalDevice const physical_device, VkDevi
       ~UINT32_C(0x13579bdf),
    };
    VkImage image = VK_NULL_HANDLE;
+   VkImage tiled_image = VK_NULL_HANDLE;
    VkBuffer buffer = VK_NULL_HANDLE;
    VkDeviceMemory image_memory = VK_NULL_HANDLE, buffer_memory = VK_NULL_HANDLE;
+   VkDeviceMemory tiled_image_memory = VK_NULL_HANDLE;
    uint8_t * image_mapping = NULL;
    uint32_t * buffer_mapping = NULL;
    VkCommandPool command_pool = VK_NULL_HANDLE;
@@ -425,7 +435,8 @@ check_rv710_linear_image_readback(VkPhysicalDevice const physical_device, VkDevi
       .tiling = VK_IMAGE_TILING_LINEAR,
       .usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
       .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-      .initialLayout = VK_IMAGE_LAYOUT_GENERAL,
+      .initialLayout = operation == RV710_TILED_IMAGE_ROUNDTRIP
+                          ? VK_IMAGE_LAYOUT_PREINITIALIZED : VK_IMAGE_LAYOUT_GENERAL,
    };
    VkResult result = vkCreateImage(device, &image_info, NULL, &image);
    if (result != VK_SUCCESS) {
@@ -468,8 +479,9 @@ check_rv710_linear_image_readback(VkPhysicalDevice const physical_device, VkDevi
    vkGetImageSubresourceLayout(device, image, &subresource, &image_layout);
    for (uint32_t y = 0; y < height; ++y)
       memcpy(image_mapping + image_layout.offset + y * image_layout.rowPitch,
-             operation == RV710_LINEAR_BUFFER_UPLOAD ? &inverse_words[y * width]
-                                                     : &source_words[y * width],
+             operation == RV710_LINEAR_BUFFER_UPLOAD || operation == RV710_TILED_IMAGE_ROUNDTRIP
+                ? &inverse_words[y * width]
+                : &source_words[y * width],
              width * sizeof(uint32_t));
    VkMappedMemoryRange const image_flush = {
       .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
@@ -482,10 +494,44 @@ check_rv710_linear_image_readback(VkPhysicalDevice const physical_device, VkDevi
       goto cleanup;
    }
 
+   if (operation == RV710_TILED_IMAGE_ROUNDTRIP) {
+      VkImageCreateInfo tiled_image_info = image_info;
+      tiled_image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+      tiled_image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+      result = vkCreateImage(device, &tiled_image_info, NULL, &tiled_image);
+      VkMemoryRequirements tiled_requirements;
+      if (result == VK_SUCCESS)
+         vkGetImageMemoryRequirements(device, tiled_image, &tiled_requirements);
+      uint32_t tiled_memory_type = UINT32_MAX;
+      for (uint32_t type = 0; result == VK_SUCCESS && type < memory_properties.memoryTypeCount;
+           ++type) {
+         if (tiled_requirements.memoryTypeBits & ((uint32_t)1 << type)) {
+            tiled_memory_type = type;
+            break;
+         }
+      }
+      if (result == VK_SUCCESS && tiled_memory_type == UINT32_MAX)
+         result = VK_ERROR_FEATURE_NOT_PRESENT;
+      VkMemoryAllocateInfo const tiled_allocate_info = {
+         .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+         .allocationSize = result == VK_SUCCESS ? tiled_requirements.size : 0,
+         .memoryTypeIndex = tiled_memory_type,
+      };
+      if (result == VK_SUCCESS && tiled_memory_type != UINT32_MAX)
+         result = vkAllocateMemory(device, &tiled_allocate_info, NULL, &tiled_image_memory);
+      if (result == VK_SUCCESS)
+         result = vkBindImageMemory(device, tiled_image, tiled_image_memory, 0);
+      if (result != VK_SUCCESS) {
+         fprintf(stderr, "  RV710 tiled-roundtrip image allocation/bind failed with %d\n", result);
+         failures = 1;
+         goto cleanup;
+      }
+   }
+
    VkBufferCreateInfo const buffer_info = {
       .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
       .size = byte_count,
-      .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+      .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
       .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
    };
    result = vkCreateBuffer(device, &buffer_info, NULL, &buffer);
@@ -525,7 +571,9 @@ check_rv710_linear_image_readback(VkPhysicalDevice const physical_device, VkDevi
    }
    for (uint32_t texel = 0; texel < width * height; ++texel)
       buffer_mapping[texel] =
-         operation == RV710_LINEAR_BUFFER_UPLOAD ? source_words[texel] : inverse_words[texel];
+         operation == RV710_LINEAR_BUFFER_UPLOAD || operation == RV710_TILED_IMAGE_ROUNDTRIP
+            ? source_words[texel]
+            : inverse_words[texel];
    VkMappedMemoryRange const buffer_flush = {
       .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
       .memory = buffer_memory,
@@ -595,7 +643,7 @@ check_rv710_linear_image_readback(VkPhysicalDevice const physical_device, VkDevi
                               &host_read_barrier);
       } else if (operation == RV710_LINEAR_IMAGE_READBACK) {
          vkCmdCopyImageToBuffer(command_buffer, image, VK_IMAGE_LAYOUT_GENERAL, buffer, 1, &region);
-      } else {
+      } else if (operation == RV710_LINEAR_BUFFER_UPLOAD) {
          vkCmdCopyBufferToImage(command_buffer, buffer, image, VK_IMAGE_LAYOUT_GENERAL, 1, &region);
          VkImageMemoryBarrier const host_read_barrier = {
             .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
@@ -611,6 +659,67 @@ check_rv710_linear_image_readback(VkPhysicalDevice const physical_device, VkDevi
          vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
                               VK_PIPELINE_STAGE_HOST_BIT, 0, 0, NULL, 0, NULL, 1,
                               &host_read_barrier);
+      } else {
+         /* This tiny optimal image is 1D microtiled, not a test of macrotiles, mip levels or
+          * bank rotation. The linear destination keeps inverse sentinels from its host writes.
+          */
+         VkImageMemoryBarrier initial_barriers[2] = {
+            {.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+             .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+             .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+             .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+             .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+             .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+             .image = tiled_image, .subresourceRange = clear_range},
+            {.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+             .srcAccessMask = VK_ACCESS_HOST_WRITE_BIT,
+             .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+             .oldLayout = VK_IMAGE_LAYOUT_PREINITIALIZED,
+             .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+             .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+             .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+             .image = image, .subresourceRange = clear_range},
+         };
+         vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_HOST_BIT,
+                              VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 2,
+                              initial_barriers);
+         vkCmdCopyBufferToImage(command_buffer, buffer, tiled_image, VK_IMAGE_LAYOUT_GENERAL, 1,
+                                &region);
+         VkImageMemoryBarrier barriers[2] = {
+            {
+               .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+               .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+               .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+               .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
+               .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+               .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+               .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+               .image = tiled_image,
+               .subresourceRange = clear_range,
+            },
+            {
+               .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+               .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+               .dstAccessMask = VK_ACCESS_HOST_READ_BIT,
+               .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
+               .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+               .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+               .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+               .image = image,
+               .subresourceRange = clear_range,
+            },
+         };
+         vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                              VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1, barriers);
+         VkImageCopy const image_region = {
+            .srcSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .layerCount = 1},
+            .dstSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .layerCount = 1},
+            .extent = {width, height, 1},
+         };
+         vkCmdCopyImage(command_buffer, tiled_image, VK_IMAGE_LAYOUT_GENERAL, image,
+                        VK_IMAGE_LAYOUT_GENERAL, 1, &image_region);
+         vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                              VK_PIPELINE_STAGE_HOST_BIT, 0, 0, NULL, 0, NULL, 1, &barriers[1]);
       }
       result = vkEndCommandBuffer(command_buffer);
    }
@@ -629,6 +738,7 @@ check_rv710_linear_image_readback(VkPhysicalDevice const physical_device, VkDevi
       fprintf(stderr, "  RV710 linear image %s submission failed with %d\n",
               operation == RV710_LINEAR_IMAGE_CLEAR     ? "clear"
               : operation == RV710_LINEAR_BUFFER_UPLOAD ? "buffer upload"
+              : operation == RV710_TILED_IMAGE_ROUNDTRIP ? "tiled roundtrip"
                                                         : "readback",
               result);
       failures = 1;
@@ -654,7 +764,10 @@ check_rv710_linear_image_readback(VkPhysicalDevice const physical_device, VkDevi
             if (row[x] != expected) {
                fprintf(stderr,
                        "  RV710 linear image %s mismatch at (%u,%u): got 0x%08x expected 0x%08x\n",
-                       operation == RV710_LINEAR_IMAGE_CLEAR ? "clear" : "buffer upload", x, y,
+                       operation == RV710_LINEAR_IMAGE_CLEAR     ? "clear"
+                       : operation == RV710_TILED_IMAGE_ROUNDTRIP ? "tiled roundtrip"
+                                                                  : "buffer upload",
+                       x, y,
                        row[x], expected);
                failures = 1;
             }
@@ -662,7 +775,9 @@ check_rv710_linear_image_readback(VkPhysicalDevice const physical_device, VkDevi
       }
       if (!failures)
          fprintf(stderr, "  RV710 linear image 2x2 %s readback completed\n",
-                 operation == RV710_LINEAR_IMAGE_CLEAR ? "clear" : "buffer upload");
+                 operation == RV710_LINEAR_IMAGE_CLEAR     ? "clear"
+                 : operation == RV710_TILED_IMAGE_ROUNDTRIP ? "tiled roundtrip"
+                                                            : "buffer upload");
       goto cleanup;
    }
    VkMappedMemoryRange const buffer_invalidate = {
@@ -698,6 +813,8 @@ cleanup:
       vkUnmapMemory(device, image_memory);
    vkDestroyImage(device, image, NULL);
    vkFreeMemory(device, image_memory, NULL);
+   vkDestroyImage(device, tiled_image, NULL);
+   vkFreeMemory(device, tiled_image_memory, NULL);
    return failures;
 }
 
@@ -1132,10 +1249,13 @@ main(void)
             failures +=
                terascale_1_linear_image_readback_opted_in() ||
                      terascale_1_linear_image_clear_opted_in() ||
-                     terascale_1_linear_buffer_upload_opted_in()
+                     terascale_1_linear_buffer_upload_opted_in() ||
+                     terascale_1_tiled_image_roundtrip_opted_in()
                   ? check_rv710_linear_image_readback(
                        physical_devices[device_index], device, queue,
                        terascale_1_linear_image_clear_opted_in()     ? RV710_LINEAR_IMAGE_CLEAR
+                       : terascale_1_tiled_image_roundtrip_opted_in()
+                          ? RV710_TILED_IMAGE_ROUNDTRIP
                        : terascale_1_linear_buffer_upload_opted_in() ? RV710_LINEAR_BUFFER_UPLOAD
                                                                      : RV710_LINEAR_IMAGE_READBACK)
                : terascale_1_cp_dma_unaligned_copy_opted_in()

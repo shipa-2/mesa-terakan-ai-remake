@@ -87,6 +87,14 @@ terakan_meta_nir_compile(struct terakan_device * const device, nir_shader * cons
                if (tex->op != nir_texop_txf && tex->op != nir_texop_txf_ms) {
                   shader_out->sqk_usage.samplers |= BITFIELD_BIT(tex->sampler_index);
                }
+               /* On RV710 a fresh single-sample LD meta path returned zero until sampler state
+                * was written. Omitting that write subsequently passed too: sampler state can
+                * survive between submissions, so this does not identify which field mattered.
+                * Keep the LD sampler explicit. This measurement does not cover MSAA fetches.
+                */
+               if (terakan_device_physical_device(device)->chip_info.is_terascale_1 &&
+                   tex->op == nir_texop_txf)
+                  shader_out->sqk_usage.samplers |= BITFIELD_BIT(tex->sampler_index);
                break;
             }
             case nir_instr_type_intrinsic: {
@@ -880,6 +888,53 @@ terakan_meta_nir_build_copy_buffer_to_image_ps(struct terakan_device const * con
    return b->shader;
 }
 
+nir_shader *
+terakan_meta_nir_build_copy_image_ps(struct terakan_device const * const device)
+{
+   nir_builder builder = nir_builder_init_simple_shader(
+      MESA_SHADER_FRAGMENT, &terakan_device_physical_device(device)->nir_options_fs,
+      "terakan_meta_copy_image_ps");
+   nir_builder * const b = &builder;
+   nir_variable * const position = nir_variable_create(
+      b->shader, nir_var_shader_in, glsl_vec4_type(), "gl_FragCoord");
+   position->data.location = VARYING_SLOT_POS;
+   position->data.interpolation = INTERP_MODE_NOPERSPECTIVE;
+   nir_variable * const layer =
+      nir_variable_create(b->shader, nir_var_shader_in, glsl_float_type(), "layer");
+   layer->data.location = VARYING_SLOT_VAR0;
+   layer->data.interpolation = INTERP_MODE_FLAT;
+   b->shader->info.inputs_read = BITFIELD64_BIT(VARYING_SLOT_POS) | BITFIELD64_BIT(VARYING_SLOT_VAR0);
+
+   nir_def * const p = nir_load_var(b, position);
+   nir_def * const offsets = nir_load_ubo_vec4(
+      b, 4, 32, nir_imm_int(b, TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS), nir_imm_int(b, 0));
+   nir_def * const coord = nir_vec3(
+      b, nir_iadd(b, nir_f2i32(b, nir_channel(b, p, 0)),
+                  nir_channel(b, offsets, TERAKAN_META_NIR_COPY_CONST_SRC_MINUS_DST_OFFSET_X)),
+      nir_iadd(b, nir_f2i32(b, nir_channel(b, p, 1)),
+               nir_channel(b, offsets, TERAKAN_META_NIR_COPY_CONST_SRC_MINUS_DST_OFFSET_Y)),
+      nir_f2i32(b, nir_load_var(b, layer)));
+   nir_tex_instr * const fetch = nir_tex_instr_create(b->shader, 2);
+   fetch->op = nir_texop_txf;
+   fetch->sampler_dim = GLSL_SAMPLER_DIM_2D;
+   fetch->is_array = true;
+   fetch->dest_type = nir_type_uint32;
+   fetch->coord_components = 3;
+   fetch->texture_index = TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META;
+   fetch->src[0] = nir_tex_src_for_ssa(nir_tex_src_coord, coord);
+   fetch->src[1] = nir_tex_src_for_ssa(nir_tex_src_lod, nir_imm_int(b, 0));
+   nir_def_init(&fetch->instr, &fetch->def, 4, 32);
+   nir_builder_instr_insert(b, &fetch->instr);
+
+   nir_variable * const colour =
+      nir_variable_create(b->shader, nir_var_shader_out, glsl_uvec4_type(), "colour");
+   colour->data.location = FRAG_RESULT_DATA0;
+   colour->data.driver_location = 0;
+   nir_store_var(b, colour, &fetch->def, 0xF);
+   b->shader->info.outputs_written = BITFIELD64_BIT(FRAG_RESULT_DATA0);
+   return b->shader;
+}
+
 terakan_meta_nir_builder const terakan_meta_nir_builders[TERAKAN_META_SHADER_COUNT] = {
    [TERAKAN_META_SHADER_DUMMY_OPAQUE_PS] = terakan_meta_nir_build_opaque_ps,
    [TERAKAN_META_SHADER_RESOLVE_SAMPLE_ZERO_PS] = terakan_meta_nir_build_resolve_sample_zero_ps,
@@ -905,4 +960,5 @@ terakan_meta_nir_builder const terakan_meta_nir_terascale_1_builders[TERAKAN_MET
    [TERAKAN_META_SHADER_COPY_BUFFER_TO_IMAGE_PS] =
       terakan_meta_nir_build_copy_buffer_to_image_ps,
    [TERAKAN_META_SHADER_COPY_IMAGE_TO_BUFFER_PS] = terakan_meta_nir_build_copy_image_to_buffer_ps,
+   [TERAKAN_META_SHADER_COPY_IMAGE_PS] = terakan_meta_nir_build_copy_image_ps,
 };

@@ -17,6 +17,8 @@ extern "C" {
 void terakan_sampler_terascale_1_create_descriptor(VkSamplerCreateInfo const * create_info,
                                                    bool force_base_mip, uint32_t descriptor_out[3]);
 
+void terakan_sampler_terascale_1_init_meta_fetch(uint32_t descriptor_out[3]);
+
 #ifdef __cplusplus
 }
 #endif

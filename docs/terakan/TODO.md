@@ -279,6 +279,28 @@ calculation and CB export; it does not validate other buffer formats, swizzles, 
 tiled destinations, so linear uploads continue to use the already validated CP-DMA path and the
 NIR route is not yet selected for general TeraScale 1 copies.
 
+The single-sample copy-image PS now has a T1-only NIR builder with explicit integer coordinates
+and LOD zero. The opt-in enumeration probe `TERAKAN_DEBUG_TERASCALE_1_TILED_IMAGE_ROUNDTRIP=1`
+(also requiring `TERAKAN_DEBUG_TERASCALE_1_SUBMIT=1` and
+`TERAKAN_DEBUG_TERASCALE_1_BUFFER_UPLOAD_NIR=1`) uploads four distinct RGBA8 words into a 2x2
+optimal image, copies it into a linear image and checks all four words against inverse sentinels.
+This small optimal image is **1D microtiled**, not a macrotiling test. On remote RV710 1002:954f,
+restored source passed 10/10; a shader mutation fetching (0,0) for every pixel failed 3/3 with
+exactly three mismatches per run. The kernel journal stayed clean. The existing sampler CPU test
+also checks the exact three-dword meta sampler payload; changing TYPE to zero failed that oracle.
+Both tests are already registered in Meson and bin/terakan-test.
+
+An important limitation of the investigation: the initial texture reads returned zero, whereas
+writing sampler 0 explicitly produced correct results. After that, omitting the write passed
+10/10 too. Therefore a particular sampler field is NOT established as the root cause; inherited
+GPU state still needs a cold-start investigation. The copy now explicitly sets/restores a
+point/repeat, LOD-zero sampler with TYPE=1 as in r600_create_sampler_state(), and T1 meta LD usage
+tracks its sampler. The CPU TYPE mutation proves encoding only, not an LD requirement for TYPE.
+An earlier successful linear-to-linear comparison used CP DMA and did not validate texture
+fetching; the successful microtiled-to-linear path cannot take that shortcut. These results do
+not validate macrotiles, bank rotation, nonzero mip/layer/region offsets, other formats, filtered
+sampling, MSAA or RV610. The default submit guard and general tiled buffer-upload guard remain.
+
 Direct indexed application draws now follow `r600_draw_vbo()` too: R600/R700 binding emits no
 Evergreen `INDEX_BASE`/`INDEX_BUFFER_SIZE`, and `vkCmdDrawIndexed` carries the adjusted absolute
 40-bit address in `PKT3_DRAW_INDEX` with an immediate DRM relocation. The exact packet has a CPU

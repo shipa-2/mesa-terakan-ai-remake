@@ -26,6 +26,8 @@
 #include "terakan_entrypoints.h"
 #include "terakan_image.h"
 #include "terakan_cp_dma.h"
+#include "terakan_physical_device.h"
+#include "terakan_sampler_terascale_1.h"
 
 #include "util/bitscan.h"
 #include "util/macros.h"
@@ -946,6 +948,18 @@ terakan_CmdCopyImage2(VkCommandBuffer const commandBuffer,
    terakan_meta_config_draw_set_sq_pgm_vs(command_writer,
                                           TERAKAN_META_SHADER_POSITION_AND_LAYER_FROM_INDEX_VS);
    terakan_meta_config_draw_set_sq_pgm_ps(command_writer, TERAKAN_META_SHADER_COPY_IMAGE_PS);
+   bool const is_terascale_1 =
+      terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1;
+   struct terakan_sampler_descriptor saved_t1_sampler;
+   if (is_terascale_1) {
+      saved_t1_sampler = command_writer->hw_config_sqk.stages_[MESA_SHADER_FRAGMENT].samplers[0];
+      /* Point/repeat, LOD zero, valid TYPE: the zero-state case of r600_create_sampler_state().
+       * RV710 LD readback needs deterministic sampler state; this is not a filtered-blit test.
+       */
+      struct terakan_sampler_descriptor sampler = {};
+      terakan_sampler_terascale_1_init_meta_fetch(sampler.sampler);
+      terakan_hw_config_sqk_set_sampler_fs(&command_writer->hw_config_sqk, 0, &sampler);
+   }
 
    int32_t constants[TERAKAN_META_COPY_IMAGE_CONSTS_COUNT] = {};
    bool constants_set = false;
@@ -1090,4 +1104,6 @@ terakan_CmdCopyImage2(VkCommandBuffer const commandBuffer,
       &command_writer->hw_config_sqk, meta_resource_index,
       saved_fs_resource_bound ? saved_fs_resource.bo : NULL,
       saved_fs_resource_bound ? &saved_fs_resource.descriptor : NULL);
+   if (is_terascale_1)
+      terakan_hw_config_sqk_set_sampler_fs(&command_writer->hw_config_sqk, 0, &saved_t1_sampler);
 }

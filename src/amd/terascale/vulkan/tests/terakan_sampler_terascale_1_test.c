@@ -21,6 +21,15 @@
 int
 main(void)
 {
+   /* Exact SET_SAMPLER payload used by the T1 copy-image LD path. This is a CPU encoding oracle,
+    * not evidence that every field affects LD, nor a test of filtered sampling or MSAA.
+    */
+   uint32_t meta_fetch[3] = {UINT32_MAX, UINT32_MAX, UINT32_MAX};
+   terakan_sampler_terascale_1_init_meta_fetch(meta_fetch);
+   CHECK(meta_fetch[0] == 0);
+   CHECK(meta_fetch[1] == 0);
+   CHECK(meta_fetch[2] == 0x80000000);
+
    VkSamplerCreateInfo const create_info = {
       .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
       .magFilter = VK_FILTER_LINEAR,
