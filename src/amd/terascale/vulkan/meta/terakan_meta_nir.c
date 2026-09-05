@@ -830,6 +830,56 @@ terakan_meta_nir_build_copy_image_to_buffer_ps(struct terakan_device const * con
    return b->shader;
 }
 
+nir_shader *
+terakan_meta_nir_build_copy_buffer_to_image_ps(struct terakan_device const * const device)
+{
+   nir_builder builder = nir_builder_init_simple_shader(
+      MESA_SHADER_FRAGMENT, &terakan_device_physical_device(device)->nir_options_fs,
+      "terakan_meta_copy_buffer_to_image_ps");
+   nir_builder * const b = &builder;
+   nir_variable * const position = nir_variable_create(
+      b->shader, nir_var_shader_in, glsl_vec4_type(), "gl_FragCoord");
+   position->data.location = VARYING_SLOT_POS;
+   position->data.interpolation = INTERP_MODE_NOPERSPECTIVE;
+   nir_variable * const layer =
+      nir_variable_create(b->shader, nir_var_shader_in, glsl_float_type(), "layer");
+   layer->data.location = VARYING_SLOT_VAR0;
+   layer->data.interpolation = INTERP_MODE_FLAT;
+   b->shader->info.inputs_read = BITFIELD64_BIT(VARYING_SLOT_POS) | BITFIELD64_BIT(VARYING_SLOT_VAR0);
+
+   enum {
+      image_offset_x_minus_buffer_offset,
+      image_offset_y,
+      buffer_y_pitch,
+      buffer_z_pitch,
+   };
+   nir_def * const p = nir_load_var(b, position);
+   nir_def * const c = nir_load_ubo_vec4(
+      b, 4, 32, nir_imm_int(b, TERAKAN_KCACHE_BUFFER_PUSH_CONSTANTS), nir_imm_int(b, 0));
+   nir_def * const x = nir_f2i32(b, nir_channel(b, p, 0));
+   nir_def * const y = nir_f2i32(b, nir_channel(b, p, 1));
+   nir_def * const z = nir_f2i32(b, nir_load_var(b, layer));
+   nir_def * const address = nir_iadd(
+      b, nir_isub(b, x, nir_channel(b, c, image_offset_x_minus_buffer_offset)),
+      nir_iadd(b,
+               nir_imul(b, nir_isub(b, y, nir_channel(b, c, image_offset_y)),
+                        nir_channel(b, c, buffer_y_pitch)),
+               nir_imul(b, z, nir_channel(b, c, buffer_z_pitch))));
+
+   /* PIPE_FORMAT_NONE leaves format and swizzle selection in the resource constant, matching the
+    * original VTX_FETCH ... USE_CONST_FIELDS meta shader while letting SFN encode the R700 fetch. */
+   nir_def * const value = nir_load_buffer_resource_r600(
+      b, 4, 32, nir_imm_zero(b, 1, 32), address, .access = ACCESS_CAN_REORDER,
+      .id_base = TERAKAN_RESOURCE_RANGE_SHADER_CONSTANT_ARRAYS_OR_META);
+   nir_variable * const colour =
+      nir_variable_create(b->shader, nir_var_shader_out, glsl_uvec4_type(), "colour");
+   colour->data.location = FRAG_RESULT_DATA0;
+   colour->data.driver_location = 0;
+   nir_store_var(b, colour, value, 0xF);
+   b->shader->info.outputs_written = BITFIELD64_BIT(FRAG_RESULT_DATA0);
+   return b->shader;
+}
+
 terakan_meta_nir_builder const terakan_meta_nir_builders[TERAKAN_META_SHADER_COUNT] = {
    [TERAKAN_META_SHADER_DUMMY_OPAQUE_PS] = terakan_meta_nir_build_opaque_ps,
    [TERAKAN_META_SHADER_RESOLVE_SAMPLE_ZERO_PS] = terakan_meta_nir_build_resolve_sample_zero_ps,
@@ -852,5 +902,7 @@ terakan_meta_nir_builder const terakan_meta_nir_terascale_1_builders[TERAKAN_MET
    [TERAKAN_META_SHADER_POSITION_AND_LAYER_FROM_INDEX_VS] =
       terakan_meta_nir_build_position_and_layer_from_index_vs,
    [TERAKAN_META_SHADER_CLEAR_COLOR_PS] = terakan_meta_nir_build_clear_color_ps,
+   [TERAKAN_META_SHADER_COPY_BUFFER_TO_IMAGE_PS] =
+      terakan_meta_nir_build_copy_buffer_to_image_ps,
    [TERAKAN_META_SHADER_COPY_IMAGE_TO_BUFFER_PS] = terakan_meta_nir_build_copy_image_to_buffer_ps,
 };

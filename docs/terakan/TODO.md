@@ -268,6 +268,17 @@ with no new RV710 kernel error. This proves only level-zero, single-layer linear
 offsets, layers, compressed/3x formats, tiled addressing and the eventual NIR replacement for the
 generic meta shader remain unverified. The default submit guard remains.
 
+The buffer-to-image meta shader now also has a TeraScale 1 NIR implementation compiled by the
+runtime-selected R700 SFN/assembler path instead of reusing either handwritten Evergreen program.
+Its disassembly is a 28-dword PS containing one `VFETCH RID:0` with `USE_CONST_FIELDS` and one
+colour export. With a diagnostic switch bypassing the linear CP-DMA shortcut, the same four-word
+RV710 upload/readback passed once and then 10/10 repetitions with a clean kernel journal. Keeping
+the old handwritten program is the hardware negative control: with the same now-parser-valid
+resource packet it locked ring 0. This validates a single linear RGBA8 buffer fetch, address
+calculation and CB export; it does not validate other buffer formats, swizzles, offsets, layers or
+tiled destinations, so linear uploads continue to use the already validated CP-DMA path and the
+NIR route is not yet selected for general TeraScale 1 copies.
+
 Direct indexed application draws now follow `r600_draw_vbo()` too: R600/R700 binding emits no
 Evergreen `INDEX_BASE`/`INDEX_BUFFER_SIZE`, and `vkCmdDrawIndexed` carries the adjusted absolute
 40-bit address in `PKT3_DRAW_INDEX` with an immediate DRM relocation. The exact packet has a CPU

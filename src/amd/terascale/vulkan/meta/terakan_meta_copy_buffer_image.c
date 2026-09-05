@@ -803,7 +803,8 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
    struct terakan_buffer const * const buffer =
       terakan_buffer_from_handle(pCopyBufferToImageInfo->srcBuffer);
 
-   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1 &&
+       getenv("TERAKAN_DEBUG_TERASCALE_1_BUFFER_UPLOAD_NIR") == NULL) {
       if (!terakan_meta_copy_buffer_to_image_linear_cp_dma_terascale_1(
              command_writer, buffer, image, pCopyBufferToImageInfo)) {
          /* Never fall through to the still-Evergreen meta bytecode on TeraScale 1. */
