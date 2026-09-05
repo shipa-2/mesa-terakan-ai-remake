@@ -2501,6 +2501,37 @@ Two ways out, neither small:
 
 Until one of them is done the features are a claim the driver does not honour.
 
+## Vertex-pipeline stores: writes work, reads in a vertex stage do not
+
+`vertexPipelineStoresAndAtomics` is still `VK_FALSE`, and the reason recorded next to it -- "the
+very small UAV binding count limit in the hardware" -- is not what stands in the way. Turning the
+feature on temporarily and running a 265-case sample of
+`dEQP-VK.synchronization.op.single_queue.*ssbo_vertex*` gives 48 passing and 92 failing of the 140
+supported, and the split is entirely along one axis:
+
+- **Writing a storage buffer from a vertex shader works.** `write_ssbo_vertex_read_copy_buffer`
+  passes 8 of 8, and `read_ubo_compute`, `read_ubo_fragment`, `read_ubo_texel_compute` and their
+  indirect variants all pass 4 of 4.
+- **Reading one in a vertex stage does not.** Every `read_ssbo_vertex` case fails 8 of 8 whatever
+  wrote the data -- a copy, a fill, a compute shader, a fragment shader or another vertex shader --
+  and so do `read_ubo_vertex`, `read_ubo_texel_vertex` and `read_vertex_input`. All 92 report
+  "Memory contents don't match".
+
+The synchronization primitive makes no difference: barrier, event, fence and binary semaphore each
+fail 23 and pass 12.
+
+One explanation was tested and excluded. The vertex cache is not it: a shader read in a vertex
+stage does not invalidate `VC`, but `terakan_physical_device.c` sets `has_vertex_cache = false` for
+CAICOS, so vertex fetch there goes through the texture cache, which the barrier already
+invalidates -- and adding the invalidation changed nothing, as it could not.
+
+The next thing to slice is the resource slot the read lands on.
+`terakan_nir_lower_bindings` picks the UAV index base by stage --
+`stage == MESA_SHADER_FRAGMENT ? UAV_IMMEDIATE_BASE_PIXEL : UAV_IMMEDIATE_BASE_COMPUTE` -- while
+`terakan_pipeline_layout.c` binds UAV descriptors to `uav_shader_stage`, which is the fragment
+stage for graphics. A vertex stage would then read UAVs from slots nothing was bound to. That fits
+reads failing, but not writes succeeding, so it is a hypothesis rather than the answer.
+
 ## Vertex pipeline stage survey (geometry and tessellation)
 
 Surveyed 2026-08-23 while starting the geometry and tessellation items. Both
