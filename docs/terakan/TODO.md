@@ -2192,10 +2192,29 @@ remaining bug. Writing a plain 0.5f into the registers and sampling the border r
 a 32-bit format, while the same probe on a 16-bit one reads back 32768 -- 0.5 * 2^16. So the
 denormalization is by 2^bits and 32 bits is past what this path carries.
 
-Two smaller things are still open. Immutable samplers do not get the conversion, because their
-descriptors are written before any view is known. And six cases in the sample expect zero and get
-one, which is a `ZERO` in the view's swizzle not reaching the border colour -- related to the
-gather constant-swizzle defect above, and not yet sliced.
+### What the swizzle does to the border colour, measured
+
+`terakan_border_color_swizzle_probe` writes four *distinct* values into the border colour
+registers and samples outside the image through a range of view swizzles, so every result names
+the register it came from. dEQP cannot ask this: its border colours are `(1,1,1,1)`, `(0,0,0,1)`
+and `(0,0,0,0)`, where a permutation of the components is invisible.
+
+**An ordinary sample applies `DST_SEL` twice.** A view swizzled `argb` -- `(W, X, Y, Z)` -- returns
+its border as `(Z, W, X, Y)`, that permutation composed with itself, and the self-inverse `bgra`
+comes back as the identity. Every constant an ordinary sample is asked for is produced correctly,
+in any component. The registers are now written with the swizzle applied backwards once, which
+cancels it; the suite count cannot show this, since equal border components look the same either
+way, but a border colour with distinct components needs it.
+
+**A gather reads a constant in the swizzle correctly only in W.** `1gba` gathers its components as
+`(Y, Z, W, Y)` rather than `(1, Y, Z, W)`, and `0gba` gathers them as the plain identity, while
+`rgb0` and `rgb1` are right. This is the same defect the gather constant-swizzle note above
+records, now measured on the border colour path as well, and it accounts for every non-32-bit
+failure left in the group -- all of them gathers. Closing it needs a gather-specific descriptor,
+not anything the sampler can do.
+
+Immutable samplers still do not get the conversion at all, because their descriptors are written
+before any view is known.
 
 ## An exclusive scan of a vector read past its identity
 
