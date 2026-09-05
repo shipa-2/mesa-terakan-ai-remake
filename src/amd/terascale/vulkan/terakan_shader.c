@@ -618,6 +618,13 @@ terakan_shader_lower_and_optimize_post_link(
    nir_lower_idiv_options lower_idiv_options = {};
    NIR_PASS(_, nir, nir_lower_idiv, &lower_idiv_options);
 
+   /* The backend has no 32-bit frexp -- `op1_frexp_64` is the only one in the instruction table --
+    * so `frexp_sig` and `frexp_exp` have to be lowered to bit manipulation here. Gallium r600 gets
+    * away without this because the GL state tracker lowers frexp before the driver ever sees it;
+    * a Vulkan driver receives it intact.
+    */
+   NIR_PASS(_, nir, nir_lower_frexp);
+
    /* Includes both mandatory lowerings and optimizations. */
    NIR_PASS(_, nir, nir_opt_algebraic);
 
