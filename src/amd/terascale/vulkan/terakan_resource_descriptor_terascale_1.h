@@ -49,6 +49,8 @@ void terakan_resource_buffer_descriptor_terascale_1_encode(
    uint32_t const source_words[4],
    uint32_t descriptor_out[TERAKAN_RESOURCE_DESCRIPTOR_TERASCALE_1_DWORDS]);
 
+uint32_t terakan_resource_descriptor_terascale_1_hw_index(uint32_t evergreen_hw_index);
+
 uint32_t * terakan_resource_descriptor_terascale_1_write_set_packet(
    uint32_t * packet, uint32_t resource_hw_index, uint32_t shader_type_flag,
    uint32_t const descriptor[TERAKAN_RESOURCE_DESCRIPTOR_TERASCALE_1_DWORDS]);

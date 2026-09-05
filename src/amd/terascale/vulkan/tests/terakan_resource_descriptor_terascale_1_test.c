@@ -68,12 +68,27 @@ main(void)
    for (unsigned i = 0; i < TERAKAN_RESOURCE_DESCRIPTOR_TERASCALE_1_DWORDS; ++i)
       CHECK(packet[2 + i] == expected_texture[i]);
 
+   CHECK(terakan_resource_descriptor_terascale_1_hw_index(0) == 0);
+   CHECK(terakan_resource_descriptor_terascale_1_hw_index(176) ==
+         R600_FETCH_CONSTANTS_OFFSET_VS);
+   CHECK(terakan_resource_descriptor_terascale_1_hw_index(336) ==
+         R600_FETCH_CONSTANTS_OFFSET_GS);
+   CHECK(terakan_resource_descriptor_terascale_1_hw_index(992) ==
+         R600_FETCH_CONSTANTS_OFFSET_FS);
+   CHECK(terakan_resource_descriptor_terascale_1_hw_index(816) == UINT32_MAX);
+
+   CHECK(terakan_resource_descriptor_terascale_1_write_set_packet(
+            packet, 992, 0, descriptor) ==
+         packet + TERAKAN_RESOURCE_DESCRIPTOR_TERASCALE_1_SET_PACKET_DWORDS);
+   CHECK(packet[1] == R600_FETCH_CONSTANTS_OFFSET_FS *
+                         TERAKAN_RESOURCE_DESCRIPTOR_TERASCALE_1_DWORDS);
+
    uint32_t const buffer_source[4] = {0x11223344, 0x00000fff, 0x4d12345a, 0x00006880};
    terakan_resource_buffer_descriptor_terascale_1_encode(buffer_source, descriptor);
    CHECK(descriptor[0] == buffer_source[0]);
    CHECK(descriptor[1] == buffer_source[1]);
    CHECK(descriptor[2] == buffer_source[2]);
-   CHECK(descriptor[3] == buffer_source[3]);
+   CHECK(descriptor[3] == 0);
    CHECK(descriptor[4] == 0);
    CHECK(descriptor[5] == 0);
    CHECK(descriptor[6] == 0xc0000000);
