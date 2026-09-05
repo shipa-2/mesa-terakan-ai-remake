@@ -2203,6 +2203,40 @@ terakan_CreateImageView(VkDevice const deviceHandle,
              &image_view->resource)) {
          image_view->resource = (struct terakan_resource_descriptor){};
       }
+      /* `NUM_FORMAT = INT` switches seamless cube map filtering off: a gather near a face edge
+       * clamps inside the face instead of reaching across it, which is what made every integer
+       * `glsl.texture_gather.*.cube.*` case fail while every unorm one passed.
+       * `terakan_cube_gather_probe` pins it to this one bit, and shows that `SCALED` crosses the
+       * edge while still delivering the integer value, as a float.
+       *
+       * So describe an integer cube that way and let the shader convert the result back. A float
+       * holds integers exactly only up to 2^24, so this is confined to formats whose channels are
+       * at most 16 bits wide; a 32-bit integer cube keeps `INT` and keeps the seam. The shader
+       * cannot see the format, so which views got this is passed to it in the driver push
+       * constants.
+       */
+      if (resource_dimensionality == V_030000_SQ_TEX_DIM_CUBEMAP &&
+          G_030010_NUM_FORMAT_ALL(image_view->resource.resource[4]) ==
+             V_030010_SQ_NUM_FORMAT_INT) {
+         struct util_format_description const * const format_description =
+            util_format_description(vk_format_to_pipe_format(pCreateInfo->format));
+         bool narrow_enough_for_float = format_description != NULL;
+         if (format_description != NULL) {
+            for (unsigned channel_index = 0; channel_index < format_description->nr_channels;
+                 ++channel_index) {
+               if (format_description->channel[channel_index].size > 16) {
+                  narrow_enough_for_float = false;
+                  break;
+               }
+            }
+         }
+         if (narrow_enough_for_float) {
+            image_view->resource.resource[4] =
+               (image_view->resource.resource[4] & C_030010_NUM_FORMAT_ALL) |
+               S_030010_NUM_FORMAT_ALL(V_030010_SQ_NUM_FORMAT_SCALED);
+            image_view->resource_is_scaled_integer_cube = true;
+         }
+      }
       if (getenv("TERAKAN_DEBUG_TEXTURE") != NULL &&
           resource_dimensionality == V_030000_SQ_TEX_DIM_CUBEMAP) {
          fprintf(stderr,

@@ -91,6 +91,16 @@ bool terakan_nir_lower_unnormalized_coordinates(
    nir_shader * shader, struct terakan_shader_sqk_usage * sqk_usage_accum,
    uint32_t * driver_push_constants_used_accum);
 
+/* `NUM_FORMAT = INT` switches seamless cube map filtering off, so an integer cube view is
+ * described as `SCALED` instead and the hardware returns its integer value as a float. Convert it
+ * back. Which views got that treatment depends on the channel width, which the shader cannot see,
+ * so it is read from `terakan_push_constants_driver::texture_scaled_integer`. Must run after
+ * `terakan_nir_lower_bindings`, which assigns the hardware texture slots this reads.
+ */
+bool terakan_nir_lower_integer_cube_fetch(nir_shader * shader,
+                                          uint32_t * driver_push_constants_used_accum,
+                                          struct terakan_shader_sqk_usage * sqk_usage_accum);
+
 bool terakan_nir_lower_sin_cos(nir_shader * shader);
 
 /* TeraScale doesn't have general cross-lane data exchange instructions usable by all Vulkan

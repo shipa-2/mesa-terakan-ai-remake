@@ -585,6 +585,9 @@ terakan_shader_lower_and_optimize_post_link(
 
       NIR_PASS(_, nir, terakan_nir_lower_unnormalized_coordinates, sqk_usage,
                driver_push_constants_used);
+
+      NIR_PASS(_, nir, terakan_nir_lower_integer_cube_fetch, driver_push_constants_used,
+               sqk_usage);
    }
 
    /* Binding lowering replaces SSBO and image operations, but their

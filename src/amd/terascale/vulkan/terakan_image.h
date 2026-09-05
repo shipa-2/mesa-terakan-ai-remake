@@ -354,6 +354,14 @@ struct terakan_image_view {
    struct terakan_color_meta_descriptor color_meta;
 
    struct terakan_depth_stencil_descriptor depth_stencil;
+
+   /* The resource descriptor says `NUM_FORMAT = SCALED` where an integer format would ordinarily
+    * say `INT`, so the hardware returns the integer value as a float and seamless cube map
+    * filtering stays on. The shader is told through
+    * `terakan_push_constants_driver::texture_scaled_integer`, which is why this has to be
+    * remembered per view.
+    */
+   bool resource_is_scaled_integer_cube;
 };
 
 VK_DEFINE_NONDISP_HANDLE_CASTS(terakan_image_view, vk.base, VkImageView, VK_OBJECT_TYPE_IMAGE_VIEW)

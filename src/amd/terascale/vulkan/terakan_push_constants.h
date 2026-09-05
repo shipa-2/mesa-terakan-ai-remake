@@ -54,6 +54,7 @@ enum terakan_push_constants_driver_index {
    TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_BASE_WORKGROUP,
    TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_SAMPLE_POSITIONS,
    TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_SAMPLER_UNNORMALIZED,
+   TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_TEXTURE_SCALED_INTEGER,
 
    TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_COUNT,
 };
@@ -95,6 +96,21 @@ struct terakan_push_constants_driver {
     * compilation instead and never consult this mask.
     */
    uint32_t sampler_unnormalized[MESA_SHADER_STAGES];
+
+   /* One bit per hardware texture slot of the stage, set when the bound view is an integer cube
+    * map whose descriptor says `NUM_FORMAT = SCALED` rather than `INT`.
+    *
+    * `NUM_FORMAT = INT` switches seamless cube map filtering off, which
+    * `terakan_cube_gather_probe` pins to that single bit: a gather near a face edge clamps inside
+    * the face instead of reaching across it. `SCALED` is seamless and still delivers the integer
+    * value, as a float, so an integer cube is described that way and the shader converts the
+    * result back.
+    *
+    * It cannot be described that way when a channel is wider than 16 bits, because a 32-bit float
+    * only holds integers exactly up to 2^24, so the rule depends on the view's format -- which the
+    * shader cannot see. Hence the mask: the same reason `sampler_unnormalized` above exists.
+    */
+   uint32_t texture_scaled_integer[MESA_SHADER_STAGES];
 };
 
 /* Aligned to vec4 to avoid placing vectors in different kcache lines more likely to be accessed in
