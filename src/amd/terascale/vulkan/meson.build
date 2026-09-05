@@ -2383,6 +2383,36 @@ if with_tests
         ],
         depfile : 'terakan_border_color_swizzle.spv.h.d',
       )
+      terakan_vertex_ssbo_read_vert_spv = custom_target(
+        'terakan_vertex_ssbo_read.vert.spv.h',
+        input : 'tests/terakan_vertex_ssbo_read.vert',
+        output : 'terakan_vertex_ssbo_read.vert.spv.h',
+        command : [
+          prog_glslang, '-V', '-x', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_vertex_ssbo_read.vert.spv.h.d',
+      )
+      terakan_vertex_ssbo_read_frag_spv = custom_target(
+        'terakan_vertex_ssbo_read.frag.spv.h',
+        input : 'tests/terakan_vertex_ssbo_read.frag',
+        output : 'terakan_vertex_ssbo_read.frag.spv.h',
+        command : [
+          prog_glslang, '-V', '-x', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_vertex_ssbo_read.frag.spv.h.d',
+      )
+      terakan_vertex_ssbo_read_probe = executable(
+        'terakan_vertex_ssbo_read_probe',
+        [
+          'tests/terakan_vertex_ssbo_read_probe.c',
+          terakan_vertex_ssbo_read_vert_spv,
+          terakan_vertex_ssbo_read_frag_spv,
+        ],
+        dependencies : vulkan_loader_dep,
+      )
+
       terakan_cube_gather_spv = custom_target(
         'terakan_cube_gather.spv.h',
         input : 'tests/terakan_cube_gather.comp',
