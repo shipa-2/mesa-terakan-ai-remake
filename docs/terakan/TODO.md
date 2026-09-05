@@ -1557,22 +1557,32 @@ DB -- which is what makes `array_to_array` work.
 `whole` still takes the byte copy: it is attempted first and this path runs only
 when it declines.
 
-## gl_SampleMaskIn reports the wrong number of bits
+## gl_SampleMaskIn reported the wrong number of bits -- fixed
 
-`dEQP-VK.pipeline.*.multisample_shader_builtin.sample_mask` passes 20 of 30 and
-fails 10. `pattern`, `correct_bit` and `write` all pass, so the bit positions
-and the output path are right; `bit_count` fails at every sample count and
-`bit_count_0_5` fails at four and eight samples while passing at two. The
-message is "gl_SampleMaskIn has an illegal number of bits for some shader
-invocations".
+`dEQP-VK.pipeline.*.multisample_shader_builtin.sample_mask` failed 10 of its 30 supported cases:
+`pattern`, `correct_bit` and `write` passed, so the bit positions and the output path were right,
+while `bit_count` failed at every sample count and `bit_count_0_5` at four and eight samples.
 
-SFN reads the value from the face register's third component and, since
-Terakan never sets `r600_shader_key::ps::apply_sample_id_mask` -- the pipeline
-leaves the key zeroed, as its own TODO says -- passes it through unchanged
-rather than reducing it to the current sample's bit. Narrowing it to
-`BITFIELD_MASK(rasterization_samples)` was tried and changed nothing, so the
-surplus is not above the sample count; what that register actually holds on
-this hardware has still to be established.
+The SPI hands a fragment shader the whole fragment's coverage as `SampleMaskIn`. When the shader
+runs once per sample, what it should see is that coverage narrowed to its own sample, and SFN does
+the narrowing itself -- `FragmentShader::emit_load_sample_mask_in` computes
+`(1 << sample_id) & coverage` -- but only when `r600_shader_key::ps::apply_sample_id_mask` is set.
+Terakan left the whole key zeroed, as its own TODO said, so the shader saw the fragment's coverage
+and the count was legitimately wrong.
+
+The key is now set for the two cases Gallium r600 sets it for: per-sample iteration, and
+multisampling being off at all, where sample zero is the only one to report. The group goes to
+none failing.
+
+The earlier note here recorded that masking the value with `BITFIELD_MASK(rasterization_samples)`
+changed nothing and concluded that what the register holds had still to be established. That was
+the wrong place to look: the register holds the fragment's coverage, which is correct for what it
+is, and the surplus bits were not above the sample count but outside the shader's own sample.
+
+Three failures remain in a 2415-case sample of `pipeline.monolithic.multisample`, and all three
+fail identically with the key forced back off, so they are separate: two
+`min_sample_shading.*.samples_2.primitive_point` cases reporting fewer unique colours than
+`minSampleShading` asked for, and one `sample_locations_ext.verify_interpolation` case.
 
 ## Depth/stencil clears on small images -- fixed
 
