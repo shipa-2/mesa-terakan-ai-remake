@@ -667,23 +667,39 @@ terakan_vertex_input_create_fs_code(
       attributes_bytes_per_element[attribute_index] = attribute_bytes_per_element;
       if (attribute_bytes_per_element != 0) {
          sorted_attribute_indices[bound_used_attribute_count++] = attribute_index;
-#if 1
-         /* TODO(Triang3l): Research robust vertex buffer access on R8xx. It is indeed more
-          * complicated than checking up to the first 4 bytes; terakan_vertex_fetch_bounds_probe
-          * now measures what the hardware actually does, and the thresholds do not fit that rule,
-          * an element-complete rule, or any simple function of the address -- they are not even
-          * monotonic in the attribute offset. Until the rule is known, the truncation stays 0: the
-          * value below over-truncates the attribute-offset-0 case, which is what made
-          * `dEQP-VK.rasterization.depth_bias_control.*` fail with `32_32_32_32_FLOAT` fetches from
-          * a 64-byte-sized buffer with a stride of 16 at a 0 address relative to the beginning of
-          * the BO. Leaving it at 0 keeps those fetches working at the cost of a robustBufferAccess
-          * violation for attributes whose offset is not a multiple of their element size.
+         /* The hardware checks only the *first naturally aligned chunk* of the fetch, not the
+          * whole element. `terakan_vertex_fetch_bounds_probe` measured the thresholds and then
+          * confirmed the rule against eight predictions it had not been fitted to: the chunk is
+          * `min(element_bytes, max(4, 2^ctz(attribute_offset)))`, and the fetch is accepted
+          * whenever `attribute_offset + chunk <= SIZE`. That is why the thresholds looked
+          * unruly and non-monotonic -- offset 0 is checked in full because its chunk is the whole
+          * element, offset 2 only to its first dword.
+          *
+          * So shrink `SIZE` by exactly what the check does not cover, `element_bytes - chunk`.
+          * The hardware's `attribute_offset + chunk <= SIZE - (element_bytes - chunk)` is then
+          * `attribute_offset + element_bytes <= SIZE`, which is the bound the specification asks
+          * for.
+          *
+          * The earlier `element_bytes - 4` assumed the chunk was always one dword. It is not, and
+          * that over-truncation is what made `dEQP-VK.rasterization.depth_bias_control.*` fail
+          * with `32_32_32_32_FLOAT` at offset 0, whose chunk is the full sixteen bytes.
+          *
+          * The chunk is derived from the attribute offset alone, while the address the hardware
+          * sees also carries the buffer's bound offset. A bound offset less aligned than the
+          * attribute offset makes the real chunk smaller than assumed and leaves part of the hole
+          * open; buffer objects are allocated well aligned, so this covers the ordinary case
+          * rather than every case.
           */
-         uint8_t const attribute_truncation = 0;
-#else
-         uint8_t const attribute_truncation =
-            is_r9xx ? 0 : DIV_ROUND_UP(attribute_bytes_per_element, sizeof(uint32_t)) - 1;
-#endif
+         uint8_t attribute_truncation = 0;
+         if (!is_r9xx) {
+            uint32_t const attribute_offset = layout->attribute_offsets[attribute_index];
+            uint32_t const offset_alignment =
+               attribute_offset != 0 ? (attribute_offset & -attribute_offset) : UINT32_MAX;
+            uint32_t const checked_bytes =
+               MIN2((uint32_t)attribute_bytes_per_element, MAX2(4u, offset_alignment));
+            attribute_truncation =
+               (uint8_t)((attribute_bytes_per_element - checked_bytes) / sizeof(uint32_t));
+         }
          attribute_truncations[attribute_index] = attribute_truncation;
          uint8_t const binding_index = layout->attribute_bindings[attribute_index];
          bindings_used |= BITFIELD_BIT(binding_index);

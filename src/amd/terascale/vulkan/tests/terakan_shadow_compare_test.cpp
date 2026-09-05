@@ -31,6 +31,8 @@
 #include <cstring>
 #include <vector>
 
+#include "terakan_test_device.h"
+
 #define VK_CHECK(expression)                                                                       \
    do {                                                                                            \
       VkResult const check_result = (expression);                                                  \
@@ -51,6 +53,7 @@ constexpr float kStoredDepth = 0.5F;
 
 uint32_t const shadow_compare_spirv[] = {
 #include "terakan_shadow_compare.spv.h"
+
 };
 
 struct CompareCase {
@@ -128,8 +131,7 @@ main()
    VkPhysicalDeviceProperties properties = {};
    for (VkPhysicalDevice candidate : physical_devices) {
       vkGetPhysicalDeviceProperties(candidate, &properties);
-      if (!std::strstr(properties.deviceName, "(Terakan)") ||
-          std::strstr(properties.deviceName, "TeraScale 1"))
+      if (!terakan_test_device_matches(properties.deviceName))
          continue;
       uint32_t family_count = 0;
       vkGetPhysicalDeviceQueueFamilyProperties(candidate, &family_count, nullptr);
@@ -147,7 +149,7 @@ main()
    }
    if (physical_device == VK_NULL_HANDLE) {
       std::fprintf(stderr, "Terakan graphics device not found\n");
-      return 1;
+      return TERAKAN_TEST_DEVICE_NOT_FOUND_STATUS;
    }
 
    VkFormatProperties depth_properties;

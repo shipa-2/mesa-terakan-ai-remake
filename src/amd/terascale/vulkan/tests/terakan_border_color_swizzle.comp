@@ -1,0 +1,35 @@
+#version 450
+
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) uniform sampler2D source;
+layout(set = 0, binding = 1, std430) writeonly buffer Results { vec4 values[]; } results;
+
+/* Well outside [0, 1] on both axes, so a CLAMP_TO_BORDER sampler returns the border colour and
+ * nothing of the image can reach the result.
+ */
+const vec2 uv = vec2(-4.0, -4.0);
+
+void
+main()
+{
+   results.values[0] = textureLod(source, uv, 0.0);
+   /* The same fetch as a gather of each component, because the gather path reads DST_SEL
+    * differently from an ordinary sample on this hardware and the border is where that shows.
+    */
+   results.values[1] = textureGather(source, uv, 0);
+   results.values[2] = textureGather(source, uv, 1);
+   results.values[3] = textureGather(source, uv, 2);
+   results.values[4] = textureGather(source, uv, 3);
+
+   /* The same four gathers well inside the image, where the border colour cannot reach and the
+    * result names the channel the fetch actually read. The border colour path applies the swizzle
+    * twice, so it cannot answer that question on its own.
+    */
+   const vec2 inside = vec2(0.5, 0.5);
+   results.values[5] = textureGather(source, inside, 0);
+   results.values[6] = textureGather(source, inside, 1);
+   results.values[7] = textureGather(source, inside, 2);
+   results.values[8] = textureGather(source, inside, 3);
+   results.values[9] = textureLod(source, inside, 0.0);
+}

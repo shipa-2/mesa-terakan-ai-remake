@@ -60,6 +60,19 @@ Submission is off by default and stays off unless asked for explicitly:
 tool, not a switch that makes the driver usable -- submitting real work on this
 path has locked the adapter and needed a reboot.
 
+The driver's own test suite is written once and runs on either generation. By default it picks the
+newer part and passes in full; `TERAKAN_TEST_DEVICE="TeraScale 1"` points the same tests at
+R600/R700 instead, so what that port cannot do yet comes back as a list of failures rather than as
+a guess:
+
+```bash
+TERAKAN_TEST_DEVICE="TeraScale 1" ./bin/terakan-test
+```
+
+Expect those runs to reach device creation, allocation and pipeline compilation and then fail at
+submission with `VK_ERROR_DEVICE_LOST`, which is the guard below doing its job. A machine with no
+TeraScale 1 part skips the tests rather than failing them.
+
 Most of the register work behind these rows is verified by exact CPU oracles
 over the emitted packets rather than by the hardware: per-draw CB/DB/SPI state,
 the direct indexed draw packet, the preamble, and the NIR meta shaders for

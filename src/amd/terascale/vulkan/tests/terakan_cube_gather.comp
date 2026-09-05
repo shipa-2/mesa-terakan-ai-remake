@@ -1,0 +1,27 @@
+#version 450
+
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) uniform samplerCube unorm_source;
+layout(set = 0, binding = 1) uniform usamplerCube uint_source;
+layout(set = 0, binding = 2, std430) writeonly buffer Results { uvec4 values[]; } results;
+layout(push_constant) uniform Push { vec4 direction; } push;
+
+/* Both images hold the same numbers -- texel (x, y) of face f is 16*f + 4*y + x -- one as unorm
+ * bytes and one as unsigned integers, so a gather of the same direction should return the same
+ * four values from both. Where they differ, the format is what the hardware is treating
+ * differently, which is the whole question here.
+ */
+void
+main()
+{
+   vec4 unorm_gathered = textureGather(unorm_source, push.direction.xyz, 0);
+   results.values[0] = uvec4(round(unorm_gathered * 255.0));
+   results.values[1] = textureGather(uint_source, push.direction.xyz, 0);
+   /* The other components, to tell a channel problem from a texel one. */
+   results.values[2] = uvec4(round(textureGather(unorm_source, push.direction.xyz, 1) * 255.0));
+   results.values[3] = textureGather(uint_source, push.direction.xyz, 1);
+   /* An ordinary sample of the same direction, which is known to work for both formats. */
+   results.values[4] = uvec4(round(texture(unorm_source, push.direction.xyz) * 255.0));
+   results.values[5] = texture(uint_source, push.direction.xyz);
+}

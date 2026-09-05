@@ -28,6 +28,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "terakan_test_device.h"
+
+
 #define TARGET_SIZE 16u
 #define TEXELS (TARGET_SIZE * TARGET_SIZE)
 #define INSTANCE_COUNT 12u
@@ -126,7 +129,7 @@ main(int argc, char ** argv)
    for (uint32_t i = 0; i < physical_device_count; ++i) {
       VkPhysicalDeviceProperties properties;
       vkGetPhysicalDeviceProperties(physical_devices[i], &properties);
-      if (strstr(properties.deviceName, "(Terakan)") != NULL) {
+      if (terakan_test_device_matches(properties.deviceName)) {
          physical_device = physical_devices[i];
          break;
       }
@@ -293,7 +296,7 @@ main(int argc, char ** argv)
    VkShaderModule const vertex_module = load_shader(device, argv[1]);
    VkShaderModule const fragment_module = load_shader(device, argv[2]);
    if (vertex_module == VK_NULL_HANDLE || fragment_module == VK_NULL_HANDLE) {
-      return 1;
+      return TERAKAN_TEST_DEVICE_NOT_FOUND_STATUS;
    }
 
    VkCommandPoolCreateInfo const command_pool_create_info = {
