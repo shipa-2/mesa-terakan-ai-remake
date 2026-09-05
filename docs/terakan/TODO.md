@@ -2359,8 +2359,25 @@ shift, inverse or double application accounts for `argb` and `ba01` together.
 What would close it is a gather-specific descriptor after all, but for a different reason than the
 one first recorded here: not to name a constant, which it cannot do, but to carry an identity
 `DST_SEL`, whose row above is correct. The shader would then apply the whole swizzle itself --
-permutation and constants -- out of the push-constant masks that now exist. The cost is a second
-resource slot for every view a shader gathers from.
+permutation and constants -- out of the push-constant masks that now exist.
+
+**There is no slot budget for a second descriptor per view.** `terakan_instance.c` gives sampled
+images *all* the resource bindings left after uniform buffers, the RTV/UAV range and input
+attachments, and `terakan_descriptor.h` asserts that what remains still covers Direct3D 11's 128
+sampled images plus storage buffers. Duplicating every sampled image would halve
+`maxPerStageDescriptorSampledImages`, taking it below that floor -- and the layout assigns slots
+from the descriptor set layout, which cannot see which bindings a shader gathers from, so the
+duplication cannot be confined to those.
+
+What fits the budget is the same idea in one slot: program the slot with an identity `DST_SEL` when
+the pipeline's shaders gather from it, and have those shaders apply the swizzle themselves for
+*every* fetch through that slot, not just the gather. Then four gathers do become the way to get an
+arbitrary channel, since with an identity descriptor component C gathers channel C. The pieces are
+a per-slot "needs identity" mask carried from the pipeline to descriptor emission, the full swizzle
+in the push constants (three bits per slot per component, on top of the constant masks already
+there), and a NIR pass that emits the three extra gathers behind a uniform branch so an identity
+swizzle keeps paying for one. That is a multi-session change touching descriptor emission, and it
+is worth weighing against what it buys: 32 failures in a 1200-case sample.
 
 Measured extent, on a 1200-case random sample of `glsl.texture_gather` (267 passing, 62 failing):
 the swizzles whose constant is anywhere but W fail outright -- `one_red_green_blue` 8 of 8,
