@@ -34,6 +34,8 @@
 #include <cstring>
 #include <vector>
 
+#include "terakan_test_device.h"
+
 #define VK_CHECK(expression)                                                                       \
    do {                                                                                            \
       VkResult const check_result = (expression);                                                  \
@@ -59,6 +61,7 @@ uint32_t const storage_format_uint_spirv[] = {
 };
 uint32_t const storage_format_sint_spirv[] = {
 #include "terakan_storage_format_sint.spv.h"
+
 };
 
 struct FormatCase {
@@ -149,8 +152,7 @@ main()
    VkPhysicalDeviceProperties properties = {};
    for (VkPhysicalDevice candidate : physical_devices) {
       vkGetPhysicalDeviceProperties(candidate, &properties);
-      if (!std::strstr(properties.deviceName, "(Terakan)") ||
-          std::strstr(properties.deviceName, "TeraScale 1"))
+      if (!terakan_test_device_matches(properties.deviceName))
          continue;
       uint32_t family_count = 0;
       vkGetPhysicalDeviceQueueFamilyProperties(candidate, &family_count, nullptr);
@@ -168,7 +170,7 @@ main()
    }
    if (physical_device == VK_NULL_HANDLE) {
       std::fprintf(stderr, "Terakan graphics device not found\n");
-      return 1;
+      return TERAKAN_TEST_DEVICE_NOT_FOUND_STATUS;
    }
    std::fprintf(stderr, "device=%s queue_family=%u formats=%u\n", properties.deviceName,
                 queue_family, kFormatCount);

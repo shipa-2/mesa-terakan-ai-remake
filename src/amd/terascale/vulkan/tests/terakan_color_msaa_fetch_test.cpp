@@ -37,6 +37,8 @@
 #include <cstring>
 #include <vector>
 
+#include "terakan_test_device.h"
+
 #define VK_CHECK(expression)                                                                       \
    do {                                                                                            \
       VkResult const check_result = (expression);                                                  \
@@ -60,6 +62,7 @@ uint32_t const color_msaa_write_vertex_spirv[] = {
 };
 uint32_t const color_msaa_write_fragment_spirv[] = {
 #include "terakan_color_msaa_write.frag.spv.h"
+
 };
 
 /* One distinct, exactly-UNORM8-representable colour per sample, so a fetch that returns the right
@@ -132,13 +135,10 @@ main(int argc, char ** argv)
    VkPhysicalDeviceProperties properties = {};
    for (VkPhysicalDevice candidate : physical_devices) {
       vkGetPhysicalDeviceProperties(candidate, &properties);
-      /* TeraScale 1 (R600/R700) devices also enumerate as "... (Terakan)" but cannot create a
-       * device yet (see terakan_physical_device_chip_info::is_terascale_1 and
-       * terakan_CreateDevice), so they are excluded by their "TeraScale 1" name prefix rather than
-       * picked and failed on below.
+      /* Which generation this run is for is `terakan_test_device_matches`'s decision, not each
+       * test's; see terakan_test_device.h.
        */
-      if (!std::strstr(properties.deviceName, "(Terakan)") ||
-          std::strstr(properties.deviceName, "TeraScale 1"))
+      if (!terakan_test_device_matches(properties.deviceName))
          continue;
       uint32_t family_count = 0;
       vkGetPhysicalDeviceQueueFamilyProperties(candidate, &family_count, nullptr);
@@ -156,7 +156,7 @@ main(int argc, char ** argv)
    }
    if (physical_device == VK_NULL_HANDLE) {
       std::fprintf(stderr, "Terakan graphics device not found\n");
-      return 1;
+      return TERAKAN_TEST_DEVICE_NOT_FOUND_STATUS;
    }
 
    VkSampleCountFlags const color_sample_counts =

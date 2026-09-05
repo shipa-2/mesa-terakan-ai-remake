@@ -26,11 +26,11 @@ accept the work. Both use a 1–5 scale.
 | Enable tessellation control/evaluation shaders | 4/5 | 5/5 | Hardware-supported; see the vertex pipeline stage survey below | Tessellation limits are reported from tested hardware behavior and representative pipelines pass |
 | Complete stream output / transform feedback | 4/5 | 4/5 | Hardware-supported | SFN receives NIR stream-output metadata and D3D11 stream-output workloads pass readback tests |
 | ~~Complete storage-image/UAV format and atomic coverage~~ **load/store + atomics covered** | 4/5 | 4/5 | `shaderStorageImageExtendedFormats` is exposed, and both halves of the acceptance criteria now have real coverage. `terakan_storage_format_matrix` walks 28 formats spanning every class Terakan advertises -- UNORM, SNORM, packed 10/11-bit, 16- and 32-bit float, and UINT/SINT at 8/16/32 bits, one to four channels -- storing a known value through a formatless storage image and loading the same texel back in one dispatch. All 28 are advertised as storage images and all 28 round-trip correctly on real CAICOS hardware, with none skipped. `terakan_storage_image_atomic` covers the atomic half (atomicAdd/Min/Max/Exchange across 32768 invocations, exact). What is left is not format breadth but `shaderStorageImageMultisample`, which is its own P1 row below | Every advertised storage-image format passes load, store and applicable integer-atomic tests |
-| Fix image clearing, measured under CTS | 4/5 | 4/5 | A sampled `dEQP-VK.api.image_clearing` run failed 162 of 3042, from three unrelated causes. **117 are three-component formats**, where `vkCmdClearColorImage` returns without doing anything (`TODO(Triang3l): 3x-expanded format clearing` in `terakan_meta_clear.c`) -- a silent no-op, and with 20 in `buffer_view` and 12 in `image_to_image` the largest single cause found anywhere at 149 failures. Closing it means more hand-assembled bytecode of the kind `terakan_meta_copy_expand_3x.c` already carries. **35 are multisample integer formats that turned out not to be clear failures at all**: those tests resolve the image to read it back, and the integer resolve returns early without doing anything, which instrumenting that return confirmed. They belong with the integer resolve gap. Two other hypotheses were tested and dropped -- disabling colour compression and fast clear, the only structural difference between the multisample and single-sample paths, left all 35 failing. **10 are depth/stencil clears returning zero**, concentrated on width 1 and on multiple subresource ranges in one call | Clears produce the requested value for every advertised format, sample count and subresource range |
+| ~~Fix image clearing, measured under CTS~~ **done** | 4/5 | 4/5 | The whole of `dEQP-VK.api.image_clearing` now passes: **0 failures of 45636**, 29340 passed and 16296 unsupported. The three causes the original sample of 3042 found are all closed. The 117 three-component-format cases were `vkCmdClearColorImage` returning without doing anything; the 35 multisample integer ones were never clear failures at all but the integer resolve returning early, which instrumenting that return confirmed; and the last group, depth/stencil clears coming back as zero on small images, turned out not to be in the clear either -- `vkCmdCopyBufferToImage` recorded its flush in the color field while the barrier after it named a depth image, so the tail of the fill landed on top of the clear. See the section below. | Clears produce the requested value for every advertised format, sample count and subresource range |
 | Implement multisample storage images | 4/5 | 4/5 | Implementable with format-aware lowering, FMASK work and RAT validation; single-sample formatless reads/writes now work | Multisample UAV loads/stores pass for every exposed format before the remaining feature bit is enabled |
 | ~~Implement extended image gather~~ | 5/5 | 1/5 | Done, and it turned out to be already implemented: the TODO's premise that `LowerTexToBackend::lower_tg4` drops the offset source was wrong -- `finalize()` removes only the coordinate, LOD, bias, comparator and sample index sources, so `nir_tex_src_offset` reaches `TexInstr::Inputs`, where `GATHER4_O` selection for non-constant offsets and constant-offset folding into the TEX instruction fields both already existed. Only the feature bit, the gather offset limits and coverage were missing. `terakan_image_gather` covers all four components, constant offsets at both extremes, a non-constant offset, `textureGatherOffsets` and ordinary offset sampling, checking the gather order and not just the footprint; all fourteen cases passed unchanged, with two negative controls confirming the coverage bites. `maxTexelOffset` was also corrected from 8 to 7: the five-bit `SQ_TEX_WORD2` offset fields carry the value shifted left by one, so +8 was being applied as -8 | Component selection and constant/dynamic offset gather tests pass for all advertised sampled formats |
 | Implement vertex-pipeline stores and atomics | 4/5 | 4/5 | Hardware-supported with stage-specific RAT synchronization work | VS/GS/TES storage writes and applicable atomics pass readback and cross-stage visibility tests before exposure |
-| Enforce robust buffer and image bounds everywhere | 5/5 | 4/5 | Descriptor bounds are done and regression-covered on all three paths: the SIZE reclamping of the `resource[1]` read path (`terakan_dynamic_offset_bounds`), the UAV/colour path, where `BASE`/`VIEW`/`DIM` are now rebuilt together for the dynamic offset instead of `BASE` being moved on its own (`terakan_dynamic_uav_bounds`), and storage images, where the hardware's own `CB_COLOR*_DIM` and `CB_COLOR*_VIEW` were confirmed to hold stores inside the bound view across mip levels and layer subranges (`terakan_image_bounds`, with negative controls that reach 408 guard words and mistarget layers). **One hole remains open and is now measured rather than guessed**: vertex fetch can read past the end of the bound vertex buffer range. A `32_32_32_32` attribute at attribute offset 4 with a binding size of 8 returns bytes [4, 20) -- twelve bytes past. `terakan_vertex_fetch_bounds_probe` (built, deliberately not a pass/fail test) tabulates the thresholds; they fit neither the "only the first 4 bytes are checked" guess previously recorded in `terakan_physical_device.c` nor an element-complete rule, and are not monotonic in the attribute offset (offset 0 needs 16, offset 2 needs 6). Closing it needs the ISA documentation for the fetch bounds check: the obvious fix of shrinking SIZE over-truncates the offset-0 case, which is why the truncation in `terakan_vertex_input.c` is disabled | Guard regions remain intact for misaligned, dynamic and end-of-range accesses |
+| Enforce robust buffer and image bounds everywhere | 5/5 | 4/5 | Descriptor bounds are done and regression-covered on all three paths: the SIZE reclamping of the `resource[1]` read path (`terakan_dynamic_offset_bounds`), the UAV/colour path, where `BASE`/`VIEW`/`DIM` are now rebuilt together for the dynamic offset instead of `BASE` being moved on its own (`terakan_dynamic_uav_bounds`), and storage images, where the hardware's own `CB_COLOR*_DIM` and `CB_COLOR*_VIEW` were confirmed to hold stores inside the bound view across mip levels and layer subranges (`terakan_image_bounds`). **Vertex fetch is now closed too.** The hardware checks only the first naturally aligned chunk of a fetch -- `min(element_bytes, max(4, 2^ctz(attribute_offset)))` -- which is why the measured thresholds were not monotonic in the offset; `SIZE` is now shrunk by exactly what that check does not cover, and all nineteen `terakan_vertex_fetch_bounds_probe` cases accept at exactly the size the element needs. What remains is a bound buffer offset less aligned than the attribute offset, which makes the real chunk smaller than the static rule assumes | Guard regions remain intact for misaligned, dynamic and end-of-range accesses |
 | ~~Integrate query reset/copy/end synchronization with the common barrier machinery~~ | 5/5 | 3/5 | Done, and it turned up more than synchronization: queries had no coverage at all, and `vkCmdCopyQueryPoolResults` had never worked on DRM Radeon (its destination UAV described a colour surface with a pitch of 8, which the kernel rejects, losing the device), while the pipeline-statistics destination offsets were built in `VkQueryPipelineStatisticFlags` bit order and read in hardware counter order. Both fixed. The copy now raises a pending VS partial flush that `vkCmdResetQueryPool`, `vkCmdBeginQuery`, `vkCmdEndQuery` and `vkCmdWriteTimestamp` drain before writing. Note the ordering half is unproven: `terakan_query_sync` still passes with that wait removed, at eight generations of a 64-query pool, so it is kept on the strength of the requirement rather than of the test | Occlusion, timestamp and pipeline-statistics queries pass reuse and cross-stage ordering tests |
 
 ### Meta shaders through NIR
@@ -1684,119 +1684,78 @@ DB -- which is what makes `array_to_array` work.
 `whole` still takes the byte copy: it is attempted first and this path runs only
 when it declines.
 
-## gl_SampleMaskIn reports the wrong number of bits
+## gl_SampleMaskIn reported the wrong number of bits -- fixed
 
-`dEQP-VK.pipeline.*.multisample_shader_builtin.sample_mask` passes 20 of 30 and
-fails 10. `pattern`, `correct_bit` and `write` all pass, so the bit positions
-and the output path are right; `bit_count` fails at every sample count and
-`bit_count_0_5` fails at four and eight samples while passing at two. The
-message is "gl_SampleMaskIn has an illegal number of bits for some shader
-invocations".
+`dEQP-VK.pipeline.*.multisample_shader_builtin.sample_mask` failed 10 of its 30 supported cases:
+`pattern`, `correct_bit` and `write` passed, so the bit positions and the output path were right,
+while `bit_count` failed at every sample count and `bit_count_0_5` at four and eight samples.
 
-SFN reads the value from the face register's third component and, since
-Terakan never sets `r600_shader_key::ps::apply_sample_id_mask` -- the pipeline
-leaves the key zeroed, as its own TODO says -- passes it through unchanged
-rather than reducing it to the current sample's bit. Narrowing it to
-`BITFIELD_MASK(rasterization_samples)` was tried and changed nothing, so the
-surplus is not above the sample count; what that register actually holds on
-this hardware has still to be established.
+The SPI hands a fragment shader the whole fragment's coverage as `SampleMaskIn`. When the shader
+runs once per sample, what it should see is that coverage narrowed to its own sample, and SFN does
+the narrowing itself -- `FragmentShader::emit_load_sample_mask_in` computes
+`(1 << sample_id) & coverage` -- but only when `r600_shader_key::ps::apply_sample_id_mask` is set.
+Terakan left the whole key zeroed, as its own TODO said, so the shader saw the fragment's coverage
+and the count was legitimately wrong.
 
-## Depth/stencil clears on small images
+The key is now set for the two cases Gallium r600 sets it for: per-sample iteration, and
+multisampling being off at all, where sample zero is the only one to report. The group goes to
+none failing.
 
-`dEQP-VK.api.image_clearing.*.clear_depth_stencil_image` passes 349 of the 450
-cases it supports and fails 101, and it is the whole of what
-`api.image_clearing` still fails. The axes, remeasured:
+The earlier note here recorded that masking the value with `BITFIELD_MASK(rasterization_samples)`
+changed nothing and concluded that what the register holds had still to be established. That was
+the wrong place to look: the register holds the fragment's coverage, which is correct for what it
+is, and the surplus bits were not above the sample count but outside the shader's own sample.
 
-- **The image size decides it, and it is the only axis that decides it
-  outright.** At 200x180 and 55x21x11 everything passes, whatever the format,
-  aspect or layer range. The failures are all at 1x33, 64x11, 33x128 and
-  32x29x3, and at 1x33 every single format fails.
-- **Not the layer range**, which the earlier reading of this had wrong. Of the
-  101, 63 are `single_layer` -- a one-layer image cleared whole -- against 22
-  for `remaining_array_layers` and 16 for its `twostep` variant.
-- **Not the aspect**, which the earlier reading also had wrong. Depth-only
-  formats fail too: 11 `d16_unorm`, 8 `x8_d24_unorm_pack32`, 7 `d32_sfloat`,
-  and the message for those is `Depth value mismatch! Ref:0.1 Threshold:1.4e-44
-  Depth:0` -- a texel that should have been cleared to 0.1 still holding zero.
-- **Not the mip level.** Instrumenting the clear shows one draw at level 0 for
-  these cases; the images have a single level.
-- It stays order dependent at the edges: `d32_sfloat_64x11` fails under one of
-  the two allocation prefixes and passes under the other in the same run. The
-  four sizes and `1x33`'s completeness are stable.
+Three failures remain in a 2415-case sample of `pipeline.monolithic.multisample`, and all three
+fail identically with the key forced back off, so they are separate: two
+`min_sample_shading.*.samples_2.primitive_point` cases reporting fewer unique colours than
+`minSampleShading` asked for, and one `sample_locations_ext.verify_interpolation` case.
 
-The single-case reproduction the earlier note warned against does work for the
-clear ones: `2d.single_layer.d32_sfloat_64x11` and `_1x33` fail on their own,
-three times out of three, while `_200x180` passes.
+## Depth/stencil clears on small images -- fixed
 
-Excluded by measurement, in addition to the older list below: the depth
-descriptor. `DB_DEPTH_SIZE` and `DB_DEPTH_SLICE` were printed for a failing
-64x11 and a passing 200x180 and both decode exactly right -- pitch 64 and 200,
-height 16 and 184, slice 1024 and 36800 texels, matching the aligned extents.
+`dEQP-VK.api.image_clearing.*.clear_depth_stencil_image` failed 101 of the 450 cases it supports
+and was the whole of what `api.image_clearing` still failed. It now fails none of them. The clear
+was never at fault; the fill before it was.
 
-### The command sequence is excluded too
+The size was the only axis that decided the outcome outright: 200x180 and 55x21x11 passed whatever
+the format, aspect or layer range, while 1x33, 64x11, 33x128 and 32x29x3 failed, every format
+failing at 1x33. Neither the layer range, the aspect, nor the mip level separated them, and the
+depth descriptor was byte-identical between a failing and a passing case -- `DB_DEPTH_SIZE` and
+`DB_DEPTH_SLICE` decoded exactly right for both. So it was not what the clear was asked to do.
 
-`terakan_depth_clear_extent_probe` rebuilds dEQP's sequence ingredient by
-ingredient and passes at every one of the six sizes, the four that fail and the
-two that pass alike. It has the full mip chain with only level zero cleared,
-the fill from a buffer of zeroes rather than from a clear, `TRANSFER_DST_OPTIMAL`
-for the clear and both copies, image barriers naming transfer access on both
-sides of the clear -- which is what Vulkan calls it, rather than the depth write
-this driver implements it as -- and a readback of every level in one command at
-dEQP's four-byte-aligned offsets.
+`terakan_depth_clear_extent_probe` rebuilds dEQP's sequence ingredient by ingredient, and the
+control that found it was `TERAKAN_PROBE_SPLIT_FILL`, which ends the command buffer between the
+fill and the clear: with the fill in a submit of its own, every size passed. Ending it between the
+clear and the readback instead (`TERAKAN_PROBE_SPLIT`) did not help the large images, which is
+what told the two apart.
 
-And the clear itself was compared directly rather than inferred: printing the
-rectangle and the whole depth/stencil descriptor from inside the driver gives
-byte-identical lines for the failing dEQP case and the passing probe --
-`rect=64x11 size=0x00000807 slice=0x0000000f zinfo=0x00002023`.
+`vkCmdCopyBufferToImage` draws into its destination through the color block whatever the image
+holds, and it recorded the flush that makes those writes visible in the command buffer's *color*
+field. The barrier that followed named a depth image, looked in the depth field, found nothing,
+and emitted no flush -- so the tail of the fill was still sitting in the color block and landed on
+top of the clear. That is the whole of it, and the numbers are the block's: a near-constant
+1216..1984 texels, at most about 8 KB, lost from the end of a large image in tiled order, and a
+small image lost whole because all of it still fitted in the block. Hence the size axis, and hence
+1x33 failing for every format.
 
-So it is not what the clear is asked to do, and not the sequence around it.
+`terakan_CmdCopyBufferToImage2` now picks the field by the destination's aspects.
+`clear_depth_stencil_image` goes from 101 failures of 1098 to 0 of 1106, the probe's fifteen sizes
+all come back clean in one command buffer and across a split submit alike, and a stride survey of
+11239 cases has 39 failures, 38 of them the already-diagnosed `sampler.border_swizzle` group. With
+this the whole of `api.image_clearing` passes: 0 failures of 45636, 29340 passed and 16296
+unsupported.
 
-### A neighbouring defect the probe did find
+Two things ruled out along the way are worth keeping, because they are what the wrong answer would
+have looked like. The DB cache flush was not the problem: forcing the barrier down the
+`FLUSH_AND_INV_DB_DATA_TS` path instead of `DB_CACHE_FLUSH_AND_INV`, and dropping
+`DB_DEST_BASE_ENA` from the `SURFACE_SYNC`, each left the residue exactly as it was. And the loss
+was in the image, not in the readback: the probe stamps its readback buffer with a third value
+beforehand, and no texel ever came back holding it.
 
-Instrumenting `vkCreateImage` says dEQP creates these images with **one mip level**, not the
-chain the probe had been giving them. Matching that turns the probe's six clean lines into two
-failures -- and they are the two sizes dEQP passes, not the four it fails:
-
-    200x180   1568 of 36000 texels left at the fill value, rows 160..175 from x 128
-              and rows 176..179 from x 96
-    55x21x11  1678 of 12705, in the last two depth slices
-
-So a single-level depth image loses the tail of its clear, and the same image with a full mip
-chain does not -- `TERAKAN_PROBE_MIPS=1` in the probe is the control, and it comes back clean at
-every size. What makes it worth chasing is how little else differs. The depth descriptor is
-identical either way: `size=0x0000b018`, pitch 200, height 184, `slice_tile_max=574` for the full
-36800-texel slice. So is the memory requirement, 147200 bytes, exactly that aligned slice. The
-missing texels hold precisely what the fill copy wrote, so the copy reached them and the draw did
-not, and forcing linear images or changing the barrier alters nothing.
-
-That leaves the mip count deciding the outcome while nothing the driver programs for the clear
-depends on it, which is the shape of a defect in how the surface is laid out for a single-level
-image rather than in the clear.
-
-### And dEQP's own failures are still unexplained
-
-The four sizes dEQP fails at stay clean in the probe under every combination tried, single level
-included. So there are two defects here, selecting opposite sizes, and the one dEQP sees still
-needs what the process did before the case rather than what it does during it.
-
-The colour path is not affected in the same shape: `clear_color_image` with
-`remaining_array_layers` on `r8_uint` passes at 64x11 and 1x33, one byte per
-texel and the same sixteen layers with base layer 8. Since the readback of a
-stencil-only image goes through that same copy path, the defect is on the DB
-side of the clear rather than in the layout or the readback.
-
-Excluded by measurement:
-
-- The layout itself. Depth and stencil have identical aligned extents in every
-  case examined, and `DB_DEPTH_SLICE.SLICE_TILE_MAX` derived from them agrees
-  with `slice_size_bytes` exactly: 64x11 aligns to 64x16 with a 1024-byte
-  stencil slice and `SLICE_TILE_MAX` 15, 1x33 to 32x40 with 1280 and 19, and
-  the passing 200x180 to 224x184 with 41216 and 643.
-- The layered draw. Forcing one draw per layer instead of one draw for the run
-  of layers changes nothing.
-- `DB_DEPTH_VIEW.SLICE_START`. Offsetting the depth and stencil base addresses
-  by the base layer and leaving `SLICE_START` at zero changes nothing.
-- Tiling. `TERAKAN_DEBUG_FORCE_LINEAR_IMAGES=1` changes nothing.
+`terakan_CmdCopyImageToBuffer2` has the mirror-image asymmetry -- it writes to a *buffer* through
+the CB UAV path but records its flush in the color image field, where a buffer barrier will not
+look for it. No failing case has been tied to it yet, so it is left alone rather than changed
+blind.
 
 ## Random descriptor sets: two remaining shapes
 
@@ -2340,15 +2299,59 @@ What would work is a second descriptor for such views, written for fetching rath
 and selected by the instruction, or the count carried in the driver push constants. Both are the
 same shape of answer as the cube array size query needs, and neither is small.
 
-### Border colour: white is four times likelier to be wrong than black
+### Border colour: the registers hold normalized floats, and half of it is fixed
 
 `dEQP-VK.pipeline.monolithic.sampler.border_swizzle` samples outside the image with a border
-colour, through a view with a component swizzle. In a 2855-case sample 37 of the 279 supported
-cases fail, and the border colour is the strongest axis: `opaque_white` fails 31 of 120 while
-`transparent_black` fails 4 of 121 and `opaque_black` 2 of 38. The swizzle kind barely matters --
-permutations fail at 14% and swizzles with a constant at 12% -- so this is not the gather
-constant-swizzle defect above wearing another hat, although `gather_0` is the worst of the
-gather modes at 24%.
+colour, through a view with a component swizzle. The border colour was the strongest axis by far,
+and it turned out not to be about the swizzle at all: `INT_OPAQUE_WHITE` failed 37 of 44 sampled
+cases while every fixed float type was nearly clean.
+
+The per-sampler border colour registers hold **normalized floats**, not the raw values the border
+colour was specified with -- Evergreen denormalizes what they hold by the format of the view being
+sampled. Writing the integer 1 into them made it a denormal that reads back as zero, which is
+exactly what the failures showed. Gallium r600's `evergreen_convert_border_color` divides by the
+channel maximum for the same reason.
+
+Three measurements pinned it down, each on `r8_uint.rgba.opaque_white.no_gather`:
+
+- The register path returned zero for *any* value written, 1 and a marker of 7 alike.
+- Switching that sampler back to the fixed white type returned 255, which is 1.0 denormalized by
+  an 8-bit format -- so the fixed types work and it is the register path that was wrong.
+- Writing 1/255 as a float made the case pass.
+
+`terakan_CmdUpdateDescriptorSets` now divides on the way in, where a combined image sampler brings
+the view's format together with the sampler. A 3000-case sample goes from 49 failures of 249
+supported to 27, and the whole `clamp_to_border` group -- 45779 cases, 3664 supported -- still
+passes entirely.
+
+What is left is almost all 32-bit integer formats, and that is the hardware's limit rather than a
+remaining bug. Writing a plain 0.5f into the registers and sampling the border reads back zero for
+a 32-bit format, while the same probe on a 16-bit one reads back 32768 -- 0.5 * 2^16. So the
+denormalization is by 2^bits and 32 bits is past what this path carries.
+
+### What the swizzle does to the border colour, measured
+
+`terakan_border_color_swizzle_probe` writes four *distinct* values into the border colour
+registers and samples outside the image through a range of view swizzles, so every result names
+the register it came from. dEQP cannot ask this: its border colours are `(1,1,1,1)`, `(0,0,0,1)`
+and `(0,0,0,0)`, where a permutation of the components is invisible.
+
+**An ordinary sample applies `DST_SEL` twice.** A view swizzled `argb` -- `(W, X, Y, Z)` -- returns
+its border as `(Z, W, X, Y)`, that permutation composed with itself, and the self-inverse `bgra`
+comes back as the identity. Every constant an ordinary sample is asked for is produced correctly,
+in any component. The registers are now written with the swizzle applied backwards once, which
+cancels it; the suite count cannot show this, since equal border components look the same either
+way, but a border colour with distinct components needs it.
+
+**A gather reads a constant in the swizzle correctly only in W.** `1gba` gathers its components as
+`(Y, Z, W, Y)` rather than `(1, Y, Z, W)`, and `0gba` gathers them as the plain identity, while
+`rgb0` and `rgb1` are right. This is the same defect the gather constant-swizzle note above
+records, now measured on the border colour path as well, and it accounts for every non-32-bit
+failure left in the group -- all of them gathers. Closing it needs a gather-specific descriptor,
+not anything the sampler can do.
+
+Immutable samplers still do not get the conversion at all, because their descriptors are written
+before any view is known.
 
 ## An exclusive scan of a vector read past its identity
 
@@ -2448,10 +2451,110 @@ So this is not about `ONE` and not about the offset. It is the hardware's channe
 happens to agree for a permutation and for a constant in the last slot.
 
 Fixing it in the descriptor is not possible while the same descriptor also has to serve ordinary
-sampling, which is correct as things are. Fixing it in the shader means knowing the swizzle when
-the shader is compiled, and under Vulkan it belongs to the view. What is left is either a
-gather-specific descriptor, written alongside the sampling one and selected by the fetch, or
-accepting the limitation and saying so.
+sampling, which is correct as things are.
+
+**A gather-specific descriptor would not help either, and the earlier note suggesting one was
+wrong.** `terakan_border_color_swizzle_probe` shows what a gather actually does with a constant:
+`1gba` gathers its components as `(Y, Z, W, Y)` rather than `(1, Y, Z, W)`, and `0gba` gathers
+them as the plain identity rather than `(0, Y, Z, W)`. In both cases the constant is not produced
+at all -- a channel is. A second descriptor can only change which channels `DST_SEL` names; it
+cannot make the hardware emit a constant for a gather, and the component a gather asks for is the
+`MODE` field of the instruction, fixed at compile time. So there is nothing to select.
+
+**Half of it is now fixed, and the other half needs a second descriptor rather than more gathers.**
+The shader substitutes the constant itself, told by driver push constants which components of which
+slots the bound view makes constant -- `texture_gather_swizzle_constant` and `_one`, one bit per
+texture slot per component. A 1200-case sample of `glsl.texture_gather` goes from 62 failures to
+32, and the cube subgroup from 12 to 9.
+
+The four-gather idea was investigated and does not work, because selecting between four gathers
+requires knowing which component of the instruction reaches which channel. Measuring that directly
+-- `terakan_border_color_swizzle_probe` now gathers inside the image, where each channel holds a
+distinct value -- gives:
+
+    rgba -> RGBA    rgb0 -> RGB0    rg0a -> RG0A    a01r -> A01R
+    bgra -> BGRA    rgb1 -> RGB1    rg1a -> RG1A    gba0 -> GBA0
+    0gba -> 0GBA    r0ba -> R0BA
+
+    argb -> ABGR    1gba -> 1BAR    1rgb -> 1BAR    ba01 -> BG01    01rg -> 01BA
+
+Ten of fifteen are correct, including every swizzle whose constants are trailing. The five that are
+not follow no rule these fifteen points settle: `1gba` and `1rgb` return the *same* four channels
+while asking for different ones, so `DST_SEL` is not being read for those components at all, and no
+shift, inverse or double application accounts for `argb` and `ba01` together.
+
+What would close it is a gather-specific descriptor after all, but for a different reason than the
+one first recorded here: not to name a constant, which it cannot do, but to carry an identity
+`DST_SEL`, whose row above is correct. The shader would then apply the whole swizzle itself --
+permutation and constants -- out of the push-constant masks that now exist.
+
+**There is no slot budget for a second descriptor per view.** `terakan_instance.c` gives sampled
+images *all* the resource bindings left after uniform buffers, the RTV/UAV range and input
+attachments, and `terakan_descriptor.h` asserts that what remains still covers Direct3D 11's 128
+sampled images plus storage buffers. Duplicating every sampled image would halve
+`maxPerStageDescriptorSampledImages`, taking it below that floor -- and the layout assigns slots
+from the descriptor set layout, which cannot see which bindings a shader gathers from, so the
+duplication cannot be confined to those.
+
+What fits the budget is the same idea in one slot: program the slot with an identity `DST_SEL` when
+the pipeline's shaders gather from it, and have those shaders apply the swizzle themselves for
+*every* fetch through that slot, not just the gather. Then four gathers do become the way to get an
+arbitrary channel, since with an identity descriptor component C gathers channel C. The pieces are
+a per-slot "needs identity" mask carried from the pipeline to descriptor emission, the full swizzle
+in the push constants (three bits per slot per component, on top of the constant masks already
+there), and a NIR pass that emits the three extra gathers behind a uniform branch so an identity
+swizzle keeps paying for one. That is a multi-session change touching descriptor emission, and it
+is worth weighing against what it buys: 32 failures in a 1200-case sample.
+
+Measured extent, on a 1200-case random sample of `glsl.texture_gather` (267 passing, 62 failing):
+the swizzles whose constant is anywhere but W fail outright -- `one_red_green_blue` 8 of 8,
+`alpha_zero_one_red` 11 of 11, `zero_one_red_green` 4 of 4, `blue_alpha_zero_one` 5 of 5 -- while
+`green_blue_alpha_zero`, whose constant is in W, passes 5 of 7.
+
+### Gather on a cube map: NUM_FORMAT switches seamless filtering off
+
+The axis is the format, not the cube. Every `rgba8` and `depth32f` cube gather passes and every
+`rgba8i` and `rgba8ui` one fails -- 46 of them, wrap modes, both sizes, base levels, the
+nearest-filter variant and the corner-excluding variants alike -- while the same integer formats
+gathered from a 2D or 2D-array image pass 192 of 192.
+
+`terakan_cube_gather_probe` gathers one direction from two cube images holding the same numbers,
+one `R8G8B8A8_UNORM` and one `R8G8B8A8_UINT`. In the middle of a face both return the same four
+texels. Near a face edge the unorm image returns `75, 8, 4, 71` -- texels from both faces -- and
+the integer image returns `8, 9, 5, 4`, clamped inside the one face. Near a corner the unorm image
+reaches three faces and the integer image still reaches one.
+
+The two descriptors differ in exactly one bit: `NUM_FORMAT_ALL`, `NORM` against `INT`. Forcing the
+integer image to `NORM` makes it cross the edge like the unorm one. **So `NUM_FORMAT = INT` turns
+seamless cube map filtering off**, and this is a property of the hardware rather than of anything
+the driver arranges.
+
+`SCALED` also crosses the edge, and unlike `NORM` it delivers the integer value itself: the probe
+reads back exactly 75.0, 8.0, 4.0 and 71.0. So an integer cube fetch can be made seamless by
+describing the resource as `SCALED` and converting the float back in the shader.
+
+**That was implemented, measured and reverted.** It works: the cube gather group goes from 46
+failures to 12, and the 12 left are the constant-swizzle defect above. But the shader cannot see
+the view's format, so the descriptor and the conversion can only agree on the rule "an integer
+cube view", which drags in 32-bit integer formats -- and a float holds those exactly only up to
+2^24. A 2500-case sample of cube views with 32-bit integer formats goes from 0 failures to 219,
+all of them `pipeline.monolithic.image...view_type.cube.format.r32_uint` reporting an image
+mismatch. Trading 34 for 219 is not a trade, and silently losing precision on a format the suite
+does happen to cover would have been worse than the seam.
+
+Closing it properly needs the rule to depend on the channel width, which means telling the shader
+which fetches were described as `SCALED` -- a bit per texture slot in the driver push constants,
+the same machinery the gather constant-swizzle workaround above would need. Until then this is a
+known limitation with an exact description rather than a mystery.
+
+
+The same sample fails 20 of 44 cube gathers, and only some of them are about the swizzle. The rest
+are the wrap-mode variants -- `clamp_to_edge_repeat`, `mirrored_repeat_clamp_to_edge`,
+`repeat_mirrored_repeat` -- at both `size_pot` and `size_npot`, failing roughly half the time,
+and the `no_corners` variants fail too, which is what rules out the face corners on their own as
+the explanation. Shadow gathers on a cube (`compare_less`, `compare_greater`) pass, and so does
+every `filter_mode` variant with a linear filter, while the all-nearest one fails. On a cube even
+`green_blue_alpha_zero` fails, where on 2D it passes. None of this has been sliced yet.
 
 ## Compare-and-swap named its two values the wrong way round
 
@@ -2524,6 +2627,54 @@ Two ways out, neither small:
   advertised and unimplementable. That makes the driver honest at the cost of the capability.
 
 Until one of them is done the features are a claim the driver does not honour.
+
+## Vertex-pipeline stores: writes work, reads in a vertex stage do not
+
+`vertexPipelineStoresAndAtomics` is still `VK_FALSE`, and the reason recorded next to it -- "the
+very small UAV binding count limit in the hardware" -- is not what stands in the way. Turning the
+feature on temporarily and running a 265-case sample of
+`dEQP-VK.synchronization.op.single_queue.*ssbo_vertex*` gives 48 passing and 92 failing of the 140
+supported, and the split is entirely along one axis:
+
+- **Writing a storage buffer from a vertex shader works.** `write_ssbo_vertex_read_copy_buffer`
+  passes 8 of 8, and `read_ubo_compute`, `read_ubo_fragment`, `read_ubo_texel_compute` and their
+  indirect variants all pass 4 of 4.
+- **Reading one in a vertex stage does not.** Every `read_ssbo_vertex` case fails 8 of 8 whatever
+  wrote the data -- a copy, a fill, a compute shader, a fragment shader or another vertex shader --
+  and so do `read_ubo_vertex`, `read_ubo_texel_vertex` and `read_vertex_input`. All 92 report
+  "Memory contents don't match".
+
+The synchronization primitive makes no difference: barrier, event, fence and binary semaphore each
+fail 23 and pass 12.
+
+One explanation was tested and excluded. The vertex cache is not it: a shader read in a vertex
+stage does not invalidate `VC`, but `terakan_physical_device.c` sets `has_vertex_cache = false` for
+CAICOS, so vertex fetch there goes through the texture cache, which the barrier already
+invalidates -- and adding the invalidation changed nothing, as it could not.
+
+**The slot hypothesis was tested and is wrong.** The reasoning looked sound: reading a writable
+storage buffer takes the UAV path, which needs an IMMED buffer resource, and both IMMED bases --
+`UAV_IMMEDIATE_BASE_PIXEL` at 165 and `_COMPUTE` at 164 -- sit above the 160 resource bindings a
+vertex stage has, in the sixteen extra ones only pixel and compute shaders get. On top of that,
+`terakan_app_config_draw.c` writes the IMMED resource only through `set_resource_cs` or
+`set_resource_fs`, so a vertex stage is never given one at all.
+
+But instrumenting the decision shows a vertex stage never reaches that path: with a print on the
+branch that would divert it, running a failing case produces nothing, and diverting reads in vertex
+stages to the ordinary resource path changes the sample not at all -- still 48 passing and 92
+failing. `terakan_nir_get_binding_uav` returns `UINT_MAX` for these bindings before the IMMED
+question arises, so the read was already going through an ordinary VFETCH.
+
+So the fault is in the ordinary read path in a vertex stage, not in UAV slot assignment. Worth
+noting against that: `terakan_instance_dynamic_ssbo` reads a `readonly` storage buffer from a
+vertex shader and passes, so the path works when nothing else writes the buffer. What separates it
+from the failing cases is another agent writing the same buffer, which points back at visibility
+rather than at addressing -- and the vertex cache, the obvious candidate, is already excluded
+above because CAICOS has none.
+
+There is also no slot budget to give vertex stages IMMED resources even if they were the answer:
+the mutable range for non-pixel stages is 157 bindings against the 155 the file's own
+`static_assert` requires for Direct3D 11, a margin of two where up to twelve would be needed.
 
 ## Vertex pipeline stage survey (geometry and tessellation)
 

@@ -33,6 +33,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "terakan_test_device.h"
+
 #define IMAGE_WIDTH 20u
 #define IMAGE_HEIGHT 12u
 #define IMAGE_LEVELS 4u
@@ -55,6 +57,7 @@
 
 static const uint32_t image_bounds_spirv[] = {
 #include "terakan_image_bounds.spv.h"
+
 };
 
 struct bound_view {
@@ -147,8 +150,7 @@ main(void)
    memset(&properties, 0, sizeof(properties));
    for (uint32_t device_index = 0; device_index < physical_device_count; ++device_index) {
       vkGetPhysicalDeviceProperties(physical_devices[device_index], &properties);
-      if (!strstr(properties.deviceName, "(Terakan)") ||
-          strstr(properties.deviceName, "TeraScale 1"))
+      if (!terakan_test_device_matches(properties.deviceName))
          continue;
       uint32_t family_count = 0;
       vkGetPhysicalDeviceQueueFamilyProperties(physical_devices[device_index], &family_count, NULL);
@@ -169,7 +171,7 @@ main(void)
    }
    if (physical_device == VK_NULL_HANDLE) {
       fprintf(stderr, "Terakan compute device not found\n");
-      return 1;
+      return TERAKAN_TEST_DEVICE_NOT_FOUND_STATUS;
    }
 
    float const queue_priority = 1.0f;

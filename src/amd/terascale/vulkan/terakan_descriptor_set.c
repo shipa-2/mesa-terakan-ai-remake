@@ -144,6 +144,19 @@ terakan_UpdateDescriptorSets(UNUSED VkDevice const device, uint32_t const descri
                } else {
                   dst_resource->bo = NULL;
                }
+               /* The integer border colour registers hold values normalized by the format being
+                * sampled, which is the view's rather than the sampler's, so it can only be applied
+                * once the two are brought together here.
+                */
+               if (image_view != NULL &&
+                   descriptor_write->descriptorType ==
+                      VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER &&
+                   dst_binding->first_immutable_sampler_or_dynamic_offset == UINT16_MAX) {
+                  terakan_sampler_descriptor_normalize_integer_border_color(
+                     &dst_samplers[descriptor_index].sampler, &image_view->resource,
+                     image_view->vk.format,
+                     (image_view->vk.aspects & VK_IMAGE_ASPECT_STENCIL_BIT) != 0);
+               }
             }
          }
       } break;

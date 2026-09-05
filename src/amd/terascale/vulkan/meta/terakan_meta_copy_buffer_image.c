@@ -851,7 +851,16 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
          [TERAKAN_RESOURCE_BUFFER_PRIORITY_WORD] = TERAKAN_BO_PRIORITY_VERTEX_BUFFER,
       }};
 
-   command_writer->post_color_image_copy_write_barrier_actions |=
+   /* The upload draws into the destination through the color block whatever the image holds, but
+    * the barrier that makes the upload visible names the destination's own aspects. A depth image
+    * filled here would look for these actions in the depth field and find nothing, so the color
+    * block would still be holding the tail of the upload when the next command reads the image.
+    */
+   enum terakan_barrier_action_flags * const post_upload_barrier_actions =
+      image->vk.aspects & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)
+         ? &command_writer->post_depth_stencil_image_copy_write_barrier_actions
+         : &command_writer->post_color_image_copy_write_barrier_actions;
+   *post_upload_barrier_actions |=
       TERAKAN_BARRIER_ACTION_FLUSH_INV_CB_RTV_DATA |
       TERAKAN_BARRIER_ACTION_PARTIAL_FLUSH_CP_THROUGH_PS;
 

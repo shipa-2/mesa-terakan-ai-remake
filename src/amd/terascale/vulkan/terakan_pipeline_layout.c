@@ -45,6 +45,63 @@
 #include <stdint.h>
 #include <string.h>
 
+/* An integer cube map is described with `NUM_FORMAT = SCALED` so that seamless filtering stays on
+ * (see terakan_image.c), which means the hardware hands the shader a float where it asked for an
+ * integer. The shader is told which of its texture slots that applies to through the driver push
+ * constants, because the decision depends on the view's format and the shader cannot see it.
+ */
+static void
+terakan_pipeline_layout_track_scaled_integer_texture(
+   struct terakan_gfx_command_writer * const command_writer, gl_shader_stage const shader_stage,
+   unsigned const shader_resource, struct terakan_resource_descriptor const * const resource)
+{
+   if (shader_resource >= 32) {
+      return;
+   }
+   bool const is_scaled_integer_cube =
+      G_03001C_TYPE(resource->resource[7]) == V_03001C_SQ_TEX_VTX_VALID_TEXTURE &&
+      G_030000_DIM(resource->resource[0]) == V_030000_SQ_TEX_DIM_CUBEMAP &&
+      G_030010_NUM_FORMAT_ALL(resource->resource[4]) == V_030010_SQ_NUM_FORMAT_SCALED;
+   uint32_t * const mask =
+      &command_writer->push_constants_state.driver_constants.texture_scaled_integer[shader_stage];
+   uint32_t const bit = BITFIELD_BIT(shader_resource);
+   uint32_t const mask_new = is_scaled_integer_cube ? (*mask | bit) : (*mask & ~bit);
+   if (mask_new != *mask) {
+      *mask = mask_new;
+      command_writer->push_constants_state.driver_constants_modified |=
+         BITFIELD_BIT(TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_TEXTURE_SCALED_INTEGER);
+   }
+
+   /* A gather does not produce the constant a view's swizzle asks for unless it is in W, so the
+    * shader substitutes it and is told here which components of which slots are constant.
+    */
+   uint32_t const dst_sel[4] = {G_030010_DST_SEL_X(resource->resource[4]),
+                                G_030010_DST_SEL_Y(resource->resource[4]),
+                                G_030010_DST_SEL_Z(resource->resource[4]),
+                                G_030010_DST_SEL_W(resource->resource[4])};
+   bool const is_texture =
+      G_03001C_TYPE(resource->resource[7]) == V_03001C_SQ_TEX_VTX_VALID_TEXTURE;
+   for (unsigned component_index = 0; component_index < 4; ++component_index) {
+      bool const is_constant = is_texture && dst_sel[component_index] > TERASCALE_SWIZZLE_W;
+      bool const is_one = is_constant && dst_sel[component_index] == TERASCALE_SWIZZLE_1;
+      uint32_t * const constant_mask =
+         &command_writer->push_constants_state.driver_constants
+             .texture_gather_swizzle_constant[shader_stage][component_index];
+      uint32_t * const one_mask =
+         &command_writer->push_constants_state.driver_constants
+             .texture_gather_swizzle_one[shader_stage][component_index];
+      uint32_t const constant_mask_new = is_constant ? (*constant_mask | bit)
+                                                     : (*constant_mask & ~bit);
+      uint32_t const one_mask_new = is_one ? (*one_mask | bit) : (*one_mask & ~bit);
+      if (constant_mask_new != *constant_mask || one_mask_new != *one_mask) {
+         *constant_mask = constant_mask_new;
+         *one_mask = one_mask_new;
+         command_writer->push_constants_state.driver_constants_modified |= BITFIELD_BIT(
+            TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_TEXTURE_GATHER_SWIZZLE_CONSTANT);
+      }
+   }
+}
+
 VKAPI_ATTR void VKAPI_CALL
 terakan_CmdBindDescriptorSets(VkCommandBuffer const commandBuffer,
                               VkPipelineBindPoint const pipelineBindPoint,
@@ -157,6 +214,8 @@ terakan_CmdBindDescriptorSets(VkCommandBuffer const commandBuffer,
                    sqk_set_functions->resource(&command_writer->hw_config_sqk,
                                                range_shader_base + resource_index, set_resource->bo,
                                                &resource);
+                   terakan_pipeline_layout_track_scaled_integer_texture(
+                      command_writer, shader_stage, range_shader_base + resource_index, &resource);
                }
             } else {
                 for (uint8_t resource_index = 0; resource_index < range->descriptor_count;
@@ -166,6 +225,9 @@ terakan_CmdBindDescriptorSets(VkCommandBuffer const commandBuffer,
                    sqk_set_functions->resource(&command_writer->hw_config_sqk,
                                                range_shader_base + resource_index, resource->bo,
                                                &resource->resource);
+                   terakan_pipeline_layout_track_scaled_integer_texture(
+                      command_writer, shader_stage, range_shader_base + resource_index,
+                      &resource->resource);
                }
             }
          }

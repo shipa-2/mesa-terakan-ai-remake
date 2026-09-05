@@ -24,6 +24,8 @@
 #include <cstring>
 #include <vector>
 
+#include "terakan_test_device.h"
+
 #define VK_CHECK(expression)                                                                       \
    do {                                                                                            \
       VkResult const check_result = (expression);                                                  \
@@ -93,6 +95,7 @@ uint32_t const vertex_spirv[] = {
 };
 uint32_t const fragment_spirv[] = {
 #include "terakan_descriptor_set_shape.frag.spv.h"
+
 };
 
 } // namespace
@@ -119,15 +122,14 @@ main()
    for (uint32_t i = 0; i < physical_device_count; ++i) {
       VkPhysicalDeviceProperties properties;
       vkGetPhysicalDeviceProperties(physical_devices[i], &properties);
-      if (std::strstr(properties.deviceName, "(Terakan)") == nullptr ||
-          std::strstr(properties.deviceName, "TeraScale 1") != nullptr)
+      if (!terakan_test_device_matches(properties.deviceName))
          continue;
       physical_device = physical_devices[i];
       break;
    }
    if (physical_device == VK_NULL_HANDLE) {
       std::fprintf(stderr, "No usable Terakan physical device found\n");
-      return 1;
+      return TERAKAN_TEST_DEVICE_NOT_FOUND_STATUS;
    }
    VkPhysicalDeviceProperties device_properties;
    vkGetPhysicalDeviceProperties(physical_device, &device_properties);

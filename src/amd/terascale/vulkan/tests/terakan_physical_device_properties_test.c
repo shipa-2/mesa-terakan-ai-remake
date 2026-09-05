@@ -30,6 +30,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "terakan_test_device.h"
+
+
 #define ARRAY_SIZE(array) (sizeof(array) / sizeof((array)[0]))
 
 #define TEST_CHECK(condition)                                                                      \
@@ -131,7 +134,7 @@ main(void)
    for (uint32_t i = 0; i < physical_device_count; ++i) {
       vkGetPhysicalDeviceProperties(physical_devices[i], &legacy_properties);
       if (legacy_properties.vendorID == 0x1002 &&
-          strstr(legacy_properties.deviceName, "(Terakan)") != NULL) {
+          terakan_test_device_matches(legacy_properties.deviceName)) {
          physical_device = physical_devices[i];
          break;
       }
