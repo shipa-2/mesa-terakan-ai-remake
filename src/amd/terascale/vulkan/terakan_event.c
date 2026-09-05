@@ -7,6 +7,7 @@
 
 #include "terakan_command_buffer.h"
 #include "terakan_device.h"
+#include "terakan_barrier.h"
 #include "terakan_entrypoints.h"
 
 #include "amd/terascale/common/terascale_wddm.h"
@@ -191,4 +192,40 @@ terakan_CmdWaitEvents(VkCommandBuffer const command_buffer, uint32_t const event
       command_buffer, src_stage_mask, dst_stage_mask, 0, memory_barrier_count, memory_barriers,
       buffer_memory_barrier_count, buffer_memory_barriers, image_memory_barrier_count,
       image_memory_barriers);
+}
+
+/* The synchronization2 forms of the event commands. The event itself is written and waited for the
+ * same way -- an EOP timestamp and a WAIT_REG_MEM -- and the dependency each carries is the same
+ * dependency vkCmdPipelineBarrier2 already takes, so both are handed straight to it.
+ */
+
+VKAPI_ATTR void VKAPI_CALL
+terakan_CmdSetEvent2(VkCommandBuffer const command_buffer, VkEvent const event,
+                     VkDependencyInfo const * const dependency_info)
+{
+   /* The first synchronization scope of the set is everything before it, and its writes have to be
+    * made available before the event is signalled, so the dependency goes first.
+    */
+   terakan_CmdPipelineBarrier2(command_buffer, dependency_info);
+   terakan_cmd_write_event(command_buffer, event, 1);
+}
+
+VKAPI_ATTR void VKAPI_CALL
+terakan_CmdResetEvent2(VkCommandBuffer const command_buffer, VkEvent const event,
+                       UNUSED VkPipelineStageFlags2 const stage_mask)
+{
+   terakan_cmd_write_event(command_buffer, event, 0);
+}
+
+VKAPI_ATTR void VKAPI_CALL
+terakan_CmdWaitEvents2(VkCommandBuffer const command_buffer, uint32_t const event_count,
+                       VkEvent const * const events,
+                       VkDependencyInfo const * const dependency_infos)
+{
+   for (uint32_t event_index = 0; event_index < event_count; ++event_index) {
+      terakan_cmd_wait_event(command_buffer, events[event_index]);
+   }
+   for (uint32_t event_index = 0; event_index < event_count; ++event_index) {
+      terakan_CmdPipelineBarrier2(command_buffer, &dependency_infos[event_index]);
+   }
 }

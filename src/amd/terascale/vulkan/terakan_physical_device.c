@@ -1026,6 +1026,18 @@ terakan_physical_device_get_capabilities(
    features_out->dynamicRendering = true;
 
 
+   /* VK_KHR_synchronization2 (#315, Vulkan 1.3).
+    *
+    * The barrier machinery is already written against the 2 forms: terakan_barrier_get_src_actions
+    * and _dst_actions take VkPipelineStageFlags2 and VkAccessFlags2, terakan_CmdPipelineBarrier2
+    * is the real implementation and vk_common_CmdPipelineBarrier lowers the original form onto it,
+    * and vkCmdWriteTimestamp2 was already here. What the extension additionally needs is the event
+    * commands in their 2 forms, which terakan_event.c now provides, and vkQueueSubmit2, which the
+    * common queue implementation serves.
+    */
+   extensions_out->KHR_synchronization2 = true;
+   features_out->synchronization2 = true;
+
    /* VK_KHR_create_renderpass2 (#110, Vulkan 1.2), entirely served by the common render pass
     * implementation. Exposed because VK_KHR_depth_stencil_resolve depends on it.
     */
