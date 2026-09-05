@@ -313,6 +313,15 @@ could hide a shared mistake. Bank rotation between layers, nonzero mips/offsets,
 and cold-start sampler state remain unverified. No additional driver path or submit guard was
 enabled by this test extension; the existing enumeration test is already in both test lists.
 
+`TERAKAN_DEBUG_TERASCALE_1_MACROTILED_ROUNDTRIP=offset` additionally copies a 125x62 rectangle
+from (1,2) to (3,1) in 129x65 images: the NIR constants include a negative X delta (-2) and
+positive Y delta (+1). The CPU checks all 7750 copied pixels and all 635 inverse sentinels
+outside the rectangle. RV710 passed once plus 10/10 restored runs, with no kernel messages.
+Changing source X from 1 to 2 failed 3/3 with 7750 mismatches; widening the destination by one
+column failed 3/3 with exactly 62 sentinel mismatches. Neither mutation changes the oracle.
+This covers nonzero XY copy offsets and preservation outside that rectangle, not mip/layer
+addressing, filtered sampling, CPU swizzle equations or cold-start initialization.
+
 Direct indexed application draws now follow `r600_draw_vbo()` too: R600/R700 binding emits no
 Evergreen `INDEX_BASE`/`INDEX_BUFFER_SIZE`, and `vkCmdDrawIndexed` carries the adjusted absolute
 40-bit address in `PKT3_DRAW_INDEX` with an immediate DRM relocation. The exact packet has a CPU

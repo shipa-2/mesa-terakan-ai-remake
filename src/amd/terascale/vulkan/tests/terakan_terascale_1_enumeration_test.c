@@ -398,9 +398,12 @@ check_rv710_linear_image_readback(VkPhysicalDevice const physical_device, VkDevi
                                   enum rv710_linear_image_operation const operation)
 {
    char const * const macro_variant = getenv("TERAKAN_DEBUG_TERASCALE_1_MACROTILED_ROUNDTRIP");
+   bool const offset_copy = operation == RV710_TILED_IMAGE_ROUNDTRIP && macro_variant &&
+                            !strcmp(macro_variant, "offset");
    bool const macrotiled = operation == RV710_TILED_IMAGE_ROUNDTRIP && macro_variant &&
-                           (!strcmp(macro_variant, "1") || !strcmp(macro_variant, "edge"));
-   bool const macro_edge = macrotiled && !strcmp(macro_variant, "edge");
+                           (!strcmp(macro_variant, "1") || !strcmp(macro_variant, "edge") ||
+                            offset_copy);
+   bool const macro_edge = macrotiled && (offset_copy || !strcmp(macro_variant, "edge"));
    uint32_t const width = macro_edge ? 129 : macrotiled ? 128 : 2;
    uint32_t const height = macro_edge ? 65 : macrotiled ? 128 : 2;
    uint32_t const byte_count = width * height * 4;
@@ -726,8 +729,10 @@ check_rv710_linear_image_readback(VkPhysicalDevice const physical_device, VkDevi
                               VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1, barriers);
          VkImageCopy const image_region = {
             .srcSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .layerCount = 1},
+            .srcOffset = {offset_copy ? 1 : 0, offset_copy ? 2 : 0, 0},
             .dstSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .layerCount = 1},
-            .extent = {width, height, 1},
+            .dstOffset = {offset_copy ? 3 : 0, offset_copy ? 1 : 0, 0},
+            .extent = {offset_copy ? width - 4 : width, offset_copy ? height - 3 : height, 1},
          };
          vkCmdCopyImage(command_buffer, tiled_image, VK_IMAGE_LAYOUT_GENERAL, image,
                         VK_IMAGE_LAYOUT_GENERAL, 1, &image_region);
@@ -772,8 +777,16 @@ check_rv710_linear_image_readback(VkPhysicalDevice const physical_device, VkDevi
          uint32_t const * const row =
             (uint32_t const *)(image_mapping + image_layout.offset + y * image_layout.rowPitch);
          for (uint32_t x = 0; x < width; ++x) {
-            uint32_t const expected =
+            uint32_t expected =
                operation == RV710_LINEAR_IMAGE_CLEAR ? clear_word : source_words[y * width + x];
+            if (offset_copy) {
+               /* Independent oracle for source (1,2), destination (3,1), size (125,62).
+                * Check inverse sentinels everywhere outside the destination rectangle too.
+                */
+               expected = x >= 3 && x < width - 1 && y >= 1 && y < height - 2
+                             ? source_words[(y + 1) * width + x - 2]
+                             : inverse_words[y * width + x];
+            }
             if (row[x] != expected) {
                fprintf(stderr,
                        "  RV710 linear image %s mismatch at (%u,%u): got 0x%08x expected 0x%08x\n",
