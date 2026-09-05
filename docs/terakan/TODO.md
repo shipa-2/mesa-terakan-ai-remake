@@ -666,6 +666,10 @@ oracle; indirect indexed draws and all indexed hardware execution remain unverif
   Until classic R600 supplies an exact replacement, the generation-specific
   packet is exactly zero dwords and the dirty bits are consumed. This prevents
   corrupt recording but deliberately does not provide R700 compute support.
+  The [compute/ISA audit](R700_COMPUTE_ISA_AUDIT.md) now records why waiting for a classic
+  R700 compute atom is insufficient: Gallium exposes compute only above R700. It also answers
+  the plan's Evergreen SET_CF_IDX lane-selection question from AMD's manual, without claiming
+  a proven divergent-clause fix or touching the shared SFN files under parallel investigation.
 
 - TeraScale 1 (R700) `DB_SHADER_CONTROL`: the runtime emitter no longer sends
   the full Evergreen payload merely because both generations place the
