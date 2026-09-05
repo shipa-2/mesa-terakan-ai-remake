@@ -397,19 +397,31 @@ check_rv710_linear_image_readback(VkPhysicalDevice const physical_device, VkDevi
                                   VkQueue const queue,
                                   enum rv710_linear_image_operation const operation)
 {
-   enum { width = 2, height = 2, byte_count = width * height * 4 };
-   uint32_t const source_words[width * height] = {
+   char const * const macro_variant = getenv("TERAKAN_DEBUG_TERASCALE_1_MACROTILED_ROUNDTRIP");
+   bool const macrotiled = operation == RV710_TILED_IMAGE_ROUNDTRIP && macro_variant &&
+                           (!strcmp(macro_variant, "1") || !strcmp(macro_variant, "edge"));
+   bool const macro_edge = macrotiled && !strcmp(macro_variant, "edge");
+   uint32_t const width = macro_edge ? 129 : macrotiled ? 128 : 2;
+   uint32_t const height = macro_edge ? 65 : macrotiled ? 128 : 2;
+   uint32_t const byte_count = width * height * 4;
+   uint32_t source_words[129 * 128] = {
       UINT32_C(0x10203040),
       UINT32_C(0x55667788),
       UINT32_C(0x90abcdef),
       UINT32_C(0x13579bdf),
    };
-   uint32_t const inverse_words[width * height] = {
+   uint32_t inverse_words[129 * 128] = {
       ~UINT32_C(0x10203040),
       ~UINT32_C(0x55667788),
       ~UINT32_C(0x90abcdef),
       ~UINT32_C(0x13579bdf),
    };
+   if (macrotiled) {
+      for (uint32_t pixel = 0; pixel < width * height; ++pixel) {
+         source_words[pixel] = UINT32_C(0x10203040) + pixel * UINT32_C(0x01030507);
+         inverse_words[pixel] = ~source_words[pixel];
+      }
+   }
    VkImage image = VK_NULL_HANDLE;
    VkImage tiled_image = VK_NULL_HANDLE;
    VkBuffer buffer = VK_NULL_HANDLE;
@@ -660,8 +672,9 @@ check_rv710_linear_image_readback(VkPhysicalDevice const physical_device, VkDevi
                               VK_PIPELINE_STAGE_HOST_BIT, 0, 0, NULL, 0, NULL, 1,
                               &host_read_barrier);
       } else {
-         /* This tiny optimal image is 1D microtiled, not a test of macrotiles, mip levels or
-          * bank rotation. The linear destination keeps inverse sentinels from its host writes.
+         /* The default 2x2 optimal image is 1D microtiled. The optional 128x128 and 129x65 cases
+          * cross macrotiles, with the latter also exercising row padding. None tests mip levels
+          * or bank rotation between layers. The linear destination keeps inverse host sentinels.
           */
          VkImageMemoryBarrier initial_barriers[2] = {
             {.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
@@ -774,7 +787,7 @@ check_rv710_linear_image_readback(VkPhysicalDevice const physical_device, VkDevi
          }
       }
       if (!failures)
-         fprintf(stderr, "  RV710 linear image 2x2 %s readback completed\n",
+         fprintf(stderr, "  RV710 linear image %ux%u %s readback completed\n", width, height,
                  operation == RV710_LINEAR_IMAGE_CLEAR     ? "clear"
                  : operation == RV710_TILED_IMAGE_ROUNDTRIP ? "tiled roundtrip"
                                                             : "buffer upload");

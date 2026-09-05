@@ -301,6 +301,18 @@ fetching; the successful microtiled-to-linear path cannot take that shortcut. Th
 not validate macrotiles, bank rotation, nonzero mip/layer/region offsets, other formats, filtered
 sampling, MSAA or RV610. The default submit guard and general tiled buffer-upload guard remain.
 
+The same opt-in probe now accepts `TERAKAN_DEBUG_TERASCALE_1_MACROTILED_ROUNDTRIP=1` (128x128)
+or `edge` (129x65), with a distinct 32-bit pattern per pixel. RV710 source builds passed each
+size once and then 10/10 after the negative control. Reducing the copy width by one, while
+still checking the entire destination, failed 3/3 per size with exactly 128 and 65 inverse
+sentinels remaining. IB dumps confirm TILE_MODE=4 (2D_TILED_THIN1), rather than assuming that
+an optimal VkImage necessarily stays macrotiled. This establishes level-zero RGBA8 CB-to-TC
+roundtrips across macrotiles, including an unaligned extent and padded pitch. It still does
+not establish the CPU address formula independently: matching CB and TC layout interpretations
+could hide a shared mistake. Bank rotation between layers, nonzero mips/offsets, other formats
+and cold-start sampler state remain unverified. No additional driver path or submit guard was
+enabled by this test extension; the existing enumeration test is already in both test lists.
+
 Direct indexed application draws now follow `r600_draw_vbo()` too: R600/R700 binding emits no
 Evergreen `INDEX_BASE`/`INDEX_BUFFER_SIZE`, and `vkCmdDrawIndexed` carries the adjusted absolute
 40-bit address in `PKT3_DRAW_INDEX` with an immediate DRM relocation. The exact packet has a CPU
