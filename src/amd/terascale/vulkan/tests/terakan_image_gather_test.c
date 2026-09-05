@@ -189,7 +189,7 @@ main(void)
    }
    if (physical_device == VK_NULL_HANDLE) {
       fprintf(stderr, "Terakan compute device not found\n");
-      return 1;
+      return TERAKAN_TEST_DEVICE_NOT_FOUND_STATUS;
    }
 
    VkPhysicalDeviceFeatures available_features;

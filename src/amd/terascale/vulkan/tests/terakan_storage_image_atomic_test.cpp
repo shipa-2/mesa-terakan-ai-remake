@@ -101,7 +101,7 @@ main()
    }
    if (physical_device == VK_NULL_HANDLE) {
       std::fprintf(stderr, "Terakan graphics device not found\n");
-      return 1;
+      return TERAKAN_TEST_DEVICE_NOT_FOUND_STATUS;
    }
    std::fprintf(stderr, "device=%s queue_family=%u invocations=%u\n", properties.deviceName,
                 queue_family, kTotalInvocations);

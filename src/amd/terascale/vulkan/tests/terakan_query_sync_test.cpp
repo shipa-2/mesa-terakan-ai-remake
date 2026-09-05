@@ -213,7 +213,7 @@ main()
    }
    if (physical_device == VK_NULL_HANDLE) {
       std::fprintf(stderr, "Terakan graphics device not found\n");
-      return 1;
+      return TERAKAN_TEST_DEVICE_NOT_FOUND_STATUS;
    }
    /* A timestamp period of zero would mean the queue family does not support timestamps at all. */
    uint32_t family_count = 0;

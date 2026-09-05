@@ -34,6 +34,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Exit status meson reads as "skipped". A run that found no device the selection accepts has not
+ * failed -- most often it is a machine without the generation `TERAKAN_TEST_DEVICE` asked for --
+ * and reporting it as a failure would make "the part is absent" indistinguishable from "the part
+ * cannot do this", which is the whole point of running the suite on both generations.
+ */
+#define TERAKAN_TEST_DEVICE_NOT_FOUND_STATUS 77
+
 static inline bool
 terakan_test_device_matches(char const * const device_name)
 {

@@ -104,7 +104,7 @@ main(void)
    }
    if (physical_device == VK_NULL_HANDLE) {
       fprintf(stderr, "Terakan graphics device not found\n");
-      return 1;
+      return TERAKAN_TEST_DEVICE_NOT_FOUND_STATUS;
    }
    fprintf(stderr, "device=%s queue_family=%u\n", properties.deviceName, queue_family);
 

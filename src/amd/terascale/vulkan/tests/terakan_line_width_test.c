@@ -250,7 +250,7 @@ main(int argc, char ** argv)
    VkShaderModule const vertex_module = load_shader(device, argv[1]);
    VkShaderModule const fragment_module = load_shader(device, argv[2]);
    if (vertex_module == VK_NULL_HANDLE || fragment_module == VK_NULL_HANDLE) {
-      return 1;
+      return TERAKAN_TEST_DEVICE_NOT_FOUND_STATUS;
    }
 
    /* Three pipelines: width one, width four baked in, and width four set dynamically. */

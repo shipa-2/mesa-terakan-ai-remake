@@ -128,7 +128,7 @@ main(int argc, char **argv)
    if (physical_device == VK_NULL_HANDLE) {
       fprintf(stderr, "No usable Terakan physical device found among %u enumerated\n",
               physical_device_count);
-      return 1;
+      return TERAKAN_TEST_DEVICE_NOT_FOUND_STATUS;
    }
 
    VkPhysicalDeviceFeatures features;

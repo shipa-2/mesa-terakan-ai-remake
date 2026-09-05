@@ -126,7 +126,7 @@ main(int argc, char ** argv)
    }
    if (physical_device == VK_NULL_HANDLE) {
       fprintf(stderr, "No Terakan device\n");
-      return 1;
+      return TERAKAN_TEST_DEVICE_NOT_FOUND_STATUS;
    }
 
    /* Sample shading is not requested by the pipeline, but the queried support is what makes the

@@ -761,7 +761,7 @@ main(int argc, char ** argv)
    if (physical_device == VK_NULL_HANDLE) {
       std::cerr << "Terakan compute device not found\n";
       vkDestroyInstance(instance, nullptr);
-      return 1;
+      return TERAKAN_TEST_DEVICE_NOT_FOUND_STATUS;
    }
 
    VkPhysicalDeviceFeatures features;

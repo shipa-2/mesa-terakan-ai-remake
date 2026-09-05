@@ -133,7 +133,7 @@ main(void)
    }
    if (physical_device == VK_NULL_HANDLE) {
       fprintf(stderr, "Terakan compute device not found\n");
-      return 1;
+      return TERAKAN_TEST_DEVICE_NOT_FOUND_STATUS;
    }
    fprintf(stderr, "device=%s queue_family=%u buffer=%u bytes allocation=%u bytes\n",
            properties.deviceName, compute_queue_family, BUFFER_SIZE_BYTES, ALLOCATION_BYTES);

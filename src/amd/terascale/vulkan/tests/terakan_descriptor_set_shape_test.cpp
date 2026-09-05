@@ -129,7 +129,7 @@ main()
    }
    if (physical_device == VK_NULL_HANDLE) {
       std::fprintf(stderr, "No usable Terakan physical device found\n");
-      return 1;
+      return TERAKAN_TEST_DEVICE_NOT_FOUND_STATUS;
    }
    VkPhysicalDeviceProperties device_properties;
    vkGetPhysicalDeviceProperties(physical_device, &device_properties);

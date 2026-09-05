@@ -199,7 +199,7 @@ main(int argc, char ** argv)
    }
    if (physical_device == VK_NULL_HANDLE) {
       std::fprintf(stderr, "Terakan graphics device not found\n");
-      return 1;
+      return TERAKAN_TEST_DEVICE_NOT_FOUND_STATUS;
    }
 
    /* The point of the test is that the extension is actually advertised, not only that the code
