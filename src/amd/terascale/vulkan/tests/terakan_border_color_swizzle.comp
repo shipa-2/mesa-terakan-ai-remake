@@ -21,4 +21,15 @@ main()
    results.values[2] = textureGather(source, uv, 1);
    results.values[3] = textureGather(source, uv, 2);
    results.values[4] = textureGather(source, uv, 3);
+
+   /* The same four gathers well inside the image, where the border colour cannot reach and the
+    * result names the channel the fetch actually read. The border colour path applies the swizzle
+    * twice, so it cannot answer that question on its own.
+    */
+   const vec2 inside = vec2(0.5, 0.5);
+   results.values[5] = textureGather(source, inside, 0);
+   results.values[6] = textureGather(source, inside, 1);
+   results.values[7] = textureGather(source, inside, 2);
+   results.values[8] = textureGather(source, inside, 3);
+   results.values[9] = textureLod(source, inside, 0.0);
 }

@@ -2334,10 +2334,33 @@ at all -- a channel is. A second descriptor can only change which channels `DST_
 cannot make the hardware emit a constant for a gather, and the component a gather asks for is the
 `MODE` field of the instruction, fixed at compile time. So there is nothing to select.
 
-What would actually work is the expensive thing: pass the view's swizzle to the shader in driver
-push constants, gather every channel the swizzle might name, and select between them and the
-constants at run time. That is four gathers where the application asked for one, and it needs a
-push-constant slot on every shader that gathers.
+**Half of it is now fixed, and the other half needs a second descriptor rather than more gathers.**
+The shader substitutes the constant itself, told by driver push constants which components of which
+slots the bound view makes constant -- `texture_gather_swizzle_constant` and `_one`, one bit per
+texture slot per component. A 1200-case sample of `glsl.texture_gather` goes from 62 failures to
+32, and the cube subgroup from 12 to 9.
+
+The four-gather idea was investigated and does not work, because selecting between four gathers
+requires knowing which component of the instruction reaches which channel. Measuring that directly
+-- `terakan_border_color_swizzle_probe` now gathers inside the image, where each channel holds a
+distinct value -- gives:
+
+    rgba -> RGBA    rgb0 -> RGB0    rg0a -> RG0A    a01r -> A01R
+    bgra -> BGRA    rgb1 -> RGB1    rg1a -> RG1A    gba0 -> GBA0
+    0gba -> 0GBA    r0ba -> R0BA
+
+    argb -> ABGR    1gba -> 1BAR    1rgb -> 1BAR    ba01 -> BG01    01rg -> 01BA
+
+Ten of fifteen are correct, including every swizzle whose constants are trailing. The five that are
+not follow no rule these fifteen points settle: `1gba` and `1rgb` return the *same* four channels
+while asking for different ones, so `DST_SEL` is not being read for those components at all, and no
+shift, inverse or double application accounts for `argb` and `ba01` together.
+
+What would close it is a gather-specific descriptor after all, but for a different reason than the
+one first recorded here: not to name a constant, which it cannot do, but to carry an identity
+`DST_SEL`, whose row above is correct. The shader would then apply the whole swizzle itself --
+permutation and constants -- out of the push-constant masks that now exist. The cost is a second
+resource slot for every view a shader gathers from.
 
 Measured extent, on a 1200-case random sample of `glsl.texture_gather` (267 passing, 62 failing):
 the swizzles whose constant is anywhere but W fail outright -- `one_red_green_blue` 8 of 8,

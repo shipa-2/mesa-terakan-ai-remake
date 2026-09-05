@@ -18,6 +18,29 @@
  *
  * Both an ordinary sample and a gather of each component are taken, because the gather path is
  * already known to read `DST_SEL` differently from an ordinary sample on this hardware.
+ *
+ * The same four gathers are also taken well inside the image, where the border colour cannot
+ * reach. That is the only way to ask which *channel* a gather read: the border colour path applies
+ * the swizzle twice, so it cannot answer it. With every texel holding R=0.125, G=0.25, B=0.375 and
+ * A=0.5, a gathered value names its channel. What comes back, against what the swizzle asks for:
+ *
+ *     rgba -> RGBA    rgb0 -> RGB0    rg0a -> RG0A    a01r -> A01R
+ *     bgra -> BGRA    rgb1 -> RGB1    rg1a -> RG1A    gba0 -> GBA0
+ *     0gba -> 0GBA    r0ba -> R0BA
+ *
+ *     argb -> ABGR    1gba -> 1BAR    1rgb -> 1BAR    ba01 -> BG01    01rg -> 01BA
+ *
+ * Ten of fifteen are right, including every swizzle whose constants are trailing. The five that
+ * are wrong do not follow a rule these measurements settle: `1gba` and `1rgb` return the *same*
+ * four channels despite asking for different ones, so the hardware is not reading `DST_SEL` for
+ * those components at all, and no shift, inverse or double application accounts for `argb` and
+ * `ba01` at once.
+ *
+ * This is why gathering all four components and selecting at run time does not close it. Selecting
+ * requires knowing which component of the instruction reaches which channel, and that is exactly
+ * what does not follow a rule. A gather through a second descriptor with an identity `DST_SEL`
+ * would sidestep it -- the identity row above is correct -- and the shader could then apply the
+ * whole swizzle itself, constants included, from the push-constant masks that already exist.
  */
 
 #include <vulkan/vulkan.h>
@@ -43,7 +66,7 @@ static uint32_t const border_color_swizzle_spirv[] = {
 #include "terakan_border_color_swizzle.spv.h"
 };
 
-#define RESULT_COUNT 5u
+#define RESULT_COUNT 10u
 #define IMAGE_SIZE   8u
 
 static uint32_t
@@ -81,6 +104,12 @@ static struct probe_swizzle const probe_swizzles[] = {
    {"rg0a", SWZ(R, G, ZERO, A)},
    {"rg1a", SWZ(R, G, ONE, A)},
    {"r0ba", SWZ(R, ZERO, B, A)},
+   /* The four dEQP names its failing cases after. */
+   {"1rgb", SWZ(ONE, R, G, B)},
+   {"ba01", SWZ(B, A, ZERO, ONE)},
+   {"01rg", SWZ(ZERO, ONE, R, G)},
+   {"a01r", SWZ(A, ZERO, ONE, R)},
+   {"gba0", SWZ(G, B, A, ZERO)},
 };
 
 int
@@ -303,9 +332,13 @@ main(void)
          .subresourceRange = whole};
       vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                            VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1, &to_general);
-      VkClearColorValue const zero = {.float32 = {0.0f, 0.0f, 0.0f, 0.0f}};
-      vkCmdClearColorImage(command_buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &zero, 1,
-                           &whole);
+      /* Channel k of every texel holds (k + 1) / 8, so a gathered value names the channel it was
+       * read from and the four texels of a footprint are indistinguishable on purpose -- the
+       * question here is which channel, not which texel.
+       */
+      VkClearColorValue const channels = {.float32 = {0.125f, 0.25f, 0.375f, 0.5f}};
+      vkCmdClearColorImage(command_buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &channels,
+                           1, &whole);
       VkImageMemoryBarrier const to_read = {.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
                                             .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
                                             .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
@@ -337,8 +370,9 @@ main(void)
          return 1;
       }
 
-      static char const * const fetch_names[RESULT_COUNT] = {"sample", "gather.0", "gather.1",
-                                                             "gather.2", "gather.3"};
+      static char const * const fetch_names[RESULT_COUNT] = {
+         "brd sample", "brd gath.0", "brd gath.1", "brd gath.2", "brd gath.3",
+         "in gath.0",  "in gath.1",  "in gath.2",  "in gath.3",  "in sample"};
       for (unsigned result_index = 0; result_index < RESULT_COUNT; ++result_index) {
          printf("%-6s %-10s %.3f %.3f %.3f %.3f\n", probe_swizzles[swizzle_index].name,
                 fetch_names[result_index], results[result_index * 4 + 0],
