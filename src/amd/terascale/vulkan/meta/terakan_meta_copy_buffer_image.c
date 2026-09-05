@@ -138,6 +138,101 @@ terakan_meta_copy_image_to_buffer_linear_cp_dma_terascale_1(
    return true;
 }
 
+/* The inverse linear copy has the same addressing restrictions. Keep it on CP DMA on TeraScale 1
+ * because the generic draw shader below is still handwritten Evergreen bytecode. Executing that
+ * bytecode on RV710 has been measured to lock ring 0 after the command parser accepts the IB. */
+static bool
+terakan_meta_copy_buffer_to_image_linear_cp_dma_terascale_1(
+   struct terakan_gfx_command_writer * const command_writer,
+   struct terakan_buffer const * const buffer, struct terakan_image const * const image,
+   VkCopyBufferToImageInfo2 const * const copy_info)
+{
+   for (uint32_t region_index = 0; region_index < copy_info->regionCount; ++region_index) {
+      VkBufferImageCopy2 const * const region = &copy_info->pRegions[region_index];
+      struct terakan_meta_copy_buffer_image_region_image region_image;
+      if (!terakan_meta_copy_buffer_image_translate_region_image(image, region, &region_image))
+         return false;
+      unsigned const aspect_index = region_image.image_descriptor_create_info.image_aspect_index;
+      struct terakan_image_surface_aspect const * const surface_aspect =
+         &image->surface.aspects[aspect_index];
+      struct terakan_image_surface_level const * const surface_level =
+         &surface_aspect->levels[region->imageSubresource.mipLevel];
+      if (surface_level->array_mode != V_028C70_ARRAY_LINEAR_GENERAL &&
+          surface_level->array_mode != V_028C70_ARRAY_LINEAR_ALIGNED)
+         return false;
+
+      uint64_t const width_blocks =
+         region_image.rect_blocks.bounds[1][0] - region_image.rect_blocks.bounds[0][0];
+      uint64_t const height_blocks =
+         region_image.rect_blocks.bounds[1][1] - region_image.rect_blocks.bounds[0][1];
+      uint64_t const layer_count =
+         region_image.image_descriptor_create_info.subresource_range.max_depth_or_layer_count;
+      uint64_t const bytes_per_block = surface_aspect->bytes_per_block;
+      if (region->bufferOffset > buffer->vk.size)
+         return false;
+      uint64_t remaining_blocks = (buffer->vk.size - region->bufferOffset) / bytes_per_block;
+      if ((layer_count - 1) != 0 &&
+          region_image.buffer_z_pitch_blocks > UINT64_MAX / (layer_count - 1))
+         return false;
+      uint64_t const layer_offset_blocks = (layer_count - 1) * region_image.buffer_z_pitch_blocks;
+      if (layer_offset_blocks > remaining_blocks)
+         return false;
+      remaining_blocks -= layer_offset_blocks;
+      uint64_t const row_offset_blocks =
+         (height_blocks - 1) * (uint64_t)region_image.buffer_y_pitch_blocks;
+      if (row_offset_blocks > remaining_blocks ||
+          width_blocks > remaining_blocks - row_offset_blocks)
+         return false;
+   }
+
+   for (uint32_t region_index = 0; region_index < copy_info->regionCount; ++region_index) {
+      VkBufferImageCopy2 const * const region = &copy_info->pRegions[region_index];
+      struct terakan_meta_copy_buffer_image_region_image region_image;
+      ASSERTED bool const translated =
+         terakan_meta_copy_buffer_image_translate_region_image(image, region, &region_image);
+      assert(translated);
+      unsigned const aspect_index = region_image.image_descriptor_create_info.image_aspect_index;
+      struct terakan_image_surface_aspect const * const surface_aspect =
+         &image->surface.aspects[aspect_index];
+      struct terakan_image_surface_level const * const surface_level =
+         &surface_aspect->levels[region->imageSubresource.mipLevel];
+      uint64_t const width_blocks =
+         region_image.rect_blocks.bounds[1][0] - region_image.rect_blocks.bounds[0][0];
+      uint64_t const height_blocks =
+         region_image.rect_blocks.bounds[1][1] - region_image.rect_blocks.bounds[0][1];
+      uint64_t const bytes_per_block = surface_aspect->bytes_per_block;
+      uint64_t const image_row_pitch =
+         (uint64_t)surface_level->aligned_extent_surfels[0] * bytes_per_block;
+      uint64_t const image_level_base =
+         image->va + ((uint64_t)surface_aspect->offset_in_memory_bytes_shr8 << 8) +
+         ((uint64_t)surface_level->offset_in_memory_bytes_shr8 << 8);
+      uint64_t const first_layer =
+         region_image.image_descriptor_create_info.subresource_range.base_z_or_array_layer;
+      uint64_t const layer_count =
+         region_image.image_descriptor_create_info.subresource_range.max_depth_or_layer_count;
+
+      for (uint64_t layer = 0; layer < layer_count; ++layer) {
+         uint64_t const image_slice_base =
+            image_level_base +
+            (first_layer + layer) * ((uint64_t)surface_level->slice_size_bytes_shr8 << 8);
+         for (uint64_t row = 0; row < height_blocks; ++row) {
+            uint64_t const src_va = buffer->va + region->bufferOffset +
+                                    layer * region_image.buffer_z_pitch_blocks * bytes_per_block +
+                                    row * region_image.buffer_y_pitch_blocks * bytes_per_block;
+            uint64_t const dst_va =
+               image_slice_base + (region_image.rect_blocks.bounds[0][1] + row) * image_row_pitch +
+               (uint64_t)region_image.rect_blocks.bounds[0][0] * bytes_per_block;
+            terakan_cp_dma_copy(command_writer, buffer->bo, src_va, TERAKAN_BO_PRIORITY_CP_DMA,
+                                image->bo, dst_va, TERAKAN_BO_PRIORITY_CP_DMA,
+                                width_blocks * bytes_per_block);
+         }
+      }
+   }
+   command_writer->post_color_image_copy_write_barrier_actions |=
+      TERAKAN_BARRIER_ACTION_SYNC_ME_TO_CP_DMA;
+   return true;
+}
+
 /* Buffer to image copying by drawing to an RTV.
  * Not using an image UAV because "Tex2D UAV on cypress will fail/hang if tile mode is linear"
  * according to the R800 AddrLib.
@@ -705,13 +800,23 @@ terakan_CmdCopyBufferToImage2(VkCommandBuffer const commandBuffer,
    struct terakan_image const * const image =
       terakan_image_from_handle(pCopyBufferToImageInfo->dstImage);
 
+   struct terakan_buffer const * const buffer =
+      terakan_buffer_from_handle(pCopyBufferToImageInfo->srcBuffer);
+
+   if (terakan_gfx_command_writer_physical_device(command_writer)->chip_info.is_terascale_1) {
+      if (!terakan_meta_copy_buffer_to_image_linear_cp_dma_terascale_1(
+             command_writer, buffer, image, pCopyBufferToImageInfo)) {
+         /* Never fall through to the still-Evergreen meta bytecode on TeraScale 1. */
+         vk_command_buffer_set_error(&command_writer->base.command_buffer->vk,
+                                     VK_ERROR_FEATURE_NOT_PRESENT);
+      }
+      return;
+   }
+
    if (terakan_format_is_expand_3x(image->surface.aspects[0].bytes_per_block)) {
       terakan_meta_copy_expand_3x_buffer_to_image(command_writer, pCopyBufferToImageInfo);
       return;
    }
-
-   struct terakan_buffer const * const buffer =
-      terakan_buffer_from_handle(pCopyBufferToImageInfo->srcBuffer);
 
    /*
     * The buffer-to-image shader fetches the upload buffer through resource

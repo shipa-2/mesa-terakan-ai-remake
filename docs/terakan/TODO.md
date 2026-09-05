@@ -254,6 +254,20 @@ and then 10/10 repeated runs, with four distinct image words replacing four diff
 buffer sentinels and no new kernel error. This proves the linear level-zero, single-layer case only;
 mip offsets, layers, compressed formats and tiled detiling still need focused readbacks.
 
+The inverse 2-by-2 linear buffer-to-image copy is now also hardware-validated on RV710. The first
+attempt exposed two descriptor-port boundaries: the shared bookkeeping emitted Evergreen's fetch
+shader resource base 992 where R600/R700 uses 320, which the kernel rejected as `bad SET_RESOURCE`;
+after translating the PS/VS/GS/FS resource ranges, the parser accepted the IB, but executing the
+still-handwritten Evergreen buffer-to-image meta shader locked ring 0. R600/R700 buffer resource
+word 3 is now kept zero as classic `texture_buffer_sampler_view()` requires rather than inheriting
+Evergreen destination-selection bits, but a shader fetch through that descriptor has not yet
+completed and therefore is not claimed working. Linear TeraScale 1 uploads instead use a preflighted
+row-wise CP-DMA path and reject tiled/invalid regions without falling through to the unsafe shader.
+Four distinct buffer words replaced four inverse image sentinels once and in 10/10 repetitions,
+with no new RV710 kernel error. This proves only level-zero, single-layer linear RGBA8 upload; mip
+offsets, layers, compressed/3x formats, tiled addressing and the eventual NIR replacement for the
+generic meta shader remain unverified. The default submit guard remains.
+
 Direct indexed application draws now follow `r600_draw_vbo()` too: R600/R700 binding emits no
 Evergreen `INDEX_BASE`/`INDEX_BUFFER_SIZE`, and `vkCmdDrawIndexed` carries the adjusted absolute
 40-bit address in `PKT3_DRAW_INDEX` with an immediate DRM relocation. The exact packet has a CPU
