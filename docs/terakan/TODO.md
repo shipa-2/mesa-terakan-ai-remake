@@ -2525,12 +2525,29 @@ stage does not invalidate `VC`, but `terakan_physical_device.c` sets `has_vertex
 CAICOS, so vertex fetch there goes through the texture cache, which the barrier already
 invalidates -- and adding the invalidation changed nothing, as it could not.
 
-The next thing to slice is the resource slot the read lands on.
-`terakan_nir_lower_bindings` picks the UAV index base by stage --
-`stage == MESA_SHADER_FRAGMENT ? UAV_IMMEDIATE_BASE_PIXEL : UAV_IMMEDIATE_BASE_COMPUTE` -- while
-`terakan_pipeline_layout.c` binds UAV descriptors to `uav_shader_stage`, which is the fragment
-stage for graphics. A vertex stage would then read UAVs from slots nothing was bound to. That fits
-reads failing, but not writes succeeding, so it is a hypothesis rather than the answer.
+**The slot hypothesis was tested and is wrong.** The reasoning looked sound: reading a writable
+storage buffer takes the UAV path, which needs an IMMED buffer resource, and both IMMED bases --
+`UAV_IMMEDIATE_BASE_PIXEL` at 165 and `_COMPUTE` at 164 -- sit above the 160 resource bindings a
+vertex stage has, in the sixteen extra ones only pixel and compute shaders get. On top of that,
+`terakan_app_config_draw.c` writes the IMMED resource only through `set_resource_cs` or
+`set_resource_fs`, so a vertex stage is never given one at all.
+
+But instrumenting the decision shows a vertex stage never reaches that path: with a print on the
+branch that would divert it, running a failing case produces nothing, and diverting reads in vertex
+stages to the ordinary resource path changes the sample not at all -- still 48 passing and 92
+failing. `terakan_nir_get_binding_uav` returns `UINT_MAX` for these bindings before the IMMED
+question arises, so the read was already going through an ordinary VFETCH.
+
+So the fault is in the ordinary read path in a vertex stage, not in UAV slot assignment. Worth
+noting against that: `terakan_instance_dynamic_ssbo` reads a `readonly` storage buffer from a
+vertex shader and passes, so the path works when nothing else writes the buffer. What separates it
+from the failing cases is another agent writing the same buffer, which points back at visibility
+rather than at addressing -- and the vertex cache, the obvious candidate, is already excluded
+above because CAICOS has none.
+
+There is also no slot budget to give vertex stages IMMED resources even if they were the answer:
+the mutable range for non-pixel stages is 157 bindings against the 155 the file's own
+`static_assert` requires for Direct3D 11, a margin of two where up to twelve would be needed.
 
 ## Vertex pipeline stage survey (geometry and tessellation)
 
