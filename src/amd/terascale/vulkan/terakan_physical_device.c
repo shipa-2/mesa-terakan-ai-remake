@@ -1026,6 +1026,17 @@ terakan_physical_device_get_capabilities(
    features_out->dynamicRendering = true;
 
 
+   /* VK_KHR_separate_depth_stencil_layouts (#242, Vulkan 1.2).
+    *
+    * The layouts it adds are the depth-only and stencil-only forms of the attachment and
+    * read-only layouts. This driver does not derive anything from an image layout -- no
+    * compression state is tied to one, and the barrier machinery takes its aspects from the
+    * subresource range rather than from the layout -- and the common render pass implementation
+    * handles the separate layout structures, so there is nothing further to do for them.
+    */
+   extensions_out->KHR_separate_depth_stencil_layouts = true;
+   features_out->separateDepthStencilLayouts = true;
+
    /* VK_KHR_synchronization2 (#315, Vulkan 1.3).
     *
     * The barrier machinery is already written against the 2 forms: terakan_barrier_get_src_actions
