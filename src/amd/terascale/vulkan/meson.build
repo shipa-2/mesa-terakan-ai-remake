@@ -2382,6 +2382,25 @@ if with_tests
         ],
         depfile : 'terakan_border_color_swizzle.spv.h.d',
       )
+      terakan_cube_gather_spv = custom_target(
+        'terakan_cube_gather.spv.h',
+        input : 'tests/terakan_cube_gather.comp',
+        output : 'terakan_cube_gather.spv.h',
+        command : [
+          prog_glslang, '-V', '-x', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_cube_gather.spv.h.d',
+      )
+      terakan_cube_gather_probe = executable(
+        'terakan_cube_gather_probe',
+        [
+          'tests/terakan_cube_gather_probe.c',
+          terakan_cube_gather_spv,
+        ],
+        dependencies : vulkan_loader_dep,
+      )
+
       terakan_border_color_swizzle_probe = executable(
         'terakan_border_color_swizzle_probe',
         [

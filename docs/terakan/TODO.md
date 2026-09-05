@@ -2344,7 +2344,42 @@ the swizzles whose constant is anywhere but W fail outright -- `one_red_green_bl
 `alpha_zero_one_red` 11 of 11, `zero_one_red_green` 4 of 4, `blue_alpha_zero_one` 5 of 5 -- while
 `green_blue_alpha_zero`, whose constant is in W, passes 5 of 7.
 
-### Gather on a cube map is a second, separate defect
+### Gather on a cube map: NUM_FORMAT switches seamless filtering off
+
+The axis is the format, not the cube. Every `rgba8` and `depth32f` cube gather passes and every
+`rgba8i` and `rgba8ui` one fails -- 46 of them, wrap modes, both sizes, base levels, the
+nearest-filter variant and the corner-excluding variants alike -- while the same integer formats
+gathered from a 2D or 2D-array image pass 192 of 192.
+
+`terakan_cube_gather_probe` gathers one direction from two cube images holding the same numbers,
+one `R8G8B8A8_UNORM` and one `R8G8B8A8_UINT`. In the middle of a face both return the same four
+texels. Near a face edge the unorm image returns `75, 8, 4, 71` -- texels from both faces -- and
+the integer image returns `8, 9, 5, 4`, clamped inside the one face. Near a corner the unorm image
+reaches three faces and the integer image still reaches one.
+
+The two descriptors differ in exactly one bit: `NUM_FORMAT_ALL`, `NORM` against `INT`. Forcing the
+integer image to `NORM` makes it cross the edge like the unorm one. **So `NUM_FORMAT = INT` turns
+seamless cube map filtering off**, and this is a property of the hardware rather than of anything
+the driver arranges.
+
+`SCALED` also crosses the edge, and unlike `NORM` it delivers the integer value itself: the probe
+reads back exactly 75.0, 8.0, 4.0 and 71.0. So an integer cube fetch can be made seamless by
+describing the resource as `SCALED` and converting the float back in the shader.
+
+**That was implemented, measured and reverted.** It works: the cube gather group goes from 46
+failures to 12, and the 12 left are the constant-swizzle defect above. But the shader cannot see
+the view's format, so the descriptor and the conversion can only agree on the rule "an integer
+cube view", which drags in 32-bit integer formats -- and a float holds those exactly only up to
+2^24. A 2500-case sample of cube views with 32-bit integer formats goes from 0 failures to 219,
+all of them `pipeline.monolithic.image...view_type.cube.format.r32_uint` reporting an image
+mismatch. Trading 34 for 219 is not a trade, and silently losing precision on a format the suite
+does happen to cover would have been worse than the seam.
+
+Closing it properly needs the rule to depend on the channel width, which means telling the shader
+which fetches were described as `SCALED` -- a bit per texture slot in the driver push constants,
+the same machinery the gather constant-swizzle workaround above would need. Until then this is a
+known limitation with an exact description rather than a mystery.
+
 
 The same sample fails 20 of 44 cube gathers, and only some of them are about the swizzle. The rest
 are the wrap-mode variants -- `clamp_to_edge_repeat`, `mirrored_repeat_clamp_to_edge`,
