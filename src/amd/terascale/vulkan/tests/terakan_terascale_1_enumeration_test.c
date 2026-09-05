@@ -400,10 +400,12 @@ check_rv710_linear_image_readback(VkPhysicalDevice const physical_device, VkDevi
    char const * const macro_variant = getenv("TERAKAN_DEBUG_TERASCALE_1_MACROTILED_ROUNDTRIP");
    bool const offset_copy = operation == RV710_TILED_IMAGE_ROUNDTRIP && macro_variant &&
                             !strcmp(macro_variant, "offset");
+   bool const mip_copy = operation == RV710_TILED_IMAGE_ROUNDTRIP && macro_variant &&
+                         !strcmp(macro_variant, "mip");
    bool const macrotiled = operation == RV710_TILED_IMAGE_ROUNDTRIP && macro_variant &&
                            (!strcmp(macro_variant, "1") || !strcmp(macro_variant, "edge") ||
-                            offset_copy);
-   bool const macro_edge = macrotiled && (offset_copy || !strcmp(macro_variant, "edge"));
+                            offset_copy || mip_copy);
+   bool const macro_edge = macrotiled && (offset_copy || mip_copy || !strcmp(macro_variant, "edge"));
    uint32_t const width = macro_edge ? 129 : macrotiled ? 128 : 2;
    uint32_t const height = macro_edge ? 65 : macrotiled ? 128 : 2;
    uint32_t const byte_count = width * height * 4;
@@ -513,6 +515,11 @@ check_rv710_linear_image_readback(VkPhysicalDevice const physical_device, VkDevi
       VkImageCreateInfo tiled_image_info = image_info;
       tiled_image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
       tiled_image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+      if (mip_copy) {
+         tiled_image_info.extent.width *= 2;
+         tiled_image_info.extent.height *= 2;
+         tiled_image_info.mipLevels = 2;
+      }
       result = vkCreateImage(device, &tiled_image_info, NULL, &tiled_image);
       VkMemoryRequirements tiled_requirements;
       if (result == VK_SUCCESS)
@@ -612,7 +619,8 @@ check_rv710_linear_image_readback(VkPhysicalDevice const physical_device, VkDevi
    VkCommandBufferBeginInfo const begin_info = {.sType =
                                                    VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
    VkBufferImageCopy const region = {
-      .imageSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .layerCount = 1},
+      .imageSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                           .mipLevel = mip_copy ? 1 : 0, .layerCount = 1},
       .imageExtent = {width, height, 1},
    };
    VkClearColorValue const clear_value = {.float32 = {0.0f, 1.0f, 0.0f, 1.0f}};
@@ -676,8 +684,9 @@ check_rv710_linear_image_readback(VkPhysicalDevice const physical_device, VkDevi
                               &host_read_barrier);
       } else {
          /* The default 2x2 optimal image is 1D microtiled. The optional 128x128 and 129x65 cases
-          * cross macrotiles, with the latter also exercising row padding. None tests mip levels
-          * or bank rotation between layers. The linear destination keeps inverse host sentinels.
+          * cross macrotiles, with the latter also exercising row padding. The mip variant instead
+          * addresses level 1. None tests bank rotation between layers. The linear destination
+          * keeps inverse host sentinels.
           */
          VkImageMemoryBarrier initial_barriers[2] = {
             {.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
@@ -696,9 +705,15 @@ check_rv710_linear_image_readback(VkPhysicalDevice const physical_device, VkDevi
              .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
              .image = image, .subresourceRange = clear_range},
          };
+         initial_barriers[0].subresourceRange.levelCount = mip_copy ? 2 : 1;
          vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_HOST_BIT,
                               VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 2,
                               initial_barriers);
+         if (mip_copy) {
+            VkClearColorValue const other_mip_colour = {.float32 = {1.0f, 0.0f, 1.0f, 1.0f}};
+            vkCmdClearColorImage(command_buffer, tiled_image, VK_IMAGE_LAYOUT_GENERAL,
+                                 &other_mip_colour, 1, &clear_range);
+         }
          vkCmdCopyBufferToImage(command_buffer, buffer, tiled_image, VK_IMAGE_LAYOUT_GENERAL, 1,
                                 &region);
          VkImageMemoryBarrier barriers[2] = {
@@ -725,10 +740,12 @@ check_rv710_linear_image_readback(VkPhysicalDevice const physical_device, VkDevi
                .subresourceRange = clear_range,
             },
          };
+         barriers[0].subresourceRange.levelCount = mip_copy ? 2 : 1;
          vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
                               VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1, barriers);
          VkImageCopy const image_region = {
-            .srcSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .layerCount = 1},
+            .srcSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                               .mipLevel = mip_copy ? 1 : 0, .layerCount = 1},
             .srcOffset = {offset_copy ? 1 : 0, offset_copy ? 2 : 0, 0},
             .dstSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .layerCount = 1},
             .dstOffset = {offset_copy ? 3 : 0, offset_copy ? 1 : 0, 0},

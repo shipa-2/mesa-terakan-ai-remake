@@ -322,6 +322,20 @@ column failed 3/3 with exactly 62 sentinel mismatches. Neither mutation changes 
 This covers nonzero XY copy offsets and preservation outside that rectangle, not mip/layer
 addressing, filtered sampling, CPU swizzle equations or cold-start initialization.
 
+The `mip` variant uses mip 1 (129x65) of a 258x130 two-level optimal source, while the linear
+destination stays at mip 0. Mip 0 of the source is first cleared magenta; mip 1 receives the
+per-pixel pattern. The captured T# has BASE_LEVEL=LAST_LEVEL=1, TILE_MODE=4 and mip address
+0x360 (0x36000 bytes before relocation), consistent with the CPU surface layout. On RV710 the
+restored probe passed 10/10. Reading source mip 0 instead, without changing the oracle, failed
+3/3 with all 8385 values magenta. This distinguishes the two levels rather than relying only
+on a same-level upload/readback that could alias both to level 0. Kernel journal stayed clean.
+This covers one nonzero mip and one RGBA8 extent, not the full mip chain, small-mip degradation,
+other formats, array layers or CPU per-pixel tiled address equations.
+The existing CPU tiling test also fixes this exact fixture: 384x144 base, 256x128 padded mip,
+0x36000 mip offset and 0x56000 total bytes. Adding 256 bytes to the production mip-offset output
+failed its new assertion; restoring the calculation passed. The mutation was CPU-only and was
+never submitted to hardware. Both test executables already participate in the normal test lists.
+
 Direct indexed application draws now follow `r600_draw_vbo()` too: R600/R700 binding emits no
 Evergreen `INDEX_BASE`/`INDEX_BUFFER_SIZE`, and `vkCmdDrawIndexed` carries the adjusted absolute
 40-bit address in `PKT3_DRAW_INDEX` with an immediate DRM relocation. The exact packet has a CPU

@@ -462,9 +462,31 @@ test_mip_chain_layout_expand_3x(void)
    CHECK(total / 4u - level_1_last_component - 1u == 8);
 }
 
+static void
+test_rv710_mip_readback_fixture(void)
+{
+   /* The hardware probe's 258x130 base -> 129x65 mip. Level 0 aligns to 384x144;
+    * mip 1 is power-of-two padded to 256x128. The captured T# mip base is 0x36000.
+    * This checks aggregate layout, not the intra-tile pixel-address permutation.
+    */
+   struct terakan_image_tiling_terascale_1_mip_chain_level levels[2];
+   uint64_t const total = terakan_image_tiling_terascale_1_mip_chain_layout(
+      258, 130, 1, false, 2, 1, 1, 1, 4, 1, &rv710_2d_alignments_bpe4,
+      &rv710_1d_alignments_bpe4, levels);
+   CHECK(levels[0].aligned_pitch_surfels == 384);
+   CHECK(levels[0].aligned_height_surfels == 144);
+   CHECK(levels[1].offset_bytes == 0x36000);
+   CHECK(levels[1].aligned_pitch_surfels == 256);
+   CHECK(levels[1].aligned_height_surfels == 128);
+   CHECK(!levels[0].is_1d_tiled_thin1_or_fixed);
+   CHECK(!levels[1].is_1d_tiled_thin1_or_fixed);
+   CHECK(total == 0x56000);
+}
+
 int
 main(void)
 {
+   test_rv710_mip_readback_fixture();
    test_linear_aligned();
    test_1d_tiled_thin1();
    test_2d_tiled_thin1();
