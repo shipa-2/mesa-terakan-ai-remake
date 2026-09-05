@@ -149,6 +149,17 @@ int main(void){
      {"32_32 offset 4",VK_FORMAT_R32G32_UINT,4,8,0},
      {"32 offset 0",VK_FORMAT_R32_UINT,0,4,0},
      {"32 offset 4",VK_FORMAT_R32_UINT,4,4,0},
+     /* Predictions of the "only the first naturally aligned chunk is checked" model, where the
+      * chunk is min(16, max(4, 2^ctz(offset))) and the threshold is offset + chunk.
+      */
+     {"32_32_32_32 offset 1",VK_FORMAT_R32G32B32A32_UINT,1,16,0},
+     {"32_32_32_32 offset 3",VK_FORMAT_R32G32B32A32_UINT,3,16,0},
+     {"32_32_32_32 offset 10",VK_FORMAT_R32G32B32A32_UINT,10,16,0},
+     {"32_32_32_32 offset 20",VK_FORMAT_R32G32B32A32_UINT,20,16,0},
+     {"32_32_32_32 offset 24",VK_FORMAT_R32G32B32A32_UINT,24,16,0},
+     {"32_32 offset 2",VK_FORMAT_R32G32_UINT,2,8,0},
+     {"32_32 offset 8",VK_FORMAT_R32G32_UINT,8,8,0},
+     {"32 offset 2",VK_FORMAT_R32_UINT,2,4,0},
    };
    unsigned const cfg_count=sizeof(cfgs)/sizeof(*cfgs);
    VkVertexInputBindingDescription vib={.binding=0,.stride=32,.inputRate=VK_VERTEX_INPUT_RATE_INSTANCE};
@@ -166,7 +177,7 @@ int main(void){
    VkGraphicsPipelineCreateInfo gpci={.sType=VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,.stageCount=2,.pStages=st,
      .pVertexInputState=&vi,.pInputAssemblyState=&iasm,.pViewportState=&vps,.pRasterizationState=&rs,
      .pMultisampleState=&ms,.pColorBlendState=&cb,.layout=pl,.renderPass=rp};
-   VkPipeline pipes[16];
+   VkPipeline pipes[32];
    for(unsigned c=0;c<cfg_count;++c){
       via.format=cfgs[c].fmt; via.offset=cfgs[c].attr_offset;
       CK(vkCreateGraphicsPipelines(dev,VK_NULL_HANDLE,1,&gpci,NULL,&pipes[c]));
