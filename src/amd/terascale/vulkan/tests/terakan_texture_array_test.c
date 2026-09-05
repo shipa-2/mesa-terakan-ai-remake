@@ -37,6 +37,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "terakan_test_device.h"
+
 #define ARRAY_ELEMENTS 4u
 #define SOURCE_WORDS 64u
 /* Word index viewed by the non-array control binding. */
@@ -53,6 +55,7 @@
 
 static const uint32_t texture_array_spirv[] = {
 #include "terakan_texture_array.spv.h"
+
 };
 
 /* Every word is distinct, so a fetch from the wrong offset is visible rather than coincidentally
@@ -100,7 +103,7 @@ main(void)
    for (uint32_t i = 0; i < physical_device_count; ++i) {
       VkPhysicalDeviceProperties properties;
       vkGetPhysicalDeviceProperties(physical_devices[i], &properties);
-      if (strstr(properties.deviceName, "(Terakan)") != NULL) {
+      if (terakan_test_device_matches(properties.deviceName)) {
          physical_device = physical_devices[i];
          break;
       }

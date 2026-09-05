@@ -33,6 +33,8 @@
 #include <cstring>
 #include <vector>
 
+#include "terakan_test_device.h"
+
 #define VK_CHECK(expression)                                                                       \
    do {                                                                                            \
       VkResult const check_result = (expression);                                                  \
@@ -52,6 +54,7 @@ uint32_t const write_vertex_spirv[] = {
 };
 uint32_t const write_fragment_spirv[] = {
 #include "terakan_color_msaa_write.frag.spv.h"
+
 };
 
 /* Spread widely enough that the mean lands far from every individual sample: at two samples the
@@ -167,8 +170,7 @@ main(int argc, char ** argv)
    VkPhysicalDeviceProperties properties = {};
    for (VkPhysicalDevice candidate : physical_devices) {
       vkGetPhysicalDeviceProperties(candidate, &properties);
-      if (!std::strstr(properties.deviceName, "(Terakan)") ||
-          std::strstr(properties.deviceName, "TeraScale 1"))
+      if (!terakan_test_device_matches(properties.deviceName))
          continue;
       uint32_t family_count = 0;
       vkGetPhysicalDeviceQueueFamilyProperties(candidate, &family_count, nullptr);

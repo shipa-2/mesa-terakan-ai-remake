@@ -25,6 +25,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "terakan_test_device.h"
+
+
 #define TARGET_SIZE 32u
 #define TEXELS (TARGET_SIZE * TARGET_SIZE)
 #define WIDE_LINE_WIDTH 4u
@@ -108,7 +111,7 @@ main(int argc, char ** argv)
    VkPhysicalDeviceProperties properties;
    for (uint32_t i = 0; i < physical_device_count; ++i) {
       vkGetPhysicalDeviceProperties(physical_devices[i], &properties);
-      if (strstr(properties.deviceName, "(Terakan)") != NULL) {
+      if (terakan_test_device_matches(properties.deviceName)) {
          physical_device = physical_devices[i];
          break;
       }

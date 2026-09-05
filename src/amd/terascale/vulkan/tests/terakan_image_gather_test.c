@@ -31,6 +31,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "terakan_test_device.h"
+
 #define IMAGE_SIZE 32u
 
 /* Texel coordinate 16.1 puts the footprint on texels 15 and 16. */
@@ -53,6 +55,7 @@
 
 static const uint32_t image_gather_spirv[] = {
 #include "terakan_image_gather.spv.h"
+
 };
 
 /* Must match the shader's fill. */
@@ -165,8 +168,7 @@ main(void)
    memset(&properties, 0, sizeof(properties));
    for (uint32_t device_index = 0; device_index < physical_device_count; ++device_index) {
       vkGetPhysicalDeviceProperties(physical_devices[device_index], &properties);
-      if (!strstr(properties.deviceName, "(Terakan)") ||
-          strstr(properties.deviceName, "TeraScale 1"))
+      if (!terakan_test_device_matches(properties.deviceName))
          continue;
       uint32_t family_count = 0;
       vkGetPhysicalDeviceQueueFamilyProperties(physical_devices[device_index], &family_count, NULL);

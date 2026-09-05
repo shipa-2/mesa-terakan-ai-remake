@@ -17,6 +17,9 @@
 #include <string>
 #include <vector>
 
+#include "terakan_test_device.h"
+
+
 namespace fs = std::filesystem;
 
 struct Binding {
@@ -736,7 +739,7 @@ main(int argc, char ** argv)
    for (VkPhysicalDevice const candidate : physical_devices) {
       VkPhysicalDeviceProperties properties;
       vkGetPhysicalDeviceProperties(candidate, &properties);
-      if (!allow_any_device && std::strstr(properties.deviceName, "Terakan") == nullptr)
+      if (!allow_any_device && !terakan_test_device_matches(properties.deviceName))
          continue;
       uint32_t queue_family_count = 0;
       vkGetPhysicalDeviceQueueFamilyProperties(candidate, &queue_family_count, nullptr);

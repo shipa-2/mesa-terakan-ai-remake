@@ -31,6 +31,9 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "terakan_test_device.h"
+
+
 #define IMAGE_SIZE 16u
 #define IMAGE_TEXELS (IMAGE_SIZE * IMAGE_SIZE)
 
@@ -80,8 +83,7 @@ main(void)
    memset(&properties, 0, sizeof(properties));
    for (uint32_t device_index = 0; device_index < physical_device_count; ++device_index) {
       vkGetPhysicalDeviceProperties(physical_devices[device_index], &properties);
-      if (!strstr(properties.deviceName, "(Terakan)") ||
-          strstr(properties.deviceName, "TeraScale 1"))
+      if (!terakan_test_device_matches(properties.deviceName))
          continue;
       uint32_t family_count = 0;
       vkGetPhysicalDeviceQueueFamilyProperties(physical_devices[device_index], &family_count, NULL);

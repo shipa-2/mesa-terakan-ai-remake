@@ -24,6 +24,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "terakan_test_device.h"
+
 #define VK_CHECK(expression)                                                                       \
    do {                                                                                            \
       VkResult const check_result = (expression);                                                  \
@@ -42,6 +44,7 @@ static uint32_t const clear_stencil = 0x33u;
 
 static uint32_t const clear_multisample_spirv[] = {
 #include "terakan_depth_stencil_clear_multisample.spv.h"
+
 };
 
 struct push_constants {
@@ -95,7 +98,7 @@ main(void)
    for (uint32_t i = 0; i < physical_device_count; ++i) {
       VkPhysicalDeviceProperties properties;
       vkGetPhysicalDeviceProperties(physical_devices[i], &properties);
-      if (strstr(properties.deviceName, "(Terakan)") != NULL) {
+      if (terakan_test_device_matches(properties.deviceName)) {
          physical_device = physical_devices[i];
          break;
       }

@@ -29,6 +29,9 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "terakan_test_device.h"
+
+
 #define IMAGE_SIZE 64u
 #define MIP_LEVELS 4u
 /* Level 2 is 16x16, and the bug would clamp the render area to 16 >> 2 = 4. */
@@ -84,7 +87,7 @@ main(void)
    for (uint32_t i = 0; i < physical_device_count; ++i) {
       VkPhysicalDeviceProperties properties;
       vkGetPhysicalDeviceProperties(physical_devices[i], &properties);
-      if (strstr(properties.deviceName, "(Terakan)") != NULL) {
+      if (terakan_test_device_matches(properties.deviceName)) {
          physical_device = physical_devices[i];
          break;
       }

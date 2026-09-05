@@ -37,6 +37,9 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "terakan_test_device.h"
+
+
 #define IMAGE_WIDTH 256u
 #define IMAGE_HEIGHT 256u
 #define TEXELS (IMAGE_WIDTH * IMAGE_HEIGHT)
@@ -89,7 +92,7 @@ main(void)
    for (uint32_t i = 0; i < physical_device_count; ++i) {
       VkPhysicalDeviceProperties properties;
       vkGetPhysicalDeviceProperties(physical_devices[i], &properties);
-      if (strstr(properties.deviceName, "(Terakan)") != NULL) {
+      if (terakan_test_device_matches(properties.deviceName)) {
          physical_device = physical_devices[i];
          break;
       }

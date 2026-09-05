@@ -22,6 +22,9 @@
 #include <cstring>
 #include <vector>
 
+#include "terakan_test_device.h"
+
+
 #define VK_CHECK(expression)                                                                       \
    do {                                                                                            \
       VkResult const check_result = (expression);                                                  \
@@ -75,7 +78,7 @@ main()
    VkPhysicalDeviceProperties properties = {};
    for (VkPhysicalDevice candidate : physical_devices) {
       vkGetPhysicalDeviceProperties(candidate, &properties);
-      if (!std::strstr(properties.deviceName, "Terakan"))
+      if (!terakan_test_device_matches(properties.deviceName))
          continue;
       uint32_t family_count = 0;
       vkGetPhysicalDeviceQueueFamilyProperties(candidate, &family_count, nullptr);

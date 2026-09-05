@@ -46,6 +46,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "terakan_test_device.h"
 #define CK(e) do { VkResult r=(e); if(r){fprintf(stderr,"%s -> %d\n",#e,r);return 1;} } while(0)
 static uint32_t mt(VkPhysicalDevice p,uint32_t bits,VkMemoryPropertyFlags f){
    VkPhysicalDeviceMemoryProperties m; vkGetPhysicalDeviceMemoryProperties(p,&m);
@@ -56,6 +58,7 @@ static const uint32_t vertex_spirv[] = {
 };
 static const uint32_t fragment_spirv[] = {
 #include "terakan_vertex_fetch_bounds.frag.spv.h"
+
 };
 
 int main(void){
@@ -67,7 +70,7 @@ int main(void){
    uint32_t n=8; VkPhysicalDevice pds[8]; CK(vkEnumeratePhysicalDevices(inst,&n,pds));
    VkPhysicalDevice pd=VK_NULL_HANDLE; VkPhysicalDeviceProperties pr;
    for(uint32_t i=0;i<n;++i){ vkGetPhysicalDeviceProperties(pds[i],&pr);
-      if(strstr(pr.deviceName,"(Terakan)")&&!strstr(pr.deviceName,"TeraScale 1")){pd=pds[i];break;} }
+      if(terakan_test_device_matches(pr.deviceName)){pd=pds[i];break;} }
    if(!pd){fprintf(stderr,"no device\n");return 1;}
    fprintf(stderr,"device=%s\n",pr.deviceName);
    float pri=1.f; VkDeviceQueueCreateInfo qci={.sType=VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,.queueCount=1,.pQueuePriorities=&pri};

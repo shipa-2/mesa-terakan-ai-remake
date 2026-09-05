@@ -30,6 +30,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "terakan_test_device.h"
+
 #define TEXEL_COUNT 8u
 #define SOURCE_WORDS 64u
 
@@ -44,6 +46,7 @@
 
 static const uint32_t uniform_texel_buffer_spirv[] = {
 #include "terakan_uniform_texel_buffer.spv.h"
+
 };
 
 /* The source word at index i. Every byte differs from every other byte in the same word, so a
@@ -127,8 +130,7 @@ main(void)
    memset(&properties, 0, sizeof(properties));
    for (uint32_t device_index = 0; device_index < physical_device_count; ++device_index) {
       vkGetPhysicalDeviceProperties(physical_devices[device_index], &properties);
-      if (!strstr(properties.deviceName, "(Terakan)") ||
-          strstr(properties.deviceName, "TeraScale 1"))
+      if (!terakan_test_device_matches(properties.deviceName))
          continue;
       uint32_t family_count = 0;
       vkGetPhysicalDeviceQueueFamilyProperties(physical_devices[device_index], &family_count, NULL);

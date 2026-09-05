@@ -24,6 +24,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "terakan_test_device.h"
+
 #define OUTPUT_WIDTH 8u
 #define OUTPUT_HEIGHT 8u
 #define OUTPUT_TEXELS (OUTPUT_WIDTH * OUTPUT_HEIGHT)
@@ -42,6 +44,7 @@
 
 static const uint32_t indexed_image_array_spirv[] = {
 #include "terakan_indexed_image_array.spv.h"
+
 };
 
 static uint32_t
@@ -85,8 +88,7 @@ main(void)
    memset(&properties, 0, sizeof(properties));
    for (uint32_t device_index = 0; device_index < physical_device_count; ++device_index) {
       vkGetPhysicalDeviceProperties(physical_devices[device_index], &properties);
-      if (!strstr(properties.deviceName, "(Terakan)") ||
-          strstr(properties.deviceName, "TeraScale 1"))
+      if (!terakan_test_device_matches(properties.deviceName))
          continue;
       uint32_t family_count = 0;
       vkGetPhysicalDeviceQueueFamilyProperties(physical_devices[device_index], &family_count, NULL);

@@ -24,6 +24,9 @@
 #include <cstring>
 #include <vector>
 
+#include "terakan_test_device.h"
+
+
 #define VK_CHECK(expression)                                                                       \
    do {                                                                                            \
       VkResult const check_result = (expression);                                                  \
@@ -158,13 +161,10 @@ main()
    VkPhysicalDeviceProperties properties = {};
    for (VkPhysicalDevice candidate : physical_devices) {
       vkGetPhysicalDeviceProperties(candidate, &properties);
-      /* TeraScale 1 (R600/R700) devices also enumerate as "... (Terakan)" but cannot create a
-       * device yet (see terakan_physical_device_chip_info::is_terascale_1 and
-       * terakan_CreateDevice), so they are excluded by their "TeraScale 1" name prefix rather than
-       * picked and failed on below.
+      /* Which generation this run is for is `terakan_test_device_matches`'s decision, not each
+       * test's; see terakan_test_device.h.
        */
-      if (!std::strstr(properties.deviceName, "(Terakan)") ||
-          std::strstr(properties.deviceName, "TeraScale 1"))
+      if (!terakan_test_device_matches(properties.deviceName))
          continue;
       uint32_t family_count = 0;
       vkGetPhysicalDeviceQueueFamilyProperties(candidate, &family_count, nullptr);

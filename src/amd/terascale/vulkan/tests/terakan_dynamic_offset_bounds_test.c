@@ -24,6 +24,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "terakan_test_device.h"
+
 #define BUFFER_SIZE_BYTES 64u
 #define POISON_REGION_BYTES 64u
 #define ALLOCATION_BYTES (BUFFER_SIZE_BYTES + POISON_REGION_BYTES)
@@ -42,6 +44,7 @@
 
 static const uint32_t dynamic_offset_bounds_spirv[] = {
 #include "terakan_dynamic_offset_bounds.spv.h"
+
 };
 
 static uint32_t
@@ -91,12 +94,10 @@ main(void)
    for (uint32_t device_index = 0; device_index < physical_device_count; ++device_index) {
       VkPhysicalDeviceProperties properties;
       vkGetPhysicalDeviceProperties(physical_devices[device_index], &properties);
-      /* TeraScale 1 (R600/R700) devices are also named "... (Terakan)" now that they enumerate,
-       * but cannot create a device yet (see the comment above), so they are excluded by their
-       * "TeraScale 1" name prefix rather than picked and failed on below.
+      /* Which generation this run is for is `terakan_test_device_matches`'s decision, not each
+       * test's; see terakan_test_device.h.
        */
-      if (strstr(properties.deviceName, "(Terakan)") == NULL ||
-          strstr(properties.deviceName, "TeraScale 1") != NULL) {
+      if (!terakan_test_device_matches(properties.deviceName)) {
          continue;
       }
       physical_device = physical_devices[device_index];
