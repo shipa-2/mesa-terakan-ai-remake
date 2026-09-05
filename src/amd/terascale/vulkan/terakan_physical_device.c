@@ -1227,7 +1227,19 @@ terakan_physical_device_get_capabilities(
    extensions_out->EXT_color_write_enable = true;
    features_out->colorWriteEnable = true;
 
-   /* TODO(Triang3l): VK_KHR_maintenance4 (#414, Vulkan 1.3): maxBufferSize = UINT32_MAX. */
+   /* VK_KHR_maintenance4 (#414, Vulkan 1.3).
+    *
+    * Its substance was already here: vkGetDeviceBufferMemoryRequirements and
+    * vkGetDeviceImageMemoryRequirements are implemented, and terakan_image.c already honours the
+    * rule that a size requirement never exceeds what the same parameters would give for a smaller
+    * image, and that the alignment is identical for every image with the same parameters. What was
+    * missing is the declaration, `maxBufferSize`, and the sparse form of the image query, which
+    * reports nothing because sparse residency is not supported.
+    */
+   extensions_out->KHR_maintenance4 = true;
+   features_out->maintenance4 = true;
+   properties_out->maxBufferSize = UINT32_MAX;
+
    /* Addresses within buffers are limited to 32 bits in several places:
     * - Index buffer binding via INDEX_BASE.
     * - Wraparound in copying (most importantly image copying) not handled.

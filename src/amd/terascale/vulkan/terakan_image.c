@@ -2244,3 +2244,16 @@ terakan_CreateImageView(VkDevice const deviceHandle,
    *pView = terakan_image_view_to_handle(image_view);
    return VK_SUCCESS;
 }
+
+VKAPI_ATTR void VKAPI_CALL
+terakan_GetDeviceImageSparseMemoryRequirements(
+   UNUSED VkDevice const deviceHandle,
+   UNUSED VkDeviceImageMemoryRequirements const * const pInfo,
+   uint32_t * const pSparseMemoryRequirementCount,
+   UNUSED VkSparseImageMemoryRequirements2 * const pSparseMemoryRequirements)
+{
+   /* Sparse residency is not supported, so an image never has sparse memory requirements. The
+    * entry point still has to exist for VK_KHR_maintenance4.
+    */
+   *pSparseMemoryRequirementCount = 0;
+}
