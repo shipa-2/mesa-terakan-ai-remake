@@ -145,7 +145,8 @@ struct terakan_sampler {
 VK_DEFINE_NONDISP_HANDLE_CASTS(terakan_sampler, vk.base, VkSampler, VK_OBJECT_TYPE_SAMPLER)
 
 void terakan_sampler_descriptor_normalize_integer_border_color(
-   struct terakan_sampler_descriptor * sampler_descriptor, VkFormat view_format,
+   struct terakan_sampler_descriptor * sampler_descriptor,
+   struct terakan_resource_descriptor const * view_resource, VkFormat view_format,
    bool stencil_aspect);
 
 #ifdef __cplusplus

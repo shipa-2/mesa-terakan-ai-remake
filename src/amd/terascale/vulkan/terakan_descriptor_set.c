@@ -153,7 +153,8 @@ terakan_UpdateDescriptorSets(UNUSED VkDevice const device, uint32_t const descri
                       VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER &&
                    dst_binding->first_immutable_sampler_or_dynamic_offset == UINT16_MAX) {
                   terakan_sampler_descriptor_normalize_integer_border_color(
-                     &dst_samplers[descriptor_index].sampler, image_view->vk.format,
+                     &dst_samplers[descriptor_index].sampler, &image_view->resource,
+                     image_view->vk.format,
                      (image_view->vk.aspects & VK_IMAGE_ASPECT_STENCIL_BIT) != 0);
                }
             }

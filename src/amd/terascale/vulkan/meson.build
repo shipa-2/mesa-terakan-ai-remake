@@ -2372,6 +2372,25 @@ if with_tests
         dependencies : vulkan_loader_dep,
       )
 
+      terakan_border_color_swizzle_spv = custom_target(
+        'terakan_border_color_swizzle.spv.h',
+        input : 'tests/terakan_border_color_swizzle.comp',
+        output : 'terakan_border_color_swizzle.spv.h',
+        command : [
+          prog_glslang, '-V', '-x', '-o', '@OUTPUT@', '@INPUT@',
+          glslang_quiet, glslang_depfile,
+        ],
+        depfile : 'terakan_border_color_swizzle.spv.h.d',
+      )
+      terakan_border_color_swizzle_probe = executable(
+        'terakan_border_color_swizzle_probe',
+        [
+          'tests/terakan_border_color_swizzle_probe.c',
+          terakan_border_color_swizzle_spv,
+        ],
+        dependencies : vulkan_loader_dep,
+      )
+
       terakan_vertex_format_2_10_10_10_vertex_spv = custom_target(
         'terakan_vertex_format_2_10_10_10.vert.spv.h',
         input : 'tests/terakan_vertex_format_2_10_10_10.vert',

@@ -148,6 +148,34 @@ terakan_CreateSampler(VkDevice const deviceHandle, VkSamplerCreateInfo const * c
       }
    }
 
+   /* Characterization hook for terakan_border_color_swizzle_probe. `TERAKAN_BORDER_PROBE_VALUES`
+    * takes four comma-separated floats and writes them into the per-sampler border colour
+    * registers exactly as given, so what the hardware does with `DST_SEL` and the border colour
+    * can be read off a result rather than inferred from tests whose border components happen to
+    * be equal to each other.
+    */
+   {
+      char const * const probe_values = getenv("TERAKAN_BORDER_PROBE_VALUES");
+      if (probe_values != NULL) {
+         float components[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+         char const * cursor = probe_values;
+         for (unsigned component_index = 0; component_index < 4 && *cursor != '\0';
+              ++component_index) {
+            char * end = NULL;
+            components[component_index] = strtof(cursor, &end);
+            if (end == cursor) {
+               break;
+            }
+            cursor = (*end == ',') ? end + 1 : end;
+         }
+         sampler->sampler.sampler[0] =
+            (sampler->sampler.sampler[0] & C_03C000_BORDER_COLOR_TYPE) |
+            S_03C000_BORDER_COLOR_TYPE(V_03C000_SQ_TEX_BORDER_COLOR_REGISTER);
+         memcpy(sampler->sampler.register_border_color, components,
+                sizeof(sampler->sampler.register_border_color));
+      }
+   }
+
    /* TODO(Triang3l): Custom border colours, VK_EXT_custom_border_color. */
 
    sampler->unnormalized_coordinates = pCreateInfo->unnormalizedCoordinates;
@@ -169,7 +197,8 @@ terakan_CreateSampler(VkDevice const deviceHandle, VkSamplerCreateInfo const * c
  */
 void
 terakan_sampler_descriptor_normalize_integer_border_color(
-   struct terakan_sampler_descriptor * const sampler_descriptor, VkFormat const view_format,
+   struct terakan_sampler_descriptor * const sampler_descriptor,
+   struct terakan_resource_descriptor const * const view_resource, VkFormat const view_format,
    bool const stencil_aspect)
 {
    if (G_03C000_BORDER_COLOR_TYPE(sampler_descriptor->sampler[0]) !=
@@ -197,8 +226,36 @@ terakan_sampler_descriptor_normalize_integer_border_color(
       }
    }
 
+   /* The hardware applies `DST_SEL` to the border colour twice, which
+    * terakan_border_color_swizzle_probe reads off directly: with the registers holding four
+    * distinct values, a view swizzled `argb` -- `(W, X, Y, Z)` -- samples its border as
+    * `(Z, W, X, Y)`, which is that permutation composed with itself, and the self-inverse `bgra`
+    * comes back as the identity. Constants survive either way, and an ordinary sample gets them
+    * right.
+    *
+    * So the registers have to hold the border colour with the swizzle applied backwards once:
+    * writing `register[DST_SEL[j]] = border[j]` leaves the double application landing on
+    * `border[DST_SEL[i]]`, which is what the component was asked for.
+    */
+   uint32_t const dst_sel[4] = {
+      G_030010_DST_SEL_X(view_resource->resource[4]),
+      G_030010_DST_SEL_Y(view_resource->resource[4]),
+      G_030010_DST_SEL_Z(view_resource->resource[4]),
+      G_030010_DST_SEL_W(view_resource->resource[4]),
+   };
+   uint32_t const border_color[4] = {
+      sampler_descriptor->register_border_color[0], sampler_descriptor->register_border_color[1],
+      sampler_descriptor->register_border_color[2], sampler_descriptor->register_border_color[3]};
+
    for (unsigned component_index = 0; component_index < 4; ++component_index) {
-      unsigned const bits = channel_bits[component_index];
+      /* A component the swizzle turns into a constant leaves no register to write, and the
+       * hardware produces the constant on its own.
+       */
+      if (dst_sel[component_index] > TERASCALE_SWIZZLE_W) {
+         continue;
+      }
+      unsigned const register_index = dst_sel[component_index];
+      unsigned const bits = channel_bits[register_index];
       if (bits == 0 || bits > 32) {
          continue;
       }
@@ -208,17 +265,14 @@ terakan_sampler_descriptor_normalize_integer_border_color(
        * what the border colour path carries. Those cases are left failing rather than papered
        * over.
        */
-      double const maximum = channel_signed[component_index]
+      double const maximum = channel_signed[register_index]
                                 ? (double)((1ull << (bits - 1u)) - 1ull)
                                 : (double)((1ull << bits) - 1ull);
-      double value;
-      if (channel_signed[component_index]) {
-         value = (double)(int32_t)sampler_descriptor->register_border_color[component_index];
-      } else {
-         value = (double)sampler_descriptor->register_border_color[component_index];
-      }
-      float const normalized = (float)(value / maximum);
-      memcpy(&sampler_descriptor->register_border_color[component_index], &normalized,
+      double const raw = channel_signed[register_index]
+                            ? (double)(int32_t)border_color[component_index]
+                            : (double)border_color[component_index];
+      float const normalized = (float)(raw / maximum);
+      memcpy(&sampler_descriptor->register_border_color[register_index], &normalized,
              sizeof(float));
    }
 }
