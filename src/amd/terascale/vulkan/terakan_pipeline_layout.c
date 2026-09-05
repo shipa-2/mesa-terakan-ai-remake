@@ -71,6 +71,35 @@ terakan_pipeline_layout_track_scaled_integer_texture(
       command_writer->push_constants_state.driver_constants_modified |=
          BITFIELD_BIT(TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_TEXTURE_SCALED_INTEGER);
    }
+
+   /* A gather does not produce the constant a view's swizzle asks for unless it is in W, so the
+    * shader substitutes it and is told here which components of which slots are constant.
+    */
+   uint32_t const dst_sel[4] = {G_030010_DST_SEL_X(resource->resource[4]),
+                                G_030010_DST_SEL_Y(resource->resource[4]),
+                                G_030010_DST_SEL_Z(resource->resource[4]),
+                                G_030010_DST_SEL_W(resource->resource[4])};
+   bool const is_texture =
+      G_03001C_TYPE(resource->resource[7]) == V_03001C_SQ_TEX_VTX_VALID_TEXTURE;
+   for (unsigned component_index = 0; component_index < 4; ++component_index) {
+      bool const is_constant = is_texture && dst_sel[component_index] > TERASCALE_SWIZZLE_W;
+      bool const is_one = is_constant && dst_sel[component_index] == TERASCALE_SWIZZLE_1;
+      uint32_t * const constant_mask =
+         &command_writer->push_constants_state.driver_constants
+             .texture_gather_swizzle_constant[shader_stage][component_index];
+      uint32_t * const one_mask =
+         &command_writer->push_constants_state.driver_constants
+             .texture_gather_swizzle_one[shader_stage][component_index];
+      uint32_t const constant_mask_new = is_constant ? (*constant_mask | bit)
+                                                     : (*constant_mask & ~bit);
+      uint32_t const one_mask_new = is_one ? (*one_mask | bit) : (*one_mask & ~bit);
+      if (constant_mask_new != *constant_mask || one_mask_new != *one_mask) {
+         *constant_mask = constant_mask_new;
+         *one_mask = one_mask_new;
+         command_writer->push_constants_state.driver_constants_modified |= BITFIELD_BIT(
+            TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_TEXTURE_GATHER_SWIZZLE_CONSTANT);
+      }
+   }
 }
 
 VKAPI_ATTR void VKAPI_CALL

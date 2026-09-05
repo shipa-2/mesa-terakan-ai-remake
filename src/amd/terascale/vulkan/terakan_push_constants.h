@@ -55,6 +55,7 @@ enum terakan_push_constants_driver_index {
    TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_SAMPLE_POSITIONS,
    TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_SAMPLER_UNNORMALIZED,
    TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_TEXTURE_SCALED_INTEGER,
+   TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_TEXTURE_GATHER_SWIZZLE_CONSTANT,
 
    TERAKAN_PUSH_CONSTANTS_DRIVER_INDEX_COUNT,
 };
@@ -111,6 +112,22 @@ struct terakan_push_constants_driver {
     * shader cannot see. Hence the mask: the same reason `sampler_unnormalized` above exists.
     */
    uint32_t texture_scaled_integer[MESA_SHADER_STAGES];
+
+   /* `GATHER4` does not produce a constant for a component the view's swizzle maps to zero or one
+    * unless that component is W. `terakan_border_color_swizzle_probe` shows what it produces
+    * instead: for `1gba` the components come back as (Y, Z, W, Y) rather than (1, Y, Z, W), and
+    * for `0gba` as the plain identity. A channel, in other words -- so no descriptor can express
+    * it, and the component a gather asks for is fixed in the instruction at compile time.
+    *
+    * The shader therefore substitutes the constant itself, and needs to know, for the component it
+    * is gathering, whether the bound view's swizzle makes it constant and which constant. Indexed
+    * by component, one bit per texture slot: `constant` says the swizzle is `ZERO` or `ONE`, and
+    * `one` distinguishes the two. Ordinary permutations gather correctly and are not touched.
+    *
+    * Like `sampler_unnormalized`, this covers the first 32 slots of a stage.
+    */
+   uint32_t texture_gather_swizzle_constant[MESA_SHADER_STAGES][4];
+   uint32_t texture_gather_swizzle_one[MESA_SHADER_STAGES][4];
 };
 
 /* Aligned to vec4 to avoid placing vectors in different kcache lines more likely to be accessed in
