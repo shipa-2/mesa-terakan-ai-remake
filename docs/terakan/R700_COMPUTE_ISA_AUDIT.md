@@ -38,3 +38,29 @@ The remaining implementation gate is a documented R700 work-launch and memory-ex
 path, including bounds, synchronization and readback. Reusing Evergreen DISPATCH_DIRECT,
 RAT writes or LS state is not justified by successful CB/TC copies. Keep submit guarded;
 do not claim a Vulkan dispatch by substituting an unrelated graphics copy test.
+
+## Launch and DRM boundary
+
+AMD's [Evergreen/Northern Islands acceleration guide, revision 1.0](https://docs.amd.com/api/khub/documents/ApP4PzuRytQl9QLD9lgkmA/content),
+section 3.1, explicitly describes R7xx compute as a special ES shader, using ES
+resources and SX_MEMORY_EXPORT_BASE, with ESGS/streamout as other output paths.
+This is useful positive evidence for an ES investigation, not permission to use
+the LS setup in section 3.2. Sections 9.3.12/13 label DISPATCH_DIRECT/INDIRECT
+Evergreen/Cayman only. The overview's generic DISPATCH wording must not override
+that generation qualification. An exact R7xx launch recipe is still missing.
+
+The inspected upstream Linux [r600_cs.c](https://raw.githubusercontent.com/torvalds/linux/master/drivers/gpu/drm/radeon/r600_cs.c)
+has no DISPATCH handler and rejects unhandled packet-3 opcodes. Its register
+checker accepts the safe bitmap or a handled special register; the
+[safe-register input](https://raw.githubusercontent.com/torvalds/linux/master/drivers/gpu/drm/radeon/reg_srcs/r600)
+does not list SX_MEMORY_EXPORT_BASE (0x9010), and the parser has no named SX
+memory-export handler. A MEM_EXPORT opcode alone therefore does not establish
+a usable, BO-bounded userspace export path. Audit a pinned kernel version and
+the numeric register cases before proposing a kernel change.
+
+This inspection was of upstream source on 2026-09-05, not the exact remote
+7.1.2-zen3-1-zen source: its installed build trees do not contain r600_cs.c.
+No rejected dispatch or export-register write was submitted to RV710 to test
+this inference. No kernel modification or validation bypass is authorized by
+this note. The next implementation must resolve both launch and bounded output,
+not just supply a shader with the right ISA opcode.

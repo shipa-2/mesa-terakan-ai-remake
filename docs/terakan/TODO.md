@@ -663,13 +663,17 @@ oracle; indirect indexed draws and all indexed hardware execution remain unverif
   emitter. Its `SQ_DYN_GPR_RESOURCE_LIMIT_1`, compute-flavoured `VGT_GS_MODE`,
   `VGT_SHADER_STAGES_EN`, `SPI_COMPUTE_*`, `SQ_PGM_*_LS`, `SQ_LDS_ALLOC` and
   `VGT_COMPUTE_*` packets are not a register-compatible R700 compute path.
-  Until classic R600 supplies an exact replacement, the generation-specific
-  packet is exactly zero dwords and the dirty bits are consumed. This prevents
-  corrupt recording but deliberately does not provide R700 compute support.
+  The generation-specific state packet is exactly zero dwords and the dirty bits
+  are consumed. This suppresses that emitter only: direct and indirect dispatch
+  recording still contain Evergreen launch packets. It does not make an opt-in
+  application dispatch safe and deliberately does not provide R700 compute support.
   The [compute/ISA audit](R700_COMPUTE_ISA_AUDIT.md) now records why waiting for a classic
   R700 compute atom is insufficient: Gallium exposes compute only above R700. It also answers
   the plan's Evergreen SET_CF_IDX lane-selection question from AMD's manual, without claiming
   a proven divergent-clause fix or touching the shared SFN files under parallel investigation.
+  AMD documents R7xx compute as an ES variant, but qualifies DISPATCH_DIRECT/INDIRECT
+  as Evergreen/Cayman. Upstream DRM's R600 parser also lacks dispatch handling;
+  the exact remote kernel source and a bounded MEM_EXPORT path still need auditing.
 
 - TeraScale 1 (R700) `DB_SHADER_CONTROL`: the runtime emitter no longer sends
   the full Evergreen payload merely because both generations place the
